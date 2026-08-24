@@ -1,0 +1,7 @@
+{
+  "required": false,
+  "package": "fi.tesles.seasons.mixin.fix061",
+  "compatibilityLevel": "JAVA_25",
+  "mixins": ["VoxySnapshotIngestFixMixin", "VoxyImporterSnowNeutralizerFixMixin"],
+  "injectors": {"defaultRequire": 0}
+}

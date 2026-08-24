@@ -1,0 +1,58 @@
+plugins {
+    id 'fabric-loom' version "${loom_version}"
+    id 'java'
+}
+
+version = project.mod_version
+group = project.maven_group
+
+base { archivesName = project.archives_base_name }
+
+// Minecraft 26.2 ships deobfuscated - Mojang publishes no mappings artifact and
+// Fabric's intermediary for 26.2 is the empty 0.0.0 mapping set. Compile directly
+// against official names.
+loom {
+    useIntermediateMappings = false
+}
+
+repositories {
+    mavenCentral()
+    maven { name = 'Fabric'; url = 'https://maven.fabricmc.net/' }
+    flatDir { dirs 'libs' }
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    mappings files("libs/identity-mappings-26.2.jar")
+    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+
+    // Third-party integration targets: compile against the exact installed builds.
+    compileOnly files('libs/voxy-0.2.18-beta.jar')
+    compileOnly files('libs/voxyserver-1.2.4.jar')
+    compileOnly files('libs/dynamictrees.jar')
+    compileOnly files('libs/teslesworldgen.jar')
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.3'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+java {
+    toolchain { languageVersion = JavaLanguageVersion.of(25) }
+    withSourcesJar()
+}
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.release = 25
+    it.options.encoding = 'UTF-8'
+}
+
+test {
+    useJUnitPlatform()
+    testLogging { events 'passed', 'failed', 'skipped'; showStandardStreams = true }
+}
+
+processResources {
+    inputs.property 'version', project.version
+    filesMatching('fabric.mod.json') { expand 'version': project.version }
+}

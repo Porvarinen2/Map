@@ -1,0 +1,19 @@
+{
+  "required": false,
+  "package": "fi.tesles.seasons.mixin.client",
+  "compatibilityLevel": "JAVA_25",
+  "client": [
+    "CustomWeatherRainStrengthMixin",
+    "WinterWeatherRendererMixin",
+    "WinterWeatherColumnMixin",
+    "VoxyClientLevelDirtyMixin",
+    "VoxyModelFactoryCategoryMixin",
+    "VoxyRawIngestSuppressionMixin",
+    "VoxyShaderLoaderMixin",
+    "VoxyShaderUniformMixin",
+    "SeasonalBlockStateModelSafetyMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 0
+  }
+}

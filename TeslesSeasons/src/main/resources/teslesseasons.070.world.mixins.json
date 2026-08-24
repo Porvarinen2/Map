@@ -1,0 +1,12 @@
+{
+  "required": true,
+  "package": "fi.tesles.seasons.mixin",
+  "compatibilityLevel": "JAVA_25",
+  "mixins": [
+    "PlayerChunkSenderMixin",
+    "world.GrassSnowIntegrityMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "required": false,
+  "package": "fi.tesles.seasons.mixin.fix063.client",
+  "compatibilityLevel": "JAVA_25",
+  "client": ["VoxySeasonAwareModelDedupMixin"],
+  "injectors": {"defaultRequire": 0}
+}

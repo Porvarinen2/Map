@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "id": "teslesseasons",
+  "version": "${version}",
+  "name": "TeslesSeasons",
+  "description": "TESLES 0.7.0 sectorized seasons: physical near-world leaves/flora, exact proportional snow, species-aware realtime Voxy projection and neutral-v9 cache isolation.",
+  "authors": [
+    "TESLES"
+  ],
+  "license": "All Rights Reserved",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "fi.tesles.seasons.TeslesSeasons",
+      "fi.tesles.seasons.runtime.SeasonRuntimeExtensions"
+    ],
+    "client": [
+      "fi.tesles.seasons.client.TeslesSeasonsClient",
+      "fi.tesles.seasons.fix062.client.VoxyAuthorityClient",
+      "fi.tesles.seasons.fix070.client.VoxyEpochV9Client"
+    ]
+  },
+  "mixins": [
+    {
+      "config": "teslesseasons.070.world.mixins.json"
+    },
+    {
+      "config": "teslesseasons.070.dynamictrees.mixins.json"
+    },
+    {
+      "config": "teslesseasons.070.voxyserver.mixins.json"
+    },
+    {
+      "config": "teslesseasons.070.voxy-backfill.mixins.json"
+    },
+    {
+      "config": "teslesseasons.070.voxy-ingest.mixins.json"
+    },
+    {
+      "config": "teslesseasons.070.client.mixins.json",
+      "environment": "client"
+    },
+    {
+      "config": "teslesseasons.071.voxy-visual.mixins.json",
+      "environment": "client"
+    },
+    {
+      "config": "teslesseasons.070.voxy-shader-safety.mixins.json",
+      "environment": "client"
+    },
+    {
+      "config": "teslesseasons.070.voxy-client.mixins.json",
+      "environment": "client"
+    },
+    {
+      "config": "teslesseasons.070.voxy-dedup.mixins.json",
+      "environment": "client"
+    },
+    {
+      "config": "teslesseasons.070.voxy-phase.mixins.json",
+      "environment": "client"
+    }
+  ],
+  "depends": {
+    "fabricloader": ">=0.19.3",
+    "minecraft": "~26.2",
+    "java": ">=25",
+    "fabric-api": "*"
+  },
+  "suggests": {
+    "voxy": "*",
+    "voxyserver": "*",
+    "dynamictrees": "*",
+    "teslesplants": "*",
+    "teslesfood": "*"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "required": false,
+  "package": "fi.tesles.seasons.mixin.compat",
+  "compatibilityLevel": "JAVA_25",
+  "mixins": [
+    "VoxyServerStorageEpochMixin",
+    "VoxyServerDirtyTrackerMixin",
+    "VoxyServerInstanceMixin",
+    "VoxyWorldImporterNeutralizerMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 0
+  }
+}

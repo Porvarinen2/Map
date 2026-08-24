@@ -1,0 +1,7 @@
+{
+  "required": false,
+  "package": "fi.tesles.seasons.mixin.fix061.client",
+  "compatibilityLevel": "JAVA_25",
+  "client": ["VoxySeasonShaderSafetyFixMixin"],
+  "injectors": {"defaultRequire": 0}
+}

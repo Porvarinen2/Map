@@ -1,0 +1,46 @@
+{
+  "ambientocclusion": false,
+  "textures": {
+    "snow": "minecraft:block/snow"
+  },
+  "elements": [
+    {
+      "from": [
+        0,
+        -8,
+        0
+      ],
+      "to": [
+        16,
+        2,
+        16
+      ],
+      "faces": {
+        "down": {
+          "texture": "#snow",
+          "cullface": "down"
+        },
+        "up": {
+          "texture": "#snow",
+          "cullface": "up"
+        },
+        "north": {
+          "texture": "#snow",
+          "cullface": "north"
+        },
+        "south": {
+          "texture": "#snow",
+          "cullface": "south"
+        },
+        "west": {
+          "texture": "#snow",
+          "cullface": "west"
+        },
+        "east": {
+          "texture": "#snow",
+          "cullface": "east"
+        }
+      }
+    }
+  ]
+}

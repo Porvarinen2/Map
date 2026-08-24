@@ -1,0 +1,11 @@
+{
+  "required": false,
+  "package": "fi.tesles.seasons.mixin.fix071.client",
+  "compatibilityLevel": "JAVA_25",
+  "client": [
+    "TeslesPlantsMushroomCategoryMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 0
+  }
+}
