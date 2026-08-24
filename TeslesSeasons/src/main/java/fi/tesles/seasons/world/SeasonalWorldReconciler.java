@@ -236,11 +236,9 @@ public final class SeasonalWorldReconciler {
             ROUND_ROBIN.addLast(k);
          }
 
-         SeasonSnapshot snapshot = SeasonEngine.current();
-         if (snapshot != null) {
-            SeasonFrame frame = SeasonDirector.derive(snapshot);
-            state.canonicalizeVisibleBeforeSend(frame);
-         }
+         // Canonicalise against the authoritative frame, not a re-derivation, so a chunk can
+         // never become visible carrying a season the director has already moved past.
+         state.canonicalizeVisibleBeforeSend(SeasonDirector.currentFrame());
 
          enqueueUrgent(k);
          preSendChunks++;
