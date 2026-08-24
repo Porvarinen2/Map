@@ -1,12 +1,13 @@
 package fi.tesles.seasons.mixin.fix064.client;
 
-import fi.tesles.seasons.api.SeasonSnapshot;
 import fi.tesles.seasons.client.ClientSeasonState;
+import fi.tesles.seasons.client.render.SeasonalCategory;
 import fi.tesles.seasons.client.voxy.VoxySeasonCategories;
-import fi.tesles.seasons.fix061.OrganicSnowField;
 import fi.tesles.seasons.fix064.client.VoxySeasonRemeshScheduler;
+import fi.tesles.seasons.sector.SeasonFrame;
 import fi.tesles.seasons.world.SeasonalBlockClassifier;
 import fi.tesles.seasons.world.SeasonalFloraKind;
+import fi.tesles.seasons.world.system.SnowSystem;
 import it.unimi.dsi.fastutil.ints.Int2ByteOpenHashMap;
 import me.cortex.voxy.client.core.rendering.building.BuiltSection;
 import me.cortex.voxy.common.world.WorldEngine;
@@ -25,6 +26,26 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
+/**
+ * Projects the current season onto Voxy LOD geometry at mesh-build time.
+ *
+ * <p>This is the mechanism that makes distant terrain season-correct without storing any
+ * season in Voxy's persistent LOD database. Voxy keeps neutral geometry; this mixin takes a
+ * copy of the raw section data on its way into the mesher and applies the current
+ * {@link SeasonFrame} to it. A section rebuilt tomorrow gets tomorrow's season, and a section
+ * ingested last winter has no winter baked into it.
+ *
+ * <h2>Parity</h2>
+ * Snow selection and depth come from {@link SnowSystem#targetLayers}, the exact function the
+ * server uses to place physical snow. This is deliberate and load-bearing: the previous
+ * implementation used a separate multi-octave "organic" noise field here while the physical
+ * world used the flat coordinate hash, so near terrain and LOD terrain disagreed about which
+ * columns were snowy at every partial coverage. Do not substitute a different field here to
+ * make the LOD look prettier - fix the shared field instead.
+ *
+ * <p>Only LOD levels 0-2 are projected. Beyond that a voxel spans enough blocks that
+ * per-column snow is meaningless, and the shader's snow tint carries the appearance.
+ */
 @Pseudo
 @Mixin(
    targets = {"me.cortex.voxy.client.core.rendering.building.RenderDataFactory"},
@@ -34,8 +55,13 @@ public abstract class VoxySeasonMeshProjectionMixin {
    @Shadow
    @Final
    private WorldEngine world = null;
+
+   /** Section currently being meshed, handed from generateMesh() down to prepareSectionData(). */
    @Unique
    private static final ThreadLocal<WorldSection> TESLES_SECTION = new ThreadLocal<>();
+
+   @Unique
+   private static final int TESLES_MAX_PROJECTED_LOD = 2;
 
    @Inject(
       method = {"generateMesh(Lme/cortex/voxy/common/world/WorldSection;)Lme/cortex/voxy/client/core/rendering/building/BuiltSection;"},
@@ -67,135 +93,160 @@ public abstract class VoxySeasonMeshProjectionMixin {
    )
    private long[] tesles$projectSeasonGeometry(long[] raw) {
       WorldSection section = TESLES_SECTION.get();
-      SeasonSnapshot snapshot = ClientSeasonState.get();
-      if (section == null || snapshot == null || raw == null || raw.length != 32768) {
-         return raw;
-      } else if (VoxySeasonRemeshScheduler.isHandoffUnsafe(section)) {
-         return raw;
-      } else if (section.lvl >= 0 && section.lvl <= 2 && !(snapshot.snowCover() <= 0.005F)) {
-         long[] projected = (long[])raw.clone();
-         Mapper mapper = this.world.getMapper();
-         Int2ByteOpenHashMap categories = new Int2ByteOpenHashMap(64);
-         categories.defaultReturnValue((byte)-1);
-         int scale = 1 << section.lvl;
-         int half = scale >> 1;
-         long seed = snapshot.visualSeed();
-
-         for (int z = 0; z < 32; z++) {
-            for (int x = 0; x < 32; x++) {
-               int wx = ((section.x << 5) + x << section.lvl) + half;
-               int wz = ((section.z << 5) + z << section.lvl) + half;
-               double coverageNoise = OrganicSnowField.coverageNoise(wx, wz, seed);
-               if (OrganicSnowField.wantsSnow(snapshot.snowCover(), coverageNoise)) {
-                  if (section.lvl == 0) {
-                     projectFineColumn(projected, mapper, categories, snapshot, x, z, wx, wz, coverageNoise, seed);
-                  } else {
-                     projectCoarseColumn(projected, mapper, categories, snapshot, section.lvl, x, z, wx, wz, coverageNoise, seed);
-                  }
-               }
-            }
-         }
-
-         return projected;
-      } else {
+      SeasonFrame frame = ClientSeasonState.frame();
+      if (section == null || frame == null || raw == null || raw.length != 32768) {
          return raw;
       }
-   }
 
-   @Unique
-   private static void projectFineColumn(
-      long[] projected, Mapper mapper, Int2ByteOpenHashMap categories, SeasonSnapshot snapshot, int x, int z, int wx, int wz, double coverageNoise, long seed
-   ) {
-      int topY = findTopNonAir(projected, x, z);
-      if (topY >= 0) {
-         int scanY = topY;
-         boolean hadFlora = false;
+      // Stamp the section with the revision it is being meshed at, whatever happens below.
+      // Sections that legitimately need no seasonal geometry must still count as current, or
+      // the cache-bypass mixin would reject them forever and they would remesh every frame.
+      VoxySeasonRemeshScheduler.markProjected(section.key, frame.revision());
 
-         while (scanY >= 0) {
-            long voxel = projected[WorldSection.getIndex(x, scanY, z)];
-            if (Mapper.isAir(voxel)) {
-               scanY--;
+      // Sections inside the vanilla render distance are drawn from real blocks; projecting
+      // season onto their LOD copy too would double-apply it at the handoff seam.
+      if (VoxySeasonRemeshScheduler.isHandoffUnsafe(section)) {
+         return raw;
+      }
+
+      if (section.lvl < 0 || section.lvl > TESLES_MAX_PROJECTED_LOD || frame.snowCoverage() <= 0.005F) {
+         return raw;
+      }
+
+      long[] projected = raw.clone();
+      Mapper mapper = this.world.getMapper();
+      Int2ByteOpenHashMap categories = new Int2ByteOpenHashMap(64);
+      categories.defaultReturnValue((byte) -1);
+
+      int scale = 1 << section.lvl;
+      int half = scale >> 1;
+      long seed = ClientSeasonState.get().visualSeed();
+
+      for (int z = 0; z < 32; z++) {
+         for (int x = 0; x < 32; x++) {
+            // Representative world column for this voxel. At LOD 0 this is the exact block
+            // column the server evaluates, giving coordinate-for-coordinate parity.
+            int wx = (((section.x << 5) + x) << section.lvl) + half;
+            int wz = (((section.z << 5) + z) << section.lvl) + half;
+
+            int worldLayers = SnowSystem.targetLayers(frame, wx, wz, seed);
+            if (worldLayers <= 0) {
+               continue;
+            }
+
+            if (section.lvl == 0) {
+               projectFineColumn(projected, mapper, categories, x, z, worldLayers);
             } else {
-               if (!isSeasonalFlora(mapper, categories, voxel)) {
-                  break;
-               }
-
-               hadFlora = true;
-               scanY--;
+               projectCoarseColumn(projected, mapper, categories, section.lvl, x, z, worldLayers);
             }
          }
+      }
 
-         if (scanY >= 0 && scanY < 31) {
-            long ground = projected[WorldSection.getIndex(x, scanY, z)];
-            if (isSnowGround(mapper, categories, ground)) {
-               int snowY = scanY + 1;
-               int snowIndex = WorldSection.getIndex(x, snowY, z);
-               long occupant = projected[snowIndex];
-               if (Mapper.isAir(occupant) || isSeasonalFlora(mapper, categories, occupant)) {
-                  int worldLayers = snowLayers(snapshot.snowCover(), coverageNoise, wx, wz, seed);
-                  projected[snowIndex] = snowVoxel(mapper, occupant, ground, worldLayers);
-                  if (hadFlora) {
-                     for (int y = snowY + 1; y <= topY && y < 32; y++) {
-                        int idx = WorldSection.getIndex(x, y, z);
-                        long voxel = projected[idx];
-                        if (!Mapper.isAir(voxel) && isSeasonalFlora(mapper, categories, voxel)) {
-                           projected[idx] = Mapper.airWithLight(Mapper.getLightId(voxel));
-                        }
-                     }
-                  }
-               }
+      return projected;
+   }
+
+   /**
+    * LOD 0: one voxel is one block. Walk down through seasonal flora to the ground, put the
+    * snow layer directly on it, and clear the flora the snow has buried - matching what the
+    * server physically did to the same column.
+    */
+   @Unique
+   private static void projectFineColumn(long[] projected, Mapper mapper, Int2ByteOpenHashMap categories,
+                                         int x, int z, int worldLayers) {
+      int topY = findTopNonAir(projected, x, z);
+      if (topY < 0) {
+         return;
+      }
+
+      int scanY = topY;
+      boolean hadFlora = false;
+      while (scanY >= 0) {
+         long voxel = projected[WorldSection.getIndex(x, scanY, z)];
+         if (Mapper.isAir(voxel)) {
+            scanY--;
+         } else if (isSeasonalFlora(mapper, categories, voxel)) {
+            hadFlora = true;
+            scanY--;
+         } else {
+            break;
+         }
+      }
+
+      if (scanY < 0 || scanY >= 31) {
+         return;
+      }
+
+      long ground = projected[WorldSection.getIndex(x, scanY, z)];
+      if (!isSnowGround(mapper, categories, ground)) {
+         return;
+      }
+
+      int snowY = scanY + 1;
+      int snowIndex = WorldSection.getIndex(x, snowY, z);
+      long occupant = projected[snowIndex];
+      if (!Mapper.isAir(occupant) && !isSeasonalFlora(mapper, categories, occupant)) {
+         return;
+      }
+
+      projected[snowIndex] = snowVoxel(mapper, occupant, ground, worldLayers);
+
+      if (hadFlora) {
+         for (int y = snowY + 1; y <= topY && y < 32; y++) {
+            int idx = WorldSection.getIndex(x, y, z);
+            long voxel = projected[idx];
+            if (!Mapper.isAir(voxel) && isSeasonalFlora(mapper, categories, voxel)) {
+               projected[idx] = Mapper.airWithLight(Mapper.getLightId(voxel));
             }
          }
       }
    }
 
+   /**
+    * LOD 1-2: one voxel spans 2 or 4 blocks, so the block-accurate layer count is scaled down
+    * to the voxel's own resolution. At LOD 2 a thin dusting is dropped entirely rather than
+    * rendered as a full voxel of snow.
+    */
    @Unique
-   private static void projectCoarseColumn(
-      long[] projected,
-      Mapper mapper,
-      Int2ByteOpenHashMap categories,
-      SeasonSnapshot snapshot,
-      int lod,
-      int x,
-      int z,
-      int wx,
-      int wz,
-      double coverageNoise,
-      long seed
-   ) {
+   private static void projectCoarseColumn(long[] projected, Mapper mapper, Int2ByteOpenHashMap categories,
+                                           int lod, int x, int z, int worldLayers) {
       int topY = findTopNonAir(projected, x, z);
-      if (topY >= 0) {
-         int groundY = topY;
-
-         int floraCount;
-         for (floraCount = 0; groundY >= 0; groundY--) {
-            long voxel = projected[WorldSection.getIndex(x, groundY, z)];
-            if (!isSeasonalFlora(mapper, categories, voxel)) {
-               break;
-            }
-
-            floraCount++;
-         }
-
-         if (groundY >= 0 && groundY < 31) {
-            long ground = projected[WorldSection.getIndex(x, groundY, z)];
-            if (isSnowGround(mapper, categories, ground)) {
-               int snowY = groundY + 1;
-               int snowIndex = WorldSection.getIndex(x, snowY, z);
-               long occupant = projected[snowIndex];
-               if (floraCount <= 1) {
-                  if (Mapper.isAir(occupant) || isSeasonalFlora(mapper, categories, occupant)) {
-                     int worldLayers = snowLayers(snapshot.snowCover(), coverageNoise, wx, wz, seed);
-                     int scale = 1 << lod;
-                     if (lod != 2 || worldLayers >= 3) {
-                        int modelLayers = Math.max(1, Math.min(8, Math.round((float)worldLayers / scale)));
-                        projected[snowIndex] = snowVoxel(mapper, occupant, ground, modelLayers);
-                     }
-                  }
-               }
-            }
-         }
+      if (topY < 0) {
+         return;
       }
+
+      int groundY = topY;
+      int floraCount = 0;
+      while (groundY >= 0) {
+         long voxel = projected[WorldSection.getIndex(x, groundY, z)];
+         if (!isSeasonalFlora(mapper, categories, voxel)) {
+            break;
+         }
+         floraCount++;
+         groundY--;
+      }
+
+      if (groundY < 0 || groundY >= 31 || floraCount > 1) {
+         return;
+      }
+
+      long ground = projected[WorldSection.getIndex(x, groundY, z)];
+      if (!isSnowGround(mapper, categories, ground)) {
+         return;
+      }
+
+      int snowIndex = WorldSection.getIndex(x, groundY + 1, z);
+      long occupant = projected[snowIndex];
+      if (!Mapper.isAir(occupant) && !isSeasonalFlora(mapper, categories, occupant)) {
+         return;
+      }
+
+      int scale = 1 << lod;
+      if (lod == TESLES_MAX_PROJECTED_LOD && worldLayers < 3) {
+         return;
+      }
+
+      int modelLayers = Math.max(1, Math.min(8, Math.round((float) worldLayers / scale)));
+      projected[snowIndex] = snowVoxel(mapper, occupant, ground, modelLayers);
    }
 
    @Unique
@@ -205,7 +256,6 @@ public abstract class VoxySeasonMeshProjectionMixin {
             return y;
          }
       }
-
       return -1;
    }
 
@@ -213,36 +263,40 @@ public abstract class VoxySeasonMeshProjectionMixin {
    private static boolean isSeasonalFlora(Mapper mapper, Int2ByteOpenHashMap categories, long voxel) {
       if (Mapper.isAir(voxel)) {
          return false;
-      } else {
-         try {
-            BlockState state = mapper.getBlockStateFromBlockId(Mapper.getBlockId(voxel));
-            if (SeasonalBlockClassifier.floraKind(state) != SeasonalFloraKind.NONE) {
-               return true;
-            }
-         } catch (Throwable var5) {
-         }
-
-         int c = category(mapper, categories, voxel);
-         return c == 2 || c == 5 || c == 8 || c == 9;
       }
+
+      try {
+         BlockState state = mapper.getBlockStateFromBlockId(Mapper.getBlockId(voxel));
+         if (SeasonalBlockClassifier.floraKind(state) != SeasonalFloraKind.NONE) {
+            return true;
+         }
+      } catch (Throwable ignored) {
+         // Unmapped block id: fall through to the cached visual category.
+      }
+
+      int c = category(mapper, categories, voxel);
+      return c == SeasonalCategory.GROUND_VEGETATION.voxyId()
+         || c == SeasonalCategory.FLOWER.voxyId()
+         || c == SeasonalCategory.MUSHROOM.voxyId()
+         || c == SeasonalCategory.SNOW_REPLACEABLE_DECOR.voxyId();
    }
 
    @Unique
    private static boolean isSnowGround(Mapper mapper, Int2ByteOpenHashMap categories, long voxel) {
       if (Mapper.isAir(voxel)) {
          return false;
-      } else {
-         int c = category(mapper, categories, voxel);
-         return c == 4 || c == 6;
       }
+      int c = category(mapper, categories, voxel);
+      return c == SeasonalCategory.SEASONAL_GROUND.voxyId()
+         || c == SeasonalCategory.FROSTABLE_SURFACE.voxyId();
    }
 
    @Unique
    private static long snowVoxel(Mapper mapper, long oldAtSnowPos, long ground, int layers) {
-      BlockState snowState = (BlockState)Blocks.SNOW.defaultBlockState().setValue(SnowLayerBlock.LAYERS, Math.max(1, Math.min(8, layers)));
+      BlockState snowState = Blocks.SNOW.defaultBlockState()
+         .setValue(SnowLayerBlock.LAYERS, Math.max(1, Math.min(8, layers)));
       int snowBlockId = mapper.getIdForBlockState(snowState);
-      int light = Mapper.getLightId(oldAtSnowPos);
-      long lightCarrier = Mapper.airWithLight(light);
+      long lightCarrier = Mapper.airWithLight(Mapper.getLightId(oldAtSnowPos));
       return Mapper.withBlockBiome(lightCarrier, snowBlockId, Mapper.getBiomeId(ground));
    }
 
@@ -252,43 +306,16 @@ public abstract class VoxySeasonMeshProjectionMixin {
       byte cached = cache.get(blockId);
       if (cached >= 0) {
          return cached;
-      } else {
-         int value = 0;
-
-         try {
-            value = VoxySeasonCategories.categoryFor(mapper.getBlockStateFromBlockId(blockId));
-         } catch (Throwable var8) {
-         }
-
-         cache.put(blockId, (byte)value);
-         return value;
       }
-   }
 
-   @Unique
-   private static int snowLayers(float cover, double coverageNoise, int x, int z, long seed) {
-      float depthInsidePatch = clamp01((float)((cover - coverageNoise + 0.1) / Math.max(0.22, cover + 0.08)));
-      float local = (float)hash01(x, 0, z, seed, 1397641047);
-      float depth = clamp01(cover * 0.38F + depthInsidePatch * 0.48F + local * 0.14F);
-      return Math.max(1, Math.min(8, 1 + (int)Math.floor(depth * 7.0F)));
-   }
+      int value = 0;
+      try {
+         value = VoxySeasonCategories.categoryFor(mapper.getBlockStateFromBlockId(blockId));
+      } catch (Throwable ignored) {
+         // Leave as the neutral category; a bad id must not abort the whole mesh.
+      }
 
-   @Unique
-   private static double hash01(int x, int y, int z, long seed, int salt) {
-      long h = seed ^ Integer.toUnsignedLong(salt);
-      h ^= x * -7046029254386353131L;
-      h ^= y * -4417276706812531889L;
-      h ^= z * 1609587929392839161L;
-      h ^= h >>> 30;
-      h *= -4658895280553007687L;
-      h ^= h >>> 27;
-      h *= -7723592293110705685L;
-      h ^= h >>> 31;
-      return (h >>> 11) * 1.110223E-16F;
-   }
-
-   @Unique
-   private static float clamp01(float value) {
-      return Math.max(0.0F, Math.min(1.0F, value));
+      cache.put(blockId, (byte) value);
+      return value;
    }
 }

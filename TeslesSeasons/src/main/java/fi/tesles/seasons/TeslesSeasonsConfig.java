@@ -89,8 +89,43 @@ public final class TeslesSeasonsConfig {
       }
 
       config.sanitize();
+      config.enforceCanonicalTargets();
       config.save();
       return config;
+   }
+
+   /**
+    * Pins the settings the canonical season contract depends on.
+    *
+    * <p>These are not user preferences. Percentages in the season contract mean "this
+    * fraction of the world", so a config that caps physical snow coverage at, say, 0.6 or
+    * disables physical leaf fall silently turns every checkpoint in the contract into a lie
+    * and makes the physical world disagree with the Voxy projection, which reads the frame
+    * directly. Cosmetic options stay user-controlled; these do not.
+    */
+   private void enforceCanonicalTargets() {
+      // Snow is real SnowLayerBlock over the full eligible footprint, 1/8..8/8.
+      this.seasonalSnow = true;
+      this.maximumPhysicalSnowCoverage = 1.0;
+      this.maximumAccumulatedSnowLayers = 8;
+      this.winterSnowReplacesWildFlora = true;
+
+      // Absent leaves must actually be absent blocks, never invisible collision.
+      this.physicalDeciduousLeafFall = true;
+      this.minimumWinterLeafRetention = 0.0;
+
+      // Fake overlay/flattening effects are replaced by real block projection.
+      this.plantSnowOverlay = false;
+      this.nearVegetationFlattening = false;
+      this.maximumGroundPlantFlattening = 0.0;
+
+      // Dynamic Trees must not fight a frame that deliberately removed leaves.
+      this.protectDormantDynamicTreeBranches = true;
+      this.suppressDormantDynamicTreeLeafSpread = true;
+
+      // A newly visible chunk is canonicalised before the player can observe it.
+      this.preSendSeasonProjection = true;
+      this.materializationSteps = 100;
    }
 
    public void save() {

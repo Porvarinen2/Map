@@ -4,6 +4,7 @@ import fi.tesles.seasons.TeslesSeasons;
 import fi.tesles.seasons.api.SeasonSnapshot;
 import fi.tesles.seasons.client.ClientSeasonState;
 import fi.tesles.seasons.client.voxy.VoxyShaderDiagnostics;
+import fi.tesles.seasons.sector.SeasonFrame;
 import org.lwjgl.opengl.GL20C;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Pseudo;
@@ -13,6 +14,17 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+/**
+ * The single authoritative binder for TESLES season uniforms on Voxy shaders.
+ *
+ * <p>All season uniforms are uploaded here and nowhere else. Two separate mixins used to
+ * inject into {@code Shader#bind}, each resolving and writing its own subset; whichever ran
+ * last won, and the two disagreed about where their values came from. Add new uniforms to
+ * this class rather than adding another injector.
+ *
+ * <p>Values come from the {@link SeasonFrame}, which is the same object the physical world
+ * and the LOD mesh projector read, so the shader cannot drift away from the blocks.
+ */
 @Pseudo
 @Mixin(
    targets = {"me.cortex.voxy.client.core.gl.shader.Shader"},
@@ -42,6 +54,10 @@ public abstract class VoxyShaderUniformMixin {
    @Unique
    private int tesles$blendEnd = Integer.MIN_VALUE;
    @Unique
+   private int tesles$snowDepth = Integer.MIN_VALUE;
+   @Unique
+   private int tesles$plantRetention = Integer.MIN_VALUE;
+   @Unique
    private float tesles$lastAutumn = Float.NaN;
    @Unique
    private float tesles$lastDormancy = Float.NaN;
@@ -61,6 +77,10 @@ public abstract class VoxyShaderUniformMixin {
    private float tesles$lastBlendStart = Float.NaN;
    @Unique
    private float tesles$lastBlendEnd = Float.NaN;
+   @Unique
+   private float tesles$lastSnowDepth = Float.NaN;
+   @Unique
+   private float tesles$lastPlantRetention = Float.NaN;
 
    @Shadow(
       remap = false
@@ -85,6 +105,8 @@ public abstract class VoxyShaderUniformMixin {
          this.tesles$seed = GL20C.glGetUniformLocation(program, "teslesVisualSeed");
          this.tesles$blendStart = GL20C.glGetUniformLocation(program, "teslesVoxyBlendStart");
          this.tesles$blendEnd = GL20C.glGetUniformLocation(program, "teslesVoxyBlendEnd");
+         this.tesles$snowDepth = GL20C.glGetUniformLocation(program, "teslesSnowDepth");
+         this.tesles$plantRetention = GL20C.glGetUniformLocation(program, "teslesPlantRetention");
          int resolvedCount = 0;
 
          for (int location : new int[]{
@@ -97,7 +119,9 @@ public abstract class VoxyShaderUniformMixin {
             this.tesles$spring,
             this.tesles$seed,
             this.tesles$blendStart,
-            this.tesles$blendEnd
+            this.tesles$blendEnd,
+            this.tesles$snowDepth,
+            this.tesles$plantRetention
          }) {
             if (location >= 0) {
                resolvedCount++;
@@ -108,7 +132,8 @@ public abstract class VoxyShaderUniformMixin {
          this.tesles$resolved = true;
       }
 
-      SeasonSnapshot state = ClientSeasonState.get();
+      SeasonSnapshot wire = ClientSeasonState.get();
+      SeasonFrame state = ClientSeasonState.frame();
       if (this.tesles$autumn >= 0 && state.autumnColor() != this.tesles$lastAutumn) {
          GL20C.glUniform1f(this.tesles$autumn, state.autumnColor());
          this.tesles$lastAutumn = state.autumnColor();
@@ -134,9 +159,19 @@ public abstract class VoxyShaderUniformMixin {
          this.tesles$lastMushroomRetention = state.mushroomRetention();
       }
 
-      if (this.tesles$snow >= 0 && state.snowCover() != this.tesles$lastSnow) {
-         GL20C.glUniform1f(this.tesles$snow, state.snowCover());
-         this.tesles$lastSnow = state.snowCover();
+      if (this.tesles$snow >= 0 && state.snowCoverage() != this.tesles$lastSnow) {
+         GL20C.glUniform1f(this.tesles$snow, state.snowCoverage());
+         this.tesles$lastSnow = state.snowCoverage();
+      }
+
+      if (this.tesles$snowDepth >= 0 && state.snowDepth() != this.tesles$lastSnowDepth) {
+         GL20C.glUniform1f(this.tesles$snowDepth, state.snowDepth());
+         this.tesles$lastSnowDepth = state.snowDepth();
+      }
+
+      if (this.tesles$plantRetention >= 0 && state.plantRetention() != this.tesles$lastPlantRetention) {
+         GL20C.glUniform1f(this.tesles$plantRetention, state.plantRetention());
+         this.tesles$lastPlantRetention = state.plantRetention();
       }
 
       if (this.tesles$spring >= 0 && state.springFreshness() != this.tesles$lastSpring) {
@@ -156,7 +191,7 @@ public abstract class VoxyShaderUniformMixin {
          this.tesles$lastBlendEnd = blendEnd;
       }
 
-      int seed = (int)state.visualSeed();
+      int seed = (int) wire.visualSeed();
       if (this.tesles$seed >= 0 && seed != this.tesles$lastSeed) {
          GL20C.glUniform1i(this.tesles$seed, seed);
          this.tesles$lastSeed = seed;

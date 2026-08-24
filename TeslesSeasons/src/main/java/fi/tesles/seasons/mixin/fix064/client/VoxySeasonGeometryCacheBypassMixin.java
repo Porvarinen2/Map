@@ -1,6 +1,7 @@
 package fi.tesles.seasons.mixin.fix064.client;
 
-import fi.tesles.seasons.client.ClientSeasonState;
+import fi.tesles.seasons.fix064.client.VoxySeasonRemeshScheduler;
+import fi.tesles.seasons.sector.SeasonDirector;
 import me.cortex.voxy.client.core.rendering.building.BuiltSection;
 import me.cortex.voxy.common.world.WorldEngine;
 import org.spongepowered.asm.mixin.Mixin;
@@ -9,6 +10,18 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
+/**
+ * Refuses to serve LOD geometry that was built under an older season.
+ *
+ * <p>Voxy's geometry cache is keyed only by section position, so without this a mesh built
+ * last winter is a perfectly valid cache hit today. That is the second half of the
+ * "old season chunks never disappear" problem: even once the remesh scheduler asks for a
+ * rebuild, a cached mesh could be handed back unchanged.
+ *
+ * <p>Rejection is revision-scoped rather than unconditional: while the season is not
+ * changing, cache hits are served normally and Voxy keeps its performance. Only geometry
+ * whose recorded build revision differs from the director's current revision is dropped.
+ */
 @Pseudo
 @Mixin(
    targets = {"me.cortex.voxy.client.core.rendering.GeometryCache"},
@@ -23,13 +36,19 @@ public abstract class VoxySeasonGeometryCacheBypassMixin {
       require = 1
    )
    private void tesles$rejectStaleSeasonMesh(long position, CallbackInfoReturnable<BuiltSection> cir) {
-      BuiltSection cached = (BuiltSection)cir.getReturnValue();
-      if (cached != null && ClientSeasonState.get() != null) {
-         int lvl = WorldEngine.getLevel(position);
-         if (lvl >= 0 && lvl <= 2) {
-            cached.free();
-            cir.setReturnValue(null);
-         }
+      BuiltSection cached = cir.getReturnValue();
+      if (cached == null) {
+         return;
+      }
+
+      int lvl = WorldEngine.getLevel(position);
+      if (lvl < 0 || lvl > 2) {
+         return;
+      }
+
+      if (VoxySeasonRemeshScheduler.isStale(position, SeasonDirector.currentFrame().revision())) {
+         cached.free();
+         cir.setReturnValue(null);
       }
    }
 }

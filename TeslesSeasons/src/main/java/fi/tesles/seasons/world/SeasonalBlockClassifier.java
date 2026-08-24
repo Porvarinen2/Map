@@ -61,16 +61,43 @@ public final class SeasonalBlockClassifier {
    public static boolean isDeciduousLeaf(BlockState state) {
       if (state == null || state.isAir()) {
          return false;
-      } else {
-         return !isLeaf(state) ? false : !isEvergreen(state);
       }
+      // Dynamic Trees ships several leaf block subclasses, not just DynamicLeavesBlock.
+      // Classify all of them here so no other subsystem has to guess.
+      if (isDynamicLeavesState(state)) {
+         return !isEvergreen(state);
+      }
+      return isLeaf(state) && !isEvergreen(state);
    }
 
    public static boolean isDynamicDeciduousLeaf(BlockState state) {
-      if (state != null && !state.isAir()) {
-         String className = state.getBlock().getClass().getName();
-         return className.equals("com.dtteam.dynamictrees.block.leaves.DynamicLeavesBlock") && !isEvergreen(state);
-      } else {
+      return isDynamicLeavesState(state) && !isEvergreen(state);
+   }
+
+   /**
+    * Whether this is any Dynamic Trees leaf block.
+    *
+    * <p>Species classification is centralised here on purpose: matching only the exact
+    * {@code DynamicLeavesBlock} class left every subclass unclassified, so those leaves were
+    * silently treated as "not deciduous" and survived winter as floating foliage.
+    */
+   public static boolean isDynamicLeavesState(BlockState state) {
+      if (state == null || state.isAir()) {
+         return false;
+      }
+      try {
+         if (state.getBlock().getClass().getName().startsWith("com.dtteam.dynamictrees.block.leaves.")) {
+            return true;
+         }
+         Identifier id = BuiltInRegistries.BLOCK.getKey(state.getBlock());
+         if (id == null) {
+            return false;
+         }
+         String namespace = id.getNamespace().toLowerCase(Locale.ROOT);
+         String path = id.getPath().toLowerCase(Locale.ROOT);
+         return "dynamictrees".equals(namespace)
+            && (path.equals("leaves") || path.endsWith("_leaves") || path.startsWith("leaves_"));
+      } catch (Throwable ignored) {
          return false;
       }
    }

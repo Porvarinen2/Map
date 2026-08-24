@@ -17,7 +17,8 @@
     "client": [
       "fi.tesles.seasons.client.TeslesSeasonsClient",
       "fi.tesles.seasons.fix062.client.VoxyAuthorityClient",
-      "fi.tesles.seasons.fix070.client.VoxyEpochV9Client"
+      "fi.tesles.seasons.fix070.client.VoxyEpochV9Client",
+      "fi.tesles.seasons.fix064.client.VoxySeasonRemeshScheduler"
     ]
   },
   "mixins": [
@@ -57,7 +58,11 @@
       "environment": "client"
     },
     {
-      "config": "teslesseasons.070.voxy-phase.mixins.json",
+      "config": "teslesseasons.070.voxy-projection.mixins.json",
+      "environment": "client"
+    },
+    {
+      "config": "teslesseasons.070.voxy-tint.mixins.json",
       "environment": "client"
     }
   ],

@@ -3,6 +3,8 @@ package fi.tesles.seasons.client;
 import fi.tesles.seasons.SeasonEngine;
 import fi.tesles.seasons.api.SeasonSnapshot;
 import fi.tesles.seasons.client.render.NearMeshRefreshQueue;
+import fi.tesles.seasons.sector.SeasonDirector;
+import fi.tesles.seasons.sector.SeasonFrame;
 import net.minecraft.client.Minecraft;
 
 public final class ClientSeasonState {
@@ -14,6 +16,14 @@ public final class ClientSeasonState {
 
    public static SeasonSnapshot get() {
       return snapshot;
+   }
+
+   /**
+    * The current season as an absolute target frame. This is what render-side projectors
+    * should read; the raw {@link SeasonSnapshot} is the wire format, not the contract.
+    */
+   public static SeasonFrame frame() {
+      return SeasonDirector.currentFrame();
    }
 
    public static void accept(SeasonSnapshot next) {

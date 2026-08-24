@@ -1,11 +1,9 @@
 package fi.tesles.seasons.fix064.client;
 
-import fi.tesles.seasons.api.SeasonSnapshot;
-import fi.tesles.seasons.client.ClientSeasonState;
+import fi.tesles.seasons.TeslesSeasons;
+import fi.tesles.seasons.sector.SeasonDirector;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
-import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -17,163 +15,215 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 
+/**
+ * Drives Voxy LOD sections back to the current season and guarantees that no LOD geometry
+ * built under an older season can stay on screen.
+ *
+ * <h2>The guarantee</h2>
+ * Every watched section carries the {@link SeasonDirector#revision()} it was last meshed at.
+ * When the director mints a new revision, every watched section is stale by definition, and
+ * a stale section is both (a) re-queued for remesh here and (b) refused if Voxy tries to
+ * serve it from its geometry cache. There is no path by which a section rendered under
+ * revision N can still be displayed at revision N+1 - travelling far enough to unload and
+ * reload a section does not reintroduce old seasons, because the persisted LOD data is
+ * season-neutral and season is applied at mesh time.
+ *
+ * <h2>Convergence order</h2>
+ * Work is ordered by distance from the player, nearest first. The previous implementation
+ * shuffled the watched set randomly and processed one section per tick, so a large view
+ * distance took many minutes to converge and the sections the player was actually looking at
+ * could be processed last. That is what "old season chunks in the distance" looked like.
+ */
 public final class VoxySeasonRemeshScheduler implements ClientModInitializer {
-   private static final int STEPS = 12;
+   /** Highest LOD level that carries projected seasonal geometry. */
    private static final int MAX_STRUCTURAL_LOD = 2;
-   private static final int HANDOFF_MARGIN_BLOCKS = 64;
-   private static final int HANDOFF_RESCAN_BLOCKS = 16;
+
+   /**
+    * Sections re-queued per client tick. At 20 tps this converges ~5000 sections in about
+    * four seconds while staying well inside Voxy's own mesh worker budget.
+    */
+   private static final int SEASONAL_BUDGET_PER_TICK = 64;
+
+   /** Neutral (near-field handoff) rebuilds are more urgent and cheaper; allow more. */
+   private static final int NEUTRAL_BUDGET_PER_TICK = 32;
+
+   /** Re-sort the work queue once the player has moved this far (squared blocks). */
+   private static final double RESORT_DISTANCE_SQ = 64.0 * 64.0;
+
    private static final Set<Long> WATCHED = ConcurrentHashMap.newKeySet();
    private static final Set<Long> PROTECTED = ConcurrentHashMap.newKeySet();
    private static final ConcurrentLinkedQueue<Long> URGENT_NEUTRAL = new ConcurrentLinkedQueue<>();
    private static final Set<Long> URGENT_NEUTRAL_SET = ConcurrentHashMap.newKeySet();
+
+   /**
+    * Season revision each section was last meshed at. Written from Voxy mesh worker threads,
+    * read from the client thread, so it must stay concurrent.
+    */
+   private static final ConcurrentHashMap<Long, Long> PROJECTED_REVISION = new ConcurrentHashMap<>();
+
    private static volatile SectionUpdateRouter router;
    private static volatile double playerX;
    private static volatile double playerZ;
    private static volatile int handoffRadiusBlocks = 256;
    private static volatile boolean havePlayerPosition;
+
    private static List<Long> pending = List.of();
    private static int pendingIndex;
-   private static long latestRevision = Long.MIN_VALUE;
-   private static long cycleRevision = Long.MIN_VALUE;
-   private static boolean rerunRequested;
-   private static double lastProtectionScanX = Double.NaN;
-   private static double lastProtectionScanZ = Double.NaN;
+   private static long queuedRevision = Long.MIN_VALUE;
+   private static double lastSortX = Double.NaN;
+   private static double lastSortZ = Double.NaN;
    private static int lastProtectionRadius = -1;
 
+   @Override
    public void onInitializeClient() {
-      if (FabricLoader.getInstance().isModLoaded("voxy")) {
-         ClientTickEvents.END_CLIENT_TICK.register(VoxySeasonRemeshScheduler::tick);
+      if (!FabricLoader.getInstance().isModLoaded("voxy")) {
+         return;
       }
+      ClientTickEvents.END_CLIENT_TICK.register(VoxySeasonRemeshScheduler::tick);
+      TeslesSeasons.LOGGER.info("Voxy seasonal remesh scheduler active; LOD 0-{} projected from the current SeasonFrame.",
+         MAX_STRUCTURAL_LOD);
    }
+
+   // ---------------------------------------------------------------- watch bookkeeping
 
    public static void watch(SectionUpdateRouter updateRouter, long position) {
       router = updateRouter;
-      int lvl = WorldEngine.getLevel(position);
-      if (lvl >= 0 && lvl <= 2) {
-         if (WATCHED.add(position)) {
-            if (isHandoffUnsafe(position)) {
-               PROTECTED.add(position);
-               enqueueUrgentNeutral(position);
-            } else {
-               rerunRequested = true;
-            }
+      if (!isStructural(position)) {
+         return;
+      }
+      if (WATCHED.add(position)) {
+         if (isHandoffUnsafe(position)) {
+            PROTECTED.add(position);
+            enqueueUrgentNeutral(position);
+         } else {
+            // A newly watched section has never been projected: force it into the queue.
+            invalidateQueue();
          }
       }
    }
 
    public static void unwatch(long position) {
-      int lvl = WorldEngine.getLevel(position);
-      if (lvl >= 0 && lvl <= 2) {
-         WATCHED.remove(position);
-         PROTECTED.remove(position);
-         URGENT_NEUTRAL_SET.remove(position);
+      if (!isStructural(position)) {
+         return;
       }
+      WATCHED.remove(position);
+      PROTECTED.remove(position);
+      URGENT_NEUTRAL_SET.remove(position);
+      PROJECTED_REVISION.remove(position);
    }
+
+   // ------------------------------------------------------------- staleness contract
+
+   /** Records that {@code key} has been meshed against {@code revision}. */
+   public static void markProjected(long key, long revision) {
+      PROJECTED_REVISION.put(key, revision);
+   }
+
+   /**
+    * True when the geometry cached for {@code key} was built against an older season than
+    * {@code currentRevision}, and must therefore not be shown.
+    */
+   public static boolean isStale(long key, long currentRevision) {
+      Long built = PROJECTED_REVISION.get(key);
+      return built == null || built != currentRevision;
+   }
+
+   // -------------------------------------------------------------- near/far handoff
 
    public static boolean isHandoffUnsafe(WorldSection section) {
       return section != null && isHandoffUnsafe(section.key);
    }
 
+   /**
+    * True for sections close enough that vanilla is already rendering the real blocks. Season
+    * must not be projected onto those, or the seam between real terrain and LOD shows the
+    * effect applied twice.
+    */
    public static boolean isHandoffUnsafe(long position) {
       if (!havePlayerPosition) {
          return false;
-      } else {
-         int lvl = WorldEngine.getLevel(position);
-         int scale = 1 << Math.max(0, lvl);
-         double cx = (((long)WorldEngine.getX(position) << 5) + 16.0) * scale;
-         double cz = (((long)WorldEngine.getZ(position) << 5) + 16.0) * scale;
-         double dx = cx - playerX;
-         double dz = cz - playerZ;
-         double radius = handoffRadiusBlocks + 16.0 * scale;
-         return dx * dx + dz * dz <= radius * radius;
       }
+      int scale = 1 << Math.max(0, WorldEngine.getLevel(position));
+      double cx = (((long) WorldEngine.getX(position) << 5) + 16.0) * scale;
+      double cz = (((long) WorldEngine.getZ(position) << 5) + 16.0) * scale;
+      double dx = cx - playerX;
+      double dz = cz - playerZ;
+      double radius = handoffRadiusBlocks + 16.0 * scale;
+      return dx * dx + dz * dz <= radius * radius;
    }
+
+   // ---------------------------------------------------------------------- main loop
 
    private static void tick(Minecraft client) {
       SectionUpdateRouter currentRouter = router;
-      if (currentRouter != null) {
-         updateHandoffSnapshot(client);
-         if (havePlayerPosition && protectionRescanNeeded()) {
-            updateProtectionBand();
+      if (currentRouter == null) {
+         return;
+      }
+
+      updatePlayerSnapshot(client);
+      if (havePlayerPosition && protectionRescanNeeded()) {
+         updateProtectionBand();
+      }
+
+      drainUrgentNeutral(currentRouter);
+
+      long revision = SeasonDirector.currentFrame().revision();
+      if (revision != queuedRevision) {
+         // The season targets changed: every watched section is stale by definition.
+         beginPass(revision);
+      }
+
+      int budget = SEASONAL_BUDGET_PER_TICK;
+      while (budget-- > 0 && pendingIndex < pending.size()) {
+         long position = pending.get(pendingIndex++);
+         if (!isStructural(position) || !WATCHED.contains(position)) {
+            continue;
          }
-
-         int neutralBudget = 8;
-
-         while (neutralBudget-- > 0) {
-            Long position = URGENT_NEUTRAL.poll();
-            if (position == null) {
-               break;
+         if (isHandoffUnsafe(position)) {
+            if (PROTECTED.add(position)) {
+               enqueueUrgentNeutral(position);
             }
-
-            URGENT_NEUTRAL_SET.remove(position);
-            if (WATCHED.contains(position) && isHandoffUnsafe(position)) {
-               currentRouter.triggerRemesh(position);
-            }
+            continue;
          }
-
-         SeasonSnapshot snapshot = ClientSeasonState.get();
-         if (snapshot != null) {
-            long revision = revision(snapshot);
-            if (revision != latestRevision) {
-               latestRevision = revision;
-               rerunRequested = true;
-            }
-
-            if (pendingIndex >= pending.size()) {
-               if (!rerunRequested) {
-                  return;
-               }
-
-               rerunRequested = false;
-               beginPass(snapshot, latestRevision);
-            }
-
-            boolean endpoint = snapshot.snowCover() <= 0.005F || snapshot.snowCover() >= 0.995F;
-            int seasonalBudget = endpoint ? 6 : 1;
-
-            while (seasonalBudget-- > 0 && pendingIndex < pending.size()) {
-               long positionx = pending.get(pendingIndex++);
-               int lvl = WorldEngine.getLevel(positionx);
-               if (lvl >= 0 && lvl <= 2 && WATCHED.contains(positionx)) {
-                  if (isHandoffUnsafe(positionx)) {
-                     if (PROTECTED.add(positionx)) {
-                        enqueueUrgentNeutral(positionx);
-                     }
-                  } else {
-                     currentRouter.triggerRemesh(positionx);
-                  }
-               }
-            }
-
-            if (pendingIndex >= pending.size() && latestRevision != cycleRevision) {
-               rerunRequested = true;
-            }
+         if (isStale(position, revision)) {
+            currentRouter.triggerRemesh(position);
          }
       }
    }
 
-   private static void updateHandoffSnapshot(Minecraft client) {
-      if (client != null && client.player != null) {
-         playerX = client.player.getX();
-         playerZ = client.player.getZ();
-         int vanillaChunks = Math.max(3, (Integer)client.options.renderDistance().get());
-         handoffRadiusBlocks = vanillaChunks * 16 + 64;
-         havePlayerPosition = true;
-      } else {
-         havePlayerPosition = false;
+   private static void drainUrgentNeutral(SectionUpdateRouter currentRouter) {
+      int budget = NEUTRAL_BUDGET_PER_TICK;
+      while (budget-- > 0) {
+         Long position = URGENT_NEUTRAL.poll();
+         if (position == null) {
+            break;
+         }
+         URGENT_NEUTRAL_SET.remove(position);
+         if (WATCHED.contains(position) && isHandoffUnsafe(position)) {
+            currentRouter.triggerRemesh(position);
+         }
       }
+   }
+
+   private static void updatePlayerSnapshot(Minecraft client) {
+      if (client == null || client.player == null) {
+         havePlayerPosition = false;
+         return;
+      }
+      playerX = client.player.getX();
+      playerZ = client.player.getZ();
+      int vanillaChunks = Math.max(3, client.options.renderDistance().get());
+      handoffRadiusBlocks = vanillaChunks * 16 + 64;
+      havePlayerPosition = true;
    }
 
    private static boolean protectionRescanNeeded() {
-      if (Double.isNaN(lastProtectionScanX) || Double.isNaN(lastProtectionScanZ)) {
+      if (Double.isNaN(lastSortX) || Double.isNaN(lastSortZ) || lastProtectionRadius != handoffRadiusBlocks) {
          return true;
-      } else if (lastProtectionRadius != handoffRadiusBlocks) {
-         return true;
-      } else {
-         double dx = playerX - lastProtectionScanX;
-         double dz = playerZ - lastProtectionScanZ;
-         return dx * dx + dz * dz >= 256.0;
       }
+      double dx = playerX - lastSortX;
+      double dz = playerZ - lastSortZ;
+      return dx * dx + dz * dz >= RESORT_DISTANCE_SQ;
    }
 
    private static void updateProtectionBand() {
@@ -185,13 +235,14 @@ public final class VoxySeasonRemeshScheduler implements ClientModInitializer {
             enqueueUrgentNeutral(position);
          } else if (!nowProtected && wasProtected) {
             PROTECTED.remove(position);
-            rerunRequested = true;
+            // Leaving the near band means this section now needs seasonal geometry.
+            PROJECTED_REVISION.remove(position);
+            invalidateQueue();
          }
       }
-
-      lastProtectionScanX = playerX;
-      lastProtectionScanZ = playerZ;
       lastProtectionRadius = handoffRadiusBlocks;
+      // Player has moved far enough that the nearest-first ordering is stale too.
+      invalidateQueue();
    }
 
    private static void enqueueUrgentNeutral(long position) {
@@ -200,20 +251,48 @@ public final class VoxySeasonRemeshScheduler implements ClientModInitializer {
       }
    }
 
-   private static void beginPass(SeasonSnapshot snapshot, long revision) {
-      ArrayList<Long> shuffled = new ArrayList<>(WATCHED);
-      Collections.shuffle(shuffled, new Random(snapshot.visualSeed() ^ revision * -7046029254386353131L));
-      pending = shuffled;
+   /** Rebuilds the work queue, nearest section to the player first. */
+   private static void beginPass(long revision) {
+      List<Long> ordered = new ArrayList<>(WATCHED);
+      if (havePlayerPosition) {
+         ordered.sort((a, b) -> Double.compare(distanceSq(a), distanceSq(b)));
+      }
+      pending = ordered;
       pendingIndex = 0;
-      cycleRevision = revision;
+      queuedRevision = revision;
+      lastSortX = playerX;
+      lastSortZ = playerZ;
    }
 
-   private static long revision(SeasonSnapshot s) {
-      return quantize(s.snowCover());
+   /** Forces the next tick to rebuild the queue against the current revision. */
+   private static void invalidateQueue() {
+      queuedRevision = Long.MIN_VALUE;
    }
 
-   private static int quantize(float value) {
-      float v = Math.max(0.0F, Math.min(1.0F, value));
-      return Math.max(0, Math.min(12, Math.round(v * 12.0F)));
+   private static double distanceSq(long position) {
+      int scale = 1 << Math.max(0, WorldEngine.getLevel(position));
+      double cx = (((long) WorldEngine.getX(position) << 5) + 16.0) * scale;
+      double cz = (((long) WorldEngine.getZ(position) << 5) + 16.0) * scale;
+      double dx = cx - playerX;
+      double dz = cz - playerZ;
+      return dx * dx + dz * dz;
+   }
+
+   private static boolean isStructural(long position) {
+      int lvl = WorldEngine.getLevel(position);
+      return lvl >= 0 && lvl <= MAX_STRUCTURAL_LOD;
+   }
+
+   /** Clears all per-section state; used on disconnect so a new world starts clean. */
+   public static void reset() {
+      WATCHED.clear();
+      PROTECTED.clear();
+      URGENT_NEUTRAL.clear();
+      URGENT_NEUTRAL_SET.clear();
+      PROJECTED_REVISION.clear();
+      pending = List.of();
+      pendingIndex = 0;
+      invalidateQueue();
+      router = null;
    }
 }
