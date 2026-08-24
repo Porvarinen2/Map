@@ -74,31 +74,74 @@ public record SeasonFrame(
    }
 
    /**
-    * Target equality ignoring {@link #revision()}. Used to decide whether a new frame
-    * actually asks the world for something different, so that Stable phases which change
-    * no target do not trigger pointless world-wide rewrites.
+    * Granularity at which a target counts as having changed.
+    *
+    * <p>This is the single most performance-critical constant in the mod. A revision bump
+    * means "redo the world": the server re-queues every loaded chunk and the client
+    * invalidates and rebuilds every Voxy LOD section. Comparing raw floats makes that happen
+    * on <em>every clock refresh</em> - the calendar advances continuously, so any two samples
+    * 30 seconds apart differ in the last few bits and look like a real change.
+    *
+    * <p>1/256 over a seven-day phase is one step roughly every forty minutes, which is far
+    * below the threshold where a player notices snow or leaves advancing, and far above the
+    * rate at which rebuilding the LOD set is affordable.
+    */
+   private static final float TARGET_QUANTUM = 1.0F / 256.0F;
+
+   private static int quantize(float value) {
+      return Math.round(value / TARGET_QUANTUM);
+   }
+
+   /**
+    * Target equality ignoring {@link #revision()}.
+    *
+    * <p>{@code progress} is deliberately excluded: it is the clock <em>input</em>, not a
+    * target. Every visual target is derived from it, so if all derived targets are unchanged
+    * the world has nothing to do, however much raw progress has advanced.
     */
    public boolean sameTargets(SeasonFrame other) {
       return other != null
          && this.season == other.season
          && this.phase == other.phase
-         && eq(this.progress, other.progress)
-         && eq(this.autumnColor, other.autumnColor)
-         && eq(this.leafRetention, other.leafRetention)
-         && eq(this.flowerRetention, other.flowerRetention)
-         && eq(this.plantRetention, other.plantRetention)
-         && eq(this.mushroomRetention, other.mushroomRetention)
-         && eq(this.berryRetention, other.berryRetention)
-         && eq(this.groundDormancy, other.groundDormancy)
-         && eq(this.groundFrost, other.groundFrost)
-         && eq(this.snowCoverage, other.snowCoverage)
-         && eq(this.snowDepth, other.snowDepth)
-         && eq(this.springFreshness, other.springFreshness)
-         && eq(this.treeGrowthFactor, other.treeGrowthFactor)
-         && eq(this.seedDropFactor, other.seedDropFactor)
-         && eq(this.fruitProductionFactor, other.fruitProductionFactor)
+         && same(this.autumnColor, other.autumnColor)
+         && same(this.leafRetention, other.leafRetention)
+         && same(this.flowerRetention, other.flowerRetention)
+         && same(this.plantRetention, other.plantRetention)
+         && same(this.mushroomRetention, other.mushroomRetention)
+         && same(this.berryRetention, other.berryRetention)
+         && same(this.groundDormancy, other.groundDormancy)
+         && same(this.groundFrost, other.groundFrost)
+         && same(this.snowCoverage, other.snowCoverage)
+         && same(this.snowDepth, other.snowDepth)
+         && same(this.springFreshness, other.springFreshness)
+         && same(this.treeGrowthFactor, other.treeGrowthFactor)
+         && same(this.seedDropFactor, other.seedDropFactor)
+         && same(this.fruitProductionFactor, other.fruitProductionFactor)
          && this.snowAccumulating == other.snowAccumulating
          && this.snowThawing == other.snowThawing;
+   }
+
+   /**
+    * Identity of everything that changes Voxy LOD <em>geometry</em>.
+    *
+    * <p>The LOD mesh projector only ever adds or removes snow, so snow coverage and depth are
+    * the only channels that can make a rebuilt section differ from a cached one. Colour
+    * channels reach Voxy as shader uniforms, which are uploaded per bind and need no remesh.
+    *
+    * <p>Keying LOD invalidation on this instead of on the full frame revision means that in
+    * Spring, Summer and most of Autumn - whenever snow coverage is zero - the value never
+    * changes and not a single section is ever rebuilt for seasonal reasons.
+    */
+   public long geometryKey() {
+      if (this.snowCoverage <= 0.0F) {
+         // No snow anywhere: every snow-free frame is the same geometry, regardless of season.
+         return 0L;
+      }
+      return ((long) quantize(this.snowCoverage) << 32) | (quantize(this.snowDepth) & 0xFFFFFFFFL);
+   }
+
+   private static boolean same(float a, float b) {
+      return quantize(a) == quantize(b);
    }
 
    /**

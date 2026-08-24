@@ -98,10 +98,11 @@ public abstract class VoxySeasonMeshProjectionMixin {
          return raw;
       }
 
-      // Stamp the section with the revision it is being meshed at, whatever happens below.
-      // Sections that legitimately need no seasonal geometry must still count as current, or
-      // the cache-bypass mixin would reject them forever and they would remesh every frame.
-      VoxySeasonRemeshScheduler.markProjected(section.key, frame.revision());
+      // Stamp the section with the geometry key it is being meshed against, whatever happens
+      // below. Sections that legitimately need no seasonal geometry must still count as
+      // current, or the cache-bypass mixin would reject them forever and they would remesh
+      // every frame.
+      VoxySeasonRemeshScheduler.markProjected(section.key, frame.geometryKey());
 
       // Sections inside the vanilla render distance are drawn from real blocks; projecting
       // season onto their LOD copy too would double-apply it at the handoff seam.

@@ -56,10 +56,14 @@ public final class VoxySeasonRemeshScheduler implements ClientModInitializer {
    private static final Set<Long> URGENT_NEUTRAL_SET = ConcurrentHashMap.newKeySet();
 
    /**
-    * Season revision each section was last meshed at. Written from Voxy mesh worker threads,
+    * Geometry key each section was last meshed against. Written from Voxy mesh worker threads,
     * read from the client thread, so it must stay concurrent.
+    *
+    * <p>This tracks {@code SeasonFrame.geometryKey()} rather than the frame revision. Colour
+    * changes reach Voxy through shader uniforms and need no rebuild, so keying on the full
+    * revision rebuilt the entire LOD set every time the calendar advanced at all.
     */
-   private static final ConcurrentHashMap<Long, Long> PROJECTED_REVISION = new ConcurrentHashMap<>();
+   private static final ConcurrentHashMap<Long, Long> PROJECTED_GEOMETRY = new ConcurrentHashMap<>();
 
    private static volatile SectionUpdateRouter router;
    private static volatile double playerX;
@@ -69,7 +73,7 @@ public final class VoxySeasonRemeshScheduler implements ClientModInitializer {
 
    private static List<Long> pending = List.of();
    private static int pendingIndex;
-   private static long queuedRevision = Long.MIN_VALUE;
+   private static long queuedGeometryKey = Long.MIN_VALUE;
    private static double lastSortX = Double.NaN;
    private static double lastSortZ = Double.NaN;
    private static int lastProtectionRadius = -1;
@@ -109,23 +113,27 @@ public final class VoxySeasonRemeshScheduler implements ClientModInitializer {
       WATCHED.remove(position);
       PROTECTED.remove(position);
       URGENT_NEUTRAL_SET.remove(position);
-      PROJECTED_REVISION.remove(position);
+      PROJECTED_GEOMETRY.remove(position);
    }
 
    // ------------------------------------------------------------- staleness contract
 
-   /** Records that {@code key} has been meshed against {@code revision}. */
-   public static void markProjected(long key, long revision) {
-      PROJECTED_REVISION.put(key, revision);
+   /** Records that {@code key} has been meshed against {@code geometryKey}. */
+   public static void markProjected(long key, long geometryKey) {
+      // Only LOD 0-2 carry projected geometry and only those are consulted by the cache
+      // bypass; tracking anything else would grow without ever being cleaned up.
+      if (isStructural(key)) {
+         PROJECTED_GEOMETRY.put(key, geometryKey);
+      }
    }
 
    /**
-    * True when the geometry cached for {@code key} was built against an older season than
-    * {@code currentRevision}, and must therefore not be shown.
+    * True when the geometry cached for {@code key} was built against different snow targets
+    * than {@code currentGeometryKey}, and must therefore not be shown.
     */
-   public static boolean isStale(long key, long currentRevision) {
-      Long built = PROJECTED_REVISION.get(key);
-      return built == null || built != currentRevision;
+   public static boolean isStale(long key, long currentGeometryKey) {
+      Long built = PROJECTED_GEOMETRY.get(key);
+      return built == null || built != currentGeometryKey;
    }
 
    // -------------------------------------------------------------- near/far handoff
@@ -167,10 +175,10 @@ public final class VoxySeasonRemeshScheduler implements ClientModInitializer {
 
       drainUrgentNeutral(currentRouter);
 
-      long revision = SeasonDirector.currentFrame().revision();
-      if (revision != queuedRevision) {
-         // The season targets changed: every watched section is stale by definition.
-         beginPass(revision);
+      long geometryKey = SeasonDirector.currentFrame().geometryKey();
+      if (geometryKey != queuedGeometryKey) {
+         // Snow targets changed: every watched section's geometry is stale by definition.
+         beginPass(geometryKey);
       }
 
       int budget = SEASONAL_BUDGET_PER_TICK;
@@ -185,7 +193,7 @@ public final class VoxySeasonRemeshScheduler implements ClientModInitializer {
             }
             continue;
          }
-         if (isStale(position, revision)) {
+         if (isStale(position, geometryKey)) {
             currentRouter.triggerRemesh(position);
          }
       }
@@ -236,7 +244,7 @@ public final class VoxySeasonRemeshScheduler implements ClientModInitializer {
          } else if (!nowProtected && wasProtected) {
             PROTECTED.remove(position);
             // Leaving the near band means this section now needs seasonal geometry.
-            PROJECTED_REVISION.remove(position);
+            PROJECTED_GEOMETRY.remove(position);
             invalidateQueue();
          }
       }
@@ -252,21 +260,21 @@ public final class VoxySeasonRemeshScheduler implements ClientModInitializer {
    }
 
    /** Rebuilds the work queue, nearest section to the player first. */
-   private static void beginPass(long revision) {
+   private static void beginPass(long geometryKey) {
       List<Long> ordered = new ArrayList<>(WATCHED);
       if (havePlayerPosition) {
          ordered.sort((a, b) -> Double.compare(distanceSq(a), distanceSq(b)));
       }
       pending = ordered;
       pendingIndex = 0;
-      queuedRevision = revision;
+      queuedGeometryKey = geometryKey;
       lastSortX = playerX;
       lastSortZ = playerZ;
    }
 
-   /** Forces the next tick to rebuild the queue against the current revision. */
+   /** Forces the next tick to rebuild the queue against the current geometry key. */
    private static void invalidateQueue() {
-      queuedRevision = Long.MIN_VALUE;
+      queuedGeometryKey = Long.MIN_VALUE;
    }
 
    private static double distanceSq(long position) {
@@ -289,7 +297,7 @@ public final class VoxySeasonRemeshScheduler implements ClientModInitializer {
       PROTECTED.clear();
       URGENT_NEUTRAL.clear();
       URGENT_NEUTRAL_SET.clear();
-      PROJECTED_REVISION.clear();
+      PROJECTED_GEOMETRY.clear();
       pending = List.of();
       pendingIndex = 0;
       invalidateQueue();

@@ -77,7 +77,13 @@ public final class SeasonDirector {
    private static synchronized SeasonFrame adopt(SeasonFrame candidate) {
       SeasonFrame existing = current;
       if (existing != null && existing.sameTargets(candidate)) {
-         return existing;
+         // Keep the frame current so progress keeps advancing for anything that reads it,
+         // but carry the old revision forward: nothing downstream has work to redo, and
+         // minting a revision here would re-queue every loaded chunk and rebuild every Voxy
+         // LOD section on each clock refresh.
+         SeasonFrame refreshed = candidate.withRevision(existing.revision());
+         current = refreshed;
+         return refreshed;
       }
 
       SeasonFrame promoted = candidate.withRevision(REVISION.incrementAndGet());

@@ -18,9 +18,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * "old season chunks never disappear" problem: even once the remesh scheduler asks for a
  * rebuild, a cached mesh could be handed back unchanged.
  *
- * <p>Rejection is revision-scoped rather than unconditional: while the season is not
- * changing, cache hits are served normally and Voxy keeps its performance. Only geometry
- * whose recorded build revision differs from the director's current revision is dropped.
+ * <p>Rejection is scoped to the frame's geometry key rather than its full revision: only
+ * snow changes what a rebuilt LOD section would contain, so colour and calendar movement
+ * serve cache hits normally and Voxy keeps its performance. Keying this on the full revision
+ * instead threw away the whole LOD cache every time the calendar advanced.
  */
 @Pseudo
 @Mixin(
@@ -46,7 +47,7 @@ public abstract class VoxySeasonGeometryCacheBypassMixin {
          return;
       }
 
-      if (VoxySeasonRemeshScheduler.isStale(position, SeasonDirector.currentFrame().revision())) {
+      if (VoxySeasonRemeshScheduler.isStale(position, SeasonDirector.currentFrame().geometryKey())) {
          cached.free();
          cir.setReturnValue(null);
       }
