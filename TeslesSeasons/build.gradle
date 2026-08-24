@@ -39,7 +39,9 @@ dependencies {
 
 java {
     toolchain { languageVersion = JavaLanguageVersion.of(25) }
-    withSourcesJar()
+    // No sources jar: Minecraft 26.2 needs no remapping, and Loom's sources remapper insists
+    // on an intermediary namespace that does not exist for this version. The full source is
+    // in this project anyway.
 }
 
 tasks.withType(JavaCompile).configureEach {
@@ -56,3 +58,80 @@ processResources {
     inputs.property 'version', project.version
     filesMatching('fabric.mod.json') { expand 'version': project.version }
 }
+
+/**
+ * Guards the defect that made 0.7.0's Voxy integration inert: mixin classes existed in the
+ * jar but no mixin config referenced them, and a ClientModInitializer existed but was not
+ * listed as an entrypoint. Both fail silently at runtime, so they are checked at build time.
+ */
+tasks.register('verifyModWiring') {
+    description = 'Verifies every mixin class is registered and every entrypoint class exists.'
+    group = 'verification'
+
+    def resourceDir = file('src/main/resources')
+    def javaDir = file('src/main/java')
+    inputs.dir resourceDir
+    inputs.dir javaDir
+
+    doLast {
+        def slurper = new groovy.json.JsonSlurper()
+        def problems = []
+
+        def modJson = slurper.parse(new File(resourceDir, 'fabric.mod.json'))
+
+        // Every mixin config the mod declares must exist on disk, and vice versa.
+        def declaredConfigs = modJson.mixins.collect { it instanceof String ? it : it.config } as Set
+        def configFiles = resourceDir.listFiles().findAll { it.name.endsWith('.mixins.json') }*.name as Set
+        (declaredConfigs - configFiles).each { problems << "fabric.mod.json references missing mixin config: $it" }
+        (configFiles - declaredConfigs).each { problems << "mixin config never referenced by fabric.mod.json: $it" }
+
+        // Every mixin class on disk must be registered, and every registered class must exist.
+        def registered = [] as Set
+        configFiles.each { name ->
+            def cfg = slurper.parse(new File(resourceDir, name))
+            ['mixins', 'client', 'server'].each { key ->
+                (cfg[key] ?: []).each { registered << "${cfg.package}.${it}".toString() }
+            }
+        }
+        def present = [] as Set
+        new File(javaDir, 'fi/tesles/seasons/mixin').eachFileRecurse { f ->
+            if (f.name.endsWith('.java')) {
+                present << javaDir.toPath().relativize(f.toPath()).toString()
+                    .replace(File.separator, '.').replaceAll(/\.java$/, '')
+            }
+        }
+        (registered - present).each { problems << "mixin config lists a class that does not exist: $it" }
+        (present - registered).each { problems << "mixin class is never registered, so it will never load: $it" }
+
+        // Every entrypoint must resolve to a real source file.
+        modJson.entrypoints.each { kind, entries ->
+            entries.each { entry ->
+                def cls = entry instanceof String ? entry : entry.value
+                def path = new File(javaDir, cls.replace('.', '/') + '.java')
+                if (!path.exists()) {
+                    problems << "entrypoint '$kind' names a missing class: $cls"
+                }
+            }
+        }
+
+        // Any ClientModInitializer that is not an entrypoint is dead code.
+        def clientEntrypoints = (modJson.entrypoints.client ?: []).collect { it instanceof String ? it : it.value } as Set
+        javaDir.eachFileRecurse { f ->
+            if (f.name.endsWith('.java') && f.text.contains('implements ClientModInitializer')) {
+                def cls = javaDir.toPath().relativize(f.toPath()).toString()
+                    .replace(File.separator, '.').replaceAll(/\.java$/, '')
+                if (!clientEntrypoints.contains(cls)) {
+                    problems << "ClientModInitializer is not registered as a client entrypoint, so it will never run: $cls"
+                }
+            }
+        }
+
+        if (problems) {
+            throw new GradleException("Mod wiring problems:\n  - " + problems.join('\n  - '))
+        }
+        logger.lifecycle("Mod wiring OK: ${registered.size()} mixins registered, " +
+            "${modJson.entrypoints.values().flatten().size()} entrypoints resolved.")
+    }
+}
+
+tasks.named('check') { dependsOn 'verifyModWiring' }

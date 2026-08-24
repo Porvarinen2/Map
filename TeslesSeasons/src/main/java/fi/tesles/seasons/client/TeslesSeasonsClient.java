@@ -1,6 +1,7 @@
 package fi.tesles.seasons.client;
 
 import fi.tesles.seasons.client.render.NearMeshRefreshQueue;
+import fi.tesles.seasons.fix064.client.VoxySeasonRemeshScheduler;
 import fi.tesles.seasons.client.render.SeasonalModelLoading;
 import fi.tesles.seasons.client.render.SeasonalTinting;
 import fi.tesles.seasons.network.DiagnosticCapturePayload;
@@ -28,6 +29,9 @@ public final class TeslesSeasonsClient implements ClientModInitializer {
          ClientSeasonState.reset();
          ClientWeatherState.reset();
          CustomWeatherEffects.reset();
+         // Drop per-section season bookkeeping so a different world cannot inherit the
+         // previous one's watched sections or projected revisions.
+         VoxySeasonRemeshScheduler.reset();
       });
       ClientTickEvents.END_CLIENT_TICK.register((EndTick)client -> {
          NearMeshRefreshQueue.tick(client);

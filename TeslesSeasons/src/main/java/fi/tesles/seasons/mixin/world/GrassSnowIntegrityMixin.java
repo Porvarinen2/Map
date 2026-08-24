@@ -24,7 +24,7 @@ public abstract class GrassSnowIntegrityMixin {
    private void tesles$preserveGrassUnderSeasonSnow(BlockState state, ServerLevel level, BlockPos pos, RandomSource random, CallbackInfo ci) {
       if (state.is(Blocks.GRASS_BLOCK)) {
          if (!(SeasonEngine.frame().snowDepth() <= 0.0F)) {
-            if (SnowSystem.isSeasonSnow(level.getBlockState(pos.above()))) {
+            if (SnowSystem.isSnowLayer(level.getBlockState(pos.above()))) {
                ci.cancel();
             }
          }

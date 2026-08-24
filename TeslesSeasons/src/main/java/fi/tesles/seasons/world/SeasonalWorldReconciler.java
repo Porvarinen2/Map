@@ -25,6 +25,8 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
@@ -36,6 +38,8 @@ public final class SeasonalWorldReconciler {
    private static final ArrayDeque<Long> ROUND_ROBIN = new ArrayDeque<>();
    private static final ArrayDeque<Long> URGENT = new ArrayDeque<>();
    private static final Set<Long> URGENT_SET = new HashSet<>();
+   /** Frame revision the loaded set was last brought up to date against. */
+   private static long lastQueuedRevision = Long.MIN_VALUE;
    private static long ticks;
    private static long deadlineNanos;
    private static int writesRemaining;
@@ -167,8 +171,17 @@ public final class SeasonalWorldReconciler {
    public static void tick(MinecraftServer server, SeasonSnapshot snapshot) {
       ticks++;
       if (snapshot != null && !LOADED.isEmpty()) {
-         SeasonFrame frame = SeasonDirector.derive(snapshot);
+         SeasonFrame frame = SeasonDirector.currentFrame();
          boolean debug = SeasonDebugController.isActive();
+
+         // Revision coalescing. The director mints a revision only when the frame's targets
+         // actually change, so this fires once per real change rather than once per percent,
+         // and a burst of 53% -> 54% -> 55% collapses into a single pass straight to 55%.
+         if (frame.revision() != lastQueuedRevision) {
+            lastQueuedRevision = frame.revision();
+            queueAllLoadedUrgent();
+         }
+
          canonicalizePlayerHotset(server, frame, debug);
          if ((ticks & 7L) == 0L) {
             queuePlayerVicinityUrgent(server);
@@ -506,7 +519,7 @@ public final class SeasonalWorldReconciler {
          } else {
             BlockPos ground = new BlockPos(wx, top, wz);
 
-            while (SnowSystem.isSeasonSnow(this.level.getBlockState(ground)) && ground.getY() > this.level.getMinY()) {
+            while (SnowSystem.isSnowLayer(this.level.getBlockState(ground)) && ground.getY() > this.level.getMinY()) {
                ground = ground.below();
             }
 
@@ -528,7 +541,12 @@ public final class SeasonalWorldReconciler {
                   }
                }
 
-               if (currentAtSnow.isAir() || SnowSystem.isSeasonSnow(currentAtSnow)) {
+               // Ownership gate: grow depth only on snow we placed. Pre-existing snow that
+               // happens to sit where the season also wants snow stays the player's, and is
+               // therefore never overwritten here nor deleted in the melt branch below.
+               long ownedPacked = SeasonalWorldData.packLocal(snowPos);
+               boolean seasonOwned = this.ownedSnow.contains(ownedPacked);
+               if (currentAtSnow.isAir() || (seasonOwned && SnowSystem.isSnowLayer(currentAtSnow))) {
                   int oldLayers = SnowSystem.layers(currentAtSnow);
                   BlockState desired = SnowSystem.snowStateFor(this.level, snowPos, target);
                   if (desired.canSurvive(this.level, snowPos)) {
@@ -544,7 +562,6 @@ public final class SeasonalWorldReconciler {
                         }
                      }
 
-                     long ownedPacked = SeasonalWorldData.packLocal(snowPos);
                      if (this.ownedSnow.add(ownedPacked)) {
                         index(this.ownedSnowByColumn, ownedPacked);
                      }
@@ -553,7 +570,8 @@ public final class SeasonalWorldReconciler {
                   }
                }
             } else {
-               if (SnowSystem.isSeasonSnow(currentAtSnow)) {
+               if (SnowSystem.isSnowLayer(currentAtSnow)
+                     && this.ownedSnow.contains(SeasonalWorldData.packLocal(snowPos))) {
                   if (!this.trySetFlora(snowPos, this.springGroundCoverState(snowPos))) {
                      return false;
                   }
@@ -665,7 +683,7 @@ public final class SeasonalWorldReconciler {
                long packed = it.next();
                BlockPos pos = SeasonalWorldData.unpackLocal(this.chunk, packed);
                BlockState state = this.level.getBlockState(pos);
-               if (SnowSystem.isSeasonSnow(state)) {
+               if (SnowSystem.isSnowLayer(state)) {
                   BlockState replacement = this.springGroundCoverState(pos);
                   if (!this.trySetFlora(pos, replacement)) {
                      return false;
@@ -845,6 +863,12 @@ public final class SeasonalWorldReconciler {
          BlockState old = this.level.getBlockState(pos);
          if (old.equals(state)) {
             return true;
+         } else if (isGrassIdentity(old) && (state == null || state.getBlock() != old.getBlock())) {
+            // Season logic never changes grass block identity. Winter appearance comes from
+            // snow layers placed on top and from the ground tint, never from swapping
+            // grass_block for dirt and back, which would destroy the block the player sees
+            // and could not be reversed faithfully.
+            return true;
          } else if (!SeasonalWorldReconciler.canWork()) {
             return false;
          } else {
@@ -856,9 +880,37 @@ public final class SeasonalWorldReconciler {
          }
       }
 
+      /**
+       * Persists the restore ledger for this chunk as soon as its work slice ends.
+       *
+       * <p>This deliberately does not wait for a batch of 32 mutations. Block mutations mark
+       * the chunk unsaved immediately, so a save or crash in the gap between removing a leaf
+       * and writing its ledger entry would leave the world with the leaf gone and no record
+       * of what to restore. A few extra metadata writes per tick are much cheaper than
+       * permanently losing a tree.
+       */
       void flushIfDirty() {
-         if (this.dirty && this.writesSinceFlush >= 32) {
+         if (this.dirty) {
             this.flush();
+         }
+      }
+
+      private static boolean isGrassIdentity(BlockState state) {
+         if (state == null || state.isAir()) {
+            return false;
+         }
+         if (state.is(Blocks.GRASS_BLOCK)) {
+            return true;
+         }
+         try {
+            Identifier id = BuiltInRegistries.BLOCK.getKey(state.getBlock());
+            if (id == null) {
+               return false;
+            }
+            String path = id.getPath();
+            return path.equals("grass_block") || path.endsWith("_grass_block");
+         } catch (Throwable ignored) {
+            return false;
          }
       }
 

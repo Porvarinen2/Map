@@ -35,11 +35,19 @@ public final class SnowSystem {
       return (BlockState)snow.setValue(SnowLayerBlock.LAYERS, Math.max(1, Math.min(8, layers)));
    }
 
-   public static boolean isSeasonSnow(BlockState state) {
+   /**
+    * Whether this block is a snow layer the season system is capable of managing.
+    *
+    * <p>This is a <em>shape</em> test, not an ownership test. A player-placed snow layer
+    * answers true here. Never remove or overwrite snow on the strength of this alone -
+    * check the chunk's owned-snow ledger first, or seasonal cleanup will delete player
+    * builds every spring.
+    */
+   public static boolean isSnowLayer(BlockState state) {
       return state.getBlock() == Blocks.SNOW || state.getBlock() == TeslesSeasonBlocks.SLAB_SNOW;
    }
 
    public static int layers(BlockState state) {
-      return isSeasonSnow(state) && state.hasProperty(SnowLayerBlock.LAYERS) ? (Integer)state.getValue(SnowLayerBlock.LAYERS) : 0;
+      return isSnowLayer(state) && state.hasProperty(SnowLayerBlock.LAYERS) ? (Integer)state.getValue(SnowLayerBlock.LAYERS) : 0;
    }
 }
