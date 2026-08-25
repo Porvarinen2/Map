@@ -33,6 +33,23 @@ import net.minecraft.client.Minecraft;
  * shuffled the watched set randomly and processed one section per tick, so a large view
  * distance took many minutes to converge and the sections the player was actually looking at
  * could be processed last. That is what "old season chunks in the distance" looked like.
+ *
+ * <h2>Cost per client tick - keep this list true</h2>
+ * Everything this class does on the client thread must be bounded and cheap. Anything
+ * proportional to the watched set has to be rare, because that set reaches tens of thousands
+ * of sections at a large render distance.
+ * <ul>
+ *   <li>{@code drainUrgentRemesh} - at most {@value #HANDOFF_BUDGET_PER_TICK} sections.</li>
+ *   <li>seasonal pass - at most {@value #SEASONAL_BUDGET_PER_TICK} sections.</li>
+ *   <li>{@code updateProtectionBand} - O(watched), but only after the player has moved 64
+ *       blocks, and only cheap arithmetic per entry.</li>
+ *   <li>{@code beginPass} - O(watched log watched) with boxing, so it is the expensive one.
+ *       It runs <em>only</em> when the frame's geometry key changes: never in a snow-free
+ *       season, and roughly once every forty minutes while snow is moving.</li>
+ * </ul>
+ * Calling {@code beginPass} from {@code watch} instead cost 5 ms per tick at 20k sections and
+ * 14 ms at 50k, continuously while the player was moving, because sections enter the watched
+ * set constantly. Do not reintroduce a queue rebuild on any per-section event.
  */
 public final class VoxySeasonRemeshScheduler implements ClientModInitializer {
    /** Highest LOD level that carries projected seasonal geometry. */
@@ -44,16 +61,16 @@ public final class VoxySeasonRemeshScheduler implements ClientModInitializer {
     */
    private static final int SEASONAL_BUDGET_PER_TICK = 64;
 
-   /** Neutral (near-field handoff) rebuilds are more urgent and cheaper; allow more. */
-   private static final int NEUTRAL_BUDGET_PER_TICK = 32;
+   /** Handoff-boundary rebuilds are close to the player and visible immediately. */
+   private static final int HANDOFF_BUDGET_PER_TICK = 32;
 
    /** Re-sort the work queue once the player has moved this far (squared blocks). */
    private static final double RESORT_DISTANCE_SQ = 64.0 * 64.0;
 
    private static final Set<Long> WATCHED = ConcurrentHashMap.newKeySet();
    private static final Set<Long> PROTECTED = ConcurrentHashMap.newKeySet();
-   private static final ConcurrentLinkedQueue<Long> URGENT_NEUTRAL = new ConcurrentLinkedQueue<>();
-   private static final Set<Long> URGENT_NEUTRAL_SET = ConcurrentHashMap.newKeySet();
+   private static final ConcurrentLinkedQueue<Long> URGENT_REMESH = new ConcurrentLinkedQueue<>();
+   private static final Set<Long> URGENT_REMESH_SET = ConcurrentHashMap.newKeySet();
 
    /**
     * Geometry key each section was last meshed against. Written from Voxy mesh worker threads,
@@ -95,15 +112,16 @@ public final class VoxySeasonRemeshScheduler implements ClientModInitializer {
       if (!isStructural(position)) {
          return;
       }
-      if (WATCHED.add(position)) {
-         if (isHandoffUnsafe(position)) {
-            PROTECTED.add(position);
-            enqueueUrgentNeutral(position);
-         } else {
-            // A newly watched section has never been projected: force it into the queue.
-            invalidateQueue();
-         }
+      if (WATCHED.add(position) && isHandoffUnsafe(position)) {
+         PROTECTED.add(position);
+         enqueueRemesh(position);
       }
+      // A newly watched section deliberately does not disturb the work queue. If Voxy builds
+      // it fresh, the mesh hook projects the current season into it; if Voxy serves it from
+      // the geometry cache, the cache bypass rejects any mesh built against different snow
+      // targets and forces a rebuild. Both paths are automatic. Invalidating the queue here
+      // instead re-sorted the entire watched set on the client thread every time a section
+      // came into view, which is continuously while the player is moving.
    }
 
    public static void unwatch(long position) {
@@ -112,7 +130,7 @@ public final class VoxySeasonRemeshScheduler implements ClientModInitializer {
       }
       WATCHED.remove(position);
       PROTECTED.remove(position);
-      URGENT_NEUTRAL_SET.remove(position);
+      URGENT_REMESH_SET.remove(position);
       PROJECTED_GEOMETRY.remove(position);
    }
 
@@ -173,7 +191,7 @@ public final class VoxySeasonRemeshScheduler implements ClientModInitializer {
          updateProtectionBand();
       }
 
-      drainUrgentNeutral(currentRouter);
+      drainUrgentRemesh(currentRouter);
 
       long geometryKey = SeasonDirector.currentFrame().geometryKey();
       if (geometryKey != queuedGeometryKey) {
@@ -189,7 +207,7 @@ public final class VoxySeasonRemeshScheduler implements ClientModInitializer {
          }
          if (isHandoffUnsafe(position)) {
             if (PROTECTED.add(position)) {
-               enqueueUrgentNeutral(position);
+               enqueueRemesh(position);
             }
             continue;
          }
@@ -199,15 +217,16 @@ public final class VoxySeasonRemeshScheduler implements ClientModInitializer {
       }
    }
 
-   private static void drainUrgentNeutral(SectionUpdateRouter currentRouter) {
-      int budget = NEUTRAL_BUDGET_PER_TICK;
+   /** Rebuilds sections that just crossed the near/far handoff boundary, in either direction. */
+   private static void drainUrgentRemesh(SectionUpdateRouter currentRouter) {
+      int budget = HANDOFF_BUDGET_PER_TICK;
       while (budget-- > 0) {
-         Long position = URGENT_NEUTRAL.poll();
+         Long position = URGENT_REMESH.poll();
          if (position == null) {
             break;
          }
-         URGENT_NEUTRAL_SET.remove(position);
-         if (WATCHED.contains(position) && isHandoffUnsafe(position)) {
+         URGENT_REMESH_SET.remove(position);
+         if (WATCHED.contains(position)) {
             currentRouter.triggerRemesh(position);
          }
       }
@@ -238,24 +257,28 @@ public final class VoxySeasonRemeshScheduler implements ClientModInitializer {
       for (long position : WATCHED) {
          boolean nowProtected = isHandoffUnsafe(position);
          boolean wasProtected = PROTECTED.contains(position);
-         if (nowProtected && !wasProtected) {
-            PROTECTED.add(position);
-            enqueueUrgentNeutral(position);
-         } else if (!nowProtected && wasProtected) {
-            PROTECTED.remove(position);
-            // Leaving the near band means this section now needs seasonal geometry.
+         if (nowProtected != wasProtected) {
+            // Crossing the handoff boundary changes what this section should contain: inside
+            // the band it must be neutral because vanilla draws the real blocks, outside it
+            // must carry projected snow. Forget the recorded geometry either way so a cached
+            // mesh from the other side of the boundary cannot be served as current.
+            if (nowProtected) {
+               PROTECTED.add(position);
+            } else {
+               PROTECTED.remove(position);
+            }
             PROJECTED_GEOMETRY.remove(position);
-            invalidateQueue();
+            enqueueRemesh(position);
          }
       }
       lastProtectionRadius = handoffRadiusBlocks;
-      // Player has moved far enough that the nearest-first ordering is stale too.
-      invalidateQueue();
+      lastSortX = playerX;
+      lastSortZ = playerZ;
    }
 
-   private static void enqueueUrgentNeutral(long position) {
-      if (URGENT_NEUTRAL_SET.add(position)) {
-         URGENT_NEUTRAL.add(position);
+   private static void enqueueRemesh(long position) {
+      if (URGENT_REMESH_SET.add(position)) {
+         URGENT_REMESH.add(position);
       }
    }
 
@@ -295,8 +318,8 @@ public final class VoxySeasonRemeshScheduler implements ClientModInitializer {
    public static void reset() {
       WATCHED.clear();
       PROTECTED.clear();
-      URGENT_NEUTRAL.clear();
-      URGENT_NEUTRAL_SET.clear();
+      URGENT_REMESH.clear();
+      URGENT_REMESH_SET.clear();
       PROJECTED_GEOMETRY.clear();
       pending = List.of();
       pendingIndex = 0;
