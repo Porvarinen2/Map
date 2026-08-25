@@ -64,22 +64,55 @@ class SeasonRevisionChurnTest {
    }
 
    @Test
-   @DisplayName("snow-free seasons never invalidate a single Voxy LOD section")
-   void snowFreeSeasonsNeverRemesh() {
+   @DisplayName("a season with no snow and whole leaves never invalidates a single LOD section")
+   void seasonsWithNoSeasonalGeometryNeverRemesh() {
+      // The projector edits exactly two things in LOD geometry: snow, and dropped leaves.
+      // A frame with neither is interchangeable with every other such frame, and Summer is a
+      // whole season of them - not one section may be rebuilt across all of it.
       Set<Long> keys = new HashSet<>();
-      for (SeasonTestSupport.PhaseRef ref : SeasonTestSupport.cycle()) {
-         if (ref.season() == Season.WINTER) {
-            continue;
-         }
+      for (CalendarPhase phase : SeasonTestSupport.PHASES) {
          for (int i = 0; i <= 400; i++) {
-            SeasonFrame f = SeasonTestSupport.frame(ref.season(), ref.phase(), i / 400.0F);
-            if (f.snowCoverage() <= 0.0F) {
-               keys.add(f.geometryKey());
-            }
+            SeasonFrame f = SeasonTestSupport.frame(Season.SUMMER, phase, i / 400.0F);
+            assertEquals(0.0F, f.snowCoverage(), 1.0E-4F, "test premise: summer has no snow");
+            assertEquals(1.0F, f.leafRetention(), 1.0E-4F, "test premise: summer keeps its leaves");
+            keys.add(f.geometryKey());
          }
       }
       assertEquals(Set.of(0L), keys,
-         "every snow-free frame must share one geometry key, or Voxy rebuilds for nothing");
+         "summer must be one single geometry state, or Voxy rebuilds for nothing");
+   }
+
+   @Test
+   @DisplayName("dropping leaves changes the geometry key even with no snow on the ground")
+   void leafDropIsGeometryEvenWithoutSnow() {
+      // Autumn Stable drops the canopy while the ground is still bare. Those leaves are
+      // removed from the LOD mesh rather than discarded in the shader - a discard is invisible
+      // to Iris's shadow pass - so the key has to move or the distant canopy would keep its
+      // summer geometry, and its shadows, all the way into winter.
+      Set<Long> keys = new HashSet<>();
+      for (int i = 0; i <= 400; i++) {
+         SeasonFrame f = SeasonTestSupport.frame(Season.AUTUMN, CalendarPhase.STABLE, i / 400.0F);
+         assertEquals(0.0F, f.snowCoverage(), 1.0E-4F, "test premise: no snow in Autumn Stable");
+         keys.add(f.geometryKey());
+      }
+      assertTrue(keys.size() > 100,
+         "leaf drop must move the geometry key; got only %d states".formatted(keys.size()));
+      assertTrue(keys.size() <= 300,
+         "leaf drop is quantised, so it must not produce a key per sample: " + keys.size());
+   }
+
+   @Test
+   @DisplayName("a snowy frame with whole leaves never collides with the neutral key")
+   void snowyFramesNeverLookNeutral() {
+      for (CalendarPhase phase : SeasonTestSupport.PHASES) {
+         for (int i = 0; i <= 200; i++) {
+            SeasonFrame f = SeasonTestSupport.frame(Season.WINTER, phase, i / 200.0F);
+            if (f.snowCoverage() > 0.0F || f.leafRetention() < 0.9999F) {
+               assertTrue(f.geometryKey() != 0L,
+                  "Winter %s @%d would be served as a snow-free cache hit".formatted(phase, i));
+            }
+         }
+      }
    }
 
    @Test

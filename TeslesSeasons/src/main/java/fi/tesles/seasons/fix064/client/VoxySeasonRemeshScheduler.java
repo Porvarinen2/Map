@@ -296,8 +296,16 @@ public final class VoxySeasonRemeshScheduler implements ClientModInitializer {
       }
       playerX = client.player.getX();
       playerZ = client.player.getZ();
+      // The protected band must sit strictly INSIDE vanilla's coverage.
+      //
+      // This used to be renderDistance + 64, which put the boundary 64 blocks *beyond* where
+      // vanilla stops drawing. In that ring vanilla had already given up and the LOD was still
+      // refusing to project the season onto itself, so a band of snowless green terrain
+      // followed the player around through the middle of winter. Pulling the boundary inward
+      // means the overlap is hidden behind real blocks, which costs nothing; leaving a gap on
+      // the outside is immediately visible.
       int vanillaChunks = Math.max(3, client.options.renderDistance().get());
-      handoffRadiusBlocks = vanillaChunks * 16 + 64;
+      handoffRadiusBlocks = Math.max(32, vanillaChunks * 16 - 48);
       havePlayerPosition = true;
    }
 

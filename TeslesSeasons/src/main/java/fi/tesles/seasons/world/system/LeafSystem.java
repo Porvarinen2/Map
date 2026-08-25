@@ -14,10 +14,15 @@ public final class LeafSystem {
    }
 
    public static boolean shouldExist(BlockPos pos, SeasonFrame frame, long seed) {
-      if (frame.leafRetention() >= 0.9999F) {
+      return shouldExist(pos.getX(), pos.getY(), pos.getZ(), frame, seed);
+   }
+
+   /** Allocation-free form, for scans that evaluate a whole section voxel by voxel. */
+   public static boolean shouldExist(int x, int y, int z, SeasonFrame frame, long seed) {
+      float retention = frame.leafRetention();
+      if (retention >= 0.9999F) {
          return true;
-      } else {
-         return frame.leafRetention() <= 1.0E-4F ? false : SeasonCoordinateField.leaf01(pos, seed) < frame.leafRetention();
       }
+      return retention > 1.0E-4F && SeasonCoordinateField.leaf01(x, y, z, seed) < retention;
    }
 }

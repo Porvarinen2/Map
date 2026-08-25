@@ -65,7 +65,12 @@ public final class SeasonCoordinateField {
    }
 
    public static float leaf01(BlockPos pos, long seed) {
-      return hash3D(pos.getX(), pos.getY(), pos.getZ(), seed, LEAF_SALT);
+      return leaf01(pos.getX(), pos.getY(), pos.getZ(), seed);
+   }
+
+   /** Allocation-free form, for scans that evaluate a whole section voxel by voxel. */
+   public static float leaf01(int x, int y, int z, long seed) {
+      return hash3D(x, y, z, seed, LEAF_SALT);
    }
 
    /** Legacy entry point: flowers. Prefer {@link #flora01(BlockPos, long, int)}. */

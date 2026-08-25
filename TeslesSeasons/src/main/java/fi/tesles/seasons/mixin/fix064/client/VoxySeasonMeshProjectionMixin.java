@@ -7,6 +7,7 @@ import fi.tesles.seasons.fix064.client.VoxySeasonRemeshScheduler;
 import fi.tesles.seasons.sector.SeasonFrame;
 import fi.tesles.seasons.world.SeasonalBlockClassifier;
 import fi.tesles.seasons.world.SeasonalFloraKind;
+import fi.tesles.seasons.world.system.LeafSystem;
 import fi.tesles.seasons.world.system.SnowSystem;
 import it.unimi.dsi.fastutil.ints.Int2ByteOpenHashMap;
 import me.cortex.voxy.client.core.rendering.building.BuiltSection;
@@ -168,7 +169,72 @@ public abstract class VoxySeasonMeshProjectionMixin {
          }
       }
 
+      // Deciduous leaves the season has dropped are removed from the geometry, not merely
+      // hidden. The fragment shader can discard them, but a discard only applies in the pass
+      // that runs our patched shader: Iris renders its shadow map with a different program, so
+      // discarded leaves went on casting full-canopy shadows over bare winter trees and made
+      // the ground beneath distant forest read as strangely dark. Absent has to mean absent
+      // here for the same reason it does in the physical world.
+      if (frame.leafRetention() < 0.9999F) {
+         projected = stripAbsentLeaves(projected, raw, section, mapper, categories, seed);
+      }
+
       return projected == null ? raw : projected;
+   }
+
+   /**
+    * Removes deciduous leaf voxels the current frame says are gone.
+    *
+    * <p>Skipped entirely while leaves are whole, so this costs nothing outside the seasons that
+    * actually drop them. Evergreens are classified separately and keep their needles.
+    */
+   @Unique
+   private static long[] stripAbsentLeaves(long[] projected, long[] raw, WorldSection section,
+                                           Mapper mapper, Int2ByteOpenHashMap categories, long seed) {
+      SeasonFrame frame = ClientSeasonState.frame();
+      long[] data = projected == null ? raw : projected;
+      int half = (1 << section.lvl) >> 1;
+      int baseX = (section.x << 5) << section.lvl;
+      int baseY = (section.y << 5) << section.lvl;
+      int baseZ = (section.z << 5) << section.lvl;
+
+      for (int y = 0; y < 32; y++) {
+         for (int z = 0; z < 32; z++) {
+            for (int x = 0; x < 32; x++) {
+               int index = WorldSection.getIndex(x, y, z);
+               long voxel = data[index];
+               if (Mapper.isAir(voxel) || !isDeciduousLeafCategory(category(mapper, categories, voxel))) {
+                  continue;
+               }
+
+               int wx = baseX + (x << section.lvl) + half;
+               int wy = baseY + (y << section.lvl) + half;
+               int wz = baseZ + (z << section.lvl) + half;
+               if (LeafSystem.shouldExist(wx, wy, wz, frame, seed)) {
+                  continue;
+               }
+
+               if (projected == null) {
+                  projected = raw.clone();
+                  data = projected;
+               }
+               data[index] = Mapper.airWithLight(Mapper.getLightId(voxel));
+            }
+         }
+      }
+      return projected;
+   }
+
+   /**
+    * Whether a Voxy category is deciduous foliage.
+    *
+    * <p>VoxySeasonCategories splits deciduous leaves into per-species ids so autumn colour can
+    * differ by tree, so matching only the generic id would miss birch, oak, dark oak, maple and
+    * aspen - that is to say, nearly every deciduous tree in the world.
+    */
+   @Unique
+   private static boolean isDeciduousLeafCategory(int category) {
+      return category == SeasonalCategory.DECIDUOUS_LEAVES.voxyId() || (category >= 11 && category <= 15);
    }
 
    /** Index of the topmost non-air voxel in a column, or -1. */
@@ -377,13 +443,27 @@ public abstract class VoxySeasonMeshProjectionMixin {
    }
 
    @Unique
+   /**
+    * Whether snow may rest on this voxel.
+    *
+    * <p>Snow settles on whatever solid surface is there - stone, gravel, a roof, a fallen log -
+    * exactly as the server's SnowLayerBlock placement does. Restricting it to two hand-picked
+    * ground categories left every other surface bare, which at LOD range reads as a grey and
+    * green speckle through the snowfield rather than as snow.
+    *
+    * <p>The exclusions are the things snow cannot sit on or would double up on: air, seasonal
+    * flora (which the snow replaces rather than covers) and snow itself.
+    */
    private static boolean isSnowGround(Mapper mapper, Int2ByteOpenHashMap categories, long voxel) {
       if (Mapper.isAir(voxel)) {
          return false;
       }
       int c = category(mapper, categories, voxel);
-      return c == SeasonalCategory.SEASONAL_GROUND.voxyId()
-         || c == SeasonalCategory.FROSTABLE_SURFACE.voxyId();
+      return c != SeasonalCategory.SEASONAL_SNOW.voxyId()
+         && c != SeasonalCategory.GROUND_VEGETATION.voxyId()
+         && c != SeasonalCategory.FLOWER.voxyId()
+         && c != SeasonalCategory.MUSHROOM.voxyId()
+         && c != SeasonalCategory.SNOW_REPLACEABLE_DECOR.voxyId();
    }
 
    @Unique

@@ -122,17 +122,6 @@ public record SeasonFrame(
    }
 
    /**
-    * Identity of everything that changes Voxy LOD <em>geometry</em>.
-    *
-    * <p>The LOD mesh projector only ever adds or removes snow, so snow coverage and depth are
-    * the only channels that can make a rebuilt section differ from a cached one. Colour
-    * channels reach Voxy as shader uniforms, which are uploaded per bind and need no remesh.
-    *
-    * <p>Keying LOD invalidation on this instead of on the full frame revision means that in
-    * Spring, Summer and most of Autumn - whenever snow coverage is zero - the value never
-    * changes and not a single section is ever rebuilt for seasonal reasons.
-    */
-   /**
     * Snow coverage as target selection must use it: quantised to {@link #TARGET_QUANTUM}.
     *
     * <p>Targets have to be a function of the revision, not of raw wall-clock time. The world is
@@ -150,12 +139,33 @@ public record SeasonFrame(
       return quantize(this.snowDepth) * TARGET_QUANTUM;
    }
 
+   /**
+    * Identity of everything that changes Voxy LOD <em>geometry</em>.
+    *
+    * <p>The mesh projector adds and removes exactly two things: seasonal snow, and deciduous
+    * leaves the frame has dropped. Those three channels therefore decide whether a rebuilt
+    * section would differ from a cached one. Colour reaches Voxy as shader uniforms, uploaded
+    * per bind, so it is deliberately not part of this key - including it would rebuild the
+    * whole LOD set every time the calendar moved at all.
+    *
+    * <p>Leaf retention has to be here. Leaves are removed from the geometry rather than
+    * discarded in the fragment shader, because a discard is invisible to Iris's shadow pass and
+    * dropped leaves would otherwise keep casting full-canopy shadows over bare winter trees.
+    * Geometry the projector edits is geometry this key must cover, or sections would never be
+    * rebuilt as the canopy comes and goes.
+    */
    public long geometryKey() {
-      if (this.snowCoverage <= 0.0F) {
-         // No snow anywhere: every snow-free frame is the same geometry, regardless of season.
+      boolean noSnow = this.snowCoverage <= 0.0F;
+      boolean fullLeaves = this.leafRetention >= 0.9999F;
+      if (noSnow && fullLeaves) {
+         // Nothing seasonal in the geometry at all: every such frame is interchangeable.
          return 0L;
       }
-      return ((long) quantize(this.snowCoverage) << 32) | (quantize(this.snowDepth) & 0xFFFFFFFFL);
+
+      // Three quantised channels, each at most 256, packed into distinct bit ranges. The +1 on
+      // leaves keeps a full-leaf snowy frame from colliding with the neutral key above.
+      long snow = noSnow ? 0L : (((long) quantize(this.snowCoverage) << 12) | quantize(this.snowDepth));
+      return (snow << 20) | (quantize(this.leafRetention) + 1L);
    }
 
    private static boolean same(float a, float b) {
