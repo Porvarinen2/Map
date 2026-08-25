@@ -2,6 +2,8 @@ package fi.tesles.seasons.client.render;
 
 import java.util.Locale;
 import java.util.Set;
+import fi.tesles.seasons.world.SeasonalFloraKind;
+import fi.tesles.seasons.world.system.TeslesPlantsAdapter;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.block.Block;
@@ -60,6 +62,12 @@ public final class SeasonalClassifier {
 
    public static SeasonalCategory categoryFor(BlockState state) {
       if (state != null && !state.isAir()) {
+         // The TeslesPlants registry knows its own mushrooms exactly. Ask it before falling
+         // back to the name/class heuristics below, which would otherwise file several
+         // species as generic ground vegetation and leave them standing all winter.
+         if (TeslesPlantsAdapter.kind(state) == SeasonalFloraKind.MUSHROOM) {
+            return SeasonalCategory.MUSHROOM;
+         }
          Block block = state.getBlock();
          if (block instanceof SnowLayerBlock) {
             return SeasonalCategory.SEASONAL_SNOW;

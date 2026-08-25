@@ -44,46 +44,23 @@ public final class SeasonalBlockStateModel extends WrapperBlockStateModel {
          if (!plant && !ground) {
             super.emitQuads(emitter, level, pos, state, random, cullTest);
          } else {
-            SeasonSnapshot snapshot = ClientSeasonState.get();
-            boolean upperDouble = isUpperDoublePlant(level, pos, state);
-            if (!crop && plant && shouldRenderPlantSnow(pos, snapshot)) {
-               if (!upperDouble) {
-                  emitSnowLayer(emitter, level, pos, random, cullTest, 0.0F);
-               }
-            } else if (this.category != SeasonalCategory.FLOWER || !(positionNoise(pos, snapshot.visualSeed()) > snapshot.flowerRetention())) {
-               if (this.category != SeasonalCategory.MUSHROOM || !(positionNoise(pos, snapshot.visualSeed()) > snapshot.mushroomRetention())) {
-                  int multiplier = seasonalPlant
-                     ? SeasonalColorUtil.staticPlantMultiplier(this.category)
-                     : (ground ? SeasonalColorUtil.groundMultiplier() : -1);
-                  float flatten = seasonalPlant && this.flattenable && TeslesSeasons.CONFIG.nearVegetationFlattening
-                     ? SeasonalColorUtil.flattenAmount(this.category, TeslesSeasons.CONFIG.maximumGroundPlantFlattening)
-                     : 0.0F;
-                  float yScale = 1.0F - flatten;
-                  emitter.pushTransform(quad -> {
-                     quad.multiplyColor(multiplier);
-                     if (flatten > 0.001F) {
-                        for (int vertex = 0; vertex < 4; vertex++) {
-                           quad.pos(vertex, quad.x(vertex), quad.y(vertex) * yScale, quad.z(vertex));
-                        }
-                     }
-
-                     return true;
-                  });
-                  super.emitQuads(emitter, level, pos, state, random, cullTest);
-                  emitter.popTransform();
-                  if (crop && shouldRenderPlantSnow(pos, snapshot)) {
-                     if (!upperDouble) {
-                        emitSnowLayer(emitter, level, pos, random, cullTest, 0.0F);
-                     }
-                  } else if (ground && shouldRenderGroundSnow(level, pos)) {
-                     if (isBottomSlabState(state)) {
-                        emitSnowLayer(emitter, level, pos, random, cullTest, 0.5F);
-                     } else {
-                        emitSnowLayer(emitter, level, pos.above(), random, cullTest, 1.0F);
-                     }
-                  }
-               }
-            }
+            // The near renderer only applies colour here. It must never decide whether a
+            // block exists: the server has already removed the flora this season does not
+            // want, so hiding a block that is physically present would leave the player
+            // walking into invisible plants and picking up items from thin air.
+            //
+            // It also never draws overlay snow. Seasonal snow is real SnowLayerBlock placed
+            // by the server, so a painted-on layer would double it where both appear and
+            // disagree with collision everywhere else.
+            int multiplier = seasonalPlant
+               ? SeasonalColorUtil.staticPlantMultiplier(this.category)
+               : (ground ? SeasonalColorUtil.groundMultiplier() : -1);
+            emitter.pushTransform(quad -> {
+               quad.multiplyColor(multiplier);
+               return true;
+            });
+            super.emitQuads(emitter, level, pos, state, random, cullTest);
+            emitter.popTransform();
          }
       }
    }

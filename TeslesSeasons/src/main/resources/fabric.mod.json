@@ -32,21 +32,10 @@
       "config": "teslesseasons.070.voxyserver.mixins.json"
     },
     {
-      "config": "teslesseasons.070.voxy-backfill.mixins.json"
-    },
-    {
       "config": "teslesseasons.070.voxy-ingest.mixins.json"
     },
     {
       "config": "teslesseasons.070.client.mixins.json",
-      "environment": "client"
-    },
-    {
-      "config": "teslesseasons.071.voxy-visual.mixins.json",
-      "environment": "client"
-    },
-    {
-      "config": "teslesseasons.070.voxy-shader-safety.mixins.json",
       "environment": "client"
     },
     {
@@ -59,10 +48,6 @@
     },
     {
       "config": "teslesseasons.070.voxy-projection.mixins.json",
-      "environment": "client"
-    },
-    {
-      "config": "teslesseasons.070.voxy-tint.mixins.json",
       "environment": "client"
     }
   ],

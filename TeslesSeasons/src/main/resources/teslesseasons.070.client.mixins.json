@@ -10,8 +10,7 @@
     "VoxyModelFactoryCategoryMixin",
     "VoxyRawIngestSuppressionMixin",
     "VoxyShaderLoaderMixin",
-    "VoxyShaderUniformMixin",
-    "SeasonalBlockStateModelSafetyMixin"
+    "VoxyShaderUniformMixin"
   ],
   "injectors": {
     "defaultRequire": 0

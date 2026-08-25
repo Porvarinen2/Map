@@ -33,6 +33,9 @@ dependencies {
     compileOnly files('libs/dynamictrees.jar')
     compileOnly files('libs/teslesworldgen.jar')
 
+    // The shader pipeline test runs against Voxy's real shader sources, so the jar has to be
+    // on the test runtime classpath as well as the compile classpath.
+    testRuntimeOnly files('libs/voxy-0.2.18-beta.jar')
     testImplementation 'org.junit.jupiter:junit-jupiter:5.11.3'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
@@ -135,3 +138,102 @@ tasks.register('verifyModWiring') {
 }
 
 tasks.named('check') { dependsOn 'verifyModWiring' }
+
+/**
+ * Resolves every @Mixin target class and injected method descriptor against the real bytecode
+ * on the compile classpath.
+ *
+ * A mixin whose target no longer exists either kills the game at startup (require > 0) or does
+ * nothing at all (require = 0). Both have shipped in this project: 0.7.0 carried mixins aimed at
+ * methods that had been renamed away, and had they been registered they would have crashed the
+ * game. Reading is not a reliable check for this, so it happens mechanically.
+ *
+ * Mixins that target the mod's own classes are rejected outright. Patching your own code at
+ * runtime hides the real logic from readers, from tests, and from this check.
+ */
+tasks.register('verifyMixinTargets') {
+    description = 'Resolves every mixin target against the bytecode it will run against.'
+    group = 'verification'
+    dependsOn 'compileJava'
+
+    def srcDir = file('src/main/java')
+    def cp = configurations.compileClasspath
+    inputs.dir srcDir
+    inputs.files cp
+
+    doLast {
+        def urls = cp.files.collect { it.toURI().toURL() } as URL[]
+        def loader = new URLClassLoader(urls, (ClassLoader) null)
+
+        def descriptorOf = { Class<?> c ->
+            if (c.isPrimitive()) {
+                return [void: 'V', boolean: 'Z', byte: 'B', char: 'C', short: 'S',
+                        int: 'I', long: 'J', float: 'F', double: 'D'][c.name]
+            }
+            c.isArray() ? c.name.replace('.', '/') : 'L' + c.name.replace('.', '/') + ';'
+        }
+
+        def problems = []
+        def classCount = 0, methodCount = 0
+
+        srcDir.eachFileRecurse { f ->
+            if (!f.name.endsWith('.java') || !f.path.replace(File.separator, '/').contains('/seasons/mixin/')) return
+            def src = f.text
+            def rel = srcDir.toPath().relativize(f.toPath()).toString()
+
+            def targets = []
+            (src =~ /targets\s*=\s*\{([^}]*)\}/).each { m -> (m[1] =~ /"([^"]+)"/).each { targets << it[1] } }
+            def literals = []
+            (src =~ /@Mixin\(\s*\{?\s*([A-Za-z0-9_]+)\.class/).each { literals << it[1] }
+            (src =~ /value\s*=\s*\{([^}]*)\}/).each { m -> (m[1] =~ /([A-Za-z0-9_]+)\.class/).each { literals << it[1] } }
+            literals.each { name ->
+                def imp = (src =~ /(?m)^import\s+([\w.]*\.${name});/)
+                targets << (imp ? imp[0][1] : name)
+            }
+
+            if (targets.isEmpty()) { problems << "$rel: no @Mixin target could be determined"; return }
+
+            targets.findAll { it.startsWith('fi.tesles.seasons') }.each {
+                problems << "$rel: patches the mod's own class at runtime: $it - inline it instead"
+            }
+
+            def methods = []
+            (src =~ /method\s*=\s*\{([^}]*)\}/).each { m -> (m[1] =~ /"([^"]+)"/).each { methods << it[1] } }
+            (src =~ /method\s*=\s*"([^"]+)"/).each { methods << it[1] }
+
+            targets.findAll { !it.startsWith('fi.tesles.seasons') }.each { target ->
+                classCount++
+                Class<?> cls
+                try {
+                    cls = Class.forName(target, false, loader)
+                } catch (Throwable ignored) {
+                    problems << "$rel: target class not on the compile classpath: $target"
+                    return
+                }
+                def present = [] as Set
+                cls.declaredMethods.each { present << (it.name + '(' + it.parameterTypes.collect(descriptorOf).join('') + ')' + descriptorOf(it.returnType)) }
+                cls.declaredConstructors.each { present << ('<init>(' + it.parameterTypes.collect(descriptorOf).join('') + ')V') }
+                def names = present.collect { it.substring(0, it.indexOf('(')) } as Set
+
+                methods.unique().each { m ->
+                    methodCount++
+                    if (m.contains('(')) {
+                        if (!present.contains(m)) {
+                            problems << "$rel: $target has no method matching $m"
+                        }
+                    } else if (!names.contains(m)) {
+                        problems << "$rel: $target has no method named $m"
+                    }
+                }
+            }
+        }
+
+        if (problems) {
+            throw new GradleException("Mixin target problems:\n  - " + problems.join('\n  - '))
+        }
+        logger.lifecycle("Mixin targets OK: ${classCount} target classes, ${methodCount} method references resolved against real bytecode.")
+    }
+}
+
+tasks.named('check') { dependsOn 'verifyMixinTargets' }
+

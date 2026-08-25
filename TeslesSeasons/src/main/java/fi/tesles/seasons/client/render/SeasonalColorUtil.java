@@ -2,6 +2,7 @@ package fi.tesles.seasons.client.render;
 
 import fi.tesles.seasons.api.SeasonSnapshot;
 import fi.tesles.seasons.client.ClientSeasonState;
+import fi.tesles.seasons.sector.SeasonFrame;
 import java.util.Locale;
 import net.minecraft.client.renderer.block.BlockAndTintGetter;
 import net.minecraft.world.level.block.state.BlockState;
@@ -39,17 +40,26 @@ public final class SeasonalColorUtil {
       }
    }
 
+   /**
+    * Seasonal grass tint.
+    *
+    * <p>Winter reads as frost rather than as dead brown grass: the dormancy and snow terms
+    * pull toward desaturated grey-blue, not toward the autumn browns. The autumn term stays
+    * deliberately weak because autumn colour belongs to foliage, and pushing the ground the
+    * same way made whole landscapes look uniformly dead.
+    */
    public static int grassColor(int baseColor) {
-      SeasonSnapshot snapshot = ClientSeasonState.get();
-      if (snapshot == null) {
-         return opaque(baseColor);
-      } else {
-         int c = baseColor & 16777215;
-         c = blend(c, 9142085, snapshot.autumnColor() * 0.36F);
-         c = blend(c, 8486741, snapshot.groundDormancy() * 0.48F);
-         c = blend(c, 7513423, snapshot.springFreshness() * 0.13F);
-         return opaque(c);
-      }
+      SeasonFrame frame = ClientSeasonState.frame();
+      int c = baseColor & 0xFFFFFF;
+      c = blend(c, 0x81945F, clamp01(frame.autumnColor()) * 0.10F);      // faint autumn straw
+      c = blend(c, 0xAAB69C, clamp01(frame.groundDormancy()) * 0.20F);   // dormant grey-green
+      c = blend(c, 0xC2CABB, clamp01(frame.snowCoverage()) * 0.16F);     // frost, not browning
+      c = blend(c, 0x72A45F, clamp01(frame.springFreshness()) * 0.10F);  // spring green
+      return opaque(c);
+   }
+
+   private static float clamp01(float v) {
+      return Math.max(0.0F, Math.min(1.0F, v));
    }
 
    public static int staticPlantMultiplier(SeasonalCategory category) {

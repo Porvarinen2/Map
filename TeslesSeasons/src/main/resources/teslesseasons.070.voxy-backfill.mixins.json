@@ -1,7 +1,0 @@
-{
-  "required": false,
-  "package": "fi.tesles.seasons.mixin.fix062",
-  "compatibilityLevel": "JAVA_25",
-  "mixins": ["VoxyBackfillEpochMixin"],
-  "injectors": {"defaultRequire": 0}
-}

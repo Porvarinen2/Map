@@ -7,6 +7,13 @@ public final class VoxyCanonicalVisualPostPatch {
    }
 
    public static String patch(String resource, String source) {
+      // Idempotence guard. replaceSeasonColour() splices in teslesIsDeciduousCategory and
+      // teslesAutumnLeafTarget ahead of teslesSeasonColour, so running it twice would define
+      // both helpers twice - a GLSL compile error that disables Voxy rendering outright.
+      // teslesIsDeciduousCategory exists only in this stage's output, so it is the marker.
+      if (source != null && source.contains("teslesIsDeciduousCategory")) {
+         return source;
+      }
       if ("voxy:lod/gl46/quads.frag".equals(resource) && source != null && source.contains("teslesSeasonColour") && source.contains("teslesSnowMask")) {
          String patched = addPlantRetentionUniform(source);
          patched = replaceSnowMask(patched);

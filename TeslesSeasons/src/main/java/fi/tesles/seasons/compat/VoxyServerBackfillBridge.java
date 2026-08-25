@@ -12,7 +12,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.storage.LevelResource;
 
 public final class VoxyServerBackfillBridge {
-   private static final String MARKER_NAME = "voxyserver-existing-overworld-backfill-v3.done";
+   private static final String MARKER_NAME = "voxyserver-existing-overworld-backfill-v9.done";
    private static final String IDLE_STATUS = "no import is running";
    private static Object voxyServer;
    private static Object coordinator;
@@ -162,7 +162,7 @@ public final class VoxyServerBackfillBridge {
 
             coordinator = value;
             Path root = server.getWorldPath(LevelResource.ROOT);
-            marker = root.resolve("teslesseasons").resolve("voxyserver-existing-overworld-backfill-v3.done");
+            marker = root.resolve("teslesseasons").resolve("voxyserver-existing-overworld-backfill-v9.done");
             Path voxyStore = root.resolve("voxyserver");
             if (Files.isRegularFile(marker) && !Files.isDirectory(voxyStore)) {
                Files.deleteIfExists(marker);

@@ -2,6 +2,11 @@
   "required": false,
   "package": "fi.tesles.seasons.mixin.fix062.client",
   "compatibilityLevel": "JAVA_25",
-  "client": ["VoxyClientStorageEpochMixin", "VoxyRemoteAuthorityGuardMixin", "VoxyCategorySanitizerMixin"],
-  "injectors": {"defaultRequire": 0}
+  "client": [
+    "VoxyClientStorageEpochMixin",
+    "VoxyRemoteAuthorityGuardMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 0
+  }
 }
