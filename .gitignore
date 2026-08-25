@@ -2,3 +2,7 @@
 build/
 run/
 *.log
+
+# Packaged deliverable: the jar plus a copy of this same source tree, assembled
+# by hand for hand-off. Everything in it is already tracked here.
+TeslesSeasons-*.zip
