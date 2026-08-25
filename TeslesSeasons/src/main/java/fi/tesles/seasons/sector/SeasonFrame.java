@@ -132,6 +132,24 @@ public record SeasonFrame(
     * Spring, Summer and most of Autumn - whenever snow coverage is zero - the value never
     * changes and not a single section is ever rebuilt for seasonal reasons.
     */
+   /**
+    * Snow coverage as target selection must use it: quantised to {@link #TARGET_QUANTUM}.
+    *
+    * <p>Targets have to be a function of the revision, not of raw wall-clock time. The world is
+    * mutated once per revision, so if selection read the raw channel the physical blocks placed
+    * at the start of a revision would already disagree with what the LOD projector computes
+    * later in the same revision - drifting slightly out of parity between every update, forever.
+    * Quantising here makes "same revision" mean "identical targets" by construction.
+    */
+   public float snowCoverageTarget() {
+      return quantize(this.snowCoverage) * TARGET_QUANTUM;
+   }
+
+   /** Snow depth as target selection must use it. See {@link #snowCoverageTarget()}. */
+   public float snowDepthTarget() {
+      return quantize(this.snowDepth) * TARGET_QUANTUM;
+   }
+
    public long geometryKey() {
       if (this.snowCoverage <= 0.0F) {
          // No snow anywhere: every snow-free frame is the same geometry, regardless of season.

@@ -166,6 +166,34 @@ class VoxySnowParityTest {
       }
    }
 
+   @Test
+   @DisplayName("frames sharing a geometry key produce byte-identical snow targets")
+   void targetsAreConstantWithinARevision() {
+      // The world is mutated once per revision. If target selection read the raw channel, the
+      // blocks placed at the start of a revision would already disagree with what the LOD
+      // projector computes later in the same revision, and near and far would drift apart
+      // between every update. Same key must mean same world.
+      SeasonFrame previous = null;
+      int comparisons = 0;
+      for (int step = 0; step <= 4000; step++) {
+         float p = step / 4000.0F;
+         SeasonFrame f = frame(Season.WINTER, CalendarPhase.STABLE, p);
+         if (previous != null && previous.geometryKey() == f.geometryKey()) {
+            for (int x = 0; x < 40; x++) {
+               for (int z = 0; z < 40; z++) {
+                  assertEquals(SnowSystem.targetLayers(previous, x, z, SEED),
+                     SnowSystem.targetLayers(f, x, z, SEED),
+                     "same geometry key but different target at %d,%d (progress %.4f)".formatted(x, z, p));
+                  comparisons++;
+               }
+            }
+         }
+         previous = f;
+      }
+      assertTrue(comparisons > 100_000,
+         "expected many same-key frame pairs to compare, got " + comparisons);
+   }
+
    // ------------------------------------------------------------------ snow contracts
 
    @Test

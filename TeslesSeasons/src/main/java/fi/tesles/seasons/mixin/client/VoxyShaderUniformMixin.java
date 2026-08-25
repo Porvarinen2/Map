@@ -159,14 +159,14 @@ public abstract class VoxyShaderUniformMixin {
          this.tesles$lastMushroomRetention = state.mushroomRetention();
       }
 
-      if (this.tesles$snow >= 0 && state.snowCoverage() != this.tesles$lastSnow) {
-         GL20C.glUniform1f(this.tesles$snow, state.snowCoverage());
-         this.tesles$lastSnow = state.snowCoverage();
+      if (this.tesles$snow >= 0 && state.snowCoverageTarget() != this.tesles$lastSnow) {
+         GL20C.glUniform1f(this.tesles$snow, state.snowCoverageTarget());
+         this.tesles$lastSnow = state.snowCoverageTarget();
       }
 
-      if (this.tesles$snowDepth >= 0 && state.snowDepth() != this.tesles$lastSnowDepth) {
-         GL20C.glUniform1f(this.tesles$snowDepth, state.snowDepth());
-         this.tesles$lastSnowDepth = state.snowDepth();
+      if (this.tesles$snowDepth >= 0 && state.snowDepthTarget() != this.tesles$lastSnowDepth) {
+         GL20C.glUniform1f(this.tesles$snowDepth, state.snowDepthTarget());
+         this.tesles$lastSnowDepth = state.snowDepthTarget();
       }
 
       if (this.tesles$plantRetention >= 0 && state.plantRetention() != this.tesles$lastPlantRetention) {

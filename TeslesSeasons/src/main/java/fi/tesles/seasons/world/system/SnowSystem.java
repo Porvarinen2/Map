@@ -14,13 +14,22 @@ public final class SnowSystem {
    private SnowSystem() {
    }
 
+   /**
+    * Layers of seasonal snow this column should carry, or 0 for none.
+    *
+    * <p>Reads the frame's <em>quantised</em> snow channels so that every consumer - the server
+    * placing blocks, the Voxy LOD projector and the shader - computes the same answer for the
+    * whole life of a revision, rather than drifting apart as the clock advances between updates.
+    */
    public static int targetLayers(SeasonFrame frame, int x, int z, long seed) {
-      if (frame.snowCoverage() <= 0.0F || frame.snowDepth() <= 0.0F) {
+      float coverage = frame.snowCoverageTarget();
+      float depth = frame.snowDepthTarget();
+      if (coverage <= 0.0F || depth <= 0.0F) {
          return 0;
-      } else if (SeasonCoordinateField.snowCoverage01(x, z, seed) >= frame.snowCoverage()) {
+      } else if (SeasonCoordinateField.snowCoverage01(x, z, seed) >= coverage) {
          return 0;
       } else {
-         float target = Math.max(0.0F, Math.min(8.0F, frame.snowDepth() * 8.0F));
+         float target = Math.max(0.0F, Math.min(8.0F, depth * 8.0F));
          int base = (int)Math.floor(target);
          float fractional = target - base;
          int layers = base + (SeasonCoordinateField.snowDepth01(x, z, seed) < fractional ? 1 : 0);
