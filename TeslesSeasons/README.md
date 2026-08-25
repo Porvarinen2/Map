@@ -51,12 +51,20 @@ exact binaries — replacing them with different builds may invalidate a target.
 | `SeasonCheckpointContractTest` | 96/96 phase checkpoints (12 phases × 8 progress values) match the canonical contracts. |
 | `SeasonContinuityTest` | 168 boundary checks: 14 continuous channels × 12 phase boundaries, exact match. |
 | `SeasonFieldStatisticsTest` | The coordinate field is uniform, pure, and its per-channel salts are independent. |
-| `VoxySnowParityTest` | Physical, LOD-mesh and shader snow targets agree with zero mismatches; snow layer states and phase statistics are legal. |
+| `VoxySnowParityTest` | Physical, LOD-mesh and shader snow targets agree with zero mismatches, and stay identical for a whole revision. |
+| `VoxyShaderPipelineTest` | The real GLSL injection chain, run against Voxy 0.2.18-beta's actual shaders: anchors still match, every function is defined once, every uniform is declared, and patching is idempotent. |
+| `NeutralPersistenceTest` | Seasonal changes are recognised by the same field the server decided with, so they never reach Voxy's LOD database. |
+| `TallPlantAtomicityTest` | Both halves of a double-height plant always reach the same verdict. |
+| `SeasonRevisionChurnTest` | Bounds how often the world is told to redo itself, sampled at the real 30-second clock rate. |
 | `verifyModWiring` | Every mixin is registered, every entrypoint resolves, no `ClientModInitializer` is orphaned. |
+| `verifyMixinTargets` | Every `@Mixin` target class and injected method descriptor resolves against real bytecode, and no mixin targets the mod's own code. |
 
-`verifyModWiring` exists because the 0.7.0 release shipped 15 mixins that no
-config referenced and a `ClientModInitializer` that was not an entrypoint. Both
-fail **silently** at runtime. They now fail the build instead.
+The two verification tasks exist because both failure modes have actually shipped
+here. 0.7.0 carried 15 mixins that no config referenced and a
+`ClientModInitializer` that was not an entrypoint — the entire Voxy seasonal
+projection, silently inert. It also carried mixins aimed at methods that had been
+renamed away, which would have killed the game at startup had they been
+registered. Neither is visible by reading; both now fail the build.
 
 ## Architecture
 
@@ -95,6 +103,14 @@ Rules that hold this together, and that regressions historically broke:
   built under an older revision.
 - **Ownership before deletion.** Only snow recorded in a chunk's owned-snow
   ledger is ever removed. Player-placed snow is never adopted or deleted.
+- **Targets are a function of the revision.** Channels are quantised at the point
+  of target selection, so "same revision" means "identical world targets" for the
+  server, the LOD projector and the shader alike.
+- **One logical plant, one decision.** Double-height plants resolve their
+  membership at the lower half's coordinate; the field includes Y, so per-block
+  evaluation would split them.
+- **No mixin targets our own code.** If behaviour belongs in a class, it lives in
+  that class. Runtime self-patching hides logic from readers and from tests.
 - **Absent means absent.** A leaf the frame removes is AIR, never an invisible
   collision box.
 - **Grass identity is never changed.** Winter comes from snow layers and tint,
