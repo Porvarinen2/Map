@@ -56,6 +56,8 @@ exact binaries — replacing them with different builds may invalidate a target.
 | `NeutralPersistenceTest` | Seasonal changes are recognised by the same field the server decided with, so they never reach Voxy's LOD database. |
 | `TallPlantAtomicityTest` | Both halves of a double-height plant always reach the same verdict. |
 | `SeasonRevisionChurnTest` | Bounds how often the world is told to redo itself, sampled at the real 30-second clock rate. |
+| `FloraClassificationTest` | Classification against the **real** Minecraft block registry: flowers, plants, mushrooms, berries, and everything that must never be touched. |
+| `FloraChannelTest` | Every flora category tracks its own frame channel and its own field salt. |
 | `verifyModWiring` | Every mixin is registered, every entrypoint resolves, no `ClientModInitializer` is orphaned. |
 | `verifyMixinTargets` | Every `@Mixin` target class and injected method descriptor resolves against real bytecode, and no mixin targets the mod's own code. |
 
@@ -106,6 +108,9 @@ Rules that hold this together, and that regressions historically broke:
 - **Targets are a function of the revision.** Channels are quantised at the point
   of target selection, so "same revision" means "identical world targets" for the
   server, the LOD projector and the shader alike.
+- **One registry, resolved once.** Every installed block is classified at startup into an
+  identity table. Keyword heuristics run over the real registry to build that table and
+  never again; they are not the production lookup, and the result is logged.
 - **One logical plant, one decision.** Double-height plants resolve their
   membership at the lower half's coordinate; the field includes Y, so per-block
   evaluation would split them.

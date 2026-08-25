@@ -1,5 +1,10 @@
 package fi.tesles.seasons.world;
 
+import fi.tesles.seasons.TeslesSeasons;
+import java.util.Collections;
+import java.util.EnumMap;
+import java.util.IdentityHashMap;
+import java.util.Map;
 import java.util.Locale;
 import java.util.Set;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -150,9 +155,93 @@ public final class SeasonalBlockClassifier {
       return false;
    }
 
+   /**
+    * Block -> flora category, resolved once from the installed block registry.
+    *
+    * <p>The specification is explicit that string keyword matching may be a diagnostic
+    * fallback but never the production registry. Resolving every installed block once at
+    * startup turns the heuristics into exactly that: they run over the real registry a single
+    * time to build a table, and every lookup afterwards is an identity map hit.
+    *
+    * <p>It is also a large amount of work removed from the hot path. The column sweep asks for
+    * a flora kind for every block it touches, and the old form lower-cased two strings and
+    * scanned up to eighteen keyword sets on each of those calls.
+    */
+   private static volatile Map<Block, SeasonalFloraKind> floraByBlock;
+
+   /** Blocks that only count as seasonal decor while they actually sit on the floor. */
+   private static volatile Set<Block> floorMountRequired;
+
    public static SeasonalFloraKind floraKind(BlockState state) {
-      if (state != null && !state.isAir() && state.getFluidState().isEmpty()) {
-         Block block = state.getBlock();
+      if (state == null || state.isAir() || !state.getFluidState().isEmpty()) {
+         return SeasonalFloraKind.NONE;
+      }
+
+      Block block = state.getBlock();
+      SeasonalFloraKind kind = floraRegistry().getOrDefault(block, SeasonalFloraKind.NONE);
+      if (kind == SeasonalFloraKind.NONE) {
+         return SeasonalFloraKind.NONE;
+      }
+
+      // The only classification that genuinely depends on block state rather than identity.
+      if (floorMountRequired.contains(block) && !isFloorMounted(state)) {
+         return SeasonalFloraKind.NONE;
+      }
+      return kind;
+   }
+
+   private static Map<Block, SeasonalFloraKind> floraRegistry() {
+      Map<Block, SeasonalFloraKind> resolved = floraByBlock;
+      if (resolved == null) {
+         synchronized (SeasonalBlockClassifier.class) {
+            resolved = floraByBlock;
+            if (resolved == null) {
+               resolved = buildFloraRegistry();
+            }
+         }
+      }
+      return resolved;
+   }
+
+   private static Map<Block, SeasonalFloraKind> buildFloraRegistry() {
+      Map<Block, SeasonalFloraKind> map = new IdentityHashMap<>(512);
+      Set<Block> floorMount = Collections.newSetFromMap(new IdentityHashMap<>(8));
+      EnumMap<SeasonalFloraKind, Integer> counts = new EnumMap<>(SeasonalFloraKind.class);
+
+      for (Block block : BuiltInRegistries.BLOCK) {
+         SeasonalFloraKind kind = classifyBlock(block);
+         if (kind == SeasonalFloraKind.NONE) {
+            continue;
+         }
+         map.put(block, kind);
+         counts.merge(kind, 1, Integer::sum);
+         Identifier id = BuiltInRegistries.BLOCK.getKey(block);
+         if (id != null && "minecraft".equals(id.getNamespace()) && "stone_button".equals(id.getPath())) {
+            floorMount.add(block);
+         }
+      }
+
+      floorMountRequired = floorMount;
+      floraByBlock = map;
+      // Loud on purpose: if an integration is installed but contributes nothing, that shows up
+      // here rather than as flora quietly surviving the winter.
+      TeslesSeasons.LOGGER.info(
+         "Seasonal flora registry resolved from {} installed blocks: {} plants, {} flowers, {} mushrooms, {} berries.",
+         BuiltInRegistries.BLOCK.size(),
+         counts.getOrDefault(SeasonalFloraKind.PLANT, 0),
+         counts.getOrDefault(SeasonalFloraKind.FLOWER, 0),
+         counts.getOrDefault(SeasonalFloraKind.MUSHROOM, 0),
+         counts.getOrDefault(SeasonalFloraKind.BERRY, 0));
+      return map;
+   }
+
+   /**
+    * Classifies one block by identity. Runs once per installed block at registry build time,
+    * never on the hot path.
+    */
+   private static SeasonalFloraKind classifyBlock(Block block) {
+      BlockState state = block.defaultBlockState();
+      {
          if (block instanceof LeavesBlock || block instanceof CropBlock) {
             return SeasonalFloraKind.NONE;
          } else if (!isDynamicBranch(state) && !isLeaf(state)) {
@@ -173,7 +262,8 @@ public final class SeasonalBlockClassifier {
                   return SeasonalFloraKind.FLOWER;
                } else if (namespace.equals("minecraft") && path.equals("moss_carpet")) {
                   return SeasonalFloraKind.PLANT;
-               } else if (namespace.equals("minecraft") && path.equals("stone_button") && isFloorMounted(state)) {
+               } else if (namespace.equals("minecraft") && path.equals("stone_button")) {
+                  // Registered as decor; the floor-mount check happens per state on lookup.
                   return SeasonalFloraKind.PLANT;
                } else if (namespace.equals("teslesplants") || simpleClass.contains("slabplantproxy")) {
                   return SeasonalFloraKind.PLANT;
@@ -192,8 +282,6 @@ public final class SeasonalBlockClassifier {
          } else {
             return SeasonalFloraKind.NONE;
          }
-      } else {
-         return SeasonalFloraKind.NONE;
       }
    }
 
