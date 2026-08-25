@@ -620,7 +620,9 @@ public final class SeasonalWorldReconciler {
                this.dirty = true;
             } else {
                SeasonalFloraKind canopyFlora = FloraSystem.kind(state);
-               if (canopyFlora == SeasonalFloraKind.MUSHROOM && !FloraSystem.shouldExist(canopyFlora, pos, frame, seed) && !this.removeSeasonalFloraPlant(pos)) {
+               if (canopyFlora == SeasonalFloraKind.MUSHROOM
+                  && !FloraSystem.shouldExist(canopyFlora, pos, this.level.getBlockState(pos), frame, seed)
+                  && !this.removeSeasonalFloraPlant(pos)) {
                   return false;
                }
             }
@@ -726,7 +728,7 @@ public final class SeasonalWorldReconciler {
                      this.removedFlora.remove(packed);
                      it.remove();
                      this.dirty = true;
-                  } else if (FloraSystem.shouldExist(decoded.kind(), decoded.pos(), frame, seed)) {
+                  } else if (FloraSystem.shouldExist(decoded.kind(), decoded.pos(), decoded.state(), frame, seed)) {
                      BlockState current = this.level.getBlockState(decoded.pos());
                      boolean seasonalGroundCover = current.getBlock() == Blocks.SHORT_GRASS;
                      if (!current.isAir() && !seasonalGroundCover) {
@@ -771,7 +773,7 @@ public final class SeasonalWorldReconciler {
             if (state.getBlock() != Blocks.SHORT_GRASS) {
                SeasonalFloraKind kind = FloraSystem.kind(state);
                if ((kind == SeasonalFloraKind.FLOWER || kind == SeasonalFloraKind.PLANT || kind == SeasonalFloraKind.MUSHROOM)
-                  && !FloraSystem.shouldExist(kind, pos, frame, seed)
+                  && !FloraSystem.shouldExist(kind, pos, state, frame, seed)
                   && !this.removeSeasonalFloraPlant(pos)) {
                   return false;
                }
@@ -793,6 +795,13 @@ public final class SeasonalWorldReconciler {
             return true;
          } else {
             List<BlockPos> parts = FloraSystem.connectedVerticalParts(this.level, pos, source);
+
+            // All or nothing. Starting a double-height removal without the budget to finish it
+            // takes the upper half out and leaves the lower standing headless until some later
+            // pass happens to revisit the column.
+            if (parts.size() > 1 && SeasonalWorldReconciler.writesRemaining < parts.size()) {
+               return false;
+            }
 
             for (BlockPos partPos : parts) {
                BlockState partState = this.level.getBlockState(partPos);

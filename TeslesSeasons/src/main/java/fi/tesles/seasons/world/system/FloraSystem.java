@@ -52,6 +52,27 @@ public final class FloraSystem {
       }
    }
 
+   /**
+    * Seasonal membership for a specific block, respecting multi-block atomicity.
+    *
+    * <p>Always prefer this over the position-only overload when a BlockState is available. The
+    * coordinate field includes Y, so the two halves of a double plant hash to different values
+    * and the position-only form will happily select one half and reject the other, leaving
+    * floating upper halves and headless lower ones all over the world.
+    */
+   public static boolean shouldExist(SeasonalFloraKind kind, BlockPos pos, BlockState state,
+                                     SeasonFrame frame, long seed) {
+      return shouldExist(kind, decisionPos(pos, state), frame, seed);
+   }
+
+   /**
+    * The coordinate a plant's seasonal membership is decided at: the lower half for a
+    * double-height plant, the block itself otherwise. One logical plant, one decision.
+    */
+   public static BlockPos decisionPos(BlockPos pos, BlockState state) {
+      return "upper".equals(verticalHalf(state)) ? pos.below() : pos;
+   }
+
    public static BlockPos findSurfaceFlora(ServerLevel level, BlockPos ground) {
       for (int dy = 0; dy <= 4; dy++) {
          BlockPos p = ground.above(dy);
