@@ -772,7 +772,8 @@ public final class SeasonalWorldReconciler {
             BlockState state = this.level.getBlockState(pos);
             if (state.getBlock() != Blocks.SHORT_GRASS) {
                SeasonalFloraKind kind = FloraSystem.kind(state);
-               if ((kind == SeasonalFloraKind.FLOWER || kind == SeasonalFloraKind.PLANT || kind == SeasonalFloraKind.MUSHROOM)
+               if ((kind == SeasonalFloraKind.FLOWER || kind == SeasonalFloraKind.PLANT
+                     || kind == SeasonalFloraKind.MUSHROOM || kind == SeasonalFloraKind.BERRY)
                   && !FloraSystem.shouldExist(kind, pos, state, frame, seed)
                   && !this.removeSeasonalFloraPlant(pos)) {
                   return false;

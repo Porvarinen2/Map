@@ -28,7 +28,8 @@ public final class FloraSystem {
    public static boolean snowReplaceable(BlockState state) {
       if (!TeslesPlantsAdapter.isTeslesPlant(state) && !TeslesFoodAdapter.isSeasonalWildPlant(state)) {
          SeasonalFloraKind kind = kind(state);
-         return kind == SeasonalFloraKind.PLANT || kind == SeasonalFloraKind.FLOWER || kind == SeasonalFloraKind.MUSHROOM;
+         return kind == SeasonalFloraKind.PLANT || kind == SeasonalFloraKind.FLOWER
+            || kind == SeasonalFloraKind.MUSHROOM || kind == SeasonalFloraKind.BERRY;
       } else {
          return true;
       }
@@ -42,14 +43,29 @@ public final class FloraSystem {
             case FLOWER -> frame.flowerRetention();
             case MUSHROOM -> frame.mushroomRetention();
             case PLANT -> frame.plantRetention();
+            case BERRY -> frame.berryRetention();
             default -> 1.0F;
          };
          if (retention >= 0.9999F) {
             return true;
          } else {
-            return retention <= 1.0E-4F ? false : SeasonCoordinateField.flora01(pos, seed) < retention;
+            // Each category thresholds its own salted field, so a column losing its flowers is
+            // not thereby also more likely to lose its berries - correlated salts show up as
+            // visible stripes where two channels move together.
+            return retention > 1.0E-4F
+               && SeasonCoordinateField.flora01(pos, seed, saltFor(kind)) < retention;
          }
       }
+   }
+
+   /** The independent field salt for each flora category. */
+   private static int saltFor(SeasonalFloraKind kind) {
+      return switch (kind) {
+         case FLOWER -> SeasonCoordinateField.FLOWER_SALT;
+         case MUSHROOM -> SeasonCoordinateField.MUSHROOM_SALT;
+         case BERRY -> SeasonCoordinateField.BERRY_SALT;
+         default -> SeasonCoordinateField.GROUND_PLANT_SALT;
+      };
    }
 
    /**

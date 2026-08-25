@@ -28,6 +28,6 @@ public final class TeslesFoodAdapter {
    }
 
    public static SeasonalFloraKind kind(BlockState state) {
-      return isSeasonalWildPlant(state) ? SeasonalFloraKind.PLANT : SeasonalFloraKind.NONE;
+      return isSeasonalWildPlant(state) ? SeasonalFloraKind.BERRY : SeasonalFloraKind.NONE;
    }
 }

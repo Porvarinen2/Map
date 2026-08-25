@@ -134,6 +134,22 @@ public final class SeasonalBlockClassifier {
          && (Boolean)state.getValue(BlockStateProperties.PERSISTENT);
    }
 
+   /**
+    * Wild berry bushes, which follow the berry channel rather than the ground-plant one.
+    *
+    * <p>Only wild bushes count. Cultivated or player-planted berries are not seasonal content
+    * and must not be removed and restored underneath the player.
+    */
+   private static boolean isWildBerryBush(String namespace, String path) {
+      if ("minecraft".equals(namespace)) {
+         return path.equals("sweet_berry_bush");
+      }
+      if ("teslesworldgen".equals(namespace) || "teslesworldgenflora".equals(namespace)) {
+         return path.startsWith("wild_") && path.endsWith("_bush");
+      }
+      return false;
+   }
+
    public static SeasonalFloraKind floraKind(BlockState state) {
       if (state != null && !state.isAir() && state.getFluidState().isEmpty()) {
          Block block = state.getBlock();
@@ -149,6 +165,8 @@ public final class SeasonalBlockClassifier {
                String simpleClass = block.getClass().getSimpleName().toLowerCase(Locale.ROOT);
                if (path.endsWith("_mushroom_block") || path.equals("mushroom_stem")) {
                   return SeasonalFloraKind.NONE;
+               } else if (isWildBerryBush(namespace, path)) {
+                  return SeasonalFloraKind.BERRY;
                } else if (simpleClass.contains("slabmushroomproxy") || containsAny(path, FUNGUS_WORDS) || simpleClass.contains("mushroom")) {
                   return SeasonalFloraKind.MUSHROOM;
                } else if (simpleClass.contains("flower") || containsAny(path, FLOWER_WORDS)) {
