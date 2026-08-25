@@ -1,6 +1,7 @@
 package fi.tesles.seasons.world.system;
 
 import fi.tesles.seasons.block.TeslesSeasonBlocks;
+import fi.tesles.seasons.world.SeasonalBlockClassifier;
 import fi.tesles.seasons.sector.SeasonFrame;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
@@ -42,6 +43,36 @@ public final class SnowSystem {
       boolean bottomSlab = below.getBlock() instanceof SlabBlock && below.hasProperty(SlabBlock.TYPE) && below.getValue(SlabBlock.TYPE) == SlabType.BOTTOM;
       BlockState snow = bottomSlab ? TeslesSeasonBlocks.SLAB_SNOW.defaultBlockState() : Blocks.SNOW.defaultBlockState();
       return (BlockState)snow.setValue(SnowLayerBlock.LAYERS, Math.max(1, Math.min(8, layers)));
+   }
+
+   /**
+    * Whether a snow layer can rest on this block, judged from the block state alone.
+    *
+    * <p>The server has a {@link net.minecraft.world.level.Level} and lets
+    * {@code SnowLayerBlock.canSurvive} answer this. The Voxy LOD projector does not - it runs at
+    * mesh-build time over packed voxels - so it needs the same answer from a state alone, and it
+    * has to be the <em>same</em> answer or near and distant terrain disagree about where snow is.
+    *
+    * <p>Blocking motion stands in for a sturdy top face: true of terrain, stone, logs and roofs,
+    * false of water, lava, grass and torches - the split canSurvive makes. Ice is excluded as
+    * vanilla excludes it. Foliage is excluded because the server locates a column's surface with
+    * the {@code MOTION_BLOCKING_NO_LEAVES} heightmap, which never reports a canopy as ground;
+    * a projector that let snow settle on leaves grew a lid of snow over distant forest.
+    */
+   public static boolean canRestOn(BlockState state) {
+      if (state == null || state.isAir()) {
+         return false;
+      }
+      if (state.liquid() || !state.getFluidState().isEmpty()) {
+         return false;
+      }
+      if (state.is(Blocks.ICE) || state.is(Blocks.PACKED_ICE) || state.is(Blocks.BARRIER)) {
+         return false;
+      }
+      if (SeasonalBlockClassifier.isAnyLeaf(state)) {
+         return false;
+      }
+      return state.blocksMotion();
    }
 
    /**

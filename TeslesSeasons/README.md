@@ -60,6 +60,8 @@ exact binaries — replacing them with different builds may invalidate a target.
 | `FloraChannelTest` | Every flora category tracks its own frame channel and its own field salt. |
 | `WildBerryClassificationTest` | Wild berry bushes reach the berry channel whatever block class they extend, and cultivated crops never do. |
 | `GroundCoverFallbackTest` | Melting snow always has a placeholder to fall back on, including on slab terrain. |
+| `SnowSupportTest` | Snow rests on ground and never on water, ice or foliage — the same verdict on the server and in the LOD projector. |
+| `ColumnSweepTest` | A chunk's column sweep is a true permutation, so no column can starve however fast the calendar moves. |
 | `verifyModWiring` | Every mixin is registered, every entrypoint resolves, no `ClientModInitializer` is orphaned. |
 | `verifyMixinTargets` | Every `@Mixin` target class and injected method descriptor resolves against real bytecode, and no mixin targets the mod's own code. |
 
@@ -126,6 +128,13 @@ Rules that hold this together, and that regressions historically broke:
   collision box.
 - **Grass identity is never changed.** Winter comes from snow layers and tint,
   never from swapping `grass_block`.
+- **A canopy is not the ground.** Anything looking for a column's surface ignores
+  foliage, exactly as the server's `MOTION_BLOCKING_NO_LEAVES` heightmap does.
+  A search that stops at the first non-air voxel finds the treetop in every
+  forested column.
+- **Sweeps are never restarted by the clock.** A chunk's column cursor advances
+  continuously and wraps; tying it to the season revision let a fast calendar
+  reset it before it ever reached the far side of the chunk.
 
 ## Diagnostics
 

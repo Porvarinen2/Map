@@ -278,6 +278,21 @@ public final class SeasonalWorldReconciler {
       return SeasonCoordinateField.leaf01(pos, seed);
    }
 
+   /**
+    * The column a chunk's sweep visits at {@code index}.
+    *
+    * <p>{@code start + index * step (mod 256)} with an odd step is a full-cycle permutation of
+    * 0..255, so one sweep touches every column exactly once and no column can starve. The step is
+    * forced odd by the {@code | 1}; an even step would revisit a fraction of the columns and never
+    * reach the rest.
+    */
+   public static int columnOrder(int chunkX, int chunkZ, int index, int sweep) {
+      int seed = chunkX * 73428767 ^ chunkZ * 912931 ^ sweep;
+      int start = seed & 0xFF;
+      int step = (seed >>> 8 | 1) & 0xFF;
+      return start + index * step & 0xFF;
+   }
+
    private static boolean canWork() {
       return writesRemaining > 0 && System.nanoTime() < deadlineNanos;
    }
@@ -342,6 +357,18 @@ public final class SeasonalWorldReconciler {
       final Map<Integer, LinkedHashSet<Long>> removedFloraByColumn = new HashMap<>();
       int surfaceCursor;
       int leafCursor;
+      /** Sweep number, incremented each time a cursor wraps. Chooses the column order. */
+      int surfaceSweep;
+      int leafSweep;
+      /**
+       * Columns visited since the current revision was adopted, capped at 256.
+       *
+       * <p>This, not the cursor, is what says whether a chunk is current: once 256 columns have
+       * been visited the sweep has necessarily covered every column at least once under this
+       * revision or a newer one.
+       */
+      int surfaceColumnsSinceRevision;
+      int leafColumnsSinceRevision;
       int surfaceRevision = Integer.MIN_VALUE;
       int leafRevision = Integer.MIN_VALUE;
       boolean dirty;
@@ -372,7 +399,7 @@ public final class SeasonalWorldReconciler {
 
       void canonicalizeSurfaceOnly(SeasonFrame frame) {
          int targetSurfaceRevision = SeasonalWorldReconciler.surfaceRevision(frame);
-         if (this.surfaceRevision != targetSurfaceRevision || this.surfaceCursor < 256) {
+         if (this.surfaceRevision != targetSurfaceRevision || this.surfaceColumnsSinceRevision < 256) {
             long oldDeadline = SeasonalWorldReconciler.deadlineNanos;
             int oldWrites = SeasonalWorldReconciler.writesRemaining;
             SeasonalWorldReconciler.deadlineNanos = Long.MAX_VALUE;
@@ -384,7 +411,7 @@ public final class SeasonalWorldReconciler {
                }
 
                this.surfaceRevision = targetSurfaceRevision;
-               this.surfaceCursor = 256;
+               this.surfaceColumnsSinceRevision = 256;
                this.flush();
             } finally {
                SeasonalWorldReconciler.deadlineNanos = oldDeadline;
@@ -401,24 +428,24 @@ public final class SeasonalWorldReconciler {
 
          try {
             int targetSurfaceRevision = SeasonalWorldReconciler.surfaceRevision(frame);
-            if (this.surfaceRevision != targetSurfaceRevision || this.surfaceCursor < 256) {
+            if (this.surfaceRevision != targetSurfaceRevision || this.surfaceColumnsSinceRevision < 256) {
                for (int column = 0; column < 256; column++) {
                   this.processSurfaceColumn(column, frame);
                }
 
                this.surfaceRevision = targetSurfaceRevision;
-               this.surfaceCursor = 256;
+               this.surfaceColumnsSinceRevision = 256;
             }
 
             this.restoreEligibleLeavesFromMetadata(frame);
             int targetLeafRevision = SeasonalWorldReconciler.leafRevision(frame);
-            if (this.leafRevision != targetLeafRevision || this.leafCursor < 256) {
+            if (this.leafRevision != targetLeafRevision || this.leafColumnsSinceRevision < 256) {
                for (int column = 0; column < 256; column++) {
                   this.processLeafColumn(column, frame);
                }
 
                this.leafRevision = targetLeafRevision;
-               this.leafCursor = 256;
+               this.leafColumnsSinceRevision = 256;
             }
 
             this.flush();
@@ -464,42 +491,71 @@ public final class SeasonalWorldReconciler {
          }
       }
 
+      /**
+       * Advances this chunk's surface sweep by up to {@code count} columns.
+       *
+       * <p>The cursor is deliberately <em>not</em> reset when the revision changes. It used to be,
+       * and that quietly starved everything outside the player's vicinity: a surface revision is
+       * quantised at 1/100 per channel, so during a fast timelapse it changed roughly every half
+       * second while any individual chunk came up for its turn only every couple of seconds. The
+       * cursor was therefore back at zero on nearly every visit, the same handful of columns were
+       * redone forever, and the rest of the chunk was never reached at all. Near chunks looked
+       * right only because the player hotset canonicalises them in full by a separate path.
+       *
+       * <p>Sweeping continuously fixes that: each column is evaluated against whatever frame is
+       * current when its turn comes, and no column can be skipped more than one wrap in a row.
+       */
       int processSurface(SeasonFrame frame, int count) {
          int rev = SeasonalWorldReconciler.surfaceRevision(frame);
          if (this.surfaceRevision != rev) {
             this.surfaceRevision = rev;
-            this.surfaceCursor = 0;
+            this.surfaceColumnsSinceRevision = 0;
          }
 
          int done;
-         for (done = 0; done < count && this.surfaceCursor < 256 && SeasonalWorldReconciler.canWork(); done++) {
-            int column = this.permuted(this.surfaceCursor, this.surfaceRevision);
-            if (!this.processSurfaceColumn(column, frame)) {
+         for (done = 0; done < count && SeasonalWorldReconciler.canWork(); done++) {
+            if (this.surfaceCursor >= 256) {
+               this.surfaceCursor = 0;
+               this.surfaceSweep++;
+            }
+
+            if (!this.processSurfaceColumn(this.permuted(this.surfaceCursor, this.surfaceSweep), frame)) {
                break;
             }
 
             this.surfaceCursor++;
+            if (this.surfaceColumnsSinceRevision < 256) {
+               this.surfaceColumnsSinceRevision++;
+            }
          }
 
          SeasonalWorldReconciler.surfaceColumnsProcessed += done;
          return done;
       }
 
+      /** Leaf sweep. Continuous for the same reason {@link #processSurface} is. */
       int processLeaves(SeasonFrame frame, int count) {
          int rev = SeasonalWorldReconciler.leafRevision(frame);
          if (this.leafRevision != rev) {
             this.leafRevision = rev;
-            this.leafCursor = 0;
+            this.leafColumnsSinceRevision = 0;
          }
 
          int done;
-         for (done = 0; done < count && this.leafCursor < 256 && SeasonalWorldReconciler.canWork(); done++) {
-            int column = this.permuted(this.leafCursor, this.leafRevision);
-            if (!this.processLeafColumn(column, frame)) {
+         for (done = 0; done < count && SeasonalWorldReconciler.canWork(); done++) {
+            if (this.leafCursor >= 256) {
+               this.leafCursor = 0;
+               this.leafSweep++;
+            }
+
+            if (!this.processLeafColumn(this.permuted(this.leafCursor, this.leafSweep), frame)) {
                break;
             }
 
             this.leafCursor++;
+            if (this.leafColumnsSinceRevision < 256) {
+               this.leafColumnsSinceRevision++;
+            }
          }
 
          SeasonalWorldReconciler.leafColumnsProcessed += done;
@@ -857,15 +913,15 @@ public final class SeasonalWorldReconciler {
          return Blocks.AIR.defaultBlockState();
       }
 
-      private int permuted(int index, int revision) {
-         int seed = this.chunk.getPos().x() * 73428767 ^ this.chunk.getPos().z() * 912931 ^ revision;
-         int start = seed & 0xFF;
-         int step = (seed >>> 8 | 1) & 0xFF;
-         if (step == 0) {
-            step = 73;
-         }
-
-         return start + index * step & 0xFF;
+      /**
+       * Column visiting order for one sweep.
+       *
+       * <p>Keyed on the sweep number rather than the revision. An odd step modulo 256 makes this a
+       * true permutation, so one sweep visits all 256 columns exactly once; re-keying it mid-sweep
+       * (as keying on the revision did) reshuffles the mapping and leaves columns unvisited.
+       */
+      private int permuted(int index, int sweep) {
+         return columnOrder(this.chunk.getPos().x(), this.chunk.getPos().z(), index, sweep);
       }
 
       private static void index(Map<Integer, LinkedHashSet<Long>> index, long packed) {

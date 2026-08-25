@@ -125,9 +125,22 @@ public abstract class VoxySeasonMeshProjectionMixin {
       categories.defaultReturnValue((byte) -1);
       Int2ByteOpenHashMap snowFlags = new Int2ByteOpenHashMap(32);
       snowFlags.defaultReturnValue((byte) -1);
+      Int2ByteOpenHashMap groundFlags = new Int2ByteOpenHashMap(64);
+      groundFlags.defaultReturnValue((byte) -1);
+      Int2ByteOpenHashMap leafFlags = new Int2ByteOpenHashMap(32);
+      leafFlags.defaultReturnValue((byte) -1);
 
       int half = (1 << section.lvl) >> 1;
       long seed = ClientSeasonState.get().visualSeed();
+
+      // Leaves come off first, before a single flake is placed. Snow is put on the surface of a
+      // column, so a canopy that is about to be deleted must not be allowed to act as that
+      // surface: doing snow first left a lid of snow hanging in the air exactly where the winter
+      // canopy used to be, and that floating lid went on shading the ground beneath it. Removing
+      // the canopy first means the column the snow pass sees is the column that will be drawn.
+      if (frame.leafRetention() < 0.9999F) {
+         projected = stripAbsentLeaves(projected, raw, section, mapper, categories, seed);
+      }
 
       for (int z = 0; z < 32; z++) {
          for (int x = 0; x < 32; x++) {
@@ -142,7 +155,7 @@ public abstract class VoxySeasonMeshProjectionMixin {
             // LOD database - ingested during a winter, or projected by an older build - stayed
             // there for good. Summer would render last winter's snow in the distance until the
             // player flew out and re-ingested the terrain by hand.
-            int topIndex = topSolidIndex(projected == null ? raw : projected, x, z);
+            int topIndex = topSurfaceIndex(projected == null ? raw : projected, x, z, mapper, leafFlags);
             if (topIndex >= 0 && isSeasonalSnowVoxel(mapper, snowFlags, (projected == null ? raw : projected)[topIndex])) {
                boolean wanted = mayAddSnow && worldLayers > 0;
                if (!wanted) {
@@ -162,21 +175,11 @@ public abstract class VoxySeasonMeshProjectionMixin {
                projected = raw.clone();
             }
             if (section.lvl == 0) {
-               projectFineColumn(projected, mapper, categories, x, z, worldLayers);
+               projectFineColumn(projected, mapper, categories, groundFlags, leafFlags, x, z, worldLayers);
             } else {
-               projectCoarseColumn(projected, mapper, categories, section.lvl, x, z, worldLayers);
+               projectCoarseColumn(projected, mapper, categories, groundFlags, leafFlags, section.lvl, x, z, worldLayers);
             }
          }
-      }
-
-      // Deciduous leaves the season has dropped are removed from the geometry, not merely
-      // hidden. The fragment shader can discard them, but a discard only applies in the pass
-      // that runs our patched shader: Iris renders its shadow map with a different program, so
-      // discarded leaves went on casting full-canopy shadows over bare winter trees and made
-      // the ground beneath distant forest read as strangely dark. Absent has to mean absent
-      // here for the same reason it does in the physical world.
-      if (frame.leafRetention() < 0.9999F) {
-         projected = stripAbsentLeaves(projected, raw, section, mapper, categories, seed);
       }
 
       return projected == null ? raw : projected;
@@ -237,16 +240,60 @@ public abstract class VoxySeasonMeshProjectionMixin {
       return category == SeasonalCategory.DECIDUOUS_LEAVES.voxyId() || (category >= 11 && category <= 15);
    }
 
-   /** Index of the topmost non-air voxel in a column, or -1. */
+   /**
+    * Index of the column's surface voxel, or -1.
+    *
+    * <p>Air and foliage are skipped, which is what makes this the surface rather than merely the
+    * topmost occupied voxel. The server finds the same position with the
+    * {@code MOTION_BLOCKING_NO_LEAVES} heightmap; a search that stopped at the first non-air
+    * voxel found the canopy in every forested column and treated it as ground.
+    */
    @Unique
-   private static int topSolidIndex(long[] data, int x, int z) {
+   private static int topSurfaceIndex(long[] data, int x, int z, Mapper mapper, Int2ByteOpenHashMap leafFlags) {
       for (int y = 31; y >= 0; y--) {
          int index = WorldSection.getIndex(x, y, z);
-         if (!Mapper.isAir(data[index])) {
-            return index;
+         long voxel = data[index];
+         if (Mapper.isAir(voxel) || isLeafVoxel(mapper, leafFlags, voxel)) {
+            continue;
          }
+         return index;
       }
       return -1;
+   }
+
+   /** Highest y that is neither air nor foliage, or -1. */
+   @Unique
+   private static int findTopSurfaceY(long[] data, int x, int z, Mapper mapper, Int2ByteOpenHashMap leafFlags) {
+      for (int y = 30; y >= 0; y--) {
+         long voxel = data[WorldSection.getIndex(x, y, z)];
+         if (Mapper.isAir(voxel) || isLeafVoxel(mapper, leafFlags, voxel)) {
+            continue;
+         }
+         return y;
+      }
+      return -1;
+   }
+
+   /** Any foliage, evergreen included - the set the surface search must look straight through. */
+   @Unique
+   private static boolean isLeafVoxel(Mapper mapper, Int2ByteOpenHashMap cache, long voxel) {
+      if (Mapper.isAir(voxel)) {
+         return false;
+      }
+      int blockId = Mapper.getBlockId(voxel);
+      byte cached = cache.get(blockId);
+      if (cached >= 0) {
+         return cached != 0;
+      }
+
+      boolean leaf = false;
+      try {
+         leaf = SeasonalBlockClassifier.isAnyLeaf(mapper.getBlockStateFromBlockId(blockId));
+      } catch (Throwable ignored) {
+         // Unmapped id: treat as not-foliage, which is the conservative answer here.
+      }
+      cache.put(blockId, (byte) (leaf ? 1 : 0));
+      return leaf;
    }
 
    /**
@@ -313,8 +360,9 @@ public abstract class VoxySeasonMeshProjectionMixin {
     */
    @Unique
    private static void projectFineColumn(long[] projected, Mapper mapper, Int2ByteOpenHashMap categories,
+                                         Int2ByteOpenHashMap groundFlags, Int2ByteOpenHashMap leafFlags,
                                          int x, int z, int worldLayers) {
-      int topY = findTopNonAir(projected, x, z);
+      int topY = findTopSurfaceY(projected, x, z, mapper, leafFlags);
       if (topY < 0) {
          return;
       }
@@ -338,7 +386,7 @@ public abstract class VoxySeasonMeshProjectionMixin {
       }
 
       long ground = projected[WorldSection.getIndex(x, scanY, z)];
-      if (!isSnowGround(mapper, categories, ground)) {
+      if (!isSnowGround(mapper, categories, groundFlags, ground)) {
          return;
       }
 
@@ -369,8 +417,9 @@ public abstract class VoxySeasonMeshProjectionMixin {
     */
    @Unique
    private static void projectCoarseColumn(long[] projected, Mapper mapper, Int2ByteOpenHashMap categories,
+                                           Int2ByteOpenHashMap groundFlags, Int2ByteOpenHashMap leafFlags,
                                            int lod, int x, int z, int worldLayers) {
-      int topY = findTopNonAir(projected, x, z);
+      int topY = findTopSurfaceY(projected, x, z, mapper, leafFlags);
       if (topY < 0) {
          return;
       }
@@ -391,7 +440,7 @@ public abstract class VoxySeasonMeshProjectionMixin {
       }
 
       long ground = projected[WorldSection.getIndex(x, groundY, z)];
-      if (!isSnowGround(mapper, categories, ground)) {
+      if (!isSnowGround(mapper, categories, groundFlags, ground)) {
          return;
       }
 
@@ -408,16 +457,6 @@ public abstract class VoxySeasonMeshProjectionMixin {
 
       int modelLayers = Math.max(1, Math.min(8, Math.round((float) worldLayers / scale)));
       projected[snowIndex] = snowVoxel(mapper, occupant, ground, modelLayers);
-   }
-
-   @Unique
-   private static int findTopNonAir(long[] projected, int x, int z) {
-      for (int y = 30; y >= 0; y--) {
-         if (!Mapper.isAir(projected[WorldSection.getIndex(x, y, z)])) {
-            return y;
-         }
-      }
-      return -1;
    }
 
    @Unique
@@ -442,7 +481,6 @@ public abstract class VoxySeasonMeshProjectionMixin {
          || c == SeasonalCategory.SNOW_REPLACEABLE_DECOR.voxyId();
    }
 
-   @Unique
    /**
     * Whether snow may rest on this voxel.
     *
@@ -451,20 +489,45 @@ public abstract class VoxySeasonMeshProjectionMixin {
     * ground categories left every other surface bare, which at LOD range reads as a grey and
     * green speckle through the snowfield rather than as snow.
     *
-    * <p>The exclusions are the things snow cannot sit on or would double up on: air, seasonal
-    * flora (which the snow replaces rather than covers) and snow itself.
+    * <p>But "whatever is there" is not "anything at all". The server's placement is gated by
+    * {@code SnowLayerBlock.canSurvive}, and a blacklist of a few seasonal categories was not that
+    * gate: it admitted water, so distant rivers and lakes grew a crust of snow the physical world
+    * never had, and it admitted foliage, so canopies were snowed over. This mirrors canSurvive
+    * with the information a voxel carries - no Level is available at mesh-build time.
     */
-   private static boolean isSnowGround(Mapper mapper, Int2ByteOpenHashMap categories, long voxel) {
+   @Unique
+   private static boolean isSnowGround(Mapper mapper, Int2ByteOpenHashMap categories,
+                                       Int2ByteOpenHashMap groundFlags, long voxel) {
       if (Mapper.isAir(voxel)) {
          return false;
       }
+
       int c = category(mapper, categories, voxel);
-      return c != SeasonalCategory.SEASONAL_SNOW.voxyId()
-         && c != SeasonalCategory.GROUND_VEGETATION.voxyId()
-         && c != SeasonalCategory.FLOWER.voxyId()
-         && c != SeasonalCategory.MUSHROOM.voxyId()
-         && c != SeasonalCategory.SNOW_REPLACEABLE_DECOR.voxyId();
+      if (c == SeasonalCategory.SEASONAL_SNOW.voxyId()
+         || c == SeasonalCategory.GROUND_VEGETATION.voxyId()
+         || c == SeasonalCategory.FLOWER.voxyId()
+         || c == SeasonalCategory.MUSHROOM.voxyId()
+         || c == SeasonalCategory.SNOW_REPLACEABLE_DECOR.voxyId()) {
+         return false;
+      }
+
+      int blockId = Mapper.getBlockId(voxel);
+      byte cached = groundFlags.get(blockId);
+      if (cached >= 0) {
+         return cached != 0;
+      }
+
+      boolean ground = false;
+      try {
+         BlockState state = mapper.getBlockStateFromBlockId(blockId);
+         ground = SnowSystem.canRestOn(state);
+      } catch (Throwable ignored) {
+         // Unmapped id: refuse rather than invent snow on something unknown.
+      }
+      groundFlags.put(blockId, (byte) (ground ? 1 : 0));
+      return ground;
    }
+
 
    @Unique
    private static long snowVoxel(Mapper mapper, long oldAtSnowPos, long ground, int layers) {

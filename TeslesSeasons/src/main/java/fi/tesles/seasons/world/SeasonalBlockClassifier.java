@@ -306,6 +306,18 @@ public final class SeasonalBlockClassifier {
       }
    }
 
+   /**
+    * Any foliage at all, evergreen included.
+    *
+    * <p>This is the {@code MOTION_BLOCKING_NO_LEAVES} predicate: the set the server's surface
+    * heightmap ignores when it decides where snow lands. Anything reasoning about "the ground of
+    * this column" has to ignore exactly the same set, or it will find a canopy and treat it as
+    * terrain.
+    */
+   public static boolean isAnyLeaf(BlockState state) {
+      return state != null && !state.isAir() && (isLeaf(state) || isDynamicLeavesState(state));
+   }
+
    private static boolean isLeaf(BlockState state) {
       if (state.getBlock() instanceof LeavesBlock) {
          return true;
