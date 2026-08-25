@@ -1,6 +1,7 @@
 {
   "ambientocclusion": false,
   "textures": {
+    "particle": "minecraft:block/snow",
     "snow": "minecraft:block/snow"
   },
   "elements": [

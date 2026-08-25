@@ -4,12 +4,14 @@ import fi.tesles.seasons.TeslesSeasons;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Locale;
 import java.util.Set;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.BushBlock;
 import net.minecraft.world.level.block.CropBlock;
 import net.minecraft.world.level.block.LeavesBlock;
@@ -240,12 +242,33 @@ public final class SeasonalBlockClassifier {
     * never on the hot path.
     */
    private static SeasonalFloraKind classifyBlock(Block block) {
+      return classify(BuiltInRegistries.BLOCK.getKey(block), block);
+   }
+
+   /**
+    * The classification rule itself, with the block's identity passed in rather than looked up.
+    *
+    * <p>Identity is a parameter so the rule can be exercised against combinations the frozen test
+    * registry cannot hold - in particular a {@link CropBlock} carrying a wild-bush id, which is
+    * exactly the shape TeslesWorldGeneration ships and exactly the case that used to be
+    * misclassified.
+    */
+   public static SeasonalFloraKind classify(Identifier blockId, Block block) {
       BlockState state = block.defaultBlockState();
+      // Wild berry bushes are resolved before every other rule, including the crop guard below.
+      // TeslesWorldGeneration's wild bushes extend the TeslesFood historical *crop* block, so a
+      // `block instanceof CropBlock` test reaches them first and files them as NONE - which left
+      // the berry channel holding only minecraft:sweet_berry_bush. A wild bush is worldgen flora
+      // whatever it happens to extend; only cultivated crops belong to FarmSeasons.
+      if (blockId != null
+         && isWildBerryBush(blockId.getNamespace().toLowerCase(Locale.ROOT), blockId.getPath().toLowerCase(Locale.ROOT))) {
+         return SeasonalFloraKind.BERRY;
+      }
       {
          if (block instanceof LeavesBlock || block instanceof CropBlock) {
             return SeasonalFloraKind.NONE;
          } else if (!isDynamicBranch(state) && !isLeaf(state)) {
-            Identifier id = BuiltInRegistries.BLOCK.getKey(block);
+            Identifier id = blockId;
             if (id == null) {
                return SeasonalFloraKind.NONE;
             } else {
@@ -254,8 +277,6 @@ public final class SeasonalBlockClassifier {
                String simpleClass = block.getClass().getSimpleName().toLowerCase(Locale.ROOT);
                if (path.endsWith("_mushroom_block") || path.equals("mushroom_stem")) {
                   return SeasonalFloraKind.NONE;
-               } else if (isWildBerryBush(namespace, path)) {
-                  return SeasonalFloraKind.BERRY;
                } else if (simpleClass.contains("slabmushroomproxy") || containsAny(path, FUNGUS_WORDS) || simpleClass.contains("mushroom")) {
                   return SeasonalFloraKind.MUSHROOM;
                } else if (simpleClass.contains("flower") || containsAny(path, FLOWER_WORDS)) {
@@ -328,6 +349,58 @@ public final class SeasonalBlockClassifier {
    private static boolean isFloorMounted(BlockState state) {
       String text = state.toString().toLowerCase(Locale.ROOT);
       return text.contains("face=floor") || text.contains("attach_face=floor");
+   }
+
+   /**
+    * Identifier of TeslesWorldGeneration's slab-mounted short grass, the placeholder used on slab
+    * terrain where {@code minecraft:short_grass} cannot be supported.
+    */
+   private static final Identifier SLAB_GROUND_COVER_ID = Identifier.fromNamespaceAndPath("teslesworldgenflora", "slab_minecraft_short_grass");
+
+   private static volatile BlockState slabGroundCover;
+   private static volatile boolean slabGroundCoverResolved;
+
+   /**
+    * Slab-terrain equivalent of {@code minecraft:short_grass}, or {@code null} when
+    * TeslesWorldGeneration is not installed.
+    *
+    * <p>Resolved from the registry rather than hard-referenced so the mod still loads without
+    * TeslesWorldGeneration; callers must handle {@code null} and must still check
+    * {@code canSurvive} at the target position.
+    */
+   public static BlockState slabGroundCoverState() {
+      if (!slabGroundCoverResolved) {
+         BlockState resolved = null;
+         try {
+            Block block = BuiltInRegistries.BLOCK.getOptional(SLAB_GROUND_COVER_ID).orElse(null);
+            if (block != null && block != Blocks.AIR) {
+               resolved = block.defaultBlockState();
+            }
+         } catch (Throwable ignored) {
+            resolved = null;
+         }
+
+         slabGroundCover = resolved;
+         slabGroundCoverResolved = true;
+      }
+
+      return slabGroundCover;
+   }
+
+   /**
+    * Ground covers to try, in order, where melting snow has left a column bare.
+    *
+    * <p>The caller places the first candidate that can survive at the position. There has to be
+    * more than one: {@code minecraft:short_grass} cannot be supported on a bottom slab, so on
+    * TeslesWorldGeneration's slab terrain a single-candidate rule fell through to AIR and left
+    * those columns visibly bare for the whole of Spring while ordinary ground beside them was
+    * covered. Vanilla ground comes first because it is by far the common case.
+    */
+   public static List<BlockState> groundCoverCandidates() {
+      BlockState slab = slabGroundCoverState();
+      return slab == null
+         ? List.of(Blocks.SHORT_GRASS.defaultBlockState())
+         : List.of(Blocks.SHORT_GRASS.defaultBlockState(), slab);
    }
 
    private static boolean containsAny(String value, Set<String> words) {

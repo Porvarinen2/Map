@@ -10,6 +10,7 @@ import fi.tesles.seasons.client.render.SeasonalClassifier;
 import fi.tesles.seasons.client.voxy.VoxyCategoryDiagnostics;
 import fi.tesles.seasons.client.voxy.VoxyShaderDiagnostics;
 import fi.tesles.seasons.network.DiagnosticCapturePayload;
+import fi.tesles.seasons.sector.SeasonFrame;
 import fi.tesles.seasons.weather.WeatherSnapshot;
 import java.io.BufferedWriter;
 import java.io.IOException;
@@ -155,20 +156,35 @@ public final class SeasonDiagnosticRecorder {
             candidates.add("06-first-snow");
          }
 
-         if (snap.season() == Season.WINTER && snap.snowCover() >= 0.97F) {
+         // Winter Incoming already carries full coverage, so a coverage-only test fires on the
+         // first tick of Winter - when depth is still the 1/8 handoff footprint and the capture
+         // shows the thinnest snow of the whole year under the name "winter-full". Depth is what
+         // separates deep winter from the handoff, so key on depth and require the Stable phase.
+         if (snap.season() == Season.WINTER
+            && snap.phase() == CalendarPhase.STABLE
+            && ClientSeasonState.frame().snowDepth() >= 0.75F) {
             candidates.add("07-winter-full");
          }
 
-         if (snap.season() == Season.SPRING && snap.snowCover() <= 0.8F && snap.snowCover() >= 0.45F) {
-            candidates.add("08-spring-thaw");
+         // The thaw is a Winter Outgoing event. SpringSector reports zero snow in all three of
+         // its phases, so the old SPRING-scoped condition could never match and this checkpoint
+         // was silently absent from every bundle.
+         if (snap.season() == Season.WINTER
+            && snap.phase() == CalendarPhase.OUTGOING
+            && snap.snowCover() <= 0.8F
+            && snap.snowCover() >= 0.45F) {
+            candidates.add("08-winter-thaw");
+         }
+
+         // Ordered by the clock: Spring Stable opens at leaf retention 0, so the "stable" capture
+         // must come before green-up or the bundle is numbered backwards against its own
+         // timestamps.
+         if (snap.season() == Season.SPRING && snap.phase() == CalendarPhase.STABLE && snap.snowCover() <= 0.01F) {
+            candidates.add("09-spring-stable");
          }
 
          if (snap.season() == Season.SPRING && snap.snowCover() <= 0.3F && snap.leafRetention() >= 0.35F && snap.leafRetention() <= 0.85F) {
-            candidates.add("09-spring-greenup");
-         }
-
-         if (snap.season() == Season.SPRING && snap.phase() == CalendarPhase.STABLE && snap.snowCover() <= 0.01F) {
-            candidates.add("10-spring-stable");
+            candidates.add("10-spring-greenup");
          }
 
          for (String candidate : candidates) {
@@ -272,6 +288,19 @@ public final class SeasonDiagnosticRecorder {
       out.append("dormancy=").append(s.groundDormancy()).append('\n');
       out.append("snowCover=").append(s.snowCover()).append('\n');
       out.append("springFreshness=").append(s.springFreshness()).append('\n');
+      // Channels the legacy wire snapshot does not carry. Without these a capture cannot be
+      // checked against the contract at all: snow depth decides how many layers a column gets,
+      // and plant/berry retention decide how much ground flora should be standing.
+      SeasonFrame frame = ClientSeasonState.frame();
+      out.append("snowDepth=").append(frame.snowDepth()).append('\n');
+      out.append("snowDepthTarget=").append(frame.snowDepthTarget()).append('\n');
+      out.append("snowCoverageTarget=").append(frame.snowCoverageTarget()).append('\n');
+      out.append("plantRetention=").append(frame.plantRetention()).append('\n');
+      out.append("berryRetention=").append(frame.berryRetention()).append('\n');
+      out.append("groundFrost=").append(frame.groundFrost()).append('\n');
+      out.append("revision=").append(frame.revision()).append('\n');
+      out.append("geometryKey=").append(frame.geometryKey()).append('\n');
+      out.append("expectedSnowLayers=").append(Math.round(frame.snowDepthTarget() * 8.0F)).append('\n');
       out.append("weather=")
          .append(weather.type().id())
          .append(" intensity=")

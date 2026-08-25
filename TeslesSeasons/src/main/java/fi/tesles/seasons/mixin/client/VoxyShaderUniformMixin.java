@@ -34,6 +34,8 @@ public abstract class VoxyShaderUniformMixin {
    @Unique
    private boolean tesles$resolved;
    @Unique
+   private boolean tesles$seasonProgram;
+   @Unique
    private int tesles$autumn = Integer.MIN_VALUE;
    @Unique
    private int tesles$dormancy = Integer.MIN_VALUE;
@@ -129,6 +131,7 @@ public abstract class VoxyShaderUniformMixin {
          }
 
          VoxyShaderDiagnostics.markUniformsResolved(resolvedCount);
+         this.tesles$seasonProgram = resolvedCount > 0;
          this.tesles$resolved = true;
       }
 
@@ -197,6 +200,6 @@ public abstract class VoxyShaderUniformMixin {
          this.tesles$lastSeed = seed;
       }
 
-      VoxyShaderDiagnostics.markUniformBind();
+      VoxyShaderDiagnostics.markUniformBind(this.tesles$seasonProgram);
    }
 }

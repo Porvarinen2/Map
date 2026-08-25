@@ -834,9 +834,27 @@ public final class SeasonalWorldReconciler {
          }
       }
 
+      /**
+       * The ground cover melting snow leaves behind until Spring restores the real flora.
+       *
+       * <p>Spring restoration is deliberately gradual - it tracks the plant channel, so at 45%
+       * only 45% of a column's canonical flora is back. The placeholder is what keeps the other
+       * 55% from reading as bare dirt for most of Spring.
+       *
+       * <p>Slab terrain needs its own placeholder. {@code minecraft:short_grass} cannot survive on
+       * a bottom slab, so on TeslesWorldGeneration's slab ground the vanilla placeholder silently
+       * degraded to AIR and those columns stayed visibly bare all Spring while ordinary ground
+       * beside them was covered. The slab-mounted proxy is the same plant, mounted the way slab
+       * terrain requires.
+       */
       private BlockState springGroundCoverState(BlockPos pos) {
-         BlockState grass = Blocks.SHORT_GRASS.defaultBlockState();
-         return grass.canSurvive(this.level, pos) ? grass : Blocks.AIR.defaultBlockState();
+         for (BlockState candidate : SeasonalBlockClassifier.groundCoverCandidates()) {
+            if (candidate.canSurvive(this.level, pos)) {
+               return candidate;
+            }
+         }
+
+         return Blocks.AIR.defaultBlockState();
       }
 
       private int permuted(int index, int revision) {

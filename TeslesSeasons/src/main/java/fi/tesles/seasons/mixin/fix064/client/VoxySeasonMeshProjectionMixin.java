@@ -55,7 +55,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 public abstract class VoxySeasonMeshProjectionMixin {
    @Shadow
    @Final
-   private WorldEngine world = null;
+   private WorldEngine world;
 
    /** Section currently being meshed, handed from generateMesh() down to prepareSectionData(). */
    @Unique
