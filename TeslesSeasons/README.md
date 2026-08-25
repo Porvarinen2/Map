@@ -58,6 +58,8 @@ exact binaries — replacing them with different builds may invalidate a target.
 | `SeasonRevisionChurnTest` | Bounds how often the world is told to redo itself, sampled at the real 30-second clock rate. |
 | `FloraClassificationTest` | Classification against the **real** Minecraft block registry: flowers, plants, mushrooms, berries, and everything that must never be touched. |
 | `FloraChannelTest` | Every flora category tracks its own frame channel and its own field salt. |
+| `WildBerryClassificationTest` | Wild berry bushes reach the berry channel whatever block class they extend, and cultivated crops never do. |
+| `GroundCoverFallbackTest` | Melting snow always has a placeholder to fall back on, including on slab terrain. |
 | `verifyModWiring` | Every mixin is registered, every entrypoint resolves, no `ClientModInitializer` is orphaned. |
 | `verifyMixinTargets` | Every `@Mixin` target class and injected method descriptor resolves against real bytecode, and no mixin targets the mod's own code. |
 
@@ -111,6 +113,10 @@ Rules that hold this together, and that regressions historically broke:
 - **One registry, resolved once.** Every installed block is classified at startup into an
   identity table. Keyword heuristics run over the real registry to build that table and
   never again; they are not the production lookup, and the result is logged.
+- **Identity decides category, not superclass.** What a block *is* comes from its
+  registry id. A wild berry bush is berry flora whether it extends a bush block or
+  a crop block; classifying by Java type instead put eight of nine berry blocks in
+  the wrong channel.
 - **One logical plant, one decision.** Double-height plants resolve their
   membership at the lower half's coordinate; the field includes Y, so per-block
   evaluation would split them.
@@ -120,6 +126,22 @@ Rules that hold this together, and that regressions historically broke:
   collision box.
 - **Grass identity is never changed.** Winter comes from snow layers and tint,
   never from swapping `grass_block`.
+
+## Diagnostics
+
+```
+/teslesseasons diagnostic year [seconds]   # default 600
+```
+
+Runs a full simulated year and writes a ZIP holding per-second season channels
+(`timeline.csv`), ten paired `*-state.txt` / `*-world-sample.csv` captures, screenshots,
+Voxy category and shader counters, the relevant configs and the log tail. Upload it as-is
+when reporting a visual problem — the world sample records the actual surface block of a
+fixed grid of columns, so a claim about what the world looks like can be checked rather
+than guessed at.
+
+The capture schedule keys on season *channels*, not on wall-clock time, so each checkpoint
+lands at the same point of the year on any timelapse speed.
 
 ## Configuration
 
@@ -133,4 +155,6 @@ the values the season contract depends on are re-pinned on every load by
 /teslesseasons status
 /teslesseasons timelapse <seconds>
 /teslesseasons timelapseweather <on|off|status>
+/teslesseasons diagnostic capture
+/teslesseasons diagnostic year [seconds]
 ```
