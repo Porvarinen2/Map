@@ -63,6 +63,10 @@ public abstract class VoxySeasonMeshProjectionMixin {
    @Unique
    private static final int TESLES_MAX_PROJECTED_LOD = 2;
 
+   /** Distance between two vertically adjacent voxels in WorldSection's packed index. */
+   @Unique
+   private static final int Y_STRIDE = 1 << 10;
+
    @Inject(
       method = {"generateMesh(Lme/cortex/voxy/common/world/WorldSection;)Lme/cortex/voxy/client/core/rendering/building/BuiltSection;"},
       at = {@At("HEAD")},
@@ -104,23 +108,24 @@ public abstract class VoxySeasonMeshProjectionMixin {
       // every frame.
       VoxySeasonRemeshScheduler.markProjected(section.key, frame.geometryKey());
 
-      // Sections inside the vanilla render distance are drawn from real blocks; projecting
-      // season onto their LOD copy too would double-apply it at the handoff seam.
-      if (VoxySeasonRemeshScheduler.isHandoffUnsafe(section)) {
+      if (section.lvl < 0) {
          return raw;
       }
 
-      if (section.lvl < 0 || section.lvl > TESLES_MAX_PROJECTED_LOD || frame.snowCoverage() <= 0.005F) {
-         return raw;
-      }
+      // Sections inside the vanilla render distance are drawn from real blocks, so season must
+      // not be *added* to their LOD copy or the handoff seam shows it twice. Stale snow is
+      // still stripped from them: it would otherwise peek through at the seam.
+      boolean mayAddSnow = section.lvl <= TESLES_MAX_PROJECTED_LOD
+         && !VoxySeasonRemeshScheduler.isHandoffUnsafe(section);
 
-      long[] projected = raw.clone();
+      long[] projected = null;
       Mapper mapper = this.world.getMapper();
       Int2ByteOpenHashMap categories = new Int2ByteOpenHashMap(64);
       categories.defaultReturnValue((byte) -1);
+      Int2ByteOpenHashMap snowFlags = new Int2ByteOpenHashMap(32);
+      snowFlags.defaultReturnValue((byte) -1);
 
-      int scale = 1 << section.lvl;
-      int half = scale >> 1;
+      int half = (1 << section.lvl) >> 1;
       long seed = ClientSeasonState.get().visualSeed();
 
       for (int z = 0; z < 32; z++) {
@@ -129,12 +134,32 @@ public abstract class VoxySeasonMeshProjectionMixin {
             // column the server evaluates, giving coordinate-for-coordinate parity.
             int wx = (((section.x << 5) + x) << section.lvl) + half;
             int wz = (((section.z << 5) + z) << section.lvl) + half;
-
             int worldLayers = SnowSystem.targetLayers(frame, wx, wz, seed);
-            if (worldLayers <= 0) {
+
+            // Removal first, and at every LOD level. This is the half that was missing: the
+            // projector could add snow but never take it away, so any snow that reached the
+            // LOD database - ingested during a winter, or projected by an older build - stayed
+            // there for good. Summer would render last winter's snow in the distance until the
+            // player flew out and re-ingested the terrain by hand.
+            int topIndex = topSolidIndex(projected == null ? raw : projected, x, z);
+            if (topIndex >= 0 && isSeasonalSnowVoxel(mapper, snowFlags, (projected == null ? raw : projected)[topIndex])) {
+               boolean wanted = mayAddSnow && worldLayers > 0;
+               if (!wanted) {
+                  if (projected == null) {
+                     projected = raw.clone();
+                  }
+                  stripSnowVoxel(projected, section.lvl, topIndex);
+                  continue;
+               }
+            }
+
+            if (!mayAddSnow || worldLayers <= 0) {
                continue;
             }
 
+            if (projected == null) {
+               projected = raw.clone();
+            }
             if (section.lvl == 0) {
                projectFineColumn(projected, mapper, categories, x, z, worldLayers);
             } else {
@@ -143,7 +168,76 @@ public abstract class VoxySeasonMeshProjectionMixin {
          }
       }
 
-      return projected;
+      return projected == null ? raw : projected;
+   }
+
+   /** Index of the topmost non-air voxel in a column, or -1. */
+   @Unique
+   private static int topSolidIndex(long[] data, int x, int z) {
+      for (int y = 31; y >= 0; y--) {
+         int index = WorldSection.getIndex(x, y, z);
+         if (!Mapper.isAir(data[index])) {
+            return index;
+         }
+      }
+      return -1;
+   }
+
+   /**
+    * Removes a snow voxel the current season does not want.
+    *
+    * <p>At LOD 0 a snow layer sits on top of the ground, so it simply becomes air. At coarser
+    * levels the voxel may itself be standing in for the terrain surface, and turning it to air
+    * would punch a hole in the landscape; there it takes on the material of the voxel below so
+    * the surface keeps its height and gains the right colour.
+    */
+   @Unique
+   private static void stripSnowVoxel(long[] projected, int lvl, int index) {
+      long voxel = projected[index];
+      int light = Mapper.getLightId(voxel);
+      if (lvl == 0) {
+         projected[index] = Mapper.airWithLight(light);
+         return;
+      }
+
+      // WorldSection packs a voxel index as (y << 10) | (z << 5) | x, so the voxel directly
+      // below is exactly one Y stride lower. An index below that stride is already at y == 0.
+      int below = index - Y_STRIDE;
+      if (below < 0) {
+         projected[index] = Mapper.airWithLight(light);
+         return;
+      }
+
+      long substitute = projected[below];
+      if (Mapper.isAir(substitute)) {
+         projected[index] = Mapper.airWithLight(light);
+      } else {
+         projected[index] = Mapper.withBlockBiome(Mapper.airWithLight(light),
+            Mapper.getBlockId(substitute), Mapper.getBiomeId(substitute));
+      }
+   }
+
+   /** Whether this voxel is snow the season system is responsible for. */
+   @Unique
+   private static boolean isSeasonalSnowVoxel(Mapper mapper, Int2ByteOpenHashMap cache, long voxel) {
+      if (Mapper.isAir(voxel)) {
+         return false;
+      }
+      int blockId = Mapper.getBlockId(voxel);
+      byte cached = cache.get(blockId);
+      if (cached >= 0) {
+         return cached != 0;
+      }
+
+      boolean snow = false;
+      try {
+         BlockState state = mapper.getBlockStateFromBlockId(blockId);
+         snow = SnowSystem.isSnowLayer(state) || state.is(Blocks.SNOW_BLOCK);
+      } catch (Throwable ignored) {
+         // Unmapped id: treat as not-snow rather than risk deleting real terrain.
+      }
+      cache.put(blockId, (byte) (snow ? 1 : 0));
+      return snow;
    }
 
    /**

@@ -20,19 +20,23 @@ import net.minecraft.client.Minecraft;
  * built under an older season can stay on screen.
  *
  * <h2>The guarantee</h2>
- * Every watched section carries the {@link SeasonDirector#revision()} it was last meshed at.
- * When the director mints a new revision, every watched section is stale by definition, and
- * a stale section is both (a) re-queued for remesh here and (b) refused if Voxy tries to
- * serve it from its geometry cache. There is no path by which a section rendered under
- * revision N can still be displayed at revision N+1 - travelling far enough to unload and
- * reload a section does not reintroduce old seasons, because the persisted LOD data is
- * season-neutral and season is applied at mesh time.
+ * Every watched section carries the snow geometry key it was last meshed against. A section
+ * whose key differs from the director's current one is stale, and a stale section is both
+ * (a) re-meshed by the sweep below and (b) refused if Voxy tries to serve it from its geometry
+ * cache. Because the sweep is a continuous rotation over the whole watched set with a budget
+ * scaled to that set's size, every section is revisited within a bounded time no matter how
+ * fast the season is moving or how far the player has travelled.
+ *
+ * <p>Travelling far enough to unload and reload a section does not reintroduce an old season
+ * either: the persisted LOD data is season-neutral, and the mesh projector strips seasonal
+ * snow that the current frame does not want at every LOD level, so even a database
+ * contaminated by an older build is cleaned as it is drawn.
  *
  * <h2>Convergence order</h2>
- * Work is ordered by distance from the player, nearest first. The previous implementation
- * shuffled the watched set randomly and processed one section per tick, so a large view
- * distance took many minutes to converge and the sections the player was actually looking at
- * could be processed last. That is what "old season chunks in the distance" looked like.
+ * The sweep runs nearest-first so what the player is looking at converges first, but ordering
+ * is only a convenience - coverage is the guarantee, and coverage does not depend on it. An
+ * earlier version restarted the queue from index 0 whenever the season changed, which under a
+ * timelapse meant it never reached past the nearest ring.
  *
  * <h2>Cost per client tick - keep this list true</h2>
  * Everything this class does on the client thread must be bounded and cheap. Anything
@@ -43,13 +47,16 @@ import net.minecraft.client.Minecraft;
  *   <li>seasonal pass - at most {@value #SEASONAL_BUDGET_PER_TICK} sections.</li>
  *   <li>{@code updateProtectionBand} - O(watched), but only after the player has moved 64
  *       blocks, and only cheap arithmetic per entry.</li>
- *   <li>{@code beginPass} - O(watched log watched) with boxing, so it is the expensive one.
- *       It runs <em>only</em> when the frame's geometry key changes: never in a snow-free
- *       season, and roughly once every forty minutes while snow is moving.</li>
+ *   <li>the sweep itself - {@code sweepBudget()} sections, scaled so one full rotation takes
+ *       {@value #TARGET_SWEEP_TICKS} ticks; the per-section check is a map lookup.</li>
+ *   <li>{@code refreshSweepOrderIfNeeded} - O(watched log watched) with boxing, so it is the
+ *       expensive one. It runs only when the watched set has drifted by an eighth or the
+ *       player has moved 64 blocks, never on a per-section event and never because the season
+ *       changed.</li>
  * </ul>
- * Calling {@code beginPass} from {@code watch} instead cost 5 ms per tick at 20k sections and
+ * Rebuilding that order from {@code watch} instead cost 5 ms per tick at 20k sections and
  * 14 ms at 50k, continuously while the player was moving, because sections enter the watched
- * set constantly. Do not reintroduce a queue rebuild on any per-section event.
+ * set constantly. Do not reintroduce a rebuild on any per-section event.
  */
 public final class VoxySeasonRemeshScheduler implements ClientModInitializer {
    /** Highest LOD level that carries projected seasonal geometry. */
@@ -64,8 +71,11 @@ public final class VoxySeasonRemeshScheduler implements ClientModInitializer {
    /** Handoff-boundary rebuilds are close to the player and visible immediately. */
    private static final int HANDOFF_BUDGET_PER_TICK = 32;
 
-   /** Re-sort the work queue once the player has moved this far (squared blocks). */
+   /** Re-sort the sweep order once the player has moved this far (squared blocks). */
    private static final double RESORT_DISTANCE_SQ = 64.0 * 64.0;
+
+   /** A full sweep of the watched set completes within this many client ticks (5 seconds). */
+   private static final int TARGET_SWEEP_TICKS = 100;
 
    private static final Set<Long> WATCHED = ConcurrentHashMap.newKeySet();
    private static final Set<Long> PROTECTED = ConcurrentHashMap.newKeySet();
@@ -88,9 +98,9 @@ public final class VoxySeasonRemeshScheduler implements ClientModInitializer {
    private static volatile int handoffRadiusBlocks = 256;
    private static volatile boolean havePlayerPosition;
 
-   private static List<Long> pending = List.of();
-   private static int pendingIndex;
-   private static long queuedGeometryKey = Long.MIN_VALUE;
+   private static List<Long> sweepOrder = List.of();
+   private static int sweepOrderSize;
+   private static int sweepCursor;
    private static double lastSortX = Double.NaN;
    private static double lastSortZ = Double.NaN;
    private static int lastProtectionRadius = -1;
@@ -194,27 +204,74 @@ public final class VoxySeasonRemeshScheduler implements ClientModInitializer {
       drainUrgentRemesh(currentRouter);
 
       long geometryKey = SeasonDirector.currentFrame().geometryKey();
-      if (geometryKey != queuedGeometryKey) {
-         // Snow targets changed: every watched section's geometry is stale by definition.
-         beginPass(geometryKey);
-      }
+      refreshSweepOrderIfNeeded();
 
-      int budget = SEASONAL_BUDGET_PER_TICK;
-      while (budget-- > 0 && pendingIndex < pending.size()) {
-         long position = pending.get(pendingIndex++);
-         if (!isStructural(position) || !WATCHED.contains(position)) {
-            continue;
+      // A continuous rotating sweep, never a restartable pass.
+      //
+      // The previous form rebuilt the queue and reset to index 0 every time the geometry key
+      // changed. In real time that is rare, but under /teslesseasons timelapse - which is how
+      // this is actually tested - a whole year passes in ten minutes and the key changes
+      // several times a second. The queue restarted long before it reached the far sections,
+      // so only the ring nearest the player ever converged and everything beyond it kept
+      // whatever season it was first meshed under. The cursor now advances regardless of what
+      // the season does, so every watched section is visited within one sweep, always.
+      int budget = sweepBudget();
+      int visited = 0;
+      int size = sweepOrder.size();
+      while (visited++ < budget && size > 0) {
+         if (sweepCursor >= size) {
+            sweepCursor = 0;
          }
-         if (isHandoffUnsafe(position)) {
-            if (PROTECTED.add(position)) {
-               enqueueRemesh(position);
-            }
+         long position = sweepOrder.get(sweepCursor++);
+         if (!isStructural(position) || !WATCHED.contains(position)) {
             continue;
          }
          if (isStale(position, geometryKey)) {
             currentRouter.triggerRemesh(position);
          }
       }
+   }
+
+   /**
+    * How many sections to examine this tick.
+    *
+    * <p>Scaled so a full sweep completes in {@value #TARGET_SWEEP_TICKS} ticks no matter how
+    * large the watched set is. A fixed budget silently stops being a guarantee once the render
+    * distance grows: at 64 per tick and 50k sections a sweep takes thirteen minutes, which is
+    * indistinguishable from the season never updating out there.
+    */
+   private static int sweepBudget() {
+      int size = sweepOrder.size();
+      return Math.max(SEASONAL_BUDGET_PER_TICK, (size + TARGET_SWEEP_TICKS - 1) / TARGET_SWEEP_TICKS);
+   }
+
+   /**
+    * Rebuilds the sweep order when the watched set has changed materially or the player has
+    * moved far enough that nearest-first no longer means what it says.
+    *
+    * <p>Deliberately independent of the season: ordering is a convenience, coverage is the
+    * guarantee, and coverage must not depend on how fast the calendar is moving.
+    */
+   private static void refreshSweepOrderIfNeeded() {
+      int watched = WATCHED.size();
+      boolean sizeDrift = Math.abs(watched - sweepOrderSize) > Math.max(64, sweepOrderSize / 8);
+      boolean moved = havePlayerPosition
+         && (Double.isNaN(lastSortX)
+            || (playerX - lastSortX) * (playerX - lastSortX)
+               + (playerZ - lastSortZ) * (playerZ - lastSortZ) >= RESORT_DISTANCE_SQ);
+      if (!sizeDrift && !moved && !sweepOrder.isEmpty()) {
+         return;
+      }
+
+      List<Long> ordered = new ArrayList<>(WATCHED);
+      if (havePlayerPosition) {
+         ordered.sort((a, b) -> Double.compare(distanceSq(a), distanceSq(b)));
+      }
+      sweepOrder = ordered;
+      sweepOrderSize = ordered.size();
+      sweepCursor = 0;
+      lastSortX = playerX;
+      lastSortZ = playerZ;
    }
 
    /** Rebuilds sections that just crossed the near/far handoff boundary, in either direction. */
@@ -282,23 +339,7 @@ public final class VoxySeasonRemeshScheduler implements ClientModInitializer {
       }
    }
 
-   /** Rebuilds the work queue, nearest section to the player first. */
-   private static void beginPass(long geometryKey) {
-      List<Long> ordered = new ArrayList<>(WATCHED);
-      if (havePlayerPosition) {
-         ordered.sort((a, b) -> Double.compare(distanceSq(a), distanceSq(b)));
-      }
-      pending = ordered;
-      pendingIndex = 0;
-      queuedGeometryKey = geometryKey;
-      lastSortX = playerX;
-      lastSortZ = playerZ;
-   }
 
-   /** Forces the next tick to rebuild the queue against the current geometry key. */
-   private static void invalidateQueue() {
-      queuedGeometryKey = Long.MIN_VALUE;
-   }
 
    private static double distanceSq(long position) {
       int scale = 1 << Math.max(0, WorldEngine.getLevel(position));
@@ -321,9 +362,11 @@ public final class VoxySeasonRemeshScheduler implements ClientModInitializer {
       URGENT_REMESH.clear();
       URGENT_REMESH_SET.clear();
       PROJECTED_GEOMETRY.clear();
-      pending = List.of();
-      pendingIndex = 0;
-      invalidateQueue();
+      sweepOrder = List.of();
+      sweepOrderSize = 0;
+      sweepCursor = 0;
+      lastSortX = Double.NaN;
+      lastSortZ = Double.NaN;
       router = null;
    }
 }
