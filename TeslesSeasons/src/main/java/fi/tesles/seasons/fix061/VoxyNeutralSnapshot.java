@@ -23,6 +23,25 @@ public final class VoxyNeutralSnapshot {
    private VoxyNeutralSnapshot() {
    }
 
+   /**
+    * What the neutraliser has actually done this session.
+    *
+    * <p>These counters existed from the start and were reported nowhere, which is why two rounds
+    * of "distant trees stay bare" had to be reasoned about instead of read off. {@code fast} is the
+    * telling one: it counts chunks handed to Voxy untouched because their ledgers were empty. A
+    * bare winter chunk taking the fast path means the ledger that should have described its missing
+    * canopy was not there, and the LOD it produced is winter for good.
+    */
+   public static String summary() {
+      return "voxyNeutral[snapshots=" + SNAPSHOTS.get()
+         + ",fast=" + FAST_PATHS.get()
+         + ",copiedSections=" + COPIED_SECTIONS.get()
+         + ",snowStripped=" + STRIPPED_SNOW.get()
+         + ",leavesRestored=" + RESTORED_LEAVES.get()
+         + ",floraRestored=" + RESTORED_FLORA.get()
+         + ",failures=" + FAILURES.get() + "]";
+   }
+
    public static LevelChunkSection[] copyAndNeutralize(LevelChunk chunk) {
       SNAPSHOTS.incrementAndGet();
       List<Long> ownedSnow = SeasonalWorldData.readOwnedSnow(chunk);

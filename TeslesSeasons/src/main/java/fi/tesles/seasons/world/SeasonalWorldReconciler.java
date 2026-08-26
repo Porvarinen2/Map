@@ -4,6 +4,7 @@ import fi.tesles.seasons.SeasonEngine;
 import fi.tesles.seasons.TeslesSeasons;
 import fi.tesles.seasons.api.SeasonSnapshot;
 import fi.tesles.seasons.compat.SeasonNeutrality;
+import fi.tesles.seasons.fix061.VoxyNeutralSnapshot;
 import fi.tesles.seasons.compat.VoxyServerMutationGuard;
 import fi.tesles.seasons.debug.SeasonDebugController;
 import fi.tesles.seasons.sector.SeasonDirector;
@@ -272,7 +273,29 @@ public final class SeasonalWorldReconciler {
          + " flora+="
          + floraRestored
          + " preSendQueued="
-         + preSendChunks;
+         + preSendChunks
+         + " ledger[leaves="
+         + pendingLedger(true)
+         + ",flora="
+         + pendingLedger(false)
+         + "] "
+         + VoxyNeutralSnapshot.summary();
+   }
+
+   /**
+    * Entries still owed back across loaded chunks.
+    *
+    * <p>The leaf ledger is what lets a winter chunk be handed to Voxy as a summer one, and it is
+    * the only record of which leaf stood where. If it is empty while the world is bare, nothing
+    * can restore the canopy - not the world in spring and not the LOD at any point - so its size
+    * is the first thing worth knowing when distant trees will not come back.
+    */
+   private static int pendingLedger(boolean leaves) {
+      int total = 0;
+      for (SeasonalWorldReconciler.WorkState state : LOADED.values()) {
+         total += leaves ? state.removedLeaves.size() : state.removedFlora.size();
+      }
+      return total;
    }
 
    public static float positionNoise(BlockPos pos, long seed) {
