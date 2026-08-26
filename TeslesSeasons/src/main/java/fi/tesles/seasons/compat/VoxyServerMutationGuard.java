@@ -2,61 +2,42 @@ package fi.tesles.seasons.compat;
 
 import java.util.function.BooleanSupplier;
 
+/**
+ * Marks the block writes that must not reach VoxyServer's LOD store.
+ *
+ * <p>Only one direction is suppressed: changes that take the world away from the neutral world
+ * Voxy is meant to hold. See {@link SeasonNeutrality} for why suppressing both directions
+ * quietly froze each region's LOD at the season it was first built in.
+ */
 public final class VoxyServerMutationGuard {
-   private static final ThreadLocal<Integer> LEAF_REMOVAL_DEPTH = ThreadLocal.withInitial(() -> 0);
-   private static final ThreadLocal<Integer> SURFACE_MUTATION_DEPTH = ThreadLocal.withInitial(() -> 0);
-   private static final ThreadLocal<Integer> FLORA_REMOVAL_DEPTH = ThreadLocal.withInitial(() -> 0);
+   private static final ThreadLocal<Integer> DIVERGENCE_DEPTH = ThreadLocal.withInitial(() -> 0);
 
    private VoxyServerMutationGuard() {
    }
 
-   public static boolean runSuppressingLeafRemoval(BooleanSupplier action) {
-      return run(LEAF_REMOVAL_DEPTH, action);
-   }
+   /**
+    * Runs a write that moves the world away from neutral, with the LOD store held back.
+    *
+    * <p>Writes that heal the store toward neutral must <em>not</em> be wrapped in this: they are
+    * exactly the ones that need to get through.
+    */
+   public static boolean runSuppressingLodDivergence(BooleanSupplier action) {
+      DIVERGENCE_DEPTH.set(DIVERGENCE_DEPTH.get() + 1);
 
-   public static boolean runSuppressingTransientSurfaceMutation(BooleanSupplier action) {
-      return run(SURFACE_MUTATION_DEPTH, action);
-   }
-
-   public static boolean runSuppressingFloraRemoval(BooleanSupplier action) {
-      return run(FLORA_REMOVAL_DEPTH, action);
-   }
-
-   public static boolean isSuppressingLeafRemoval() {
-      return LEAF_REMOVAL_DEPTH.get() > 0;
-   }
-
-   public static boolean isSuppressingTransientSurfaceMutation() {
-      return SURFACE_MUTATION_DEPTH.get() > 0;
-   }
-
-   public static boolean isSuppressingFloraRemoval() {
-      return FLORA_REMOVAL_DEPTH.get() > 0;
-   }
-
-   public static boolean isSuppressingAnySeasonalLodMutation() {
-      return isSuppressingLeafRemoval() || isSuppressingTransientSurfaceMutation() || isSuppressingFloraRemoval();
-   }
-
-   public static boolean isSuppressingVisualOnlyLodMutation() {
-      return isSuppressingLeafRemoval() || isSuppressingFloraRemoval();
-   }
-
-   private static boolean run(ThreadLocal<Integer> depth, BooleanSupplier action) {
-      depth.set(depth.get() + 1);
-
-      boolean var2;
       try {
-         var2 = action.getAsBoolean();
+         return action.getAsBoolean();
       } finally {
-         int next = depth.get() - 1;
+         int next = DIVERGENCE_DEPTH.get() - 1;
          if (next <= 0) {
-            depth.remove();
+            DIVERGENCE_DEPTH.remove();
          } else {
-            depth.set(next);
+            DIVERGENCE_DEPTH.set(next);
          }
       }
+   }
 
-      return var2;
+   /** Whether the write in progress on this thread must be kept out of the LOD store. */
+   public static boolean isSuppressingAnySeasonalLodMutation() {
+      return DIVERGENCE_DEPTH.get() > 0;
    }
 }

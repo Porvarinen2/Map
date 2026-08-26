@@ -62,6 +62,7 @@ exact binaries — replacing them with different builds may invalidate a target.
 | `GroundCoverFallbackTest` | Melting snow always has a placeholder to fall back on, including on slab terrain. |
 | `SnowSupportTest` | Snow rests on ground and never on water, ice or foliage — the same verdict on the server and in the LOD projector. |
 | `ColumnSweepTest` | A chunk's column sweep is a true permutation, so no column can starve however fast the calendar moves. |
+| `SeasonNeutralityTest` | Only writes that heal the world toward neutral reach the LOD store, so a store built in any season converges on the neutral one. |
 | `verifyModWiring` | Every mixin is registered, every entrypoint resolves, no `ClientModInitializer` is orphaned. |
 | `verifyMixinTargets` | Every `@Mixin` target class and injected method descriptor resolves against real bytecode, and no mixin targets the mod's own code. |
 
@@ -102,9 +103,12 @@ Rules that hold this together, and that regressions historically broke:
 - **One coordinate field.** `SeasonCoordinateField` is thresholded identically by
   the physical projector, the LOD mesh projector and the GLSL shader. This is
   what makes near and distant terrain agree without storing any season history.
-- **Voxy persistence is season-neutral.** Season is applied when a section is
-  meshed, not when it is stored, so LOD data never carries a season and cannot
-  go stale. `VoxySeasonRemeshScheduler` stamps each section with the revision it
+- **Voxy persistence is season-neutral, and heals.** Season is applied when a
+  section is meshed, not when it is stored, so LOD data never carries a season
+  and cannot go stale. Suppression is *directional*: writes that take the world
+  away from neutral are kept out of the LOD store, and writes that bring it back
+  are deliberately let through. Blocking both looks safer and is not — it freezes
+  each region's LOD at whatever season it was first built in. `VoxySeasonRemeshScheduler` stamps each section with the revision it
   was meshed at, and `VoxySeasonGeometryCacheBypassMixin` refuses any cached mesh
   built under an older revision.
 - **Ownership before deletion.** Only snow recorded in a chunk's owned-snow

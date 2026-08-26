@@ -3,6 +3,7 @@ package fi.tesles.seasons.world;
 import fi.tesles.seasons.SeasonEngine;
 import fi.tesles.seasons.TeslesSeasons;
 import fi.tesles.seasons.api.SeasonSnapshot;
+import fi.tesles.seasons.compat.SeasonNeutrality;
 import fi.tesles.seasons.compat.VoxyServerMutationGuard;
 import fi.tesles.seasons.debug.SeasonDebugController;
 import fi.tesles.seasons.sector.SeasonDirector;
@@ -930,15 +931,29 @@ public final class SeasonalWorldReconciler {
       }
 
       private boolean trySetSurface(BlockPos pos, BlockState state) {
-         return VoxyServerMutationGuard.runSuppressingTransientSurfaceMutation(() -> this.trySet(pos, state));
+         return this.trySetSeasonal(pos, state);
       }
 
       private boolean trySetLeaf(BlockPos pos, BlockState state) {
-         return VoxyServerMutationGuard.runSuppressingLeafRemoval(() -> this.trySet(pos, state));
+         return this.trySetSeasonal(pos, state);
       }
 
       private boolean trySetFlora(BlockPos pos, BlockState state) {
-         return VoxyServerMutationGuard.runSuppressingFloraRemoval(() -> this.trySet(pos, state));
+         return this.trySetSeasonal(pos, state);
+      }
+
+      /**
+       * A seasonal write, with the LOD store held back only if the write diverges from neutral.
+       *
+       * <p>The direction is read from the blocks themselves rather than from which helper the
+       * caller reached for. That matters because the same helper places snow and melts it, drops a
+       * leaf and restores it - and only one of each pair may be kept out of the LOD.
+       */
+      private boolean trySetSeasonal(BlockPos pos, BlockState state) {
+         BlockState before = this.level.getBlockState(pos);
+         return SeasonNeutrality.movesAwayFromNeutral(before, state)
+            ? VoxyServerMutationGuard.runSuppressingLodDivergence(() -> this.trySet(pos, state))
+            : this.trySet(pos, state);
       }
 
       private boolean trySet(BlockPos pos, BlockState state) {

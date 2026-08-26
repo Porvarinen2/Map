@@ -150,21 +150,27 @@ public abstract class VoxySeasonMeshProjectionMixin {
             int wz = (((section.z << 5) + z) << section.lvl) + half;
             int worldLayers = SnowSystem.targetLayers(frame, wx, wz, seed);
 
-            // Removal first, and at every LOD level. This is the half that was missing: the
-            // projector could add snow but never take it away, so any snow that reached the
-            // LOD database - ingested during a winter, or projected by an older build - stayed
-            // there for good. Summer would render last winter's snow in the distance until the
-            // player flew out and re-ingested the terrain by hand.
-            int topIndex = topSurfaceIndex(projected == null ? raw : projected, x, z, mapper, leafFlags);
-            if (topIndex >= 0 && isSeasonalSnowVoxel(mapper, snowFlags, (projected == null ? raw : projected)[topIndex])) {
-               boolean wanted = mayAddSnow && worldLayers > 0;
-               if (!wanted) {
-                  if (projected == null) {
-                     projected = raw.clone();
-                  }
-                  stripSnowVoxel(projected, section.lvl, topIndex);
+            // Clear the column of seasonal snow before deciding anything, at every height and
+            // every LOD level.
+            //
+            // Every height, because checking only the topmost voxel left snow stranded wherever
+            // something stood above it - under a trunk, or under a canopy at coarse LOD where tree
+            // and ground merge into one column. That is the snow that stayed under distant trees
+            // after the rest of the world had thawed.
+            //
+            // Before deciding, because a column that still holds last winter's snow at its surface
+            // has no ground for this winter's snow to be placed on, so its depth could never be
+            // corrected either.
+            for (int y = 31; y >= 0; y--) {
+               int index = WorldSection.getIndex(x, y, z);
+               long voxel = (projected == null ? raw : projected)[index];
+               if (Mapper.isAir(voxel) || !isSeasonalSnowVoxel(mapper, snowFlags, voxel)) {
                   continue;
                }
+               if (projected == null) {
+                  projected = raw.clone();
+               }
+               stripSnowVoxel(projected, section.lvl, index);
             }
 
             if (!mayAddSnow || worldLayers <= 0) {
@@ -315,19 +321,24 @@ public abstract class VoxySeasonMeshProjectionMixin {
 
       // WorldSection packs a voxel index as (y << 10) | (z << 5) | x, so the voxel directly
       // below is exactly one Y stride lower. An index below that stride is already at y == 0.
+      //
+      // With no voxel below to take a material from - the bottom row of the section, or open air
+      // underneath - the voxel is left exactly as it is. Turning it to air instead punched a hole
+      // straight through the landscape, and because the bottom row of every section qualifies,
+      // those holes appeared in bands: distant ground you could see the sky through. A snow voxel
+      // that outstays its season is a far smaller fault than a missing one.
       int below = index - Y_STRIDE;
       if (below < 0) {
-         projected[index] = Mapper.airWithLight(light);
          return;
       }
 
       long substitute = projected[below];
       if (Mapper.isAir(substitute)) {
-         projected[index] = Mapper.airWithLight(light);
-      } else {
-         projected[index] = Mapper.withBlockBiome(Mapper.airWithLight(light),
-            Mapper.getBlockId(substitute), Mapper.getBiomeId(substitute));
+         return;
       }
+
+      projected[index] = Mapper.withBlockBiome(Mapper.airWithLight(light),
+         Mapper.getBlockId(substitute), Mapper.getBiomeId(substitute));
    }
 
    /** Whether this voxel is snow the season system is responsible for. */
@@ -345,7 +356,9 @@ public abstract class VoxySeasonMeshProjectionMixin {
       boolean snow = false;
       try {
          BlockState state = mapper.getBlockStateFromBlockId(blockId);
-         snow = SnowSystem.isSnowLayer(state) || state.is(Blocks.SNOW_BLOCK);
+         // Snow layers only. The season places layers and never a full snow block, so treating
+         // snow blocks as seasonal meant deleting players' snow builds out of the distant view.
+         snow = SnowSystem.isSnowLayer(state);
       } catch (Throwable ignored) {
          // Unmapped id: treat as not-snow rather than risk deleting real terrain.
       }

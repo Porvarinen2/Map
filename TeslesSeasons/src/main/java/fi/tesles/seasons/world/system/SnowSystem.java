@@ -84,7 +84,10 @@ public final class SnowSystem {
     * builds every spring.
     */
    public static boolean isSnowLayer(BlockState state) {
-      return state.getBlock() == Blocks.SNOW || state.getBlock() == TeslesSeasonBlocks.SLAB_SNOW;
+      // Any snow-layer block, rather than the two this mod happens to know by name. That covers
+      // vanilla snow and the slab-mounted variant - which extends SnowLayerBlock - without this
+      // predicate having to touch block registration, and it catches other mods' snow layers too.
+      return state != null && state.getBlock() instanceof SnowLayerBlock;
    }
 
    public static int layers(BlockState state) {
