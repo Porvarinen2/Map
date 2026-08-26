@@ -113,11 +113,16 @@ public abstract class VoxySeasonMeshProjectionMixin {
          return raw;
       }
 
-      // Sections inside the vanilla render distance are drawn from real blocks, so season must
-      // not be *added* to their LOD copy or the handoff seam shows it twice. Stale snow is
-      // still stripped from them: it would otherwise peek through at the seam.
-      boolean mayAddSnow = section.lvl <= TESLES_MAX_PROJECTED_LOD
-         && !VoxySeasonRemeshScheduler.isHandoffUnsafe(section);
+      // Snow is projected at every section within the projected LOD range, including the ones
+      // overlapping the vanilla render distance.
+      //
+      // Those used to have snow stripped but never added, on the theory that adding it near real
+      // blocks would show the season twice at the seam. It does not: both sides threshold the same
+      // coordinate field at the same target, so they agree column for column. What the asymmetry
+      // did produce was a band of LOD between the player's real chunks and the rest of the world
+      // that had been cleared of snow and never given any back - a flat, empty, obviously wrong
+      // strip that followed the player around all winter.
+      boolean mayAddSnow = section.lvl <= TESLES_MAX_PROJECTED_LOD;
 
       long[] projected = null;
       Mapper mapper = this.world.getMapper();

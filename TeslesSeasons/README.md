@@ -63,6 +63,7 @@ exact binaries — replacing them with different builds may invalidate a target.
 | `SnowSupportTest` | Snow rests on ground and never on water, ice or foliage — the same verdict on the server and in the LOD projector. |
 | `ColumnSweepTest` | A chunk's column sweep is a true permutation, so no column can starve however fast the calendar moves. |
 | `SeasonNeutralityTest` | Only writes that heal the world toward neutral reach the LOD store, so a store built in any season converges on the neutral one. |
+| `VoxySnowParityTest` (melt) | Winter Outgoing keeps its canonical footprint exactly, and no column ever drops from 2/8 or deeper straight to bare ground. |
 | `verifyModWiring` | Every mixin is registered, every entrypoint resolves, no `ClientModInitializer` is orphaned. |
 | `verifyMixinTargets` | Every `@Mixin` target class and injected method descriptor resolves against real bytecode, and no mixin targets the mod's own code. |
 
@@ -130,6 +131,15 @@ Rules that hold this together, and that regressions historically broke:
   that class. Runtime self-patching hides logic from readers and from tests.
 - **Absent means absent.** A leaf the frame removes is AIR, never an invisible
   collision box.
+- **Snow melts a layer at a time.** The canonical mapping brings footprint and
+  depth down together; how one column gets from its depth to zero is left to
+  `SnowSystem`, which gives each layer its own slice of retreating coverage. A
+  column inside the footprint always keeps at least its last layer, so coverage
+  stays exactly on spec and the final step a player sees is 1/8 giving way to
+  ground.
+- **Confirming nothing to do must cost nothing.** Most of the year every
+  retention is full and there is no snow. A column sweep can then only confirm
+  the world is already correct, and it does so without touching it.
 - **Grass identity is never changed.** Winter comes from snow layers and tint,
   never from swapping `grass_block`.
 - **A canopy is not the ground.** Anything looking for a column's surface ignores

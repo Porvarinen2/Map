@@ -280,8 +280,52 @@ class VoxySnowParityTest {
             }
          }
       }
-      assertEquals(0.25F, covered / (float) total, 0.01F, "remaining footprint");
-      assertEquals(2.0, sum / (double) covered, 0.05, "remaining mean depth");
+      // Footprint is exact, not approximate: a column inside the footprint always keeps at least
+      // its last layer, so the count of snowy columns is decided by coverage alone.
+      assertEquals(0.25F, covered / (float) total, 0.005F, "remaining footprint");
+
+      // The specification gives the mean as "approx. 2/8". It sits a little under nominal because
+      // the melt is feathered along the retreating edge - columns near it step down through their
+      // layers instead of vanishing at full depth, which is what stops the thaw from punching
+      // full-depth holes in the snowfield. The cost of that is roughly a tenth of a layer of mean
+      // depth in the band, and it is the reason this tolerance is wider than the footprint's.
+      double meanDepth = sum / (double) covered;
+      assertEquals(2.0, meanDepth, 0.25, "remaining mean depth");
+      assertTrue(meanDepth <= 2.0, "feathering may only take depth off, never add it");
+   }
+
+   @Test
+   @DisplayName("Winter Outgoing melts a column layer by layer, never all at once")
+   void meltIsGradual() {
+      // What the melt looks like from the ground: follow single columns across the phase and check
+      // that none of them jumps from deep snow straight to bare earth.
+      int sampled = 0;
+      int cliffs = 0;
+      for (int x = 0; x < 60; x++) {
+         for (int z = 0; z < 60; z++) {
+            int previous = -1;
+            boolean everSnowy = false;
+            for (int step = 0; step <= 100; step++) {
+               SeasonFrame f = frame(Season.WINTER, CalendarPhase.OUTGOING, step / 100.0F);
+               int layers = SnowSystem.targetLayers(f, x, z, SEED);
+               if (previous >= 2 && layers == 0) {
+                  cliffs++;
+               }
+               if (layers > 0) {
+                  everSnowy = true;
+               }
+               previous = layers;
+            }
+            if (everSnowy) {
+               sampled++;
+            }
+         }
+      }
+      assertEquals(3600, sampled, "every column starts the melt under snow");
+      // A column may step 1/8 -> gone; that is the last layer giving way to ground, which is what
+      // the specification says should happen. Dropping from 2/8 or more straight to nothing is the
+      // cliff that read as holes appearing in the snowfield.
+      assertEquals(0, cliffs, "no column may drop from 2/8 or deeper straight to bare ground");
    }
 
    @Test

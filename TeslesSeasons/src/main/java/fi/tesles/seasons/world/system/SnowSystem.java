@@ -22,20 +22,64 @@ public final class SnowSystem {
     * placing blocks, the Voxy LOD projector and the shader - computes the same answer for the
     * whole life of a revision, rather than drifting apart as the clock advances between updates.
     */
+   /**
+    * How much retreating coverage each snow layer is given to melt away in.
+    *
+    * <p>Winter Outgoing brings footprint and depth down together, as the specification's canonical
+    * mapping requires. Applied literally per column that means a column standing under four layers
+    * of snow drops to bare ground the instant the retreating footprint passes it, so the thaw reads
+    * as holes being punched through full-depth snow with grass at the bottom of them, rather than
+    * as snow melting.
+    *
+    * <p>Giving each layer its own slice of coverage makes a column come down one layer at a time -
+    * 4/8, 3/8, 2/8, 1/8, ground - and makes the melt window proportional to how deep the snow is,
+    * so deep snow takes proportionally longer to go than a dusting.
+    *
+    * <p>The value has to be at least the revision quantum, 1/100 per channel, or a column could
+    * still lose more than one layer between two updates and the cliff would be back. Two percent
+    * gives half a layer per update at the very most.
+    */
+   private static final float LAYER_MELT_BAND = 0.02F;
+
    public static int targetLayers(SeasonFrame frame, int x, int z, long seed) {
       float coverage = frame.snowCoverageTarget();
       float depth = frame.snowDepthTarget();
       if (coverage <= 0.0F || depth <= 0.0F) {
          return 0;
-      } else if (SeasonCoordinateField.snowCoverage01(x, z, seed) >= coverage) {
-         return 0;
-      } else {
-         float target = Math.max(0.0F, Math.min(8.0F, depth * 8.0F));
-         int base = (int)Math.floor(target);
-         float fractional = target - base;
-         int layers = base + (SeasonCoordinateField.snowDepth01(x, z, seed) < fractional ? 1 : 0);
-         return Math.max(0, Math.min(8, layers));
       }
+
+      float field = SeasonCoordinateField.snowCoverage01(x, z, seed);
+      if (field >= coverage) {
+         return 0;
+      }
+
+      float target = Math.max(0.0F, Math.min(8.0F, depth * 8.0F));
+
+      // Only the thaw is feathered. Growth must not be: Autumn Outgoing lays down a footprint at
+      // exactly 1/8, and thinning its leading edge would leave part of that footprint bare and
+      // pull the phase off its canonical coverage.
+      if (frame.snowThawing()) {
+         // No guard on full coverage. Gating the feather off while coverage was still 1.0 meant the
+         // outermost columns were at full depth right up to the revision that took them out of the
+         // footprint, so the melt opened with a ring of full-depth holes before settling down.
+         // Winter Outgoing is the thaw: a depth gradient across the edge is what it should look
+         // like from its first tick.
+         target = Math.min(target, (coverage - field) / LAYER_MELT_BAND);
+      }
+      int base = (int)Math.floor(target);
+      float fractional = target - base;
+      int layers = base + (SeasonCoordinateField.snowDepth01(x, z, seed) < fractional ? 1 : 0);
+
+      // A column inside the footprint always keeps at least its last layer. Feathering decides how
+      // fast a column comes down through its layers, never whether it is still snowy - that stays
+      // the footprint's decision alone, so the phase keeps exactly the coverage the specification
+      // asks for, and the final step a player sees is 1/8 giving way to ground rather than a
+      // full-depth column disappearing at once.
+      if (layers < 1) {
+         layers = 1;
+      }
+
+      return Math.min(8, layers);
    }
 
    public static BlockState snowStateFor(ServerLevel level, BlockPos pos, int layers) {

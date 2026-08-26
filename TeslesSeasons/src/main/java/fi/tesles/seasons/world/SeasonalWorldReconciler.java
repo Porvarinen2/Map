@@ -287,6 +287,28 @@ public final class SeasonalWorldReconciler {
     * forced odd by the {@code | 1}; an even step would revisit a fraction of the columns and never
     * reach the rest.
     */
+   /**
+    * Whether the frame asks for nothing to be taken out of the world.
+    *
+    * <p>For most of the year every retention is full and there is no snow, and in that state a
+    * column sweep can only ever confirm that everything is already where it should be. Confirming
+    * it is not free: each column costs a heightmap lookup, a surface-flora search and a short
+    * vertical scan of block states, and the pre-send pass runs all 256 columns of a chunk with no
+    * budget at all. Checking the frame once and skipping the column outright is what keeps a
+    * summer afternoon from costing the same as a thaw.
+    */
+   private static boolean frameRemovesNothing(SeasonFrame f) {
+      return f.snowCoverage() <= 0.0F
+         && f.plantRetention() >= 0.9999F
+         && f.flowerRetention() >= 0.9999F
+         && f.mushroomRetention() >= 0.9999F
+         && f.berryRetention() >= 0.9999F;
+   }
+
+   private static boolean frameDropsNoLeaves(SeasonFrame f) {
+      return f.leafRetention() >= 0.9999F && f.mushroomRetention() >= 0.9999F;
+   }
+
    public static int columnOrder(int chunkX, int chunkZ, int index, int sweep) {
       int seed = chunkX * 73428767 ^ chunkZ * 912931 ^ sweep;
       int start = seed & 0xFF;
@@ -422,6 +444,24 @@ public final class SeasonalWorldReconciler {
       }
 
       void canonicalizeVisibleBeforeSend(SeasonFrame frame) {
+         // Every chunk sent to a player runs a full, unbudgeted 256-column surface pass and a
+         // 256-column canopy pass, so that a chunk can never become visible carrying a season the
+         // director has already moved past. When the frame takes nothing out of the world and this
+         // chunk owes nothing back, that guarantee holds trivially and the passes would only
+         // rediscover it - at the cost of a heightmap lookup and a vertical block scan per column,
+         // on the server thread, for every chunk a moving player pulls in.
+         if (frameRemovesNothing(frame)
+            && frameDropsNoLeaves(frame)
+            && this.ownedSnow.isEmpty()
+            && this.removedLeaves.isEmpty()
+            && this.removedFlora.isEmpty()) {
+            this.surfaceRevision = SeasonalWorldReconciler.surfaceRevision(frame);
+            this.leafRevision = SeasonalWorldReconciler.leafRevision(frame);
+            this.surfaceColumnsSinceRevision = 256;
+            this.leafColumnsSinceRevision = 256;
+            return;
+         }
+
          long oldDeadline = SeasonalWorldReconciler.deadlineNanos;
          int oldWrites = SeasonalWorldReconciler.writesRemaining;
          SeasonalWorldReconciler.deadlineNanos = Long.MAX_VALUE;
@@ -566,6 +606,16 @@ public final class SeasonalWorldReconciler {
       private boolean processSurfaceColumn(int column, SeasonFrame frame) {
          int lx = column & 15;
          int lz = column >>> 4 & 15;
+         int columnKey = lz << 4 | lx;
+
+         // Nothing to place, nothing owed back, nothing the frame wants removed: the column is
+         // already correct and touching the world at all would only cost lookups.
+         if (frameRemovesNothing(frame)
+            && !this.ownedSnowByColumn.containsKey(columnKey)
+            && !this.removedFloraByColumn.containsKey(columnKey)) {
+            return true;
+         }
+
          int wx = (this.chunk.getPos().x() << 4) + lx;
          int wz = (this.chunk.getPos().z() << 4) + lz;
          int top = this.level.getHeight(Types.MOTION_BLOCKING_NO_LEAVES, wx, wz) - 1;
@@ -650,6 +700,14 @@ public final class SeasonalWorldReconciler {
       private boolean processLeafColumn(int column, SeasonFrame frame) {
          int lx = column & 15;
          int lz = column >>> 4 & 15;
+
+         // The canopy scan reads up to ninety-six block states per column. With a full canopy and
+         // nothing recorded as removed here there is provably nothing for it to find, and this is
+         // the single most expensive thing the reconciler does.
+         if (frameDropsNoLeaves(frame) && !this.removedLeavesByColumn.containsKey(lz << 4 | lx)) {
+            return true;
+         }
+
          int wx = (this.chunk.getPos().x() << 4) + lx;
          int wz = (this.chunk.getPos().z() << 4) + lz;
          int top = this.level.getHeight(Types.MOTION_BLOCKING, wx, wz);

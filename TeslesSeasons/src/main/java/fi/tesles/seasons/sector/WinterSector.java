@@ -37,6 +37,10 @@ public final class WinterSector implements SeasonSector {
             depth = Math.max(HANDOFF_DEPTH, p);
          }
          default -> {
+            // Canonical mapping: footprint and depth both retreat as 1 - progress. How an
+            // individual column gets from its current depth to zero is SnowSystem's business -
+            // see the melt feathering there, which keeps this aggregate while letting each column
+            // come down a layer at a time.
             float remaining = 1.0F - p;
             coverage = remaining;
             depth = remaining;
