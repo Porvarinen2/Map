@@ -29,6 +29,15 @@ public final class TeslesSeasonsConfig {
    public double autumnFlowerFallCompleteFraction = 0.78;
    public boolean mushroomsAutumnOnly = true;
    public boolean seasonalSnow = true;
+
+   /**
+    * Whether still water freezes over in winter.
+    *
+    * <p>Off by default. It is a pluggable world effect rather than part of the season contract,
+    * and turning it on changes what an existing world looks like, so that is a choice to make
+    * rather than one to inherit.
+    */
+   public boolean seasonalWaterFreezing = false;
    public double maximumPhysicalSnowCoverage = 1.0;
    public boolean plantSnowOverlay = true;
    public boolean migrateLegacy022Snow = true;

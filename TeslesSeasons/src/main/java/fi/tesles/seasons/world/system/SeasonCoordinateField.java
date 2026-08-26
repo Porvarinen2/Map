@@ -41,6 +41,8 @@ public final class SeasonCoordinateField {
    public static final int GROUND_PLANT_SALT = 0x510E527F;
    public static final int MUSHROOM_SALT = 0x9B05688C;
    public static final int BERRY_SALT = 0x1F83D9AB;
+   /** Reserved for the built-in water-freezing effect. Add your own rather than reusing one. */
+   public static final int ICE_SALT = 0x5BE0CD19;
 
    /** Retained for source compatibility; flowers and ground plants now have distinct salts. */
    public static final int FLORA_SALT = FLOWER_SALT;
@@ -62,6 +64,17 @@ public final class SeasonCoordinateField {
 
    public static float snowDepth01(int x, int z, long seed) {
       return hash2D(x, z, seed, SNOW_DEPTH_SALT);
+   }
+
+   /**
+    * Membership for a world effect's own channel.
+    *
+    * <p>The entry point an effect should use. Pass a salt nobody else uses - two effects sharing
+    * one select the same coordinates, and the correlation shows up as the two appearing and
+    * disappearing together in exactly the same patches.
+    */
+   public static float effect01(int x, int z, long seed, int salt) {
+      return hash2D(x, z, seed, salt);
    }
 
    public static float leaf01(BlockPos pos, long seed) {

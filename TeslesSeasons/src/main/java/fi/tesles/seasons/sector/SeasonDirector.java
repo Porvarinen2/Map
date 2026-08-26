@@ -20,11 +20,6 @@ import java.util.concurrent.atomic.AtomicLong;
  * new never triggers a world pass.
  */
 public final class SeasonDirector {
-   private static final SeasonSector SPRING = new SpringSector();
-   private static final SeasonSector SUMMER = new SummerSector();
-   private static final SeasonSector AUTUMN = new AutumnSector();
-   private static final SeasonSector WINTER = new WinterSector();
-
    private static final AtomicLong REVISION = new AtomicLong();
    private static volatile SeasonFrame current;
 
@@ -92,11 +87,6 @@ public final class SeasonDirector {
    }
 
    private static SeasonSector sector(Season season) {
-      return switch (season) {
-         case SPRING -> SPRING;
-         case SUMMER -> SUMMER;
-         case AUTUMN -> AUTUMN;
-         case WINTER -> WINTER;
-      };
+      return SeasonRegistry.get(season);
    }
 }

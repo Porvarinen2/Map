@@ -4,6 +4,9 @@ import com.mojang.serialization.Codec;
 import fi.tesles.seasons.TeslesSeasons;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Collection;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.List;
 import net.fabricmc.fabric.api.attachment.v1.AttachmentRegistry;
 import net.fabricmc.fabric.api.attachment.v1.AttachmentType;
@@ -24,6 +27,18 @@ public final class SeasonalWorldData {
    public static final AttachmentType<List<String>> REMOVED_FLORA = AttachmentRegistry.createPersistent(
       TeslesSeasons.id("removed_flora_v4"), Codec.STRING.listOf()
    );
+   /**
+    * Positions owned by pluggable world effects, keyed by effect id.
+    *
+    * <p>One attachment for all of them rather than one per effect, so adding an effect needs no
+    * new registration and no migration: an effect that has never run simply has no entry. The
+    * built-in snow ledger stays separate because it predates this and is read by the Voxy
+    * neutraliser by name.
+    */
+   public static final AttachmentType<Map<String, List<Long>>> EFFECT_OWNED = AttachmentRegistry.createPersistent(
+      TeslesSeasons.id("effect_owned_v1"), Codec.unboundedMap(Codec.STRING, Codec.LONG.listOf())
+   );
+
    public static final AttachmentType<Boolean> LEGACY_022_SNOW_MIGRATED = AttachmentRegistry.createPersistent(
       TeslesSeasons.id("legacy_022_snow_migrated"), Codec.BOOL
    );
@@ -97,6 +112,31 @@ public final class SeasonalWorldData {
 
    public static void markLegacyMigrated(LevelChunk chunk) {
       chunk.setAttached(LEGACY_022_SNOW_MIGRATED, true);
+   }
+
+   public static Map<String, List<Long>> readEffectOwned(LevelChunk chunk) {
+      Map<String, List<Long>> value = chunk.getAttached(EFFECT_OWNED);
+      return value == null ? Map.of() : value;
+   }
+
+   public static void writeEffectOwned(LevelChunk chunk, Map<String, ? extends Collection<Long>> owned) {
+      if (owned == null || owned.isEmpty()) {
+         chunk.removeAttached(EFFECT_OWNED);
+         return;
+      }
+
+      Map<String, List<Long>> out = new LinkedHashMap<>(owned.size());
+      for (Map.Entry<String, ? extends Collection<Long>> entry : owned.entrySet()) {
+         if (!entry.getValue().isEmpty()) {
+            out.put(entry.getKey(), List.copyOf(entry.getValue()));
+         }
+      }
+
+      if (out.isEmpty()) {
+         chunk.removeAttached(EFFECT_OWNED);
+      } else {
+         chunk.setAttached(EFFECT_OWNED, out);
+      }
    }
 
    public static long packLocal(BlockPos pos) {

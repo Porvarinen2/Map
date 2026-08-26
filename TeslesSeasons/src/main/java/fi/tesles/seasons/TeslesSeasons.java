@@ -12,6 +12,8 @@ import fi.tesles.seasons.network.WeatherSyncPayload;
 import fi.tesles.seasons.weather.SeasonWeatherController;
 import fi.tesles.seasons.weather.WeatherSnapshot;
 import fi.tesles.seasons.world.SeasonalWorldData;
+import fi.tesles.seasons.world.effect.WaterFreezeEffect;
+import fi.tesles.seasons.world.effect.SeasonalWorldEffects;
 import fi.tesles.seasons.world.SeasonalWorldReconciler;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerChunkEvents;
@@ -38,10 +40,23 @@ public final class TeslesSeasons implements ModInitializer {
    private static long serverTicks;
    private static SeasonSnapshot lastBroadcastSnapshot;
 
+   /**
+    * Installs the world effects that ship with the mod.
+    *
+    * <p>This is the whole of what adding a seasonal world behaviour costs. An effect is a class
+    * and a line here; the reconciler, the season modules and the Voxy path need no knowledge of it.
+    */
+   private static void registerBuiltInWorldEffects() {
+      if (CONFIG != null && CONFIG.seasonalWaterFreezing) {
+         SeasonalWorldEffects.register(new WaterFreezeEffect());
+      }
+   }
+
    public void onInitialize() {
       CONFIG = TeslesSeasonsConfig.load();
       TeslesSeasonBlocks.init();
       SeasonalWorldData.init();
+      registerBuiltInWorldEffects();
       SeasonEngine.refresh(System.currentTimeMillis());
       SeasonCommands.register();
       PayloadTypeRegistry.clientboundPlay().register(SeasonSyncPayload.TYPE, SeasonSyncPayload.CODEC);

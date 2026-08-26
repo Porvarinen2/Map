@@ -62,6 +62,7 @@ exact binaries — replacing them with different builds may invalidate a target.
 | `GroundCoverFallbackTest` | Melting snow always has a placeholder to fall back on, including on slab terrain. |
 | `SnowSupportTest` | Snow rests on ground and never on water, ice or foliage — the same verdict on the server and in the LOD projector. |
 | `ColumnSweepTest` | A chunk's column sweep is a true permutation, so no column can starve however fast the calendar moves. |
+| `ModularityTest` | Seasons and world effects can be replaced, keep their order, are skipped when inactive, and cannot register without an id. |
 | `SeasonNeutralityTest` | Only writes that heal the world toward neutral reach the LOD store, so a store built in any season converges on the neutral one. |
 | `VoxySnowParityTest` (melt) | Winter Outgoing keeps its canonical footprint exactly, and no column ever drops from 2/8 or deeper straight to bare ground. |
 | `verifyModWiring` | Every mixin is registered, every entrypoint resolves, no `ClientModInitializer` is orphaned. |
@@ -82,12 +83,16 @@ One authority, many projectors:
 RealCalendarSeasonClock / SeasonDebugController
         |
         v
+   SeasonRegistry ──── one SeasonSector per season, replaceable
+        |
+        v
    SeasonDirector  ──── mints a revision only when targets change
         |
         v
   immutable SeasonFrame  (absolute targets, never deltas)
         |
         ├─ SnowSystem / LeafSystem / FloraSystem   physical blocks
+        ├─ SeasonalWorldEffects                    pluggable behaviours
         ├─ SeasonalWorldReconciler                 chunk canonicalisation
         ├─ VoxySeasonMeshProjectionMixin           LOD geometry
         ├─ VoxyShaderUniformMixin                  the one uniform binder
@@ -165,6 +170,85 @@ than guessed at.
 
 The capture schedule keys on season *channels*, not on wall-clock time, so each checkpoint
 lands at the same point of the year on any timelapse speed.
+
+## Extending it
+
+Two things are pluggable: what a season *is*, and what a season *does to the world*.
+
+### Replacing a season
+
+A season is a pure function from a clock snapshot to a `SeasonFrame` of absolute
+targets. Write one, register it, and nothing else changes:
+
+```java
+SeasonRegistry.register(Season.WINTER, new HarshWinterSector());
+```
+
+`SeasonDirector` reads the registry rather than naming the four built-ins, so
+there is no switch to edit. A replacement is held to the same contract as the
+original: the checkpoint and continuity suites run against **whatever is
+registered**, so one that breaks phase continuity fails the build, not the world.
+
+### Adding a world behaviour
+
+Snow, leaf fall and flora are built in because the specification pins them.
+Anything else — lakes freezing, puddles, frost on glass, mud in spring — is a
+`SeasonalWorldEffect`: one class, one registration.
+
+```java
+public final class PuddleEffect implements SeasonalWorldEffect {
+   public String id() { return "mymod:puddles"; }
+
+   public boolean appliesTo(SeasonFrame frame) {
+      return frame.springFreshness() > 0.0F;      // free for the rest of the year
+   }
+
+   public boolean applyToColumn(SeasonalEffectContext ctx) {
+      boolean wet = SeasonCoordinateField.effect01(ctx.x(), ctx.z(), ctx.seed(), MY_SALT)
+                  < ctx.frame().springFreshness() * 0.3F;
+      for (BlockPos owned : ctx.ownedInColumn()) {
+         if (!wet && !ctx.restore(owned, Blocks.DIRT.defaultBlockState())) return false;
+      }
+      return !wet || ctx.place(ctx.surface(), Blocks.MUD.defaultBlockState());
+   }
+}
+```
+
+```java
+SeasonalWorldEffects.register(new PuddleEffect());
+```
+
+`WaterFreezeEffect` is the shipped worked example — the whole of winter lake ice
+in one file. Enable it with `seasonalWaterFreezing` in the config; it is off by
+default because turning it on changes what an existing world looks like.
+
+**What the context gives you, so you cannot get it wrong:**
+
+| You call | You get |
+|---|---|
+| `ctx.frame()` | absolute targets — never ask how far through a transition you are |
+| `ctx.seed()` + `SeasonCoordinateField.effect01(..., yourSalt)` | the same deterministic field the snow and the distant LOD use |
+| `ctx.surface()` | the ground, ignoring foliage — the same position the snow pass calls the surface |
+| `ctx.place(pos, state)` | a budgeted write, recorded as **yours** |
+| `ctx.restore(pos, state)` | undoes one of *your* placements, and silently declines anything else |
+| `ctx.ownedInColumn()` | what you own here, so you can take it back |
+
+Three properties come free from using them, and are the reason to:
+
+- **Player builds are safe.** `restore` only touches what `place` recorded. A
+  thaw cannot eat ice a player put there.
+- **Distant terrain agrees.** `place` is held out of Voxy's LOD store and
+  `restore` is let through, so the store keeps converging on the neutral world
+  without your effect knowing that store exists.
+- **The tick survives.** Every write is budgeted; return `false` when one does
+  and the column is picked up again.
+
+Give each effect its own salt. Two sharing one select the same coordinates, and
+the correlation shows up in game as the two appearing and vanishing in exactly
+the same patches.
+
+An effect that throws is logged once and skipped for that column. It cannot take
+the season system down with it.
 
 ## Configuration
 

@@ -18,6 +18,12 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
+import fi.tesles.seasons.world.effect.SeasonalEffectContext;
+import fi.tesles.seasons.world.effect.SeasonalWorldEffect;
+import fi.tesles.seasons.world.effect.SeasonalWorldEffects;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -339,6 +345,15 @@ public final class SeasonalWorldReconciler {
       return start + index * step & 0xFF;
    }
 
+   private static final Set<String> REPORTED_EFFECT_FAILURES = ConcurrentHashMap.newKeySet();
+
+   /** Logs an effect's first failure and then stays quiet about it. */
+   private static void reportEffectFailure(String effectId, Throwable failure) {
+      if (REPORTED_EFFECT_FAILURES.add(effectId)) {
+         TeslesSeasons.LOGGER.error("Seasonal world effect '{}' failed and was skipped for this column.", effectId, failure);
+      }
+   }
+
    private static boolean canWork() {
       return writesRemaining > 0 && System.nanoTime() < deadlineNanos;
    }
@@ -395,6 +410,8 @@ public final class SeasonalWorldReconciler {
    private static final class WorkState {
       final ServerLevel level;
       final LevelChunk chunk;
+      /** Per-effect ownership, mirroring the chunk's EFFECT_OWNED attachment. */
+      final Map<String, LinkedHashSet<Long>> effectOwned = new LinkedHashMap<>();
       final Set<Long> ownedSnow = new HashSet<>();
       final Map<Integer, LinkedHashSet<Long>> ownedSnowByColumn = new HashMap<>();
       final Map<Long, String> removedLeaves = new HashMap<>();
@@ -428,6 +445,10 @@ public final class SeasonalWorldReconciler {
          for (long packed : SeasonalWorldData.readOwnedSnow(chunk)) {
             this.ownedSnow.add(packed);
             index(this.ownedSnowByColumn, packed);
+         }
+
+         for (Map.Entry<String, List<Long>> entry : SeasonalWorldData.readEffectOwned(chunk).entrySet()) {
+            this.effectOwned.put(entry.getKey(), new LinkedHashSet<>(entry.getValue()));
          }
 
          for (String e : SeasonalWorldData.readRemovedLeaves(chunk)) {
@@ -716,7 +737,168 @@ public final class SeasonalWorldReconciler {
                }
             }
 
-            return this.reconcileSeasonFloraInColumn(lx, lz, frame);
+            if (!this.reconcileSeasonFloraInColumn(lx, lz, frame)) {
+               return false;
+            }
+
+            return this.applyWorldEffects(wx, wz, frame);
+         }
+      }
+
+      /**
+       * Runs the installed {@link SeasonalWorldEffect}s over one column.
+       *
+       * <p>They run after the built-in snow, leaf and flora work, so an effect sees the column as
+       * the season has already left it - ice forms on water the snow pass has decided not to cover,
+       * not on water it is about to. Nothing happens at all when no effect asks for this frame,
+       * which for most of the year is every one of them.
+       */
+      private boolean applyWorldEffects(int wx, int wz, SeasonFrame frame) {
+         List<SeasonalWorldEffect> effects = SeasonalWorldEffects.active(frame);
+         if (effects.isEmpty()) {
+            return true;
+         }
+
+         for (SeasonalWorldEffect effect : effects) {
+            if (!SeasonalWorldReconciler.canWork()) {
+               return false;
+            }
+
+            SeasonalWorldReconciler.WorkState.EffectColumn column =
+               new SeasonalWorldReconciler.WorkState.EffectColumn(effect.id(), wx, wz, frame);
+            try {
+               if (!effect.applyToColumn(column)) {
+                  return false;
+               }
+            } catch (Throwable failure) {
+               // One misbehaving effect must not take the season system down with it.
+               SeasonalWorldReconciler.reportEffectFailure(effect.id(), failure);
+            }
+         }
+
+         return true;
+      }
+
+      /** {@link SeasonalEffectContext} bound to one column of this chunk. */
+      private final class EffectColumn implements SeasonalEffectContext {
+         private final String effectId;
+         private final int wx;
+         private final int wz;
+         private final SeasonFrame frame;
+         private BlockPos surface;
+
+         private EffectColumn(String effectId, int wx, int wz, SeasonFrame frame) {
+            this.effectId = effectId;
+            this.wx = wx;
+            this.wz = wz;
+            this.frame = frame;
+         }
+
+         @Override
+         public ServerLevel level() {
+            return WorkState.this.level;
+         }
+
+         @Override
+         public SeasonFrame frame() {
+            return this.frame;
+         }
+
+         @Override
+         public long seed() {
+            return SeasonEngine.current().visualSeed();
+         }
+
+         @Override
+         public int x() {
+            return this.wx;
+         }
+
+         @Override
+         public int z() {
+            return this.wz;
+         }
+
+         @Override
+         public BlockPos surface() {
+            if (this.surface == null) {
+               int top = WorkState.this.level.getHeight(Types.MOTION_BLOCKING_NO_LEAVES, this.wx, this.wz) - 1;
+               this.surface = new BlockPos(this.wx, Math.max(WorkState.this.level.getMinY(), top), this.wz);
+            }
+            return this.surface;
+         }
+
+         @Override
+         public BlockState stateAt(BlockPos pos) {
+            return WorkState.this.level.getBlockState(pos);
+         }
+
+         @Override
+         public boolean place(BlockPos pos, BlockState state) {
+            // An effect placing a block is the season diverging from the neutral world by
+            // definition, so it is held out of Voxy's LOD store without the effect having to know
+            // that store exists. Every future effect gets this for free, and correctly.
+            if (!VoxyServerMutationGuard.runSuppressingLodDivergence(() -> WorkState.this.trySet(pos, state))) {
+               return false;
+            }
+            this.markOwned(pos);
+            return true;
+         }
+
+         @Override
+         public boolean restore(BlockPos pos, BlockState state) {
+            if (!this.owns(pos)) {
+               return true;
+            }
+            // Undoing an effect brings the world back toward neutral, so it is allowed through to
+            // the LOD - that is what lets a distant lake stop being frozen.
+            if (!WorkState.this.trySet(pos, state)) {
+               return false;
+            }
+
+            LinkedHashSet<Long> owned = WorkState.this.effectOwned.get(this.effectId);
+            if (owned != null && owned.remove(SeasonalWorldData.packLocal(pos)) && owned.isEmpty()) {
+               WorkState.this.effectOwned.remove(this.effectId);
+            }
+            WorkState.this.dirty = true;
+            return true;
+         }
+
+         @Override
+         public boolean owns(BlockPos pos) {
+            LinkedHashSet<Long> owned = WorkState.this.effectOwned.get(this.effectId);
+            return owned != null && owned.contains(SeasonalWorldData.packLocal(pos));
+         }
+
+         @Override
+         public void markOwned(BlockPos pos) {
+            if (WorkState.this.effectOwned
+               .computeIfAbsent(this.effectId, ignored -> new LinkedHashSet<>())
+               .add(SeasonalWorldData.packLocal(pos))) {
+               WorkState.this.dirty = true;
+            }
+         }
+
+         @Override
+         public Iterable<BlockPos> ownedInColumn() {
+            LinkedHashSet<Long> owned = WorkState.this.effectOwned.get(this.effectId);
+            if (owned == null || owned.isEmpty()) {
+               return List.of();
+            }
+
+            int columnKey = (this.wz & 15) << 4 | this.wx & 15;
+            List<BlockPos> here = new ArrayList<>();
+            for (long packed : owned) {
+               if (SeasonalWorldData.localColumnKey(packed) == columnKey) {
+                  here.add(SeasonalWorldData.unpackLocal(WorkState.this.chunk, packed));
+               }
+            }
+            return here;
+         }
+
+         @Override
+         public boolean canWork() {
+            return SeasonalWorldReconciler.canWork();
          }
       }
 
@@ -1097,6 +1279,7 @@ public final class SeasonalWorldReconciler {
             SeasonalWorldData.writeOwnedSnow(this.chunk, this.ownedSnow);
             SeasonalWorldData.writeRemovedLeaves(this.chunk, this.removedLeaves.values());
             SeasonalWorldData.writeRemovedFlora(this.chunk, this.removedFlora.values());
+            SeasonalWorldData.writeEffectOwned(this.chunk, this.effectOwned);
             this.chunk.markUnsaved();
             this.dirty = false;
             this.writesSinceFlush = 0;
