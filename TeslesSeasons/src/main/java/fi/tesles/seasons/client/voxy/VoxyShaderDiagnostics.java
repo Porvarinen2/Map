@@ -58,6 +58,16 @@ public final class VoxyShaderDiagnostics {
       }
    }
 
+   /** Whether both halves of the shader bridge were applied to at least one program. */
+   public static boolean isBridgeApplied() {
+      return vertexPatched && fragmentPatched;
+   }
+
+   /** Milliseconds since a program carrying season uniforms last bound, or -1. */
+   public static long lastSeasonBindAgeMillis() {
+      return age(lastSeasonUniformBindMillis);
+   }
+
    public static String summary() {
       long age = age(lastUniformBindMillis);
       long seasonAge = age(lastSeasonUniformBindMillis);

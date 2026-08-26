@@ -1,5 +1,8 @@
 package fi.tesles.seasons.client;
 
+import fi.tesles.seasons.TeslesSeasons;
+import fi.tesles.seasons.client.diagnostic.PerformanceLog;
+import fi.tesles.seasons.client.diagnostic.SeasonHud;
 import fi.tesles.seasons.client.render.NearMeshRefreshQueue;
 import fi.tesles.seasons.fix064.client.VoxySeasonRemeshScheduler;
 import fi.tesles.seasons.client.render.SeasonalModelLoading;
@@ -8,10 +11,12 @@ import fi.tesles.seasons.network.DiagnosticCapturePayload;
 import fi.tesles.seasons.network.SeasonSyncPayload;
 import fi.tesles.seasons.network.WeatherSyncPayload;
 import net.fabricmc.api.ClientModInitializer;
+import net.minecraft.client.Minecraft;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents.EndTick;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents.Disconnect;
 
 public final class TeslesSeasonsClient implements ClientModInitializer {
@@ -33,7 +38,13 @@ public final class TeslesSeasonsClient implements ClientModInitializer {
          // previous one's watched sections or projected revisions.
          VoxySeasonRemeshScheduler.reset();
       });
+      // The status panel. Registered last so it draws over the rest of the HUD rather than under
+      // the hotbar, and it decides for itself whether it is visible.
+      HudElementRegistry.addLast(TeslesSeasons.id("season_hud"),
+         (gui, delta) -> SeasonHud.render(gui, Minecraft.getInstance()));
+
       ClientTickEvents.END_CLIENT_TICK.register((EndTick)client -> {
+         PerformanceLog.onFrame();
          NearMeshRefreshQueue.tick(client);
          CustomWeatherEffects.tick(client);
          SeasonDiagnosticRecorder.tick(client);

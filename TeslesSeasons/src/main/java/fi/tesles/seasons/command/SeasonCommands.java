@@ -12,6 +12,7 @@ import fi.tesles.seasons.calendar.CalendarPhase;
 import fi.tesles.seasons.calendar.Season;
 import fi.tesles.seasons.compat.VoxyServerBackfillBridge;
 import fi.tesles.seasons.debug.SeasonDebugController;
+import fi.tesles.seasons.ServerDiagnosticSampler;
 import fi.tesles.seasons.network.DiagnosticCapturePayload;
 import fi.tesles.seasons.weather.SeasonWeatherController;
 import fi.tesles.seasons.weather.TeslesWeatherType;
@@ -41,6 +42,10 @@ public final class SeasonCommands {
                                           .requires(source -> source.permissions().hasPermission(Permissions.COMMANDS_MODERATOR)))
                                        .executes(SeasonCommands::status))
                                     .then(Commands.literal("status").executes(SeasonCommands::status)))
+                                 .then(
+                                    ((LiteralArgumentBuilder)Commands.literal("hud").executes(context -> hud(context, "toggle")))
+                                       .then(Commands.literal("on").executes(context -> hud(context, "on")))
+                                       .then(Commands.literal("off").executes(context -> hud(context, "off"))))
                                  .then(Commands.literal("reconcile").executes(SeasonCommands::reconcile)))
                               .then(
                                  ((LiteralArgumentBuilder)Commands.literal("voxy").then(Commands.literal("status").executes(SeasonCommands::voxyStatus)))
@@ -182,11 +187,29 @@ public final class SeasonCommands {
       if (player == null) {
          return 0;
       } else {
+         ServerDiagnosticSampler.begin(player, 20);
          ServerPlayNetworking.send(player, DiagnosticCapturePayload.single(diagnosticServerSummary()));
          ((CommandSourceStack)context.getSource())
             .sendSuccess(() -> Component.literal("Requested client screenshot + season/Voxy/world-sample diagnostic ZIP."), false);
          return 1;
       }
+   }
+
+   /**
+    * Toggles the client's status panel.
+    *
+    * <p>The panel is drawn client-side but lives in the same command tree as everything else, so
+    * there is one place to look. The server does nothing but relay the request to the player who
+    * asked.
+    */
+   private static int hud(CommandContext<CommandSourceStack> context, String mode) {
+      ServerPlayer player = ((CommandSourceStack)context.getSource()).getPlayer();
+      if (player == null) {
+         ((CommandSourceStack)context.getSource()).sendFailure(Component.literal("The status panel is per-player; run this as a player."));
+         return 0;
+      }
+      ServerPlayNetworking.send(player, DiagnosticCapturePayload.hud(mode));
+      return 1;
    }
 
    private static int diagnosticYear(CommandContext<CommandSourceStack> context) {
@@ -203,6 +226,7 @@ public final class SeasonCommands {
          SeasonSnapshot snapshot = SeasonEngine.refresh(now);
          SeasonalWorldReconciler.queuePlayerVicinityUrgent(((CommandSourceStack)context.getSource()).getServer());
          TeslesSeasons.broadcastSeason(((CommandSourceStack)context.getSource()).getServer(), snapshot, true);
+         ServerDiagnosticSampler.begin(player, seconds);
          ServerPlayNetworking.send(player, DiagnosticCapturePayload.year(seconds, diagnosticServerSummary()));
          ((CommandSourceStack)context.getSource())
             .sendSuccess(

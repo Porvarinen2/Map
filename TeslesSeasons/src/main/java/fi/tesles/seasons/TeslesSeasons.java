@@ -94,6 +94,7 @@ public final class TeslesSeasons implements ModInitializer {
          lastBroadcastSnapshot = null;
       });
       ServerTickEvents.END_SERVER_TICK.register((EndTick)server -> {
+         ServerDiagnosticSampler.tick(server);
          serverTicks++;
          VoxyServerBackfillBridge.tick(server);
          long now = System.currentTimeMillis();

@@ -5,6 +5,9 @@ import fi.tesles.seasons.TeslesSeasons;
 import fi.tesles.seasons.api.SeasonSnapshot;
 import fi.tesles.seasons.calendar.CalendarPhase;
 import fi.tesles.seasons.calendar.Season;
+import fi.tesles.seasons.client.diagnostic.AerialMapRenderer;
+import fi.tesles.seasons.client.diagnostic.PerformanceLog;
+import fi.tesles.seasons.client.diagnostic.SeasonHud;
 import fi.tesles.seasons.client.render.SeasonalCategory;
 import fi.tesles.seasons.client.render.SeasonalClassifier;
 import fi.tesles.seasons.client.voxy.VoxyCategoryDiagnostics;
@@ -55,6 +58,23 @@ public final class SeasonDiagnosticRecorder {
    }
 
    public static void accept(DiagnosticCapturePayload.Request request, Minecraft client) {
+      if (request.isHud()) {
+         String mode = request.serverSummary();
+         boolean shown = "toggle".equalsIgnoreCase(mode) ? SeasonHud.toggle() : "on".equalsIgnoreCase(mode);
+         if (!"toggle".equalsIgnoreCase(mode)) {
+            SeasonHud.setVisible(shown);
+         }
+         say(client, "TESLES status panel " + (SeasonHud.isVisible() ? "on" : "off"));
+         return;
+      }
+
+      if (request.isSample()) {
+         // A server measurement, not a capture request: merge it into the row the client is about
+         // to write and do nothing else.
+         PerformanceLog.acceptServerSample(request.serverSummary());
+         return;
+      }
+
       if (client != null) {
          if (session != null) {
             finish(client, "replaced-by-new-request");
@@ -69,13 +89,14 @@ public final class SeasonDiagnosticRecorder {
             session = new SeasonDiagnosticRecorder.Session(dir, request, System.currentTimeMillis());
             writeText(
                dir.resolve("README.txt"),
-               "TESLESSEASONS DIAGNOSTIC BUNDLE\n\nUpload this ZIP as-is when reporting a season/Voxy visual problem.\nPNG files are direct captures of Minecraft's main render target, so Iris/Sodium/Voxy are included.\nThe paired *-state.txt and *-world-sample.csv files describe the exact season channels and nearby\nphysical surface at each screenshot. timeline.csv records the synchronized year once per second.\nVoxy category counters, selected config files, installed-mod versions and the latest log tail are\nincluded so the render mismatch can be reproduced without guessing.\n"
+               "TESLESSEASONS DIAGNOSTIC BUNDLE\n\nUpload this ZIP as-is when reporting a season or Voxy problem. Nothing here needs\nediting, trimming or explaining first.\n\nWHAT IS IN IT\n  NN-<phase>.png              the screen, exactly as rendered (Iris/Sodium/Voxy included)\n  NN-<phase>-map-terrain.png  plan view of what the world IS, from real block data\n  NN-<phase>-map-voxy.png     plan view of what VOXY HOLDS, per LOD section\n  NN-<phase>-state.txt        every season channel at that moment, plus Voxy counters\n  NN-<phase>-world-sample.csv the same 2401 columns every time: surface block, snow, category\n  timeline.csv                every season channel, once per second, all year\n  performance.csv             once per second: fps, frame time, heap, LOD counts,\n                              and the server's tick time, queues and ledger sizes\n  server-state.txt            the server status line\n  environment/, mods.txt, latest-log-tail.txt\n\nREADING THE MAPS\nBoth maps are north-up, 2 blocks per pixel, player at the centre cross. The bar at\nthe bottom left is 256 blocks. Thin lines are chunks, brighter lines every 512.\n\n  map-terrain swatches, left to right:\n    grass · deciduous · evergreen · snow · water · flower · mushroom · bare ground · built\n\n  map-voxy swatches, left to right:\n    GREEN  section is showing the current season\n    RED    section is still showing an OLDER season   <- this is the fault\n    BLUE   inside the vanilla render distance, real blocks are drawn there instead\n  The yellow ring is the handoff radius. Black means Voxy holds nothing there.\n\nA healthy voxy map is green with a blue disc in the middle. Red anywhere means the\nLOD kept a season it should have let go of - note where it is and roughly how far\naway, that is the useful part.\n"
             );
             writeText(dir.resolve("server-state.txt"), request.serverSummary() == null ? "" : request.serverSummary());
             writeText(dir.resolve("client-start.txt"), clientReport(client, "start"));
             writeMods(dir.resolve("mods.txt"));
             writeEnvironmentFiles(dir);
             writeTimelineHeader(dir.resolve("timeline.csv"));
+            PerformanceLog.start();
             say(
                client,
                request.isYear()
@@ -100,6 +121,7 @@ public final class SeasonDiagnosticRecorder {
          if (now - s.lastTimelineMillis >= 1000L) {
             s.lastTimelineMillis = now;
             appendTimeline(s.dir.resolve("timeline.csv"), now);
+            PerformanceLog.sample(client);
          }
 
          if (s.request.isYear() && !s.captureBusy) {
@@ -206,6 +228,13 @@ public final class SeasonDiagnosticRecorder {
          try {
             writeText(s.dir.resolve(label + "-state.txt"), clientReport(client, label));
             writeWorldSample(client, s.dir.resolve(label + "-world-sample.csv"));
+
+            // Plan views of the same instant. A screenshot shows one direction from one place; the
+            // faults that matter here are regional, and only visible from above.
+            AerialMapRenderer.render(client,
+               s.dir.resolve(label + "-map-terrain.png"),
+               s.dir.resolve(label + "-map-voxy.png"),
+               AerialMapRenderer.DEFAULT_RADIUS_BLOCKS);
             Path screenshot = s.dir.resolve(label + ".png");
             captureMinecraftScreenshot(client, screenshot, error -> {
                SeasonDiagnosticRecorder.Session current = session;
@@ -424,6 +453,26 @@ public final class SeasonDiagnosticRecorder {
       }
    }
 
+   /**
+    * The once-a-second performance series for the whole run.
+    *
+    * <p>Written at the end rather than streamed, because a capture that is measuring frame time
+    * should not be opening a file every second while it does so.
+    */
+   private static void writePerformanceLog(Path path) {
+      try {
+         List<String> rows = PerformanceLog.rows();
+         StringBuilder out = new StringBuilder(rows.size() * 200 + 256);
+         out.append(PerformanceLog.HEADER).append('\n');
+         for (String row : rows) {
+            out.append(row).append('\n');
+         }
+         writeText(path, out.toString());
+      } catch (Throwable ignored) {
+         // A missing performance file must never cost the rest of the bundle.
+      }
+   }
+
    private static void writeEnvironmentFiles(Path dir) {
       Path gameDir = FabricLoader.getInstance().getGameDir();
 
@@ -523,6 +572,8 @@ public final class SeasonDiagnosticRecorder {
 
          try {
             writeText(s.dir.resolve("client-end.txt"), clientReport(client, "end") + "finishReason=" + reason + "\n");
+            PerformanceLog.stop();
+            writePerformanceLog(s.dir.resolve("performance.csv"));
             writeLatestLogTail(s.dir.resolve("latest-log-tail.txt"));
             Path zip = s.dir.getParent().resolve("TeslesSeasons-diagnostic-" + s.dir.getFileName() + ".zip");
             zipDirectory(s.dir, zip);

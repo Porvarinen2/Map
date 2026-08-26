@@ -159,6 +159,72 @@ public final class VoxySeasonRemeshScheduler implements ClientModInitializer {
     * True when the geometry cached for {@code key} was built against different snow targets
     * than {@code currentGeometryKey}, and must therefore not be shown.
     */
+   /**
+    * One Voxy section, as the scheduler currently sees it.
+    *
+    * @param x section X, in section units at this level
+    * @param z section Z
+    * @param level LOD level; a section spans 32 &lt;&lt; level blocks on a side
+    * @param current whether its geometry was meshed against the frame in force
+    * @param protectedByHandoff whether it lies inside the vanilla render distance
+    */
+   public record SectionState(int x, int z, int level, boolean current, boolean protectedByHandoff) {
+      /** Side of this section in blocks. */
+      public int spanBlocks() {
+         return 32 << this.level;
+      }
+
+      public int minBlockX() {
+         return this.x * this.spanBlocks();
+      }
+
+      public int minBlockZ() {
+         return this.z * this.spanBlocks();
+      }
+   }
+
+   /**
+    * A snapshot of every watched section and whether it is showing the current season.
+    *
+    * <p>This is the only view anything outside the scheduler gets of the LOD set, and it exists so
+    * the diagnostic map can draw what Voxy actually holds rather than what it ought to. A section
+    * reported as not current is one whose geometry was built against an older frame - which on a
+    * map is exactly the band of wrong season a player sees in the distance.
+    */
+   public static List<SectionState> snapshotSections(long currentGeometryKey) {
+      List<SectionState> out = new ArrayList<>(WATCHED.size());
+      for (long position : WATCHED) {
+         Long built = PROJECTED_GEOMETRY.get(position);
+         out.add(new SectionState(
+            WorldEngine.getX(position),
+            WorldEngine.getZ(position),
+            Math.max(0, WorldEngine.getLevel(position)),
+            built != null && built == currentGeometryKey,
+            PROTECTED.contains(position)
+         ));
+      }
+      return out;
+   }
+
+   /** Blocks from the player within which Voxy defers to real chunks. */
+   public static int handoffRadius() {
+      return handoffRadiusBlocks;
+   }
+
+   /** Sections watched, and how many of those are showing the current season. */
+   public static int[] sectionCounts(long currentGeometryKey) {
+      int watched = 0;
+      int current = 0;
+      for (long position : WATCHED) {
+         watched++;
+         Long built = PROJECTED_GEOMETRY.get(position);
+         if (built != null && built == currentGeometryKey) {
+            current++;
+         }
+      }
+      return new int[]{watched, current};
+   }
+
    public static boolean isStale(long key, long currentGeometryKey) {
       Long built = PROJECTED_GEOMETRY.get(key);
       return built == null || built != currentGeometryKey;

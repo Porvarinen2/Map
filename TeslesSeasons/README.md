@@ -169,14 +169,28 @@ Rules that hold this together, and that regressions historically broke:
 
 ```
 /teslesseasons diagnostic year [seconds]   # default 600
+/teslesseasons hud [on|off]                # right-edge status panel
 ```
 
-Runs a full simulated year and writes a ZIP holding per-second season channels
-(`timeline.csv`), ten paired `*-state.txt` / `*-world-sample.csv` captures, screenshots,
-Voxy category and shader counters, the relevant configs and the log tail. Upload it as-is
-when reporting a visual problem — the world sample records the actual surface block of a
-fixed grid of columns, so a claim about what the world looks like can be checked rather
-than guessed at.
+Runs a full simulated year and writes one ZIP. Everything is automatic; drop the ZIP
+as-is into a bug report.
+
+| In the bundle | What it answers |
+|---|---|
+| `*-map-terrain.png` | Plan view of what the world **is**, from real block data |
+| `*-map-voxy.png` | Plan view of what **Voxy holds** — every LOD section, green if current, **red if it kept an older season** |
+| `*.png` | The screen as rendered, Iris and Sodium included |
+| `*-world-sample.csv` | The same 2401 columns every capture: surface block, snow layers, category |
+| `timeline.csv` | Every season channel, once per second, all year |
+| `performance.csv` | Once per second: fps, frame time, heap, LOD counts, **and the server's tick time, queues and ledger sizes** |
+| `*-state.txt`, `server-state.txt`, `environment/`, `mods.txt`, log tail | The rest |
+
+The two maps are the fastest way to see a regional fault. A band of the wrong season at
+one distance is invisible from the ground and obvious from above, and `map-voxy` names it
+directly: red sections are ones whose geometry was built against an older frame.
+
+`performance.csv` lines the client and the server up against one clock, which is what
+separates a client stall from a server one.
 
 The capture schedule keys on season *channels*, not on wall-clock time, so each checkpoint
 lands at the same point of the year on any timelapse speed.

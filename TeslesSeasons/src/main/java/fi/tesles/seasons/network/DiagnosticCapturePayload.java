@@ -24,6 +24,25 @@ public record DiagnosticCapturePayload(String json) implements CustomPacketPaylo
       return from(new DiagnosticCapturePayload.Request("year", durationSeconds, System.currentTimeMillis(), serverSummary));
    }
 
+   /**
+    * A periodic server-side measurement, pushed while a capture is running.
+    *
+    * <p>The client cannot see the server's tick time, chunk queues or ledger sizes, and those are
+    * exactly the numbers that separate a client stall from a server one. Sending them on the same
+    * second the client samples itself is what lets one file line the two up against one clock.
+    *
+    * <p>The payload is the raw comma-separated tail of the row, so adding a server-side field needs
+    * no change on the receiving side.
+    */
+   /** Toggles the client's status panel. The command tree is server-side; the panel is not. */
+   public static DiagnosticCapturePayload hud(String mode) {
+      return from(new DiagnosticCapturePayload.Request("hud", 0, System.currentTimeMillis(), mode));
+   }
+
+   public static DiagnosticCapturePayload sample(String csvTail) {
+      return from(new DiagnosticCapturePayload.Request("sample", 0, System.currentTimeMillis(), csvTail));
+   }
+
    private static DiagnosticCapturePayload from(DiagnosticCapturePayload.Request request) {
       return new DiagnosticCapturePayload(GSON.toJson(request));
    }
@@ -40,6 +59,14 @@ public record DiagnosticCapturePayload(String json) implements CustomPacketPaylo
    public record Request(String mode, int durationSeconds, long requestedAtMillis, String serverSummary) {
       public boolean isYear() {
          return "year".equalsIgnoreCase(this.mode);
+      }
+
+      public boolean isSample() {
+         return "sample".equalsIgnoreCase(this.mode);
+      }
+
+      public boolean isHud() {
+         return "hud".equalsIgnoreCase(this.mode);
       }
    }
 }

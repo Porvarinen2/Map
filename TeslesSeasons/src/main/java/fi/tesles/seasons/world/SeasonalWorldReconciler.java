@@ -253,6 +253,21 @@ public final class SeasonalWorldReconciler {
       }
    }
 
+   /**
+    * The numbers a diagnostic capture needs, without parsing the status string.
+    *
+    * <p>{@link #status()} exists for a human reading a HUD; this exists for a machine writing a time
+    * series. Neither should be built by taking the other apart.
+    */
+   public record Counters(int loaded, int urgent, int ledgerLeaves, int ledgerFlora,
+                          long snowPlaced, long leavesRemoved, long leavesRestored) {
+   }
+
+   public static Counters counters() {
+      return new Counters(LOADED.size(), URGENT.size(), pendingLedger(true), pendingLedger(false),
+         snowPlaced, leavesRemoved, leavesRestored);
+   }
+
    public static String status() {
       return "0.7.0 sectorized loaded="
          + LOADED.size()
