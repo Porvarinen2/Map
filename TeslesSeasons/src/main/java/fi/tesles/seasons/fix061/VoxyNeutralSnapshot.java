@@ -1,5 +1,6 @@
 package fi.tesles.seasons.fix061;
 
+import fi.tesles.seasons.TeslesSeasons;
 import fi.tesles.seasons.world.SeasonalWorldData;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
@@ -89,8 +90,15 @@ public final class VoxyNeutralSnapshot {
                   }
                }
             }
-         } catch (Throwable var12) {
-            FAILURES.incrementAndGet();
+         } catch (Throwable failure) {
+            // Counting a failure and saying nothing about it cost a full round of diagnosis: a
+            // capture reported nine hundred failures with no way to tell what threw. The first one
+            // is logged in full; the rest are counted.
+            if (FAILURES.getAndIncrement() == 0L) {
+               TeslesSeasons.LOGGER.error(
+                  "TESLES Voxy neutralisation failed for chunk {}; the LOD it produces will carry a season.",
+                  chunk.getPos(), failure);
+            }
          }
 
          return copy;
@@ -137,7 +145,11 @@ public final class VoxyNeutralSnapshot {
       if (section == null) {
          return false;
       } else {
-         section.setBlockState(pos.getX() & 15, pos.getY() & 15, pos.getZ() & 15, state);
+         // Unlocked, deliberately. The four-argument form takes the palette lock, and this runs on a
+         // Voxy ingest worker while the server thread owns the real chunk - so acquiring it throws
+         // rather than blocking, which aborted the whole neutralisation. The section being written
+         // here is a private copy that nothing else can see, so there is nothing to lock against.
+         section.setBlockState(pos.getX() & 15, pos.getY() & 15, pos.getZ() & 15, state, false);
          return true;
       }
    }

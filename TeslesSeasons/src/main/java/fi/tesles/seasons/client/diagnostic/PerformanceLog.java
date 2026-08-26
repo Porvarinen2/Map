@@ -24,7 +24,7 @@ import net.minecraft.client.Minecraft;
  */
 public final class PerformanceLog {
    public static final String HEADER =
-      "t_ms,season,phase,progress,revision,fps,frame_ms_avg,frame_ms_p95,heap_used_mib,heap_max_mib,"
+      "t_ms,season,phase,progress,revision,fps,tick_ms_avg,tick_ms_p95,heap_used_mib,heap_max_mib,"
       + "voxy_sections,voxy_current,voxy_stale,shader_bind_age_ms,player_x,player_y,player_z,"
       + "server_mspt,server_tps,server_loaded,server_urgent,server_ledger_leaves,server_ledger_flora,"
       + "server_snow_placed,server_leaves_removed,server_leaves_restored";
@@ -57,7 +57,14 @@ public final class PerformanceLog {
       return running;
    }
 
-   /** Called every client frame while a run is active. Cheap by construction. */
+   /**
+    * Called from the client tick, which fires twenty times a second - so what this measures is the
+    * client's tick interval, not its frame time.
+    *
+    * <p>The distinction cost a reading: an early capture reported a flat 20 fps and a 50 ms frame
+    * time for a whole year, which is the tick rate wearing a frame time's name. Frames per second
+    * are taken from Minecraft's own counter instead, and these columns say tick.
+    */
    public static void onFrame() {
       if (!running) {
          return;
@@ -117,7 +124,7 @@ public final class PerformanceLog {
          .append(frame.phase()).append(',')
          .append(round(frame.progress())).append(',')
          .append(frame.revision()).append(',')
-         .append(avgMs > 0.0 ? Math.round(1000.0 / avgMs) : 0).append(',')
+         .append(currentFps(client)).append(',')
          .append(round(avgMs)).append(',')
          .append(round(p95Ms)).append(',')
          .append((runtime.totalMemory() - runtime.freeMemory()) / 1048576L).append(',')
@@ -135,6 +142,15 @@ public final class PerformanceLog {
 
    public static synchronized List<String> rows() {
       return List.copyOf(ROWS);
+   }
+
+   /** Minecraft's own frame counter, which is the only thing here that really is frames. */
+   private static int currentFps(Minecraft client) {
+      try {
+         return client.getFps();
+      } catch (Throwable ignored) {
+         return -1;
+      }
    }
 
    /** Voxy may not be installed, and the scheduler is only live on a client with it. */

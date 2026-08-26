@@ -103,7 +103,11 @@ public final class AerialMapRenderer {
                continue;
             }
 
-            int top = level.getHeight(Types.MOTION_BLOCKING_NO_LEAVES, wx, wz) - 1;
+            // WORLD_SURFACE, not MOTION_BLOCKING_NO_LEAVES. The latter is what the snow pass uses
+            // to find the ground a layer should rest on, and a one-layer snow does not block motion
+            // - so it reports the grass block underneath and the map drew a green world in deep
+            // winter. A map wants whatever is visible from above: canopy, snow, grass.
+            int top = level.getHeight(Types.WORLD_SURFACE, wx, wz) - 1;
             if (top < level.getMinY()) {
                continue;
             }

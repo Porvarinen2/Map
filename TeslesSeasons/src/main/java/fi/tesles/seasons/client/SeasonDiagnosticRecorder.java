@@ -241,7 +241,9 @@ public final class SeasonDiagnosticRecorder {
                if (current != null) {
                   if (error != null) {
                      try {
-                        writeText(current.dir.resolve(label + "-screenshot-error.txt"), error);
+                        writeText(current.dir.resolve(label + "-screenshot-error.txt"),
+                           error + "\n\nThe maps in this bundle are unaffected; they are rendered from data\n"
+                           + "rather than from the framebuffer.\n");
                      } catch (Exception var5x) {
                      }
                   }
@@ -290,8 +292,19 @@ public final class SeasonDiagnosticRecorder {
                if (screenshot != null) {
                   screenshot.close();
                }
+
+               // The write can report success and still leave nothing on disk - which is what has
+               // been happening, silently, for every capture so far: no screenshot and no error
+               // either. Confirming the file afterwards turns that into something a bundle can say.
+               if (!Files.isRegularFile(output) || Files.size(output) <= 0L) {
+                  error = "screenshot reported success but no file was written to " + output.toAbsolutePath();
+               }
             } catch (Throwable var9) {
                error = var9.toString();
+            }
+
+            if (error != null) {
+               TeslesSeasons.LOGGER.warn("TESLES diagnostic screenshot failed: {}", error);
             }
 
             completion.accept(error);
