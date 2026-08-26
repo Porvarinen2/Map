@@ -39,6 +39,11 @@ public record DiagnosticCapturePayload(String json) implements CustomPacketPaylo
       return from(new DiagnosticCapturePayload.Request("hud", 0, System.currentTimeMillis(), mode));
    }
 
+   /** The server's full status line, kept as the bundle's end-of-run snapshot. */
+   public static DiagnosticCapturePayload status(String status) {
+      return from(new DiagnosticCapturePayload.Request("status", 0, System.currentTimeMillis(), status));
+   }
+
    public static DiagnosticCapturePayload sample(String csvTail) {
       return from(new DiagnosticCapturePayload.Request("sample", 0, System.currentTimeMillis(), csvTail));
    }
@@ -63,6 +68,10 @@ public record DiagnosticCapturePayload(String json) implements CustomPacketPaylo
 
       public boolean isSample() {
          return "sample".equalsIgnoreCase(this.mode);
+      }
+
+      public boolean isStatus() {
+         return "status".equalsIgnoreCase(this.mode);
       }
 
       public boolean isHud() {

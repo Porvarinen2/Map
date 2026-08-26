@@ -19,7 +19,16 @@ public final class VoxyNeutralSnapshot {
    public static final AtomicLong STRIPPED_SNOW = new AtomicLong();
    public static final AtomicLong RESTORED_LEAVES = new AtomicLong();
    public static final AtomicLong RESTORED_FLORA = new AtomicLong();
+   /** Failures inside {@link #copyAndNeutralize}: a chunk handed to Voxy still carrying a season. */
    public static final AtomicLong FAILURES = new AtomicLong();
+   /**
+    * Failures in the region-file importer, which shares this class's counters.
+    *
+    * <p>Separate from {@link #FAILURES} because reading one number for both cost a round of
+    * diagnosis: a capture reported 354 failures and no log line, which looked like the snapshot path
+    * throwing silently when in fact the snapshot path was clean and every failure was the importer's.
+    */
+   public static final AtomicLong IMPORT_FAILURES = new AtomicLong();
 
    private VoxyNeutralSnapshot() {
    }
@@ -40,7 +49,8 @@ public final class VoxyNeutralSnapshot {
          + ",snowStripped=" + STRIPPED_SNOW.get()
          + ",leavesRestored=" + RESTORED_LEAVES.get()
          + ",floraRestored=" + RESTORED_FLORA.get()
-         + ",failures=" + FAILURES.get() + "]";
+         + ",failures=" + FAILURES.get()
+         + ",importFailures=" + IMPORT_FAILURES.get() + "]";
    }
 
    public static LevelChunkSection[] copyAndNeutralize(LevelChunk chunk) {

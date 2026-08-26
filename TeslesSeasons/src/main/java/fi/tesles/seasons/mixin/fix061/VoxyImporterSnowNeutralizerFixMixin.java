@@ -1,6 +1,7 @@
 package fi.tesles.seasons.mixin.fix061;
 
 import com.mojang.serialization.Codec;
+import fi.tesles.seasons.TeslesSeasons;
 import fi.tesles.seasons.fix061.VoxyNeutralSnapshot;
 import fi.tesles.seasons.world.SeasonalWorldData;
 import java.util.List;
@@ -26,6 +27,20 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
    remap = false
 )
 public abstract class VoxyImporterSnowNeutralizerFixMixin {
+   /**
+    * Counts an importer failure, and explains the first one.
+    *
+    * <p>These used to share the snapshot path's counter and log nothing, so a bundle could report
+    * hundreds of failures that no log line accounted for.
+    */
+   @Unique
+   private static void tesles$reportImportFailure(Throwable failure) {
+      if (VoxyNeutralSnapshot.IMPORT_FAILURES.getAndIncrement() == 0L) {
+         TeslesSeasons.LOGGER.error(
+            "TESLES Voxy import neutralisation failed; imported LOD may carry a season.", failure);
+      }
+   }
+
    @Unique
    private static final ThreadLocal<List<Long>> TESLES$OWNED_SNOW = new ThreadLocal<>();
 
@@ -48,8 +63,8 @@ public abstract class VoxyImporterSnowNeutralizerFixMixin {
          if (!owned.isEmpty()) {
             TESLES$OWNED_SNOW.set(owned);
          }
-      } catch (Throwable var7) {
-         VoxyNeutralSnapshot.FAILURES.incrementAndGet();
+      } catch (Throwable failure) {
+         tesles$reportImportFailure(failure);
       }
    }
 
@@ -100,8 +115,8 @@ public abstract class VoxyImporterSnowNeutralizerFixMixin {
                   }
                }
             }
-         } catch (Throwable var16) {
-            VoxyNeutralSnapshot.FAILURES.incrementAndGet();
+         } catch (Throwable failure) {
+            tesles$reportImportFailure(failure);
          }
 
          return states;

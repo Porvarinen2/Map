@@ -1,6 +1,7 @@
 package fi.tesles.seasons.mixin.fix064.client;
 
 import fi.tesles.seasons.client.ClientSeasonState;
+import fi.tesles.seasons.client.diagnostic.ClientCostMeter;
 import fi.tesles.seasons.client.render.SeasonalCategory;
 import fi.tesles.seasons.client.voxy.VoxySeasonCategories;
 import fi.tesles.seasons.fix064.client.VoxySeasonRemeshScheduler;
@@ -124,6 +125,7 @@ public abstract class VoxySeasonMeshProjectionMixin {
       // strip that followed the player around all winter.
       boolean mayAddSnow = section.lvl <= TESLES_MAX_PROJECTED_LOD;
 
+      long tesles$projectStart = System.nanoTime();
       long[] projected = null;
       Mapper mapper = this.world.getMapper();
       Int2ByteOpenHashMap categories = new Int2ByteOpenHashMap(64);
@@ -137,6 +139,7 @@ public abstract class VoxySeasonMeshProjectionMixin {
 
       int half = (1 << section.lvl) >> 1;
       long seed = ClientSeasonState.get().visualSeed();
+      boolean snowAdded = false;
 
       // Leaves come off first, before a single flake is placed. Snow is put on the surface of a
       // column, so a canopy that is about to be deleted must not be allowed to act as that
@@ -144,8 +147,17 @@ public abstract class VoxySeasonMeshProjectionMixin {
       // canopy used to be, and that floating lid went on shading the ground beneath it. Removing
       // the canopy first means the column the snow pass sees is the column that will be drawn.
       if (frame.leafRetention() < 0.9999F) {
+         long leafStart = System.nanoTime();
          projected = stripAbsentLeaves(projected, raw, section, mapper, categories, seed);
+         ClientCostMeter.LEAF_STRIP.record(System.nanoTime() - leafStart);
       }
+
+      // One cheap pass to answer "is there any seasonal snow in this section at all". The clearing
+      // loop below walks all thirty-two heights of all 1,024 columns, and it runs on every mesh
+      // build of every section for as long as the world is anything but high summer. Most sections
+      // hold no snow at all, and for those the whole pass is 32,768 array reads to conclude nothing.
+      boolean anySnowPresent = containsSeasonalSnow(raw, mapper, snowFlags);
+      long snowClearStart = System.nanoTime();
 
       for (int z = 0; z < 32; z++) {
          for (int x = 0; x < 32; x++) {
@@ -166,16 +178,18 @@ public abstract class VoxySeasonMeshProjectionMixin {
             // Before deciding, because a column that still holds last winter's snow at its surface
             // has no ground for this winter's snow to be placed on, so its depth could never be
             // corrected either.
-            for (int y = 31; y >= 0; y--) {
-               int index = WorldSection.getIndex(x, y, z);
-               long voxel = (projected == null ? raw : projected)[index];
-               if (Mapper.isAir(voxel) || !isSeasonalSnowVoxel(mapper, snowFlags, voxel)) {
-                  continue;
+            if (anySnowPresent) {
+               for (int y = 31; y >= 0; y--) {
+                  int index = WorldSection.getIndex(x, y, z);
+                  long voxel = (projected == null ? raw : projected)[index];
+                  if (Mapper.isAir(voxel) || !isSeasonalSnowVoxel(mapper, snowFlags, voxel)) {
+                     continue;
+                  }
+                  if (projected == null) {
+                     projected = raw.clone();
+                  }
+                  stripSnowVoxel(projected, section.lvl, index);
                }
-               if (projected == null) {
-                  projected = raw.clone();
-               }
-               stripSnowVoxel(projected, section.lvl, index);
             }
 
             if (!mayAddSnow || worldLayers <= 0) {
@@ -185,6 +199,7 @@ public abstract class VoxySeasonMeshProjectionMixin {
             if (projected == null) {
                projected = raw.clone();
             }
+            snowAdded = true;
             if (section.lvl == 0) {
                projectFineColumn(projected, mapper, categories, groundFlags, leafFlags, x, z, worldLayers);
             } else {
@@ -193,6 +208,9 @@ public abstract class VoxySeasonMeshProjectionMixin {
          }
       }
 
+      long snowElapsed = System.nanoTime() - snowClearStart;
+      (snowAdded ? ClientCostMeter.SNOW_ADD : ClientCostMeter.SNOW_CLEAR).record(snowElapsed);
+      ClientCostMeter.LOD_PROJECTION.record(System.nanoTime() - tesles$projectStart);
       return projected == null ? raw : projected;
    }
 
@@ -283,6 +301,22 @@ public abstract class VoxySeasonMeshProjectionMixin {
          return y;
       }
       return -1;
+   }
+
+   /**
+    * Whether this section holds any seasonal snow at all.
+    *
+    * <p>A single linear pass that stops at the first hit, rather than the per-column walk it guards,
+    * which cannot stop early and repeats the same block-id lookups a thousand times over.
+    */
+   @Unique
+   private static boolean containsSeasonalSnow(long[] raw, Mapper mapper, Int2ByteOpenHashMap snowFlags) {
+      for (long voxel : raw) {
+         if (!Mapper.isAir(voxel) && isSeasonalSnowVoxel(mapper, snowFlags, voxel)) {
+            return true;
+         }
+      }
+      return false;
    }
 
    /** Any foliage, evergreen included - the set the surface search must look straight through. */

@@ -29,6 +29,7 @@ public final class ServerDiagnosticSampler {
    private static long lastTickNanos;
    private static double msptAverage;
    private static int tickCounter;
+   private static int statusCounter;
 
    private ServerDiagnosticSampler() {
    }
@@ -80,6 +81,12 @@ public final class ServerDiagnosticSampler {
 
       try {
          ServerPlayNetworking.send(player, DiagnosticCapturePayload.sample(sampleRow()));
+         // The full status line too, every tenth sample. It is the end-of-run snapshot the bundle
+         // keeps, and it costs a few hundred bytes a minute.
+         if (++statusCounter >= 10) {
+            statusCounter = 0;
+            ServerPlayNetworking.send(player, DiagnosticCapturePayload.status(SeasonalWorldReconciler.status()));
+         }
       } catch (Throwable ignored) {
          // A capture must never be the reason a tick throws.
       }

@@ -68,6 +68,11 @@ public final class SeasonDiagnosticRecorder {
          return;
       }
 
+      if (request.isStatus()) {
+         PerformanceLog.acceptServerStatus(request.serverSummary());
+         return;
+      }
+
       if (request.isSample()) {
          // A server measurement, not a capture request: merge it into the row the client is about
          // to write and do nothing else.
@@ -91,7 +96,7 @@ public final class SeasonDiagnosticRecorder {
                dir.resolve("README.txt"),
                "TESLESSEASONS DIAGNOSTIC BUNDLE\n\nUpload this ZIP as-is when reporting a season or Voxy problem. Nothing here needs\nediting, trimming or explaining first.\n\nWHAT IS IN IT\n  NN-<phase>.png              the screen, exactly as rendered (Iris/Sodium/Voxy included)\n  NN-<phase>-map-terrain.png  plan view of what the world IS, from real block data\n  NN-<phase>-map-voxy.png     plan view of what VOXY HOLDS, per LOD section\n  NN-<phase>-state.txt        every season channel at that moment, plus Voxy counters\n  NN-<phase>-world-sample.csv the same 2401 columns every time: surface block, snow, category\n  timeline.csv                every season channel, once per second, all year\n  performance.csv             once per second: fps, frame time, heap, LOD counts,\n                              and the server's tick time, queues and ledger sizes\n  server-state.txt            the server status line\n  environment/, mods.txt, latest-log-tail.txt\n\nREADING THE MAPS\nBoth maps are north-up, 2 blocks per pixel, player at the centre cross. The bar at\nthe bottom left is 256 blocks. Thin lines are chunks, brighter lines every 512.\n\n  map-terrain swatches, left to right:\n    grass · deciduous · evergreen · snow · water · flower · mushroom · bare ground · built\n\n  map-voxy swatches, left to right:\n    GREEN  section is showing the current season\n    RED    section is still showing an OLDER season   <- this is the fault\n    BLUE   inside the vanilla render distance, real blocks are drawn there instead\n  The yellow ring is the handoff radius. Black means Voxy holds nothing there.\n\nA healthy voxy map is green with a blue disc in the middle. Red anywhere means the\nLOD kept a season it should have let go of - note where it is and roughly how far\naway, that is the useful part.\n"
             );
-            writeText(dir.resolve("server-state.txt"), request.serverSummary() == null ? "" : request.serverSummary());
+            writeText(dir.resolve("server-state-start.txt"), request.serverSummary() == null ? "" : request.serverSummary());
             writeText(dir.resolve("client-start.txt"), clientReport(client, "start"));
             writeMods(dir.resolve("mods.txt"));
             writeEnvironmentFiles(dir);
@@ -587,6 +592,12 @@ public final class SeasonDiagnosticRecorder {
             writeText(s.dir.resolve("client-end.txt"), clientReport(client, "end") + "finishReason=" + reason + "\n");
             PerformanceLog.stop();
             writePerformanceLog(s.dir.resolve("performance.csv"));
+
+            // The server summary written when the capture was requested describes the world before
+            // the run - which is how a bundle covering a whole simulated year came to report zero
+            // leaves removed and zero restored. The last sample the server pushed is the state it
+            // finished in, and that is the one worth reading.
+            writeText(s.dir.resolve("server-state.txt"), PerformanceLog.latestServerState());
             writeLatestLogTail(s.dir.resolve("latest-log-tail.txt"));
             Path zip = s.dir.getParent().resolve("TeslesSeasons-diagnostic-" + s.dir.getFileName() + ".zip");
             zipDirectory(s.dir, zip);

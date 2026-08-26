@@ -27,12 +27,14 @@ public final class PerformanceLog {
       "t_ms,season,phase,progress,revision,fps,tick_ms_avg,tick_ms_p95,heap_used_mib,heap_max_mib,"
       + "voxy_sections,voxy_current,voxy_stale,shader_bind_age_ms,player_x,player_y,player_z,"
       + "server_mspt,server_tps,server_loaded,server_urgent,server_ledger_leaves,server_ledger_flora,"
-      + "server_snow_placed,server_leaves_removed,server_leaves_restored";
+      + "server_snow_placed,server_leaves_removed,server_leaves_restored"
+      + ClientCostMeter.header();
 
    /** Frame times of the last second, for an average and a tail figure. */
    private static final Deque<Long> FRAME_NANOS = new ArrayDeque<>(256);
    private static final List<String> ROWS = new ArrayList<>();
    private static volatile String latestServerSample = "";
+   private static volatile String latestServerStatus = "";
    private static long lastFrameNanos;
    private static long startMillis;
    private static boolean running;
@@ -45,6 +47,7 @@ public final class PerformanceLog {
       FRAME_NANOS.clear();
       latestServerSample = "";
       startMillis = System.currentTimeMillis();
+      ClientCostMeter.reset();
       lastFrameNanos = 0L;
       running = true;
    }
@@ -89,6 +92,13 @@ public final class PerformanceLog {
     */
    public static void acceptServerSample(String csvTail) {
       latestServerSample = csvTail == null ? "" : csvTail;
+   }
+
+   /** The server's full human-readable status, pushed alongside the numeric sample. */
+   public static void acceptServerStatus(String status) {
+      if (status != null && !status.isBlank()) {
+         latestServerStatus = status;
+      }
    }
 
    /** Called once a second while a run is active. */
@@ -136,8 +146,14 @@ public final class PerformanceLog {
          .append(Math.round(px)).append(',')
          .append(Math.round(py)).append(',')
          .append(Math.round(pz)).append(',')
-         .append(latestServerSample.isEmpty() ? ",,,,,,,," : latestServerSample);
+         .append(latestServerSample.isEmpty() ? ",,,,,,,," : latestServerSample)
+         .append(ClientCostMeter.sampleRow());
       ROWS.add(row.toString());
+   }
+
+   /** The most recent full server status line, for the end-of-run snapshot. */
+   public static String latestServerState() {
+      return latestServerStatus.isEmpty() ? "no server status was received during this capture\n" : latestServerStatus;
    }
 
    public static synchronized List<String> rows() {
