@@ -1,0 +1,134 @@
+<h1><span class="num">Part 6</span>Extending it</h1>
+
+<p class="lead">Two things are pluggable: what a season <em>is</em>, and what a season <em>does to the
+world</em>. This part is a how-to.</p>
+
+<h2>Replacing a season</h2>
+
+<p>A season is a pure function from a clock snapshot to a frame of absolute targets. Write one, register it,
+and nothing else in the mod changes:</p>
+
+<pre><code>public final class HarshWinterSector implements SeasonSector {
+   public SeasonFrame frame(SeasonSnapshot raw) {
+      float p = SeasonSector.clamp(raw.phaseProgress());
+      return SeasonFrame.builder(raw.season(), raw.phase(), p)
+         .leaves(0.0F).flowers(0.0F).plants(0.0F)
+         .dormancy(1.0F).frost(1.0F)
+         .snow(1.0F, Math.max(0.25F, p))    // deeper, sooner
+         .thawing(raw.phase() == CalendarPhase.OUTGOING)
+         .build();
+   }
+}
+
+SeasonRegistry.register(Season.WINTER, new HarshWinterSector());</code></pre>
+
+<p><code>SeasonDirector</code> reads the registry rather than naming the four built-ins, so there is no switch
+to edit and no other file to touch.</p>
+
+<div class="key"><b>A replacement is held to the same contract.</b> The checkpoint and continuity suites
+resolve through the registry, so they run against <em>whatever is registered</em>. A replacement season that
+breaks phase continuity fails the build, not the world.</div>
+
+<h3>What a season module must not do</h3>
+<ul>
+<li>Touch the world, the scheduler, or another mod. It is a formula, nothing else.</li>
+<li>Remember anything between calls. Same snapshot in, same frame out, forever.</li>
+<li>Leave a phase at a different value than the next phase enters with.</li>
+</ul>
+
+<h2>World effects</h2>
+
+<p>Snow, leaf fall and flora are built into the reconciler because the specification pins them. Everything
+else a season might do to the world — lakes freezing, puddles, frost on glass, ice thickening, mud in spring
+— is a <code>SeasonalWorldEffect</code>: one class, one registration.</p>
+
+<pre><code>public interface SeasonalWorldEffect {
+   String  id();                                       // ledger key; treat it like a block id
+   boolean appliesTo(SeasonFrame frame);               // cheap gate, asked once per chunk pass
+   boolean applyToColumn(SeasonalEffectContext ctx);   // false = out of budget, retry later
+}</code></pre>
+
+<h3>The context, and why to use it</h3>
+
+<table>
+<tr><th style="width:34%">You call</th><th>You get</th></tr>
+<tr><td><code>ctx.frame()</code></td><td>Absolute targets. Never ask how far through a transition you are.</td></tr>
+<tr><td><code>ctx.seed()</code> + <code>effect01(…, yourSalt)</code></td><td>The same deterministic field the
+snow and the distant LOD use.</td></tr>
+<tr><td><code>ctx.surface()</code></td><td>The ground, ignoring foliage — the same position the snow pass calls
+the surface.</td></tr>
+<tr><td><code>ctx.place(pos, state)</code></td><td>A budgeted write, recorded as <b>yours</b>.</td></tr>
+<tr><td><code>ctx.restore(pos, state)</code></td><td>Undoes one of <em>your</em> placements; silently declines
+anything else.</td></tr>
+<tr><td><code>ctx.ownedInColumn()</code></td><td>What you own here, so you can take it back.</td></tr>
+<tr><td><code>ctx.canWork()</code></td><td>False once the tick's budget is spent.</td></tr>
+</table>
+
+<h3>Three properties you get free</h3>
+
+<table>
+<tr><th style="width:30%">Property</th><th>Why it holds without you doing anything</th></tr>
+<tr><td><b>Player builds are safe</b></td><td><code>restore</code> only touches what <code>place</code>
+recorded, against a ledger keyed by your effect id. A thaw cannot eat ice a player put there.</td></tr>
+<tr><td><b>Distant terrain agrees</b></td><td><code>place</code> is a divergence from the neutral world by
+definition and is held out of Voxy's LOD store; <code>restore</code> is a healing write and is let through. The
+store keeps converging on neutral without your effect knowing that store exists.</td></tr>
+<tr><td><b>The tick survives</b></td><td>Every write is budgeted. Return <code>false</code> when one does and
+the column is picked up again where it left off.</td></tr>
+</table>
+
+<p>Registration order is the run order, and registering the same id twice replaces the earlier one — which is
+how a pack overrides a built-in effect rather than fighting it. An effect that throws is logged once and
+skipped for that column; it cannot take the season system down with it.</p>
+
+<h2>Worked example: lake ice</h2>
+
+<p><code>WaterFreezeEffect</code> ships as both a working feature and the worked example. It is the whole of
+winter lake ice, and nothing in the reconciler, the season modules or the Voxy path knows it exists.</p>
+
+<pre><code>public boolean applyToColumn(SeasonalEffectContext ctx) {
+   BlockPos surface = ctx.surface();
+   float coverage   = ctx.frame().groundFrost() * MAXIMUM_COVERAGE;
+   boolean wantIce  = coverage &gt; 0.0F
+      &amp;&amp; effect01(ctx.x(), ctx.z(), ctx.seed(), ICE_SALT) &lt; coverage;
+
+   // give back what is no longer wanted first
+   for (BlockPos owned : ctx.ownedInColumn()) {
+      if (!ctx.canWork()) return false;
+      boolean keep = wantIce &amp;&amp; owned.equals(surface);
+      if (!keep &amp;&amp; ctx.stateAt(owned).is(Blocks.ICE)
+              &amp;&amp; !ctx.restore(owned, sourceWater())) return false;
+   }
+   if (!wantIce) return true;
+
+   BlockState state = ctx.stateAt(surface);
+   if (!isFreezableWater(state) || !ctx.stateAt(surface.above()).isAir()) return true;
+   return ctx.place(surface, Blocks.ICE.defaultBlockState());
+}</code></pre>
+
+<p>Worth reading for what it does <em>not</em> do. It keeps no state between ticks — the frame says how much
+of the world should be frozen and the field says which part, so a player who logs in mid-winter sees the same
+lake as one who watched it freeze. It never removes ice it did not place. And it never asks how far through
+winter we are, only how frozen the world should be now.</p>
+
+<p>It is <b>off by default</b>: it is not part of the season contract, and turning it on changes what an
+existing world looks like. Enable it with <code>seasonalWaterFreezing</code>.</p>
+
+<h2>Ideas that fit this seam cleanly</h2>
+
+<table>
+<tr><th style="width:26%">Effect</th><th>Channel to key on</th><th>Sketch</th></tr>
+<tr><td>Frozen crops</td><td><code>groundFrost</code></td><td>Swap mature crops to a withered variant while
+frost is high; restore on thaw.</td></tr>
+<tr><td>Spring mud</td><td><code>springFreshness</code></td><td>Place mud on a fraction of dirt columns as the
+thaw runs.</td></tr>
+<tr><td>Autumn leaf litter</td><td><code>1 − leafRetention</code></td><td>Place litter under deciduous canopy as
+the canopy comes down.</td></tr>
+<tr><td>Icicles</td><td><code>groundFrost</code></td><td>Hang from overhangs; needs a downward search rather than
+<code>surface()</code>.</td></tr>
+<tr><td>Thicker ice over winter</td><td><code>snowDepth</code></td><td>Replace ice with packed ice past a depth
+threshold — a second effect layered on the first.</td></tr>
+</table>
+
+<div class="warn"><b>Give each effect its own salt.</b> Two sharing one select the same coordinates, and the
+correlation shows up in game as the two appearing and vanishing in exactly the same patches.</div>

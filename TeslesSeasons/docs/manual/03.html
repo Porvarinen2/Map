@@ -1,0 +1,98 @@
+<h1><span class="num">Part 3</span>The coordinate field</h1>
+
+<p class="lead">One pure function turns a percentage into a concrete set of world coordinates. It is
+the smallest piece of the mod and the one everything else depends on.</p>
+
+<h2>Why percentages must mean coordinates</h2>
+
+<p>Suppose the frame says snow coverage is 25&nbsp;%. Something has to decide <em>which</em> quarter of
+the world is snowy. There are two ways to do it, and only one of them works.</p>
+
+<p>The tempting way is to keep a record: mark chunks as done, snow a quarter of them, remember which.
+This fails immediately at scale. The server can only reason about loaded chunks, and the client's LOD
+renderer is drawing terrain kilometres away that no server tick has touched in hours. Any record-keeping
+scheme means near and far are working from different books.</p>
+
+<p>The way that works is to make membership a <b>pure function of position</b>. Given a coordinate and a
+world seed, a hash produces a value in&nbsp;[0,&nbsp;1). A coordinate belongs to the target set at
+retention <code>p</code> exactly when its value is below <code>p</code>:</p>
+
+<pre><code>existsAtRetention(fieldValue, retention)  ⇔  fieldValue &lt; retention</code></pre>
+
+<p>Three consequences follow, and they are the reason the whole design holds together:</p>
+
+<ul>
+<li><b>No history is stored anywhere.</b> Any consumer can answer "is this coordinate snowy at 25&nbsp;%"
+without knowing anything about what happened before.</li>
+<li><b>Near and far agree by construction.</b> The physical block projector, the LOD mesh projector and
+the GLSL shader threshold the same function, so they cannot disagree.</li>
+<li><b>Coverage is monotone.</b> As retention rises from 0 to 1, the selected set only ever grows.
+Nothing pops in and out as the season advances.</li>
+</ul>
+
+<h2>Salts</h2>
+
+<p>Each channel gets its own constant mixed into the hash. Without that, a column that is snowy would
+also be more likely to keep its flowers — and correlated channels produce visible stripes where two
+things change together.</p>
+
+<table class="mono">
+<tr><th style="width:34%">Salt</th><th style="width:20%">Value</th><th>Channel</th></tr>
+<tr><td>SNOW_COVERAGE_SALT</td><td>0x6A09E667</td><td>Which columns are snowy</td></tr>
+<tr><td>SNOW_DEPTH_SALT</td><td>0xBB67AE85</td><td>Fractional-layer dithering</td></tr>
+<tr><td>LEAF_SALT</td><td>0x3C6EF372</td><td>Which leaves survive</td></tr>
+<tr><td>FLOWER_SALT</td><td>0xA54FF53A</td><td>Which flowers survive</td></tr>
+<tr><td>GROUND_PLANT_SALT</td><td>0x510E527F</td><td>Which ground plants survive</td></tr>
+<tr><td>MUSHROOM_SALT</td><td>0x9B05688C</td><td>Which mushrooms exist</td></tr>
+<tr><td>BERRY_SALT</td><td>0x1F83D9AB</td><td>Which wild berry bushes survive</td></tr>
+<tr><td>ICE_SALT</td><td>0x5BE0CD19</td><td>Reserved for the built-in freezing effect</td></tr>
+</table>
+
+<p>The values are the fractional bits of square roots — arbitrary but well separated.
+<code>SeasonFieldStatisticsTest</code> checks that the field is uniform, that it is pure, and that the
+per-channel salts are genuinely independent of one another.</p>
+
+<div class="warn"><b>Adding an effect?</b> Give it a salt nobody else uses. Two effects sharing a salt
+select the same coordinates, and the correlation shows up in game as the two appearing and vanishing in
+exactly the same patches. Use
+<code>SeasonCoordinateField.effect01(x, z, seed, yourSalt)</code>.</div>
+
+<h3>Snow uses two dimensions, flora uses three</h3>
+
+<p>Snow coverage and depth are functions of <code>(x, z)</code>: snow is a property of a column, and every
+block in a column shares its answer. Leaves and flora hash <code>(x, y, z)</code>, because a tree's canopy
+has many leaves in one column and they should not all vanish together.</p>
+
+<p>That extra dimension creates one hazard. A double-height plant occupies two positions and would get
+two different answers, leaving a headless lower half or a floating upper one. Both halves therefore
+resolve their membership at the <em>lower</em> half's coordinate — see <code>decisionPos</code> — and
+removal is all-or-nothing: a double-height removal is not started unless there is budget to finish it.
+<code>TallPlantAtomicityTest</code> holds this.</p>
+
+<h2>The GLSL mirror</h2>
+
+<p>The distant-terrain shader needs the same answers, so <code>snowCoverage01</code> is mirrored
+bit-for-bit in GLSL by the Voxy shader patch. Both sides run the same avalanche:</p>
+
+<pre><code>h  = x·0x9E3779B9 ^ z·0x85EBCA6B ^ seed ^ salt
+h ^= h &gt;&gt;&gt; 16;  h *= 0x7FEB352D
+h ^= h &gt;&gt;&gt; 15;  h *= 0x846CA68B
+h ^= h &gt;&gt;&gt; 16
+value = (h &amp; 0xFFFFFF) / 16777215.0</code></pre>
+
+<div class="warn"><b>Do not "improve" the snow hash.</b> Changing the mixing constants on the Java side
+without changing the shader breaks near/far parity in a way that only shows up visually, kilometres from
+the player, in one season. <code>VoxySnowParityTest</code> guards the Java side of this contract, and
+<code>VoxyShaderPipelineTest</code> runs the real injection chain against Voxy's actual shader source.</div>
+
+<p>Dimension separation is carried by the per-world visual seed rather than an extra hash term, which
+keeps the GLSL mirror a straight function of <code>(x, z, seed)</code>.</p>
+
+<h2>Quantised targets</h2>
+
+<p>Selection reads <code>snowCoverageTarget()</code> and <code>snowDepthTarget()</code> rather than the raw
+channels. Both are quantised to 1/256. The reason is subtle but important: the world is mutated once per
+revision, so if selection read the raw channel, the physical blocks placed at the start of a revision
+would already disagree with what the LOD projector computes later in the same revision — drifting
+slightly out of parity between every update, forever. Quantising at the point of selection makes "same
+revision" mean "identical targets" by construction.</p>

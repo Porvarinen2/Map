@@ -1,0 +1,165 @@
+<!doctype html><html><head><meta charset="utf-8">
+<title>TeslesSeasons — Technical Manual</title>
+<link rel="stylesheet" href="style.css"></head><body>
+
+<div class="title-page">
+  <div class="eyebrow">Technical Manual</div>
+  <h1 class="doc">TeslesSeasons</h1>
+  <div class="sub">Real-calendar seasons for Minecraft&nbsp;26.2, with a season-neutral Voxy LOD integration</div>
+  <div class="meta">
+    <b>Version</b> 1.0.0 &nbsp;·&nbsp; Minecraft 26.2 &nbsp;·&nbsp; Fabric<br>
+    <b>Integrations</b> Voxy 0.2.18-beta · VoxyServer 1.2.4 · Dynamic Trees 1.8.0 · Iris · Sodium<br>
+    <b>Verified by</b> 93 contract tests and two build-time wiring verifiers<br>
+    <b>Scope</b> Architecture, season model, world mutation, Voxy integration,
+    extension points, configuration, diagnostics
+  </div>
+</div>
+
+<div class="toc">
+<h1><span class="num">Contents</span>What is in this manual</h1>
+<ol>
+<li>1 · The shape of the mod
+  <ul><li>The one-authority model</li><li>The nine rules</li><li>Where each rule came from</li></ul></li>
+<li>2 · The season model
+  <ul><li>Calendar, seasons and phases</li><li>The SeasonFrame</li><li>What each season asks for</li><li>Continuity</li><li>Revisions</li></ul></li>
+<li>3 · The coordinate field
+  <ul><li>Why percentages must mean coordinates</li><li>Salts</li><li>The GLSL mirror</li></ul></li>
+<li>4 · The physical world
+  <ul><li>The reconciler</li><li>The column sweep</li><li>Ownership and ledgers</li><li>Snow</li><li>Leaves</li><li>Flora</li><li>Budget</li></ul></li>
+<li>5 · Voxy integration
+  <ul><li>Why LOD is hard here</li><li>Season-neutral persistence</li><li>Directional healing</li><li>Mesh projection</li><li>The shader pipeline</li><li>Handoff</li></ul></li>
+<li>6 · Extending it
+  <ul><li>Replacing a season</li><li>World effects</li><li>Worked example: lake ice</li><li>What you get free</li></ul></li>
+<li>7 · Configuration reference
+  <ul><li>All 52 options</li><li>Which ones are re-pinned</li></ul></li>
+<li>8 · Diagnostics and troubleshooting
+  <ul><li>Commands</li><li>The diagnostic bundle</li><li>Reading the status line</li><li>Symptom index</li></ul></li>
+<li>9 · Verification
+  <ul><li>The 17 suites</li><li>The two wiring verifiers</li></ul></li>
+<li>10 · Building from source</li>
+<li>Appendix A · Mixin inventory</li>
+<li>Appendix B · Glossary</li>
+</ol>
+</div>
+
+<h1><span class="num">Part 1</span>The shape of the mod</h1>
+
+<p class="lead">TeslesSeasons drives a Minecraft world through a real four-season year: leaves colour and
+fall, flowers and mushrooms come and go, snow accumulates and melts, and terrain far beyond the
+player's render distance shows the same season as the ground under their feet. This part explains
+the single idea the whole mod is built on, and the rules that follow from it.</p>
+
+<h2>The one-authority model</h2>
+
+<p>Every seasonal mod eventually faces the same question: when three different parts of the game need
+to know what season it is, who decides? The answer here is that exactly one thing interprets the
+calendar, and everything else is a <em>projector</em> of what that thing decided.</p>
+
+<div class="ascii">  RealCalendarSeasonClock  /  SeasonDebugController      the clock
+             |
+             v
+     SeasonRegistry            one SeasonSector per season, replaceable
+             |
+             v
+     SeasonDirector            mints a revision only when targets change
+             |
+             v
+  ==== immutable SeasonFrame ====   absolute targets, never deltas
+             |
+   +---------+-----------+-----------+--------------+
+   |         |           |           |              |
+ Snow     Leaves      Flora     World effects    Voxy LOD
+ System   System      System     (pluggable)     projection + shader
+</div>
+
+<p>The <span class="rule-name">SeasonDirector</span> is the only code in the mod that reads a clock and
+concludes "it is autumn". It hands out an immutable <code>SeasonFrame</code>: a record of about twenty
+numbers describing what the world should look like <em>right now</em>. Nothing downstream is allowed to
+re-derive a season, cache one, or remember what it was doing last tick.</p>
+
+<p>This sounds like ceremony until you see what happens without it. If the snow code decides the
+season from the clock, and the LOD renderer decides it from its own copy of the clock, the two answer
+differently the instant one of them runs a few milliseconds later than the other — and the seam
+between near terrain and distant terrain is exactly where a player is looking.</p>
+
+<h2>The nine rules</h2>
+
+<p>These are not style preferences. Each is written down because breaking it produced a specific,
+diagnosable failure in a running world.</p>
+
+<table>
+<tr><th style="width:31%">Rule</th><th>What it means, and what breaking it looks like</th></tr>
+
+<tr><td><b>One season truth</b></td>
+<td>Only <code>SeasonDirector</code> interprets the calendar. Nothing else derives, caches or
+reinterprets a season. Break it and near and far terrain disagree at the seam.</td></tr>
+
+<tr><td><b>Percent means world, not progress</b></td>
+<td>A target of 25&nbsp;% means a quarter of <em>the world</em>, chosen by a deterministic coordinate
+field — never "25&nbsp;% of the work queue is done". Break it and the same coordinate is snowy or bare
+depending on which chunk the sweep reached first.</td></tr>
+
+<tr><td><b>One coordinate field</b></td>
+<td><code>SeasonCoordinateField</code> is thresholded identically by the physical projector, the LOD
+mesh projector and the GLSL shader. This is what lets near and distant terrain agree without storing
+any season history anywhere.</td></tr>
+
+<tr><td><b>Targets are absolute, never deltas</b></td>
+<td>A frame says what the world should be, not how to get there. A player who logs in mid-winter must
+see the same world as one who watched it arrive.</td></tr>
+
+<tr><td><b>Voxy persistence is season-neutral, and heals</b></td>
+<td>Season is applied when a section is <em>meshed</em>, never when it is <em>stored</em>. Suppression
+is directional: writes that move the world away from neutral are held out of the LOD store; writes
+that bring it back are deliberately let through.</td></tr>
+
+<tr><td><b>Ownership before deletion</b></td>
+<td>Only blocks recorded in a chunk's ledger are ever removed. Player-placed snow, ice and plants are
+never adopted and never deleted.</td></tr>
+
+<tr><td><b>Identity decides category, not superclass</b></td>
+<td>What a block <em>is</em> comes from its registry id. A wild berry bush is berry flora whether it
+extends a bush block or a crop block.</td></tr>
+
+<tr><td><b>Absent means absent</b></td>
+<td>A leaf the frame removes is AIR, never an invisible collision box and never a fragment-shader
+discard — a discard is invisible to the shadow pass, so discarded leaves keep shading the ground.</td></tr>
+
+<tr><td><b>Grass identity is never changed</b></td>
+<td>Winter comes from snow layers and tint, never from swapping <code>grass_block</code> for something
+else. That swap destroys the block a player sees and cannot be reversed faithfully.</td></tr>
+</table>
+
+<div class="key"><b>The shortest summary of the whole design.</b> One object describes the world's
+current appearance. One pure function turns a coordinate into a yes/no for any percentage. Everything
+else reads those two and converges what it owns.</div>
+
+<h2>Where each rule came from</h2>
+
+<p>The mod's history is a useful map of where the difficulty actually lies, and every entry below was
+found in a running world rather than by reading code.</p>
+
+<table>
+<tr><th style="width:34%">Failure</th><th>Root cause</th></tr>
+<tr><td>Whole subsystem silently inert</td><td>Fifteen mixins that no config referenced, and a
+<code>ClientModInitializer</code> that was not an entrypoint. Invisible by reading; both now fail the
+build.</td></tr>
+<tr><td>Snow flickering between near and far</td><td>The LOD projector used a multi-octave "organic"
+noise field while the server used the flat coordinate hash.</td></tr>
+<tr><td>Distant terrain kept last winter's snow forever</td><td>The projector could add snow but never
+remove it.</td></tr>
+<tr><td>Only the player's surroundings updated</td><td>The column sweep was keyed on the season
+revision and reset whenever it changed — which, in a fast timelapse, was more often than any chunk
+came up for its turn.</td></tr>
+<tr><td>Snow in the treetops, shadows under bare trees</td><td>The projector took the topmost occupied
+voxel as the ground. In a forest that is the canopy.</td></tr>
+<tr><td>Lakes rendered as flat white sheets</td><td>The shader gave every unclassified up-face a snow
+cap, and water is unclassified.</td></tr>
+<tr><td>Distant trees never regained leaves</td><td>LOD suppression was blind to direction, so the
+spring restoration that would have healed the store was blocked by the same flag that blocked the
+autumn removal.</td></tr>
+<tr><td>Eight of nine berry blocks not seasonal</td><td>They extend a crop block, and the crop guard
+ran before the berry rule.</td></tr>
+<tr><td>Thaw punched holes in the snowfield</td><td>Footprint and depth retreated together, so a column
+under four layers dropped to bare ground the moment the edge passed it.</td></tr>
+</table>

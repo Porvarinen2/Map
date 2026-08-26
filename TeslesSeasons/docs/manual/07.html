@@ -1,0 +1,89 @@
+<h1><span class="num">Part 7</span>Configuration reference</h1>
+
+<p class="lead">All 52 options in <code>config/teslesseasons.json</code>, written on first run. Cosmetic
+options are yours to set; the values the season contract depends on are re-pinned on every load.</p>
+
+<div class="warn"><b>Re-pinned values.</b> <code>TeslesSeasonsConfig.enforceCanonicalTargets()</code> resets
+the options the specification fixes every time the config is loaded &mdash; snow footprint, layer count, the
+transition fractions. Editing those in the file has no effect, on purpose: they are contract, not
+preference, and a world running with them changed is not running the season model this manual describes.</div>
+
+<table class="mono long">
+<thead><tr><th style="width:34%">Option</th><th style="width:16%">Default</th><th>Notes</th></tr></thead><tbody>
+<tr><td colspan="3" style="background:#12324d;color:#fff;font-family:sans-serif;font-size:7.6pt;font-weight:600;letter-spacing:.05em;padding:1.5mm 2mm;">CALENDAR</td></tr>
+<tr><td><code>timeZone</code></td><td><code>&quot;Europe/Helsinki&quot;</code></td><td>Timezone the real calendar is read in.</td></tr>
+<tr><td><code>incomingTransitionDays</code></td><td><code>7</code></td><td>Length of every Incoming phase, in real days.</td></tr>
+<tr><td><code>outgoingTransitionDays</code></td><td><code>7</code></td><td>Length of every Outgoing phase, in real days.</td></tr>
+<tr><td><code>calendarRefreshSeconds</code></td><td><code>30</code></td><td>How often the clock is re-read. A refresh only costs work if a target actually moved.</td></tr>
+<tr><td><code>visualStepsPerTransition</code></td><td><code>28</code></td><td></td></tr>
+<tr><td><code>debugVisualStepsPerTransition</code></td><td><code>4</code></td><td></td></tr>
+<tr><td colspan="3" style="background:#12324d;color:#fff;font-family:sans-serif;font-size:7.6pt;font-weight:600;letter-spacing:.05em;padding:1.5mm 2mm;">SEASON SHAPE</td></tr>
+<tr><td><code>autumnLeafFallCompleteFraction</code></td><td><code>0.68</code></td><td></td></tr>
+<tr><td><code>springLeafReturnCompleteFraction</code></td><td><code>0.6</code></td><td></td></tr>
+<tr><td><code>autumnFlowerFallCompleteFraction</code></td><td><code>0.78</code></td><td></td></tr>
+<tr><td><code>mushroomsAutumnOnly</code></td><td><code>true</code></td><td></td></tr>
+<tr><td><code>minimumWinterLeafRetention</code></td><td><code>0.0</code></td><td>Floor on winter leaf retention. 0.0 is canonical: winter is bare.</td></tr>
+<tr><td colspan="3" style="background:#12324d;color:#fff;font-family:sans-serif;font-size:7.6pt;font-weight:600;letter-spacing:.05em;padding:1.5mm 2mm;">SNOW AND ICE</td></tr>
+<tr><td><code>seasonalSnow</code></td><td><code>true</code></td><td>Master switch for physical seasonal snow.</td></tr>
+<tr><td><code>seasonalWaterFreezing</code></td><td><code>false</code></td><td>The pluggable lake-ice effect. Off by default; turning it on changes an existing world.</td></tr>
+<tr><td><code>maximumPhysicalSnowCoverage</code></td><td><code>1.0</code></td><td>Caps the footprint. 1.0 is the canonical value.</td></tr>
+<tr><td><code>plantSnowOverlay</code></td><td><code>true</code></td><td></td></tr>
+<tr><td><code>migrateLegacy022Snow</code></td><td><code>true</code></td><td>One-time adoption of snow left by a much older version.</td></tr>
+<tr><td><code>winterSnowReplacesWildFlora</code></td><td><code>true</code></td><td>Whether arriving snow buries wild flora rather than sitting beside it.</td></tr>
+<tr><td><code>maximumAccumulatedSnowLayers</code></td><td><code>8</code></td><td>Deepest snow, in eighths. 8 is canonical.</td></tr>
+<tr><td colspan="3" style="background:#12324d;color:#fff;font-family:sans-serif;font-size:7.6pt;font-weight:600;letter-spacing:.05em;padding:1.5mm 2mm;">SERVER BUDGET</td></tr>
+<tr><td><code>surfaceColumnsPerTick</code></td><td><code>1024</code></td><td>Surface columns per tick. Clamped hard outside a timelapse.</td></tr>
+<tr><td><code>leafColumnsPerTick</code></td><td><code>128</code></td><td>Canopy columns per tick - the most expensive pass.</td></tr>
+<tr><td><code>debugLeafColumnsPerTick</code></td><td><code>512</code></td><td></td></tr>
+<tr><td><code>columnsPerChunkSlice</code></td><td><code>16</code></td><td></td></tr>
+<tr><td><code>maxVisibleSnowWritesPerTick</code></td><td><code>128</code></td><td>Block writes per tick for snow.</td></tr>
+<tr><td><code>maxVisibleLeafWritesPerTick</code></td><td><code>24</code></td><td>Block writes per tick for leaves.</td></tr>
+<tr><td><code>debugMaxVisibleLeafWritesPerTick</code></td><td><code>96</code></td><td></td></tr>
+<tr><td><code>maxVisibleLeafWritesPerChunkSlice</code></td><td><code>48</code></td><td></td></tr>
+<tr><td><code>debugImmediateLeafPriorityRadiusChunks</code></td><td><code>6</code></td><td></td></tr>
+<tr><td><code>canopyScanDepth</code></td><td><code>128</code></td><td>How far below the treetop the canopy sweep looks.</td></tr>
+<tr><td><code>materializationSteps</code></td><td><code>24</code></td><td></td></tr>
+<tr><td><code>backgroundReconcileRadiusChunks</code></td><td><code>14</code></td><td>Radius kept converged in the background.</td></tr>
+<tr><td><code>playerPriorityRadiusChunks</code></td><td><code>12</code></td><td>Radius given priority around each player.</td></tr>
+<tr><td><code>preSendSeasonProjection</code></td><td><code>true</code></td><td>Canonicalise a chunk before it is sent. Off, a chunk can arrive carrying a stale season.</td></tr>
+<tr><td colspan="3" style="background:#12324d;color:#fff;font-family:sans-serif;font-size:7.6pt;font-weight:600;letter-spacing:.05em;padding:1.5mm 2mm;">DYNAMIC TREES</td></tr>
+<tr><td><code>dynamicTreesSeasonManager</code></td><td><code>true</code></td><td></td></tr>
+<tr><td><code>physicalDeciduousLeafFall</code></td><td><code>true</code></td><td>Whether leaves are physically removed rather than only tinted.</td></tr>
+<tr><td><code>protectDormantDynamicTreeBranches</code></td><td><code>true</code></td><td></td></tr>
+<tr><td><code>suppressDormantDynamicTreeLeafSpread</code></td><td><code>true</code></td><td></td></tr>
+<tr><td colspan="3" style="background:#12324d;color:#fff;font-family:sans-serif;font-size:7.6pt;font-weight:600;letter-spacing:.05em;padding:1.5mm 2mm;">WEATHER</td></tr>
+<tr><td><code>customWeatherSystem</code></td><td><code>true</code></td><td>Season-aware weather instead of vanilla&#x27;s.</td></tr>
+<tr><td><code>historicalWeather</code></td><td><code>true</code></td><td></td></tr>
+<tr><td><code>weatherEvaluationTicks</code></td><td><code>100</code></td><td></td></tr>
+<tr><td><code>weatherPatternMinutes</code></td><td><code>20</code></td><td></td></tr>
+<tr><td><code>debugWeatherPatternSeconds</code></td><td><code>12</code></td><td></td></tr>
+<tr><td colspan="3" style="background:#12324d;color:#fff;font-family:sans-serif;font-size:7.6pt;font-weight:600;letter-spacing:.05em;padding:1.5mm 2mm;">CLIENT RENDERING</td></tr>
+<tr><td><code>nearSeasonalTinting</code></td><td><code>true</code></td><td>Client-side seasonal tint on near blocks.</td></tr>
+<tr><td><code>nearVegetationFlattening</code></td><td><code>true</code></td><td></td></tr>
+<tr><td><code>maximumGroundPlantFlattening</code></td><td><code>0.14</code></td><td></td></tr>
+<tr><td><code>nearRefreshRadiusChunks</code></td><td><code>14</code></td><td></td></tr>
+<tr><td><code>nearRefreshChunksPerTick</code></td><td><code>2</code></td><td></td></tr>
+<tr><td><code>debugNearRefreshChunksPerTick</code></td><td><code>2</code></td><td></td></tr>
+<tr><td colspan="3" style="background:#12324d;color:#fff;font-family:sans-serif;font-size:7.6pt;font-weight:600;letter-spacing:.05em;padding:1.5mm 2mm;">VOXY</td></tr>
+<tr><td><code>voxySeasonRendering</code></td><td><code>true</code></td><td>Master switch for the whole Voxy integration.</td></tr>
+<tr><td><code>voxySnowBlendStartBlocks</code></td><td><code>96.0</code></td><td>Distance at which the LOD snow blend begins.</td></tr>
+<tr><td><code>voxySnowBlendEndBlocks</code></td><td><code>384.0</code></td><td>Distance at which it is fully applied.</td></tr>
+<tr><td><code>suppressSeasonalVoxyReingest</code></td><td><code>true</code></td><td>Keeps seasonal writes out of the LOD store. Off, the store carries seasons and goes stale.</td></tr>
+<tr><td><code>voxyServerAutoBackfillExistingRegions</code></td><td><code>true</code></td><td>Ask VoxyServer to build LOD for regions that have none.</td></tr>
+</tbody></table>
+
+<h2>Tuning for server load</h2>
+
+<p>If the season system is taking too much of a tick, the two dials that matter most are the time budgets:
+<code>worldReconcileBudgetMicros</code> for normal running and <code>debugReconcileBudgetMicros</code> for
+while a timelapse is active. Lowering them gives the season system less of each tick and slows convergence;
+nothing breaks, the world simply catches up more gradually.</p>
+
+<p>The column and write counts are secondary &mdash; they cap how much is attempted, but the time budget
+usually binds first. <code>canopyScanDepth</code> is worth lowering on worlds with very tall custom trees,
+since the canopy sweep reads one block state per level per column.</p>
+
+<div class="note"><b>Timelapse arithmetic.</b> A 3600-second year is roughly nine thousand times real time.
+A full pass over a thousand loaded chunks is tens of seconds of budgeted work whatever the settings, so the
+far field will always trail a fast timelapse. It converges evenly rather than stalling; at real-calendar
+speed the question does not arise.</div>

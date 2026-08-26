@@ -1,0 +1,146 @@
+<h1><span class="num">Part 8</span>Diagnostics and troubleshooting</h1>
+
+<p class="lead">Seasonal faults are hard to report and hard to reproduce: they appear kilometres away, in
+one season, after an hour of play. This part is about turning "it looks wrong" into a number.</p>
+
+<h2>Commands</h2>
+
+<table class="mono">
+<tr><th style="width:46%">Command</th><th>What it does</th></tr>
+<tr><td>/teslesseasons status</td><td>Current frame, phase, all channels, and the server status line.</td></tr>
+<tr><td>/teslesseasons season &lt;season&gt;</td><td>Force a season.</td></tr>
+<tr><td>/teslesseasons phase &lt;phase&gt;</td><td>Force a phase.</td></tr>
+<tr><td>/teslesseasons date &lt;date&gt;</td><td>Force a calendar date.</td></tr>
+<tr><td>/teslesseasons transition &lt;…&gt;</td><td>Drive a transition directly.</td></tr>
+<tr><td>/teslesseasons clear</td><td>Drop every override and return to the real calendar.</td></tr>
+<tr><td>/teslesseasons timelapse &lt;seconds&gt;</td><td>Run a whole year in that many seconds.</td></tr>
+<tr><td>/teslesseasons timelapse stop</td><td>Stop it.</td></tr>
+<tr><td>/teslesseasons weather &lt;…&gt;</td><td>Weather control; forces clear during a timelapse.</td></tr>
+<tr><td>/teslesseasons reconcile</td><td>Force a reconcile pass now.</td></tr>
+<tr><td>/teslesseasons voxy backfill</td><td>Ask VoxyServer to fill in regions with no LOD.</td></tr>
+<tr><td>/teslesseasons diagnostic capture</td><td>One screenshot plus a state and world sample.</td></tr>
+<tr><td>/teslesseasons diagnostic year [seconds]</td><td>A full year, captured automatically. Default 600.</td></tr>
+</table>
+
+<h2>The diagnostic bundle</h2>
+
+<p><code>/teslesseasons diagnostic year</code> runs a whole simulated year and writes a ZIP under
+<code>teslesseasons-diagnostics/</code>. Send that ZIP when reporting a visual problem: it turns a claim about
+what the world looks like into something checkable.</p>
+
+<table class="mono">
+<tr><th style="width:38%">File</th><th>Contents</th></tr>
+<tr><td>timeline.csv</td><td>Every season channel, once per second, for the whole year.</td></tr>
+<tr><td>NN-&lt;phase&gt;-state.txt</td><td>All frame channels at that checkpoint, plus Voxy counters, player
+position, heap, blend distances.</td></tr>
+<tr><td>NN-&lt;phase&gt;-world-sample.csv</td><td>A fixed grid of 2401 columns: surface block, category, snow
+layers, the block below, whether it is slab terrain.</td></tr>
+<tr><td>NN-&lt;phase&gt;.png</td><td>The main render target, so Iris, Sodium and Voxy are all included.</td></tr>
+<tr><td>server-state.txt</td><td>The server status line at capture time.</td></tr>
+<tr><td>environment/</td><td>The relevant configs, as actually loaded.</td></tr>
+<tr><td>mods.txt, latest-log-tail.txt</td><td>Installed versions and the log.</td></tr>
+</table>
+
+<p>Checkpoints key on season <em>channels</em>, not wall-clock time, so each lands at the same point of the
+year at any timelapse speed. The world sample uses the same 2401 columns at every checkpoint after the first,
+which makes it a controlled experiment: the same coordinate can be followed through the whole year.</p>
+
+<h2>Reading the status line</h2>
+
+<pre><code>loaded=1325 rr=1325 urgent=1185
+surfaceCols=9474959 leafCols=8091919 snow+=1662490 snow-=257616 layers=1300818
+leaves-=4281976 leaves+=96136 flora-=2028609 flora+=143601 preSendQueued=16657
+ledger[leaves=…,flora=…]
+voxyNeutral[snapshots=…,fast=…,copiedSections=…,snowStripped=…,leavesRestored=…,failures=…]</code></pre>
+
+<table class="mono">
+<tr><th style="width:28%">Field</th><th>Meaning, and what a bad value looks like</th></tr>
+<tr><td>loaded / rr / urgent</td><td>Chunks tracked, in the round-robin, and queued urgently. Urgent staying
+near <code>loaded</code> means the queue is not draining.</td></tr>
+<tr><td>snow+ / snow− / layers</td><td>Placements, removals, and depth changes. <code>layers=0</code> during
+Winter Stable would mean snow is never deepening.</td></tr>
+<tr><td>leaves− / leaves+</td><td>Removed and restored. Over a full year these should approach each other; a
+large imbalance means the ledger is not surviving.</td></tr>
+<tr><td>ledger[…]</td><td>Entries still owed back across loaded chunks. This is the only record of which leaf
+stood where. Empty while the world is bare means nothing can restore the canopy.</td></tr>
+<tr><td>voxyNeutral fast=</td><td>Chunks handed to Voxy untouched because their ledgers were empty. <b>A bare
+winter chunk on that path is the failure</b> — the record of its canopy was gone when Voxy asked, so the LOD
+it wrote is winter permanently.</td></tr>
+<tr><td>voxyNeutral failures=</td><td>Non-zero means neutralisation is throwing. Nothing downstream can be
+trusted.</td></tr>
+</table>
+
+<p>The client state file carries the shader side:</p>
+
+<pre><code>voxyShader: vertexPatched=true fragmentPatched=true status=OK
+            uniformsMax=12/12 seasonPrograms=1/7 lastBindAgeMs=31</code></pre>
+
+<p><code>status</code> is the summary. <code>BRIDGE-NOT-APPLIED</code> means the shader injection did not
+match Voxy's source. <code>NO-PROGRAM-CARRIES-UNIFORMS</code> means it applied but no program resolved any
+season uniform. <code>PARTIAL(n/12)</code> means some resolved and some did not.</p>
+
+<h2>Symptom index</h2>
+
+<table>
+<tr><th style="width:30%">What you see</th><th>Where to look</th></tr>
+
+<tr><td><b>Distant trees stay bare after winter</b></td>
+<td>The LOD store was written while that region was bare. The projector removes leaves; it cannot grow ones
+the store does not contain. Check <code>voxyNeutral fast=</code> and the ledger size, then rebuild the store
+(below).</td></tr>
+
+<tr><td><b>A band of the wrong season at one distance</b></td>
+<td>Same cause. The band is where you were standing when that region's LOD was written.</td></tr>
+
+<tr><td><b>Only the area around the player updates</b></td>
+<td>Convergence, not correctness. The player hotset is unbudgeted; everything else is a budgeted sweep. At a
+fast timelapse the far field cannot keep up. Check <code>urgent</code> against <code>loaded</code>.</td></tr>
+
+<tr><td><b>Snow in the treetops, or shadows under bare trees</b></td>
+<td>A surface search that stopped at the canopy. Fixed; if it reappears, the LOD in view predates the fix —
+rebuild.</td></tr>
+
+<tr><td><b>Lakes are flat white or pale sheets</b></td>
+<td>A shader snow cap reaching water. Fixed; check <code>fragmentPatched</code> and that the client jar is
+current.</td></tr>
+
+<tr><td><b>Ground you can see through, in bands</b></td>
+<td>Snow removal at coarse LOD replacing a voxel with air where there was nothing below. Fixed; the bands fall
+on section boundaries, every 32 blocks of a level.</td></tr>
+
+<tr><td><b>Holes punched in the snowfield during the thaw</b></td>
+<td>Melting without the per-layer feather. Fixed; a column now steps 4/8, 3/8, 2/8, 1/8, ground.</td></tr>
+
+<tr><td><b>Bare patches on slab terrain in spring</b></td>
+<td>The ground-cover placeholder could not survive on a slab and fell through to air. Fixed by an ordered
+candidate list.</td></tr>
+
+<tr><td><b>A whole category never changes</b></td>
+<td>Check the classification log line at startup. A category showing a very low count is a misclassification —
+that is how eight of nine berry blocks were found sitting in the wrong bucket.</td></tr>
+
+<tr><td><b>Server tick time high</b></td>
+<td>Lower <code>worldReconcileBudgetMicros</code> and <code>debugReconcileBudgetMicros</code>. Confirm the
+season system is the cause first: for most of the year its column passes short-circuit and cost almost
+nothing.</td></tr>
+</table>
+
+<h2>Rebuilding the LOD store</h2>
+
+<div class="key"><b>When a rebuild is the answer.</b> Anything of the form "a region shows the season it was in
+when I was last there" is stale LOD, and no amount of remeshing fixes it — the data Voxy holds is simply the
+wrong world. A rebuild from region files re-derives the LOD through the neutraliser, which applies each
+chunk's persisted ledgers as it goes, so the result is neutral regardless of what season the files were saved
+in.</div>
+
+<p>Use VoxyServer's import to rebuild from the region files on disk. Watch the log for:</p>
+
+<pre><code>TESLES neutralising imported Voxy LOD: N seasonal snow removed,
+                                       N leaves restored, N flora restored.</code></pre>
+
+<p>If that line never appears, the import ran <em>without</em> neutralisation and the store will hold whatever
+season the region files were saved in. That is a bug worth reporting rather than working around.</p>
+
+<div class="note"><b>Server-side.</b> Everything that decides what the LOD store contains runs on the server:
+the neutralisation of a chunk before Voxy sees it, and the rule about which seasonal writes may reach the LOD
+at all. A client-only update changes none of it.</div>

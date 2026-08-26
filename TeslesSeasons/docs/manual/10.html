@@ -1,0 +1,111 @@
+<h1><span class="num">Part 10</span>Building from source</h1>
+
+<pre><code>cd TeslesSeasons
+./gradlew build</code></pre>
+
+<p>The jar lands in <code>build/libs/teslesseasons-1.0.0.jar</code>. <code>build</code> runs the contract suites
+and both wiring verifiers first, so a build that succeeds has already checked everything in Part&nbsp;9.</p>
+
+<table class="mono">
+<tr><th style="width:26%">Component</th><th style="width:18%">Version</th><th>Notes</th></tr>
+<tr><td>JDK</td><td>25</td><td>Minecraft 26.2 requires it.</td></tr>
+<tr><td>Gradle</td><td>9.5.1</td><td>Provided by the wrapper.</td></tr>
+<tr><td>Fabric Loom</td><td>1.17.19</td><td>Resolved automatically.</td></tr>
+<tr><td>Minecraft</td><td>26.2</td><td>Downloaded automatically.</td></tr>
+</table>
+
+<p>If the wrapper picks the wrong JDK:</p>
+<pre><code>JAVA_HOME=/path/to/jdk-25 ./gradlew build</code></pre>
+
+<h2>Why there is an identity-mappings jar</h2>
+
+<p>Minecraft 26.2 ships <b>deobfuscated</b>. Mojang publishes no mappings artifact for it, and Fabric's
+intermediary for 26.2 is the empty <code>0.0.0</code> set. Loom still requires <em>a</em> mappings dependency, so
+<code>libs/identity-mappings-26.2.jar</code> supplies a tiny-v2 file with an <code>official → named</code> header
+and no entries: every name maps to itself. It is generated from <code>build-support/identity-mappings/</code> and
+is why <code>loom.useIntermediateMappings = false</code> is set.</p>
+
+<h2>Integration jars</h2>
+
+<p><code>libs/</code> holds the exact third-party builds this mod is compiled against — Voxy 0.2.18-beta,
+VoxyServer 1.2.4, Dynamic Trees, TeslesWorldGeneration. They are <code>compileOnly</code>. Every mixin target
+was verified against these exact binaries; replacing them with different builds may invalidate a target, which
+<code>verifyMixinTargets</code> will report.</p>
+
+<h1><span class="num">Appendix A</span>Mixin inventory</h1>
+
+<p>Every mixin, what it attaches to and why. All are <code>@Pseudo</code> where they target another mod, so a
+missing mod is not a crash.</p>
+
+<table class="long">
+<thead><tr><th style="width:34%">Mixin</th><th style="width:10%">Side</th><th>Purpose</th></tr></thead><tbody>
+<tr><td colspan="3" style="background:#12324d;color:#fff;font-family:sans-serif;font-size:7.6pt;font-weight:600;padding:1.5mm 2mm;">VOXY — MESH AND SHADER (CLIENT)</td></tr>
+<tr><td>VoxySeasonMeshProjectionMixin</td><td>client</td><td>Projects the frame onto LOD geometry at mesh-build
+time. The core of Part 5.</td></tr>
+<tr><td>VoxySeasonGeometryCacheBypassMixin</td><td>client</td><td>Refuses a cached mesh built under an older
+geometry key.</td></tr>
+<tr><td>VoxyWatchedSectionMixin</td><td>client</td><td>Tracks which sections are live, for the remesh sweep.</td></tr>
+<tr><td>VoxyShaderLoaderMixin</td><td>client</td><td>Injects the three GLSL layers as shaders load.</td></tr>
+<tr><td>VoxyShaderUniformMixin</td><td>client</td><td>The one and only binder for the twelve season uniforms.</td></tr>
+<tr><td>VoxyModelFactoryCategoryMixin</td><td>client</td><td>Attaches a seasonal category to each LOD model id.</td></tr>
+<tr><td>VoxySeasonAwareModelDedupMixin</td><td>client</td><td>Keeps deduplication from collapsing models that
+differ only by season category.</td></tr>
+<tr><td>VoxyClientLevelDirtyMixin</td><td>client</td><td>Marks client-side sections dirty on seasonal change.</td></tr>
+<tr><td colspan="3" style="background:#12324d;color:#fff;font-family:sans-serif;font-size:7.6pt;font-weight:600;padding:1.5mm 2mm;">VOXY — NEUTRAL PERSISTENCE</td></tr>
+<tr><td>VoxySnapshotIngestFixMixin</td><td>both</td><td>Hands Voxy a neutralised copy of a chunk instead of the
+live one.</td></tr>
+<tr><td>VoxyImporterSnowNeutralizerFixMixin</td><td>both</td><td>Strips seasonal snow during import.</td></tr>
+<tr><td>VoxyWorldImporterNeutralizerMixin</td><td>both</td><td>Applies the persisted ledgers to imported region
+sections.</td></tr>
+<tr><td>VoxyServerDirtyTrackerMixin</td><td>both</td><td>Holds back LOD updates for writes that diverge from
+neutral — and lets healing writes through.</td></tr>
+<tr><td>VoxyRawIngestSuppressionMixin</td><td>client</td><td>Blocks ingest of a recognised seasonal mutation.</td></tr>
+<tr><td>VoxyRemoteAuthorityGuardMixin</td><td>client</td><td>Disables local ingest while a server is supplying
+LOD.</td></tr>
+<tr><td>VoxyClientStorageEpochMixin / VoxyServerStorageEpochMixin</td><td>both</td><td>Cache-epoch handling
+across versions.</td></tr>
+<tr><td>VoxyServerInstanceMixin</td><td>both</td><td>Hooks VoxyServer's lifecycle.</td></tr>
+<tr><td colspan="3" style="background:#12324d;color:#fff;font-family:sans-serif;font-size:7.6pt;font-weight:600;padding:1.5mm 2mm;">WORLD AND COMPATIBILITY</td></tr>
+<tr><td>PlayerChunkSenderMixin</td><td>both</td><td>Canonicalises a chunk before it is sent to a player.</td></tr>
+<tr><td>GrassSnowIntegrityMixin</td><td>both</td><td>Keeps the snowy grass property consistent with what is
+above it.</td></tr>
+<tr><td>DynamicTreesLeafTickMixin</td><td>both</td><td>Stops dormant trees regrowing leaves the season removed.</td></tr>
+<tr><td>DynamicTreesBranchRotGuardMixin</td><td>both</td><td>Stops branches rotting because winter took their
+leaves.</td></tr>
+<tr><td colspan="3" style="background:#12324d;color:#fff;font-family:sans-serif;font-size:7.6pt;font-weight:600;padding:1.5mm 2mm;">WEATHER (CLIENT)</td></tr>
+<tr><td>CustomWeatherRainStrengthMixin</td><td>client</td><td>Season-aware precipitation strength.</td></tr>
+<tr><td>WinterWeatherRendererMixin / WinterWeatherColumnMixin</td><td>client</td><td>Snow rather than rain in
+winter, per column.</td></tr>
+</table>
+
+<h1><span class="num">Appendix B</span>Glossary</h1>
+
+<table>
+<tr><th style="width:26%">Term</th><th>Meaning in this mod</th></tr>
+<tr><td><b>Frame</b></td><td>An immutable <code>SeasonFrame</code>: what the world should look like now, as
+absolute targets.</td></tr>
+<tr><td><b>Channel</b></td><td>One number in a frame — <code>leafRetention</code>, <code>snowDepth</code> and so
+on.</td></tr>
+<tr><td><b>Target</b></td><td>A channel's value, quantised to 1/256 at the point of selection.</td></tr>
+<tr><td><b>Revision</b></td><td>Monotonic counter, bumped only when targets change. A coalescing token.</td></tr>
+<tr><td><b>Sector</b></td><td>A season module: a pure function from a clock snapshot to a frame.</td></tr>
+<tr><td><b>Coordinate field</b></td><td>The pure hash turning <code>(position, seed, salt)</code> into
+[0,&nbsp;1), which decides membership.</td></tr>
+<tr><td><b>Salt</b></td><td>A per-channel constant that keeps channels from correlating.</td></tr>
+<tr><td><b>Ledger</b></td><td>Per-chunk persistent record of what the season removed or placed. What makes
+seasonal change reversible.</td></tr>
+<tr><td><b>Ownership</b></td><td>Whether a block is in a ledger. Only owned blocks are ever removed.</td></tr>
+<tr><td><b>Neutral world</b></td><td>Full canopy, full flora, no seasonal snow. What Voxy's LOD store is meant
+to hold.</td></tr>
+<tr><td><b>Divergent / healing write</b></td><td>A change away from the neutral world, or back toward it.
+Decides whether it may reach the LOD store.</td></tr>
+<tr><td><b>Geometry key</b></td><td>Identity of everything that changes LOD geometry. Decides whether a cached
+mesh may be reused.</td></tr>
+<tr><td><b>Projection</b></td><td>Applying the frame to something — blocks, LOD geometry, or shader colour.</td></tr>
+<tr><td><b>Sweep</b></td><td>One full pass over a chunk's 256 columns, in a permuted order.</td></tr>
+<tr><td><b>Handoff</b></td><td>The band where real blocks give way to LOD.</td></tr>
+<tr><td><b>Effect</b></td><td>A pluggable <code>SeasonalWorldEffect</code> — a seasonal world behaviour that is
+not part of the pinned contract.</td></tr>
+</table>
+
+</body></html>

@@ -1,0 +1,173 @@
+<h1><span class="num">Part 5</span>Voxy integration</h1>
+
+<p class="lead">Making terrain kilometres away show the same season as the ground underfoot, without
+ever storing a season in the LOD database. This is the hardest part of the mod and the source of most
+of its history.</p>
+
+<h2>Why LOD is hard here</h2>
+
+<p>Voxy keeps its own persistent database of the world at several levels of detail, built as regions are
+played and streamed to clients. It is a <em>cache of what the world looks like</em> — and that is exactly
+the problem, because what the world looks like changes four times a year.</p>
+
+<p>Three approaches are possible, and two of them fail:</p>
+
+<table>
+<tr><th style="width:26%">Approach</th><th>Why it fails, or does not</th></tr>
+<tr><td>Store the season in the LOD</td><td>The store is only written where a player has been. A region
+last visited in winter stays winter for good, and the player sees a band of the wrong season wherever
+they happened to be standing months ago.</td></tr>
+<tr><td>Rebuild the LOD when the season changes</td><td>The server can only rebuild what is loaded, and
+the LOD covers far more than that. It also means rebuilding the entire visible LOD set on every
+revision.</td></tr>
+<tr><td><b>Keep the store season-neutral and apply the season at mesh time</b></td><td>The store holds one
+world — full canopy, no snow. The season is painted on as sections are meshed, so a section rebuilt today
+gets today's season and a section stored last winter carries no winter at all.</td></tr>
+</table>
+
+<p>The third is what this mod does, and every rule below exists to keep the store neutral.</p>
+
+<h2>Season-neutral persistence</h2>
+
+<p>Neutrality is maintained in three places, because there are three ways world data reaches Voxy.</p>
+
+<h3>1 · Chunk ingest</h3>
+
+<p>When Voxy ingests a chunk, it is handed a neutralised copy rather than the live one. The copy is built
+from the chunk's ledgers: seasonal snow is taken back out, removed leaves and flora are put back. A chunk
+that is physically deep in winter is therefore handed over looking like summer.</p>
+
+<p>This runs on the server as well as the client, because VoxyServer's own voxelizer funnels through the
+same Voxy entry point. Chunk load, chunk unload and re-voxelisation after a block change all pass through
+it; there is no section-level bypass.</p>
+
+<h3>2 · Live block changes</h3>
+
+<p>A seasonal block change would ordinarily mark the chunk dirty and cause a re-voxelisation. Whether that
+is allowed depends on <b>which direction the change moves the world</b>.</p>
+
+<div class="key"><b>Directional suppression — the rule that took longest to find.</b> Writes that take the
+world <em>away</em> from neutral are held out of the LOD store. Writes that bring it <em>back</em> are
+deliberately let through.</div>
+
+<table>
+<tr><th style="width:38%">Change</th><th style="width:20%">Direction</th><th>Reaches the LOD?</th></tr>
+<tr><td>Leaf removed</td><td>away</td><td>no</td></tr>
+<tr><td>Leaf restored</td><td>toward</td><td><b>yes</b></td></tr>
+<tr><td>Snow placed, or deepened</td><td>away</td><td>no</td></tr>
+<tr><td>Snow thinned, or melted</td><td>toward</td><td><b>yes</b></td></tr>
+<tr><td>Flora removed</td><td>away</td><td>no</td></tr>
+<tr><td>Flora restored</td><td>toward</td><td><b>yes</b></td></tr>
+</table>
+
+<p>Blocking both directions looks more conservative and is in fact the opposite: it freezes each region's
+LOD at whatever season was running the first time that region's LOD was built. A forest whose LOD was born
+in winter then had no canopy and no way to gain one, because the spring restoration that would have healed
+it was suppressed by the same flag that had suppressed the autumn removal — and the client cannot invent a
+canopy the store does not contain. Letting the healing direction through makes the store self-correcting:
+over one year every leaf is restored, every flower returns and every layer melts, and each of those writes
+reaches the LOD.</p>
+
+<p>The direction is read from the blocks themselves, not from which helper the caller reached for — the same
+code path places snow and melts it, drops a leaf and restores it.</p>
+
+<h3>3 · Bulk import</h3>
+
+<p>Rebuilding the store from region files on disk is the one operation that can neutralise an entire world
+at once, and it is hooked the same way: as each chunk's sections are decoded, the persisted ledgers are
+applied to them before Voxy sees them. This is the supported remedy for a store that was contaminated by an
+older build.</p>
+
+<h2>Mesh projection</h2>
+
+<p>With the store neutral, the season is applied when a section is meshed. The projector takes a copy of the
+raw section data on its way into the mesher and edits it.</p>
+
+<figure><div class="ascii">for each section handed to the mesher:
+   1. stamp it with the geometry key it is being meshed against
+   2. strip leaves the frame has dropped          (all LOD levels)
+   3. for each of the 32×32 columns:
+        a. clear seasonal snow at every height
+        b. if the frame wants snow here, place it on the surface
+   4. hand the edited copy to the mesher; the store is untouched</div>
+<figcaption>The projection pass, in order. Steps 2 and 3a are removals and run unconditionally;
+3b is the only addition.</figcaption></figure>
+
+<p><b>Leaves come off first.</b> Snow is placed on the surface of a column, so a canopy about to be deleted
+must not be allowed to act as that surface. Doing snow first left a lid of snow hanging in the air exactly
+where the winter canopy had been — and that floating lid went on shading the ground beneath it, which is
+what "shadows from leaves that are not there" actually was.</p>
+
+<p><b>The surface search ignores foliage.</b> The server locates a column's surface with the
+motion-blocking-no-leaves heightmap, which looks straight through a canopy. A search that stops at the first
+non-air voxel finds the treetop in every forested column and treats it as ground — putting snow up in the
+trees.</p>
+
+<p><b>Removal happens at every height, and before any decision.</b> Checking only the topmost voxel left snow
+stranded wherever something stood above it: under a trunk, or under a canopy at coarse LOD where tree and
+ground merge into one column. Clearing before deciding matters too — a column still holding last winter's
+snow at its surface offers no ground for this winter's snow, so its depth could never be corrected either.</p>
+
+<p><b>Never punch a hole.</b> Clearing snow at coarse LOD replaces the voxel with the material below it. When
+there is nothing below — which is the case for the bottom row of every section — the voxel is left alone.
+Falling back to air punched holes through the landscape in bands. Stale snow is a far smaller fault than
+terrain you can see the sky through.</p>
+
+<table>
+<tr><th style="width:26%">LOD level</th><th>What the projector does</th></tr>
+<tr><td>0</td><td>One voxel is one block. Exact coordinate-for-coordinate parity with the server.</td></tr>
+<tr><td>1 – 2</td><td>Layer counts scaled to the voxel's resolution; a thin dusting at level 2 is dropped
+rather than rendered as a full voxel of snow.</td></tr>
+<tr><td>3 and above</td><td>No snow geometry — a voxel spans too many blocks for per-column snow to mean
+anything. Appearance comes from the shader. Leaf stripping still applies at every level.</td></tr>
+</table>
+
+<h3>Geometry keys and cache bypass</h3>
+
+<p>Colour reaches Voxy as shader uniforms uploaded per bind, so it is deliberately <em>not</em> part of what
+decides whether a section must be rebuilt — including it would rebuild the whole LOD set every time the
+calendar moved at all. Only two things change LOD <em>geometry</em>: seasonal snow, and leaves the frame has
+dropped. Those form a <b>geometry key</b>. Each section is stamped with the key it was meshed against, and a
+cached mesh built under an older key is refused.</p>
+
+<h2>The shader pipeline</h2>
+
+<p>Voxy's own vertex and fragment shaders are patched by string injection at load time. Three layers apply in
+order, and each is idempotent — patching an already-patched source is a no-op, which matters because the
+render pipeline is recreated several times during startup.</p>
+
+<table>
+<tr><th style="width:30%">Layer</th><th>What it adds</th></tr>
+<tr><td>Vertex season bridge</td><td>Carries a 4-bit seasonal category and the fragment's world position
+through to the fragment stage, packed Iris-safely into the custom id.</td></tr>
+<tr><td>Fragment snowfield bridge</td><td>The GLSL mirror of the coordinate field, distance blending,
+per-category seasonal colour, terrain-side snow shading, and discards for flora the season has removed.</td></tr>
+<tr><td>Canonical visual post-pass</td><td>Luminance-preserving autumn foliage shaping, so distant leaves
+match the near field rather than washing out under shaders.</td></tr>
+</table>
+
+<p>Twelve uniforms are bound, by exactly one binder. Two separate mixins used to inject into the shader bind
+method, each resolving and writing its own subset; whichever ran last won, and the two disagreed about where
+their values came from.</p>
+
+<div class="warn"><b>Nothing gets a blanket snow cap.</b> An earlier version gave every fragment in the
+unclassified category a snow cap on its up-face, guarded by a preprocessor check meant to spare water. Voxy
+draws water through the same program, so at full winter every lake and river became one flat white plane at
+its own water level. LOD 0–2 now receives real projected snow geometry on any solid surface, classified or
+not, so the cap was not what carried distant snow anyway.</div>
+
+<h2>Handoff</h2>
+
+<p>Near the player, terrain is drawn from real blocks and Voxy's copy is hidden behind them. Sections in that
+band used to have snow stripped but never added, on the theory that adding season near real blocks would show
+it twice at the seam. It does not — both sides threshold the same field at the same target and agree column
+for column. What the asymmetry produced was a band of LOD that had been cleared of snow and never given any
+back: a flat, empty strip that followed the player around all winter. Snow is now projected symmetrically at
+every section within the projected LOD range.</p>
+
+<h2>What the client cannot do</h2>
+
+<div class="warn"><b>The projector removes; it cannot invent.</b> It can take away leaves the season has
+dropped and snow the season does not want. It has <em>no way</em> to grow leaves that the store does not
+contain. This is the one asymmetry that matters operationally: if a region's LOD was written while that
+region was bare, only a rebuild will fix it — see Part&nbsp;8.</div>

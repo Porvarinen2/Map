@@ -1,0 +1,158 @@
+<h1><span class="num">Part 2</span>The season model</h1>
+
+<p class="lead">This part is the contract. It defines the calendar, the twenty channels a frame
+carries, and exactly what each of the twelve season-phases asks the world for. Everything else in the
+mod is a consequence of these numbers.</p>
+
+<h2>Calendar, seasons and phases</h2>
+
+<p>The year runs <b>Summer → Autumn → Winter → Spring → Summer</b>. Each season has three phases, giving
+twelve in all:</p>
+
+<table>
+<tr><th style="width:18%">Phase</th><th>Role</th></tr>
+<tr><td><b>INCOMING</b></td><td>The season arriving. Takes over exactly where the previous season's
+Outgoing left off.</td></tr>
+<tr><td><b>STABLE</b></td><td>The season itself. The long middle where most of the visible change
+happens.</td></tr>
+<tr><td><b>OUTGOING</b></td><td>The season handing over. Ends at exactly the value the next season's
+Incoming begins at.</td></tr>
+</table>
+
+<p>Incoming and Outgoing are each seven real days by default
+(<code>incomingTransitionDays</code>, <code>outgoingTransitionDays</code>); Stable fills the rest of the
+season. The clock is real-calendar and refreshes every <code>calendarRefreshSeconds</code> (30 by
+default), in the timezone given by <code>timeZone</code>.</p>
+
+<p>Every phase exposes a single <b>progress</b> value <code>p</code> in&nbsp;[0,&nbsp;1]. Every formula
+in this part is a function of the phase and that one number — nothing else. That is what makes a season
+module a pure function and lets the contract suites evaluate all twelve phases without a running game.</p>
+
+<h2>The SeasonFrame</h2>
+
+<p>A <code>SeasonFrame</code> is an immutable record of what the world should look like now. Each field
+is an <b>absolute world target</b> in&nbsp;[0,&nbsp;1] — a retention of 0.6 means "sixty percent of these
+should exist", not "we are sixty percent of the way through removing them".</p>
+
+<table class="chan long">
+<thead><tr><th style="width:28%">Channel</th><th>What it targets</th></tr></thead><tbody>
+<tr><td>season, phase, progress</td><td>Where the calendar is. Inputs, not targets.</td></tr>
+<tr><td>revision</td><td>Monotonic. The only non-target field; exists purely so schedulers can coalesce.</td></tr>
+<tr><td>autumnColor</td><td>How far the foliage palette has turned.</td></tr>
+<tr><td>leafRetention</td><td>Fraction of deciduous leaves that still exist, physically.</td></tr>
+<tr><td>flowerRetention</td><td>Fraction of flowers that still exist.</td></tr>
+<tr><td>plantRetention</td><td>Fraction of ground vegetation that still exists.</td></tr>
+<tr><td>mushroomRetention</td><td>Fraction of mushrooms that still exist.</td></tr>
+<tr><td>berryRetention</td><td>Fraction of wild berry bushes that still exist.</td></tr>
+<tr><td>groundDormancy</td><td>How brown and dormant the ground reads.</td></tr>
+<tr><td>groundFrost</td><td>How frozen the ground is. Drives the pluggable ice effect.</td></tr>
+<tr><td>snowCoverage</td><td>Fraction of eligible columns that carry snow.</td></tr>
+<tr><td>snowDepth</td><td>Normalised depth; ×8 gives the layer target.</td></tr>
+<tr><td>springFreshness</td><td>How vivid the new growth reads.</td></tr>
+<tr><td>treeGrowthFactor</td><td>Handed to Dynamic Trees.</td></tr>
+<tr><td>seedDropFactor</td><td>Handed to Dynamic Trees.</td></tr>
+<tr><td>fruitProductionFactor</td><td>Handed to Dynamic Trees and food mods.</td></tr>
+<tr><td>snowAccumulating / snowThawing</td><td>Direction flags. Thawing switches on the layer-by-layer melt.</td></tr>
+</table>
+
+<h3>Quantisation, and why it matters more than it looks</h3>
+
+<p>Targets are compared at a granularity of <b>1/256</b>. This is the single most performance-critical
+constant in the mod. A revision bump means "redo the world": the server re-queues every loaded chunk
+and the client invalidates every Voxy LOD section. Comparing raw floats makes that happen on
+<em>every clock refresh</em>, because the calendar advances continuously and any two samples thirty
+seconds apart differ in the last few bits.</p>
+
+<p>One step per 1/256 over a seven-day phase is roughly one step every forty minutes — far below what a
+player notices, and far above the rate at which rebuilding the LOD set is affordable. <code>progress</code>
+is deliberately excluded from the comparison: it is the clock <em>input</em>, not a target. If every
+derived target is unchanged, the world has nothing to do however much raw progress has advanced.</p>
+
+<h2>What each season asks for</h2>
+
+<p>In the tables below, <code>p</code> is phase progress. These are the complete formulas.</p>
+
+<h3>Summer</h3>
+<table class="formula">
+<tr><th style="width:22%">Channel</th><th>Incoming</th><th>Stable</th><th>Outgoing</th></tr>
+<tr><td>leaves / flowers / plants / berries</td><td>1.0</td><td>1.0</td><td>1.0</td></tr>
+<tr><td>mushrooms</td><td>0.0</td><td>0.0</td><td>0.0</td></tr>
+<tr><td>autumnColor</td><td>0.0</td><td>0.0</td><td>p</td></tr>
+<tr><td>seedDrop</td><td>0.0</td><td>0.0</td><td>p</td></tr>
+<tr><td>growth / fruit</td><td>1.0</td><td>1.0</td><td>1.0</td></tr>
+<tr><td>dormancy / frost / snow</td><td>0.0</td><td>0.0</td><td>0.0</td></tr>
+</table>
+<p>Summer is the neutral world. Everything exists, nothing is frozen. Its Outgoing phase does one job:
+turn the palette so Autumn Incoming can start at a fully saturated 1.0 with no jump.</p>
+
+<h3>Autumn</h3>
+<table class="formula">
+<tr><th style="width:22%">Channel</th><th>Incoming</th><th>Stable</th><th>Outgoing</th></tr>
+<tr><td>autumnColor</td><td>1.0</td><td>1.0</td><td>1.0</td></tr>
+<tr><td>leaves</td><td>1.0</td><td>1 − p</td><td>0.0</td></tr>
+<tr><td>flowers / berries</td><td>1.0</td><td>1 − p</td><td>0.0</td></tr>
+<tr><td>plants</td><td>1.0</td><td>1.0</td><td>1 − p</td></tr>
+<tr><td>mushrooms</td><td>p</td><td>1.0</td><td>1 − p</td></tr>
+<tr><td>dormancy</td><td>p</td><td>1.0</td><td>1.0</td></tr>
+<tr><td>frost</td><td>0.15·p</td><td>0.15 + 0.25·p</td><td>0.40 + 0.60·p</td></tr>
+<tr><td>snow coverage</td><td>0.0</td><td>0.0</td><td>p</td></tr>
+<tr><td>snow depth</td><td>0.0</td><td>0.0</td><td>0.125 (1/8)</td></tr>
+</table>
+<p>Two details are load-bearing. Mushrooms are an autumn-only crop: they rise through Incoming, hold
+through Stable and are gone by the end of Outgoing. And Autumn Outgoing lays down the <b>first snow
+footprint</b> at exactly one eighth of a layer, growing to full coverage — so Winter Incoming inherits a
+complete 1/8 blanket rather than starting from nothing.</p>
+
+<h3>Winter</h3>
+<table class="formula">
+<tr><th style="width:22%">Channel</th><th>Incoming</th><th>Stable</th><th>Outgoing</th></tr>
+<tr><td>leaves / flowers / plants / mushrooms / berries</td><td>0.0</td><td>0.0</td><td>0.0</td></tr>
+<tr><td>autumnColor</td><td>1 − p</td><td>0.0</td><td>0.0</td></tr>
+<tr><td>dormancy / frost</td><td>1.0</td><td>1.0</td><td>1.0</td></tr>
+<tr><td>snow coverage</td><td>1.0</td><td>1.0</td><td>1 − p</td></tr>
+<tr><td>snow depth</td><td>0.125</td><td>max(0.125, p)</td><td>1 − p</td></tr>
+<tr><td>accumulating / thawing</td><td>accumulating</td><td>accumulating</td><td>thawing</td></tr>
+</table>
+<p>Winter Incoming is a seamless handoff: it takes the complete 1/8 footprint Autumn Outgoing finished
+building and must never reset coverage to zero. Winter Stable maps progress directly to depth — at 54&nbsp;%
+the target is 4.32 layers, realised as a deterministic mix of 4/8 and 5/8 placements so that the
+large-area mean converges to 4.32. Winter Outgoing brings footprint and depth down together; how an
+individual column gets from its depth to zero is covered in Part&nbsp;4.</p>
+
+<h3>Spring</h3>
+<table class="formula">
+<tr><th style="width:22%">Channel</th><th>Incoming</th><th>Stable</th><th>Outgoing</th></tr>
+<tr><td>flowers / plants / berries / growth / fruit</td><td>p/3</td><td>(1+p)/3</td><td>(2+p)/3</td></tr>
+<tr><td>leaves</td><td>0.0</td><td>p</td><td>1.0</td></tr>
+<tr><td>dormancy / frost</td><td>1 − p</td><td>0.0</td><td>0.0</td></tr>
+<tr><td>freshness</td><td>p</td><td>1.0</td><td>1 − p</td></tr>
+<tr><td>mushrooms / snow</td><td>0.0</td><td>0.0</td><td>0.0</td></tr>
+</table>
+<p>Spring's flora restoration is one continuous 0→1 channel spanning all three phases, each covering a
+third, so Summer starts at exactly 100&nbsp;%. Leaves return across Spring Stable and then stay full.</p>
+
+<div class="note"><b>Reading the tables as a player.</b> Autumn Stable is when the canopy actually
+comes down. Winter Stable is when snow gets deep. Spring Stable is when the leaves come back. The
+Incoming and Outgoing phases are almost entirely about handing over cleanly.</div>
+
+<h2>Continuity</h2>
+
+<p>Every continuous channel must leave a phase at exactly the value the next phase enters with, at all
+twelve boundaries. Not approximately — exactly. <code>SeasonContinuityTest</code> checks fourteen
+channels across twelve boundaries, 168 comparisons, and a run of a full simulated year in a live server
+confirmed all twelve boundaries continuous in practice.</p>
+
+<p>This is why several formulas look more elaborate than they need to. Winter Incoming fades
+<code>autumnColor</code> from 1 to 0 rather than snapping it, because Autumn Outgoing ends fully
+saturated. Winter Stable's depth is <code>max(0.125, p)</code> rather than <code>p</code>, so that at
+p = 0 it still equals the 1/8 endpoint Winter Incoming handed it.</p>
+
+<h2>Revisions</h2>
+
+<p>The director owns a monotonic revision counter, and mints a new revision <b>only</b> when a frame's
+targets actually differ from the one in place. A Stable phase that asks for nothing new never triggers a
+world pass. When targets are unchanged the frame is still refreshed — so progress keeps advancing for
+anything reading it — but the old revision is carried forward.</p>
+
+<p>Downstream, a revision is a coalescing token. If revisions 53, 54 and 55 all arrive before a chunk is
+processed, the chunk is taken straight to 55; the intermediate states are never realised.</p>

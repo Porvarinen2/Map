@@ -75,6 +75,16 @@ projection, silently inert. It also carried mixins aimed at methods that had bee
 renamed away, which would have killed the game at startup had they been
 registered. Neither is visible by reading; both now fail the build.
 
+## The manual
+
+`docs/TeslesSeasons-Manual.pdf` is the full technical manual — 37 pages covering the
+season contract phase by phase, the coordinate field, the physical world pass, the
+Voxy integration in detail, both extension points, all 52 configuration options, and
+a symptom index for diagnosing a world that looks wrong.
+
+It is written as one HTML file per part under `docs/manual/`; `docs/manual/build.sh`
+rebuilds the PDF (needs `pip install weasyprint`).
+
 ## Architecture
 
 One authority, many projectors:

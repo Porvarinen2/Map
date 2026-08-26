@@ -1,0 +1,176 @@
+<h1><span class="num">Part 4</span>The physical world</h1>
+
+<p class="lead">How real blocks are brought to the frame's targets: the sweep that visits them, the
+ledgers that make removal reversible, and the budget that keeps it all inside a server tick.</p>
+
+<h2>The reconciler</h2>
+
+<p><code>SeasonalWorldReconciler</code> holds a <code>WorkState</code> per loaded chunk and walks them
+continuously, converging each toward the current frame. It never asks "what changed?" — it asks "what
+should this column look like, and what does it look like?" That difference is the whole of its job, and it
+is why a chunk that has been unloaded for a year needs no catch-up logic.</p>
+
+<p>Each chunk carries two independent sweeps:</p>
+
+<table>
+<tr><th style="width:24%">Sweep</th><th>What it does per column</th></tr>
+<tr><td><b>Surface</b></td><td>Snow placement and removal, flora removal and restoration, then any
+registered world effects.</td></tr>
+<tr><td><b>Canopy</b></td><td>Walks down from the motion-blocking height through up to
+<code>canopyScanDepth</code> blocks, removing and restoring deciduous leaves and canopy mushrooms.</td></tr>
+</table>
+
+<h2>The column sweep</h2>
+
+<p>A chunk has 256 columns. A sweep visits each exactly once and then wraps. The order within a sweep is
+a permutation:</p>
+
+<pre><code>seed  = chunkX·73428767 ^ chunkZ·912931 ^ sweepNumber
+start = seed &amp; 0xFF
+step  = (seed &gt;&gt;&gt; 8 | 1) &amp; 0xFF        // forced odd
+column(i) = (start + i·step) &amp; 0xFF</code></pre>
+
+<p>An odd step modulo 256 is a full-cycle permutation, so one sweep touches all 256 columns exactly once
+and no column can starve. The <code>| 1</code> is what forces it odd; an even step would revisit a fraction
+of the columns and never reach the rest.</p>
+
+<div class="warn"><b>The cursor is deliberately not reset when the season changes.</b> It used to be, and
+that quietly starved everything outside the player's vicinity. A surface revision is quantised at 1/100
+per channel, so during a fast timelapse it changed roughly twice a second while any individual chunk came
+up for its turn only every couple of seconds. The cursor was back at zero on nearly every visit, the same
+opening columns were redone forever, and the rest of the chunk was never reached. Near chunks looked right
+only because the player hotset canonicalises them in full by a different path.</div>
+
+<p>Whether a chunk is <em>current</em> is tracked separately, by how many columns it has covered since the
+revision last changed. Once that reaches 256, the sweep has necessarily covered every column at least once
+under this revision or a newer one.</p>
+
+<h2>Ownership and ledgers</h2>
+
+<p>Seasonal change has to be reversible, and it has to be reversible <em>without touching anything that
+was not seasonal</em>. Each chunk therefore carries persistent ledgers, stored as Fabric attachments:</p>
+
+<table class="mono">
+<tr><th style="width:30%">Ledger</th><th>Holds</th></tr>
+<tr><td>owned_snow_v3</td><td>Packed positions of snow this mod placed</td></tr>
+<tr><td>removed_leaves_v3</td><td>Encoded block states of leaves removed, and where</td></tr>
+<tr><td>removed_flora_v4</td><td>Encoded block states of flora removed, and where</td></tr>
+<tr><td>effect_owned_v1</td><td>Positions owned by pluggable world effects, keyed by effect id</td></tr>
+</table>
+
+<div class="key"><b>The ownership rule.</b> Only snow recorded in the owned-snow ledger is ever removed.
+A player-placed snow layer that happens to sit where the season also wants snow stays the player's: it is
+never overwritten, and never deleted in the melt. The same holds for every pluggable effect, which gets
+its own ownership set automatically.</div>
+
+<p>The ledgers are flushed on every dirty work slice rather than at the end of a chunk's pass. Writing the
+block and writing its ledger entry must not be separable: a crash between the two would leave the world
+with the leaf gone and no record of what to restore. A few extra metadata writes per tick are much cheaper
+than that.</p>
+
+<h2>Snow</h2>
+
+<p>The target for a column is:</p>
+
+<pre><code>coverage = frame.snowCoverageTarget()        // quantised
+depth    = frame.snowDepthTarget()           // quantised
+if coverage ≤ 0 or depth ≤ 0                     → 0 layers
+if snowCoverage01(x, z, seed) ≥ coverage         → 0 layers
+
+target = depth · 8
+layers = floor(target) + (snowDepth01(x,z,seed) &lt; frac(target) ? 1 : 0)</code></pre>
+
+<p>The fractional part is realised by <b>deterministic stochastic rounding</b>: at a target of 4.32 layers,
+only 4/8 and 5/8 states are produced, and the proportion of 5s is chosen so the large-area mean converges
+to 4.32. No column ever holds an illegal layer count.</p>
+
+<h3>Where snow may rest</h3>
+
+<p>Snow settles on whatever solid surface is there — stone, gravel, a roof, a fallen log — matching what
+vanilla's own placement allows. It is refused on water and lava, on ice, and on foliage. The projector has
+no <code>Level</code> at mesh-build time, so the rule is expressed over a block state alone, in
+<code>SnowSystem.canRestOn</code>, and both the server and the LOD projector ask it. Blocking motion stands
+in for a sturdy top face.</p>
+
+<h3>Melting, a layer at a time</h3>
+
+<p>The canonical mapping brings footprint and depth down together. Applied literally per column that means
+a column standing under four layers drops to bare ground the instant the retreating footprint passes it —
+which reads as holes being punched through full-depth snow with grass at the bottom of them.</p>
+
+<p>The specification pins the <em>aggregate</em>, not the trajectory, so each layer is instead given its own
+slice of retreating coverage:</p>
+
+<pre><code>if thawing:
+    target = min(depth·8, (coverage − fieldValue) / 0.02)
+layers = max(1, …)          // a column inside the footprint keeps its last layer</code></pre>
+
+<p>A column therefore comes down 4/8, 3/8, 2/8, 1/8, ground, and the melt window is proportional to how
+deep the snow is. The band is at least the revision quantum wide, so no column can lose more than half a
+layer between two updates. Because a column inside the footprint always keeps its last layer, the footprint
+matches the specification <em>exactly</em> rather than approximately; mean depth sits slightly under nominal
+(about 1.9/8 where the specification says approximately 2/8), which is the cost of removing the cliff.</p>
+
+<h3>What appears when the last layer goes</h3>
+
+<p>Spring restores real flora gradually, tracking the plant channel — at 45&nbsp;%, only 45&nbsp;% of a
+column's canonical flora is back. A placeholder covers the remainder so the ground never reads as bare
+dirt. Ground cover is an ordered list of candidates: <code>minecraft:short_grass</code> first, then the
+slab-mounted equivalent for slab terrain, then nothing. A single-candidate rule silently degraded to air on
+slab ground, leaving those columns visibly bare all spring while ordinary ground beside them was covered.</p>
+
+<h2>Leaves</h2>
+
+<p>A deciduous leaf exists when <code>leaf01(x,y,z,seed) &lt; leafRetention</code>. Removal writes the exact
+block state into the ledger; restoration reads it back and puts the same state, same species, in the same
+place.</p>
+
+<div class="key"><b>Absent means absent.</b> A removed leaf becomes AIR. It is not made invisible, and it is
+not discarded in the fragment shader — a discard only applies in the pass running the patched shader, and
+Iris renders its shadow map with a different program, so discarded leaves go on casting full-canopy shadows
+over bare winter trees.</div>
+
+<p>Evergreens are classified separately and keep their needles all year. Dynamic Trees ships several leaf
+block subclasses, not just one, and all of them are classified centrally — matching only the exact class
+left every subclass unclassified and those leaves survived winter as floating foliage.</p>
+
+<h2>Flora</h2>
+
+<p>Flora is classified once, at startup, from the real block registry into an identity table. Keyword
+heuristics run over that registry a single time to build the table and never again; they are not the
+production lookup. The result is logged, which is how a misclassification becomes visible:</p>
+
+<pre><code>Seasonal flora registry resolved from 1596 installed blocks:
+148 plants, 77 flowers, 50 mushrooms, 9 berries.</code></pre>
+
+<p>Five categories exist: <code>PLANT</code>, <code>FLOWER</code>, <code>MUSHROOM</code>, <code>BERRY</code>
+and <code>NONE</code>. Each tracks its own frame channel and its own field salt.</p>
+
+<div class="warn"><b>Identity decides category, not superclass.</b> Wild berry bushes are resolved before
+every other rule, including the crop guard. Some ship as subclasses of a crop block, and an
+<code>instanceof CropBlock</code> test reaches them first and files them as not-seasonal — which once left
+the berry channel holding exactly one block out of nine. A wild bush is worldgen flora whatever it extends;
+only cultivated crops belong to a farming mod.</div>
+
+<h2>Budget</h2>
+
+<p>All of this runs on the server thread, so it is bounded twice over: by a write count and by a wall-clock
+deadline. Both are checked by a single <code>canWork()</code>, and every loop that could be long checks it.</p>
+
+<table class="mono">
+<tr><th style="width:42%">Bound</th><th>Default</th></tr>
+<tr><td>worldReconcileBudgetMicros</td><td>2200 µs per tick</td></tr>
+<tr><td>debugReconcileBudgetMicros</td><td>4500 µs per tick (while a timelapse runs)</td></tr>
+<tr><td>surfaceColumnsPerTick</td><td>1024, clamped to 96 outside debug</td></tr>
+<tr><td>leafColumnsPerTick</td><td>128</td></tr>
+<tr><td>maxVisibleSnowWritesPerTick</td><td>128</td></tr>
+<tr><td>maxVisibleLeafWritesPerTick</td><td>24</td></tr>
+</table>
+
+<p>Two paths are deliberately unbudgeted, because correctness beats smoothness there: the player hotset,
+and the pre-send pass that canonicalises a chunk before it is transmitted. A chunk must never become
+visible carrying a season the director has already moved past.</p>
+
+<p>That pre-send pass is also the most expensive thing the mod does when a player is flying, so it
+short-circuits: when the frame takes nothing out of the world and the chunk owes nothing back, the guarantee
+holds trivially and both passes are skipped entirely. For most of the year that is every chunk.</p>

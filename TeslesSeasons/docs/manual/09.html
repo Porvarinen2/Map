@@ -1,0 +1,85 @@
+<h1><span class="num">Part 9</span>Verification</h1>
+
+<p class="lead">What the build proves before it produces a jar. 93 tests across 17 suites, plus two
+verifiers that exist because both failure modes have actually shipped here.</p>
+
+<h2>The suites</h2>
+
+<table class="long">
+<thead><tr><th style="width:30%">Suite</th><th style="width:8%">Tests</th><th>What it proves</th></tr></thead><tbody>
+<tr><td>SeasonCheckpointContractTest</td><td>2</td><td>96 phase checkpoints — 12 phases × 8 progress values —
+match the canonical contracts, plus the named examples from the specification.</td></tr>
+<tr><td>SeasonContinuityTest</td><td>3</td><td>168 boundary checks: 14 continuous channels × 12 phase
+boundaries, exact match.</td></tr>
+<tr><td>SeasonFieldStatisticsTest</td><td>5</td><td>The coordinate field is uniform, pure, and its per-channel
+salts are independent.</td></tr>
+<tr><td>VoxySnowParityTest</td><td>13</td><td>Physical, LOD-mesh and shader snow targets agree with zero
+mismatches; targets stay identical for a whole revision; the melt keeps its footprint and never drops a column
+from 2/8 or deeper straight to bare ground.</td></tr>
+<tr><td>VoxyShaderPipelineTest</td><td>9</td><td>The real GLSL injection chain, run against Voxy's actual
+shaders: anchors match, every function is defined once, every uniform is declared, and patching is
+idempotent.</td></tr>
+<tr><td>SeasonNeutralityTest</td><td>6</td><td>Only writes that heal the world toward neutral reach the LOD
+store, so a store built in any season converges on the neutral one.</td></tr>
+<tr><td>NeutralPersistenceTest</td><td>4</td><td>Seasonal changes are recognised by the same field the server
+decided with, so they never reach the LOD database.</td></tr>
+<tr><td>StaleSeasonEliminationTest</td><td>5</td><td>No path leaves an older season visible.</td></tr>
+<tr><td>SeasonRevisionChurnTest</td><td>8</td><td>Bounds how often the world is told to redo itself, sampled at
+the real 30-second clock rate.</td></tr>
+<tr><td>ColumnSweepTest</td><td>3</td><td>A chunk's column sweep is a true permutation, so no column can starve
+however fast the calendar moves.</td></tr>
+<tr><td>FloraClassificationTest</td><td>8</td><td>Classification against the real Minecraft block registry, and
+everything that must never be touched.</td></tr>
+<tr><td>WildBerryClassificationTest</td><td>4</td><td>Wild berry bushes reach the berry channel whatever block
+class they extend; cultivated crops never do.</td></tr>
+<tr><td>FloraChannelTest</td><td>4</td><td>Every flora category tracks its own frame channel and its own field
+salt.</td></tr>
+<tr><td>SnowSupportTest</td><td>5</td><td>Snow rests on ground and never on water, ice or foliage — the same
+verdict on the server and in the LOD projector.</td></tr>
+<tr><td>GroundCoverFallbackTest</td><td>4</td><td>Melting snow always has a placeholder to fall back on,
+including on slab terrain.</td></tr>
+<tr><td>TallPlantAtomicityTest</td><td>3</td><td>Both halves of a double-height plant always reach the same
+verdict.</td></tr>
+<tr><td>ModularityTest</td><td>7</td><td>Seasons and world effects can be replaced, keep their order, are
+skipped when inactive, and cannot register without an id.</td></tr>
+</table>
+
+<div class="key"><b>Real registries, real shaders.</b> Minecraft's bootstrap runs in the test JVM, so
+classification is checked against the actual block registry rather than a mock. The shader suite runs the real
+injection chain against Voxy 0.2.18-beta's actual shader source, so a Voxy update that moves an anchor fails
+the build rather than the game.</div>
+
+<h2>The two wiring verifiers</h2>
+
+<p>Both run as part of <code>build</code>, before the jar is produced, and both exist because the failure they
+catch has actually shipped.</p>
+
+<table>
+<tr><th style="width:26%">Task</th><th>What it checks</th></tr>
+<tr><td><code>verifyModWiring</code></td><td>Every mixin is registered in a config, every entrypoint resolves,
+no <code>ClientModInitializer</code> is orphaned. Version 0.7.0 carried fifteen mixins that no config
+referenced and an initializer that was not an entrypoint — the entire Voxy seasonal projection, silently
+inert, invisible by reading.</td></tr>
+<tr><td><code>verifyMixinTargets</code></td><td>Every <code>@Mixin</code> target class and injected method
+descriptor resolves against real bytecode, and no mixin targets the mod's own code. The same version carried
+mixins aimed at methods that had been renamed away, which would have killed the game at startup had they been
+registered.</td></tr>
+</table>
+
+<p>The second half of that check — no mixin targets our own code — is a design rule, not a safety one. If
+behaviour belongs in a class, it lives in that class. Runtime self-patching hides logic from readers and from
+tests.</p>
+
+<h2>What the tests do not cover</h2>
+
+<p>Honesty about the boundary is more useful than a claim of completeness.</p>
+
+<ul>
+<li><b>Rendering.</b> No test looks at a pixel. The shader suite proves the GLSL is well-formed, injected once
+and declares its uniforms; it cannot prove the result looks right.</li>
+<li><b>Live server behaviour.</b> Budgets, convergence rate and tick cost are only observable in a running
+world. The diagnostic bundle exists for exactly this gap.</li>
+<li><b>Third-party updates.</b> The mixin targets are verified against the exact Voxy, VoxyServer and Dynamic
+Trees builds in <code>libs/</code>. A different build may invalidate a target — which the verifier will catch
+at build time, not at runtime.</li>
+</ul>
