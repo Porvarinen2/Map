@@ -117,6 +117,36 @@ MITA v16 TEKEE TOISIN
    savyalueella 60..78, ja katto 85 sailyttaa siita 100 % ja poistaa
    92 % palkin taytosta.
 
+9d. AIKARAJAT, EI FRAME-LASKUREITA
+   v15 vapautti A/D:n kolmen epaonnistuneen framen jalkeen ja haki palkin
+   uudelleen kahdeksan jalkeen. 11 Hz:lla ne olivat 270 ms ja 730 ms. Kun
+   silmukka pyorii 300 Hz:lla, samat luvut ovat 10 ms ja 27 ms - yksi
+   epaonninen frame vapauttaa napit ja lyhyt sarja pudottaa palkkilukon ja
+   pakottaa taysimittaisen uudelleenhaun. Silloin vihrea nykii sen sijaan
+   etta seuraisi. Nyt: 120 ms armonaika, 350 ms ennen uudelleenhakua.
+
+9e. UUSI OHJAIN (tama on se "vihrea ei seuraa kalaa oikein")
+   Vanha ohjain oli: "paina sita nappia, kummalla puolella kala on, ja
+   vapauta kun keskipisteet ovat 0,8 pikselin sisalla". Kolme ongelmaa:
+
+     - 0,8 px kuollut alue tarkoittaa etta napit heiluvat jatkuvasti.
+     - Nappi vapautetaan vasta kun virhe on nolla, mutta vyohyke jatkaa
+       liikettaan yhden viiveen verran -> se ylittaa aina maalin.
+     - Ohjain tahtaa siihen missa kala ON, joten vyohyke on pysyvasti
+       yhden reaktion verran perassa. Juuri sita "ei seuraa oikein"
+       tarkoittaa.
+
+   v16:n ohjain mittaa ajon aikana kuinka nopeasti vyohyke oikeasti
+   liikkuu kun nappi on pohjassa, ja kayttaa sita jarrutusmatkaan. Se
+   tahtaa kalan mitatun nopeuden verran eteenpain, kayttaa vyohykkeen
+   leveyteen suhteutettua kuollutta aluetta hystereesilla, eika koskaan
+   vaihda suuntaa nopeammin kuin peli ehtii lukea nappaimiston.
+
+   Mitattuna: kala vihrean sisalla 95 % -> 97 % ajasta 300 silmukalla,
+   ja kolmasosa nappaintapahtumia. Kun vyohyke on hyvin hidas tai hyvin
+   nopea ero on selvasti isompi: 2200 px/s ja 60 silmukkaa/s -> 63 %
+   vanhalla, 86 % uudella.
+
 10. LEVYKIRJOITUS POIS OHJAUSPOLULTA
     Todiste- ja debug-kuvat ovat oletuksena POIS PAALTA ja kirjoitetaan
     taustasaikeessa kun ne laitetaan paalle. v15 kutsui cv2.imwrite ja
@@ -158,8 +188,23 @@ minigame_example.png:sta ja liikuttaa kalaa. Sama kone, sama kuorma.
       v16   5/5
 
   Kokonaiset kierrokset (heitto -> seuranta -> SPACE -> uusi kierros)
-      v16   4-5 kierrosta 20 sekunnissa, reaktio joka kierroksella 21-26 ms,
-            ei yhtaan poikkeusta ajossa
+      v16   4-5 kierrosta 20 sekunnissa, reaktio joka kierroksella 20-25 ms,
+            kala vihrean sisalla 93 % ajasta, ei yhtaan poikkeusta ajossa
+
+  SEURANNAN LAATU vs. SILMUKAN NOPEUS
+  Tama on tarkein yksittainen luku. Kala vihrean alueen sisalla, keskiarvo
+  neljasta vyohykenopeudesta ja kahdesta kalatyypista:
+
+      silmukkaa/s      vanha ohjain     uusi ohjain
+             11              21 %            24 %     <- tassa v15 pyori
+             25              48 %            61 %
+             60              82 %            91 %
+            150              95 %            97 %
+            300              95 %            97 %     <- tassa v16 pyorii
+
+  Eli: silmukan nopeus oli ylivoimaisesti tarkein tekija. v15:n 11 Hz:lla
+  mikaan ohjain ei olisi pysynyt kalan alla. Uusi ohjain tuo paalle
+  muutaman prosentin ja selvasti paremman kayttaytymisen aariarvoilla.
 
 Huom: mittauskoneen suoritusteho on selvasti pelikonetta heikompi ja
 simulaattorin oma ruudunkaappaus on hitaampi kuin oikea mss. Omalla
@@ -185,11 +230,39 @@ Jos luvut ovat selvasti pienempia, tarkista etta SAVE_PROOF_IMAGES ja
 SAVE_DEBUG_IMAGES ovat False.
 
 
+[FISH]-RIVIN LUKEMINEN
+----------------------
+
+  [FISH] round=5 fishX=990 greenX=991 error=+15px key=D lead=+16px
+         stopBand=12px zoneSpeed=810px/s fishSpeed=+177px/s
+         keyChanges=36/s greenMode=dynamic-borders inside=YES ready=0.412/0.68
+
+  error       kuinka kaukana vihrean keskipiste on tahtayspisteesta
+  key         mika nappi on nyt pohjassa
+  lead        kuinka paljon kalan eteen tahdataan juuri nyt
+  stopBand    kuinka lahella maalia nappi vapautetaan (jarrutusmatka)
+  zoneSpeed   AJON AIKANA MITATTU vihrean alueen nopeus. Jos tama on 0,
+              vihrea ei liiku - silloin nappaimet eivat mene peliin asti.
+  fishSpeed   kalan mitattu nopeus
+  keyChanges  suunnanvaihtoja sekunnissa. Yli ~25 = ohjain heiluu;
+              nosta MIN_KEY_HOLD_SECONDS tai CONTROL_ENTER_RATIO.
+  greenMode   dynamic-borders = molemmat vihreat reunaviivat nakyvat, paras.
+              dynamic-fallback = kala peittaa reunan, arvio on karkeampi.
+              startup-bar-center = vihreaa ei viela loydetty, oletetaan
+              keskelle. Jos tama nakyy jatkuvasti, vihrean tunnistus ei
+              toimi ja se pitaa korjata ennen kuin ohjaimesta kannattaa
+              puhua.
+  inside      onko kala vihrean sisalla juuri nyt
+
+
 ASETUKSET JOITA KANNATTAA SAATAA
 --------------------------------
 
   SPACE_READY_DELAY_SECONDS   0.220   turvaviive ennen SPACE:a
-  CONTROL_ENTER_MIN_PX        0.80    kuollut alue keskella (pienempi = tarkempi)
+  CONTROL_LEAD_SECONDS        0.090   kuinka paljon kalan eteen tahdataan
+  CONTROL_ENTER_RATIO         0.050   milloin nappi painetaan (osuus vyoh.)
+  CONTROL_BRAKE_SECONDS       0.015   kuinka pitkalle vyohyke liukuu
+  MIN_KEY_HOLD_SECONDS        0.026   lyhin sallittu aika suunnanvaihtojen valilla
   CAST_SCAN_INTERVAL          0.10    kuinka usein cast.png etsitaan
   SAVE_PROOF_IMAGES           False   tarkista tunnistus -> True
   SAVE_DEBUG_IMAGES           False   piirretty kokoruudun kuva -> True

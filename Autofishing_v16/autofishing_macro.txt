@@ -85,6 +85,7 @@ import os
 import sys
 import time
 import queue
+import collections
 import threading
 import subprocess
 import ctypes
@@ -184,14 +185,103 @@ GREEN_FALLBACK_MIN_HEIGHT_FRACTION = 0.20
 # center instead of leaving A/D idle.
 STARTUP_ASSUME_GREEN_AT_BAR_CENTER = True
 
-# Frames of green-detector miss tolerated before A/D is released.
-GREEN_MISS_GRACE_FRAMES = 3
+# How long a detector miss is tolerated before A/D is released, and before the
+# bar lock is thrown away and re-acquired.
+#
+# These used to be FRAME COUNTS (3 frames and 8 frames). That was survivable
+# while the tracker crawled at 11 Hz - 3 frames meant 270 ms of grace. Once the
+# loop runs at 200-350 Hz the same numbers mean 10 ms and 25 ms, so a single
+# unlucky frame releases the keys and a brief run of them drops the bar lock
+# and triggers a full re-acquisition. The zone then stutters instead of
+# following the fish. Anything that describes a duration is expressed as one.
+TRACK_MISS_GRACE_SECONDS = 0.12
+TRACK_REACQUIRE_AFTER_SECONDS = 0.35
 
 # ---------------------------------------------------------------------
-# Controller. Direct current-position control, no prediction: every frame
-# may reverse A <-> D immediately.
+# CONTROLLER
+#
+# The job is not "press the key on the side the fish is on". It is "keep the
+# green zone underneath the fish", and three things stand between those two.
+#
+# 1. A KEY PRESS MUST OUTLIVE A GAME FRAME.
+#    The game samples the keyboard once per rendered frame. A press injected
+#    and released between two frames can be missed completely. A naive
+#    per-frame controller running at 300 loops/s emits presses of a few
+#    milliseconds, far shorter than the ~16 ms frame it has to survive, so the
+#    zone twitches instead of moving. Every press is therefore held for at
+#    least MIN_KEY_HOLD_SECONDS.
+#
+# 2. THE DEADBAND MUST BE RELATIVE TO THE ZONE.
+#    v15 released the key when the centres were within 0.8 px of each other.
+#    At that tolerance the controller is always toggling.
+#
+# 3. RELEASING AT ZERO ERROR ALWAYS OVERSHOOTS.
+#    The zone keeps moving for one input latency after the key goes up, so the
+#    key has to be released early, by the braking distance. That distance is
+#    not guessed: the zone's real speed is measured at runtime from how far it
+#    actually travels while a key is held, so it adapts to the game.
+#
+# On top of that the zone aims slightly ahead of the fish, by the fish's
+# measured velocity times CONTROL_LEAD_SECONDS, which is what puts the zone
+# UNDER a moving fish rather than permanently one reaction behind it.
 # ---------------------------------------------------------------------
-CONTROL_ENTER_MIN_PX = 0.80
+
+# Minimum time any A/D press is held. Must comfortably exceed one game frame
+# (16.7 ms at 60 fps). Raise it if the zone still barely moves.
+MIN_KEY_HOLD_SECONDS = 0.026
+
+# Press when the error exceeds this fraction of the zone width...
+CONTROL_ENTER_RATIO = 0.050
+
+# ...and release once inside this fraction (hysteresis, so it does not chatter
+# around the target).
+CONTROL_RELEASE_RATIO = 0.030
+
+# Absolute floor for both bands, for very small zones.
+CONTROL_MIN_BAND_PX = 2.0
+
+# How far ahead of the fish to aim, in seconds of fish travel. This is what
+# keeps the zone under a moving fish instead of trailing it. Tuned against both
+# a smooth fish and a randomly reversing one; without it the zone is
+# permanently one reaction behind, which is exactly the "green does not follow
+# the fish" symptom.
+CONTROL_LEAD_SECONDS = 0.090
+
+# How long the zone keeps gliding after the key is released. Multiplied by the
+# MEASURED zone speed to get the braking distance.
+CONTROL_BRAKE_SECONDS = 0.015
+
+# Neither the lead nor the braking distance may exceed this fraction of the
+# zone width, so a bad measurement cannot make the controller run away.
+CONTROL_MAX_LEAD_RATIO = 0.60
+CONTROL_MAX_BRAKE_RATIO = 0.75
+
+# How much of one press quantum has to fit between the release band and the
+# press band. Below ~0.5 the controller starts trying to correct errors it
+# cannot actually fix, and oscillates.
+# Measured to hurt at every setting tried, because the braking term plus the
+# hysteresis ratio below already keep the bands ordered, and adding a quantum
+# on top makes the controller ignore errors it could perfectly well correct.
+# Kept as a knob in case a game needs much longer presses to register.
+CONTROL_QUANTUM_MARGIN = 0.0
+
+# Guaranteed gap between the release band and the press band, as a fraction of
+# the release band. Without it a large braking distance can swallow the press
+# band entirely.
+CONTROL_HYSTERESIS_RATIO = 0.35
+
+# Measurement windows for the two velocity estimates. Long enough to be steady
+# at 300 loops/s, short enough to catch a fish that reverses.
+FISH_VELOCITY_WINDOW = 0.055
+ZONE_VELOCITY_WINDOW = 0.030
+
+# Ignore absurd one-frame jumps, as a fraction of the bar width per second.
+MAX_FISH_SPEED_BAR_RATIO = 4.0
+
+# Smoothing for the measured zone speed, and the shortest hold that counts as
+# a usable speed measurement.
+ZONE_SPEED_ALPHA = 0.25
+ZONE_SPEED_MIN_HOLD = 0.045
 
 # ---------------------------------------------------------------------
 # Round / catch timing.
@@ -202,7 +292,6 @@ PROGRESS_CHECK_INTERVAL = 0.200
 
 CAST_DEBOUNCE_SECONDS = 2.0
 MINIGAME_LOST_SECONDS = 1.10
-FAST_TRACK_FAIL_LIMIT = 8
 
 # After SPACE, ignore the dying minigame graphics for this long.
 POST_CATCH_BLIND_SECONDS = 0.25
@@ -1212,6 +1301,202 @@ def find_fish_in_bar(frame, bar):
         "left_score": left_score,
         "right_score": right_score,
     }
+
+
+
+# =====================================================================
+# CONTROLLER
+# =====================================================================
+
+class VelocityEstimator:
+    """
+    Velocity over a fixed time window.
+
+    Two consecutive frames are useless for this at 300 loops/s: the target
+    moves a fraction of a pixel between them and the quantised difference is
+    pure noise. Measuring across a window of a few tens of milliseconds gives a
+    usable number while still reacting to a fish that turns around.
+    """
+
+    def __init__(self, window):
+        self.window = window
+        self.samples = collections.deque()
+
+    def add(self, moment, value):
+        self.samples.append((moment, float(value)))
+
+        while len(self.samples) > 2 and moment - self.samples[0][0] > self.window:
+            self.samples.popleft()
+
+    def velocity(self):
+        if len(self.samples) < 2:
+            return 0.0
+
+        t0, x0 = self.samples[0]
+        t1, x1 = self.samples[-1]
+
+        span = t1 - t0
+
+        if span < 1e-4:
+            return 0.0
+
+        return (x1 - x0) / span
+
+    def reset(self):
+        self.samples.clear()
+
+
+class TargetController:
+    """
+    Decides which of A / D should be held so the green zone sits under the fish.
+
+    Holds three pieces of state across frames: the fish's velocity, the zone's
+    measured travel speed, and which key is currently down and since when.
+    """
+
+    def __init__(self):
+        self.fish_velocity = VelocityEstimator(FISH_VELOCITY_WINDOW)
+        self.zone_position = VelocityEstimator(ZONE_VELOCITY_WINDOW)
+
+        self.zone_speed = 0.0
+        self.current = None
+        self.changed_at = 0.0
+
+        self.changes = 0
+        self.last_error = 0.0
+        self.last_aim_offset = 0.0
+        self.last_stop_band = 0.0
+
+    def reset(self):
+        self.fish_velocity.reset()
+        self.zone_position.reset()
+
+        self.current = None
+        self.changed_at = 0.0
+        self.changes = 0
+
+        # The zone speed is a property of the game, not of the round, so it is
+        # deliberately kept across rounds once measured.
+
+    def update(self, moment, fish_x, zone_x, zone_width, bar_width):
+        self.fish_velocity.add(moment, fish_x)
+        self.zone_position.add(moment, zone_x)
+
+        held_for = moment - self.changed_at
+
+        # ---- measure how fast the zone actually travels while a key is down
+        if self.current in ("A", "D") and held_for >= ZONE_SPEED_MIN_HOLD:
+            measured = abs(self.zone_position.velocity())
+
+            # A zone pinned against either end of the bar reads as ~0 and must
+            # not drag the estimate down.
+            if measured > 1.0:
+                if self.zone_speed <= 0.0:
+                    self.zone_speed = measured
+                else:
+                    self.zone_speed = (
+                        (1.0 - ZONE_SPEED_ALPHA) * self.zone_speed
+                        + ZONE_SPEED_ALPHA * measured
+                    )
+
+        # ---- aim ahead of the fish by its measured velocity
+        max_fish_speed = bar_width * MAX_FISH_SPEED_BAR_RATIO
+
+        fish_speed = max(
+            -max_fish_speed,
+            min(max_fish_speed, self.fish_velocity.velocity()),
+        )
+
+        max_lead = zone_width * CONTROL_MAX_LEAD_RATIO
+
+        lead = max(
+            -max_lead,
+            min(max_lead, fish_speed * CONTROL_LEAD_SECONDS),
+        )
+
+        error = (fish_x + lead) - zone_x
+
+        # ---- bands
+        #
+        # The shortest press the game can see moves the zone by a fixed
+        # distance: speed x minimum hold. That "quantum" is the finest
+        # correction the controller can make, so it must never try to correct
+        # an error smaller than one - it would press, overshoot, press back,
+        # and oscillate forever. Both bands are therefore derived from the
+        # measured zone speed, not just from the zone width.
+        quantum = self.zone_speed * MIN_KEY_HOLD_SECONDS
+
+        brake = min(
+            self.zone_speed * CONTROL_BRAKE_SECONDS,
+            zone_width * CONTROL_MAX_BRAKE_RATIO,
+        )
+
+        release_band = max(
+            CONTROL_MIN_BAND_PX * 0.5,
+            zone_width * CONTROL_RELEASE_RATIO,
+            brake,
+        )
+
+        # The press band must always sit clearly ABOVE the release band. If
+        # braking pushes the release band above it - which it does as soon as
+        # the zone is fast - the controller presses and lets go again in the
+        # same breath, and the zone flutters in place without travelling.
+        enter_band = max(
+            CONTROL_MIN_BAND_PX,
+            zone_width * CONTROL_ENTER_RATIO,
+            release_band
+            + max(
+                CONTROL_MIN_BAND_PX,
+                quantum * CONTROL_QUANTUM_MARGIN,
+                release_band * CONTROL_HYSTERESIS_RATIO,
+            ),
+        )
+
+        stop_band = release_band
+
+        if self.current is None:
+            if error > enter_band:
+                want = "D"
+            elif error < -enter_band:
+                want = "A"
+            else:
+                want = None
+        else:
+            # Already moving: keep going until the zone has arrived, allowing
+            # for the distance it will still cover after the key is released.
+            if abs(error) <= stop_band:
+                want = None
+            elif error > 0:
+                want = "D"
+            else:
+                want = "A"
+
+        # ---- never reverse faster than the game can sample
+        #
+        # Releasing early is harmless under every input model: if the press was
+        # too short for the game to see, nothing moved and the error simply
+        # persists into the next decision. Reversing every few milliseconds is
+        # harmful under all of them, because the zone is then handed a stream
+        # of contradictory samples and jitters in place instead of travelling.
+        # So the minimum hold guards direction CHANGES only.
+        if (
+            want is not None
+            and self.current is not None
+            and want != self.current
+            and held_for < MIN_KEY_HOLD_SECONDS
+        ):
+            want = self.current
+
+        if want != self.current:
+            self.current = want
+            self.changed_at = moment
+            self.changes += 1
+
+        self.last_error = error
+        self.last_aim_offset = lead
+        self.last_stop_band = stop_band
+
+        return self.current
 
 
 # =====================================================================
@@ -2278,8 +2563,10 @@ def main():
     # catch: the next cast normally puts the minigame in the same place.
     last_known_bar_by_monitor = {}
 
+    controller = TargetController()
+
     locked_bar = None
-    fast_track_failures = 0
+    last_good_track_at = 0.0
     previous_local_ui = None
 
     cached_progress = 0.0
@@ -2301,7 +2588,7 @@ def main():
     perf_state = "IDLE"
 
     def reset_tracker():
-        nonlocal locked_bar, fast_track_failures, previous_local_ui
+        nonlocal locked_bar, last_good_track_at, previous_local_ui
         nonlocal ready_visible_since
         nonlocal cached_progress, cached_progress_box
         nonlocal cached_ready_score, cached_ready_box, cached_ready_ref
@@ -2310,9 +2597,10 @@ def main():
         release_movement()
 
         ready_task.clear()
+        controller.reset()
 
         locked_bar = None
-        fast_track_failures = 0
+        last_good_track_at = 0.0
         previous_local_ui = None
         ready_visible_since = None
 
@@ -2333,7 +2621,7 @@ def main():
         This is the whole point of the script: the frame that first shows a
         usable fish is also the frame that moves the target.
         """
-        nonlocal state, locked_bar, fast_track_failures
+        nonlocal state, locked_bar, last_good_track_at
         nonlocal previous_local_ui, last_valid_minigame_at, round_number
         global ACTIVE_MONITOR
 
@@ -2352,40 +2640,52 @@ def main():
         # local continuity starts fresh.
         previous_local_ui = None
 
-        fast_track_failures = 0
-        last_valid_minigame_at = time.monotonic()
+        last_good_track_at = time.monotonic()
+        last_valid_minigame_at = last_good_track_at
 
+        # The first frame that shows a usable fish is also the frame that moves
+        # the zone. There is no velocity history yet, so this is a plain
+        # position decision - the controller takes over from the next frame.
         error = ui["fish_center_x"] - ui["zone_center_x"]
 
-        enter_band = max(CONTROL_ENTER_MIN_PX, ui["zone"][2] * 0.006)
+        first_band = max(CONTROL_MIN_BAND_PX, ui["zone"][2] * CONTROL_ENTER_RATIO)
 
-        if error < -enter_band:
+        if error < -first_band:
             first_key = "A"
-        elif error > enter_band:
+        elif error > first_band:
             first_key = "D"
         else:
             first_key = "NONE"
 
-        drive(None if first_key == "NONE" else first_key)
+        controller.current = None if first_key == "NONE" else first_key
+        controller.changed_at = time.monotonic()
+
+        drive(controller.current)
 
         if state != "ARMED_FAST":
             round_number += 1
 
         state = "FISHING"
 
+        since_cast = (
+            f"{time.monotonic() - last_cast_at:.2f}s after E"
+            if last_cast_at > 0.0
+            else "no cast this round"
+        )
+
         print(
             f"[ZERO-WAIT] Round {round_number}: BAR+FISH FOUND -> {first_key} "
             f"ON FIRST USABLE FRAME "
-            f"error={error:+.1f}px "
+            f"error={error:+.0f}px "
             f"bar={bar} "
             f"greenMode={ui.get('green_mode', '?')} "
-            f"via={source}",
+            f"via={source} "
+            f"({since_cast})",
             flush=True,
         )
 
     def start_new_cast(sct, monitor_index, cast_box, cast_score, cast_scale):
         nonlocal state, last_cast_at, round_number, locked_bar
-        nonlocal fast_track_failures
         global ACTIVE_MONITOR
 
         ACTIVE_MONITOR = monitor_index
@@ -2409,7 +2709,6 @@ def main():
         # Start probing the previous bar position immediately. No scan
         # interval, no notification reference, no fallback timer.
         locked_bar = last_known_bar_by_monitor.get(monitor_index)
-        fast_track_failures = 0
 
         state = "ARMED_FAST"
 
@@ -2538,12 +2837,13 @@ def main():
                     )
 
                     if fast_frame is None:
-                        fast_track_failures += 1
+                        blind_for = now - last_good_track_at
 
-                        if fast_track_failures > GREEN_MISS_GRACE_FRAMES:
+                        if blind_for > TRACK_MISS_GRACE_SECONDS:
                             release_movement()
+                            controller.current = None
 
-                        if fast_track_failures >= FAST_TRACK_FAIL_LIMIT:
+                        if blind_for >= TRACK_REACQUIRE_AFTER_SECONDS:
                             locked_bar = None
 
                         continue
@@ -2556,17 +2856,21 @@ def main():
                     )
 
                     if not local_ui.get("valid"):
-                        fast_track_failures += 1
+                        blind_for = now - last_good_track_at
 
-                        # A single detector miss must not park the target.
-                        if fast_track_failures > GREEN_MISS_GRACE_FRAMES:
+                        # A single detector miss must not park the zone. The
+                        # key stays down for the whole grace window, which is a
+                        # duration and not a frame count - at 300 loops/s a
+                        # three-frame grace would be ten milliseconds.
+                        if blind_for > TRACK_MISS_GRACE_SECONDS:
                             release_movement()
+                            controller.current = None
                             previous_local_ui = None
 
-                        if fast_track_failures >= FAST_TRACK_FAIL_LIMIT:
+                        if blind_for >= TRACK_REACQUIRE_AFTER_SECONDS:
                             print(
                                 f"[TRACK] Lost fish/green for "
-                                f"{fast_track_failures} frames -> reacquire",
+                                f"{blind_for * 1000:.0f}ms -> reacquire",
                                 flush=True,
                             )
                             locked_bar = None
@@ -2583,7 +2887,7 @@ def main():
 
                         continue
 
-                    fast_track_failures = 0
+                    last_good_track_at = now
                     last_valid_minigame_at = now
 
                     previous_local_ui = dict(local_ui)
@@ -2597,26 +2901,27 @@ def main():
                     green_x = float(ui["zone"][0] + ui["zone"][2] / 2.0)
 
                     # -----------------------------------------------------
-                    # Direct current-position control.
+                    # Control decision.
                     #
-                    # No velocity state is allowed to override the sign of the
-                    # current measured error, so a fish that reverses is
-                    # followed on the very next frame.
+                    # See TargetController: minimum hold so the game actually
+                    # samples the press, a zone-relative deadband, braking
+                    # based on the zone's MEASURED speed, and a small lead so
+                    # the zone sits under a moving fish rather than behind it.
                     # -----------------------------------------------------
-                    error = fish_x - green_x
-
                     zone_width = float(ui["zone"][2])
 
-                    enter_band = max(CONTROL_ENTER_MIN_PX, zone_width * 0.006)
+                    key = controller.update(
+                        time.perf_counter(),
+                        fish_x,
+                        green_x,
+                        zone_width,
+                        float(ui["bar"][2]),
+                    )
 
-                    if error < -enter_band:
-                        desired = "A"
-                    elif error > enter_band:
-                        desired = "D"
-                    else:
-                        desired = "NONE"
+                    drive(key)
 
-                    drive(None if desired == "NONE" else desired)
+                    desired = key or "NONE"
+                    error = controller.last_error
 
                     raw_inside = bool(
                         fish_x >= ui["zone"][0] + ui["zone"][2] * 0.04
@@ -2717,18 +3022,25 @@ def main():
                         last_proof_check = now
 
                     if now - last_fish_log_at >= FISH_LOG_INTERVAL:
+                        elapsed_log = max(1e-3, now - last_fish_log_at)
+
                         print(
                             f"[FISH] round={round_number} "
-                            f"fishX={fish_x:.1f} greenX={green_x:.1f} "
-                            f"error={error:+.1f}px key={desired} "
+                            f"fishX={fish_x:.0f} greenX={green_x:.0f} "
+                            f"error={error:+.0f}px key={desired} "
+                            f"lead={controller.last_aim_offset:+.0f}px "
+                            f"stopBand={controller.last_stop_band:.0f}px "
+                            f"zoneSpeed={controller.zone_speed:.0f}px/s "
+                            f"fishSpeed={controller.fish_velocity.velocity():+.0f}px/s "
+                            f"keyChanges={controller.changes / elapsed_log:.0f}/s "
                             f"greenMode={ui.get('green_mode', '?')} "
                             f"inside={'YES' if raw_inside else 'NO'} "
-                            f"progress={cached_progress * 100:.1f}% "
                             f"ready={cached_ready_score:.3f}/"
                             f"{READY_THRESHOLD:.2f}",
                             flush=True,
                         )
 
+                        controller.changes = 0
                         last_fish_log_at = now
 
                     # -----------------------------------------------------
