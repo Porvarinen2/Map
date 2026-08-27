@@ -1,5 +1,5 @@
-# AUTOFISHING v11
-# Windows screen-only singleplayer fishing automation - v11
+# AUTOFISHING v11 FAST-FOLLOW v3 DEBUG
+# Windows screen-only singleplayer fishing automation - v11 / FAST-FOLLOW v3
 #
 # This version uses the exact reference images in ./references/
 # supplied by the user.
@@ -31,6 +31,13 @@ import sys
 import time
 import subprocess
 import ctypes
+import threading
+import queue
+import json
+import csv
+import zipfile
+from collections import deque
+from datetime import datetime
 from ctypes import wintypes
 from pathlib import Path
 
@@ -132,50 +139,56 @@ SPACE_READY_DELAY_SECONDS = 0.220
 FAST_ARMED_UNCAPPED = True
 FAST_ARMED_BAR_REACQUIRE_INTERVAL = 0.020
 
-# --------------------------------------------------------------------
-# RESPONSIVENESS FIX
-# --------------------------------------------------------------------
-# Measured cost of the ARMED_FAST wait in stock v11, on a 1080p screen:
-#
-#   fast_track_minigame (fish template, 2 refs x 5 scales)   26 ms
-#   find_cyan_bar_candidates over the whole monitor          20 ms
-#   fast_track_minigame again on the reacquired bar          26 ms
-#   ---------------------------------------------------------------
-#                                                            72 ms per loop
-#
-# and on top of that, because ARMED_FAST is not FISHING, the loop fell
-# through into the normal scan branch, which every 0.12 s ran
-#
-#   detect_minigame 250 ms + waiting 177 + bite 177 + cast 196 = 800 ms
-#
-# So while waiting for the fish, the script actually looked at the bar about
-# once per second. That is the delay.
-#
-# Three settings below fix it. Nothing about detection or the A/D controller
-# changes: when the fish is there, the same v11 template tracker runs on the
-# same frame and produces the same position.
+# FAST-FOLLOW v2 tuning.
+# Known bar: stay on the tiny capture hot-path at startup instead of doing a
+# full-monitor scan on every failed frame.
+FAST_STARTUP_KNOWN_BAR_GRACE = 0.850
+FAST_STARTUP_FULL_REACQUIRE_INTERVAL = 0.100
 
-# Do not run the full-screen reference scan while waiting for the fish.
+# --------------------------------------------------------------------
+# ARMED_FAST must not share its loop with the old full-screen scan.
+#
+# ARMED_FAST is not FISHING, so after doing its own targeted acquisition the
+# loop still fell through into the legacy scan branch, which every 0.12 s ran,
+# on a full-monitor screenshot (measured at 1080p):
+#
+#     detect_minigame 249 ms + waiting 183 + bite 185 + cast 204 = 821 ms
+#
+# E has already been pressed, so nothing in that scan is needed. Without this,
+# the bar/fish search effectively got to look at the screen about once per
+# second, which is the "it takes a second or two before it starts" delay.
 ARMED_SKIP_FULL_SCAN = True
 
-# ...but not forever. Stock v11 could leave ARMED_FAST only by acquiring the
-# fish; its one escape hatch, if the fish never showed up, was the full scan
-# seeing cast.png again. Skipping that scan removes the hatch, so it comes
-# back automatically once a bite has plainly taken far too long.
+# That scan was however the only way out of ARMED_FAST if the fish never
+# arrived, so it comes back on its own after this long.
 ARMED_SKIP_FULL_SCAN_SECONDS = 12.0
 
-# While waiting, re-search the whole monitor for the cyan bar at most this
-# often instead of on every single loop.
-ARMED_FULL_REACQUIRE_INTERVAL = 0.25
+# Fish center from cyan pixels is the control source whenever available.
+# Exact fish-left/right templates remain a fallback / validation source.
+# The fish silhouette's pixel area scales with the SQUARE of the UI scale, so
+# it cannot be a fixed pixel range. Measured on minigame_example.png the fish
+# covers about 0.24 x (bar height)^2, so this window is generous on both sides
+# and follows the resolution automatically.
+#
+# v3 used a hardcoded "area < 35 or area > 1400" here. In the supplied
+# screenshot the bar is 400x40 and the fish 379 px, which fits - but that
+# screenshot is a downscaled capture. On a real 1080p screen the same bar is
+# about 1096x109 and the same fish about 2200 px, so the shape test rejected
+# it and every frame fell through to the slow scale-locked template match.
+FAST_FISH_MIN_AREA_RATIO = 0.045
+FAST_FISH_MAX_AREA_RATIO = 1.30
+FAST_FISH_ABS_MIN_AREA = 30
+FAST_FISH_MAX_JUMP_PX = 105.0
 
-# Gate the expensive fish template match behind a sub-millisecond colour test
-# that answers "has the fish appeared inside the bar at all yet?".
-ARMED_USE_FISH_GATE = True
+# Dynamic green border tracking. Width is measured live every frame; the
+# reference width is NOT a hard limit.
+DYNAMIC_GREEN_MAX_WIDTH_RATIO = 0.78
+DYNAMIC_GREEN_MIN_BORDER_HEIGHT = 0.42
+DYNAMIC_GREEN_MAX_CENTER_JUMP = 95.0
 
-# The gate is only ever allowed to save time, never to blind the script: if it
-# has said "no fish" for this long without interruption, the full template
-# match runs anyway.
-ARMED_GATE_SAFETY_INTERVAL = 0.50
+# Very small center band: current fish X vs current green X.
+CONTROL_ENTER_MIN_PX = 0.75
+CONTROL_RELEASE_MIN_PX = 0.30
 
 CAST_DEBOUNCE_SECONDS = 2.0
 AFTER_CATCH_SECONDS = 0.70
@@ -187,7 +200,70 @@ DEBUG_SAVE_INTERVAL = 1.0
 
 # Save exact crops whenever a supplied reference is genuinely matched.
 DETECTION_MAX_FILES = 100
-DETECTION_SAVE_COOLDOWN = 0.30
+DETECTION_SAVE_COOLDOWN = 0.75
+
+# FAST-FOLLOW v3
+#
+# New-round startup does NOT assume any fixed screen coordinates. After E,
+# the active monitor itself is scanned dynamically on every uncapped loop with
+# a cheap downscaled cyan-bar detector. The first frame containing a real
+# fishing bar + fish already sends A/D.
+STARTUP_BAR_DOWNSCALE = 0.50
+STARTUP_BAR_MAX_CANDIDATES = 5
+
+# Bright-cyan fish component. Higher V removes dark cyan/blue scenery showing
+# through the transparent fishing bar.
+FISH_BRIGHT_HSV_LOW = (88, 120, 120)
+FISH_BRIGHT_HSV_HIGH = (123, 255, 255)
+FISH_SHAPE_MIN_SCORE = 0.54
+
+# Dynamic green target: use its two bright full-height border lines whenever
+# possible. Their distance is the LIVE target width; no reference width cap.
+GREEN_BORDER_HSV_LOW = (50, 180, 160)
+GREEN_BORDER_HSV_HIGH = (85, 255, 255)
+GREEN_BORDER_MIN_COLUMN_FRACTION = 0.50
+GREEN_TARGET_MAX_WIDTH_RATIO = 0.90
+
+# Smoothness: direction always follows CURRENT measured error. Relative-error
+# velocity is used ONLY to release a key slightly early while approaching the
+# center; it is never allowed to command the opposite direction.
+RELATIVE_ERROR_ALPHA = 0.55
+BRAKE_LOOKAHEAD_SECONDS = 0.014
+RELATIVE_ERROR_MAX_PX_S = 3000.0
+
+# Centering band scales with the actual live green width. This prevents the
+# constant A/D chatter caused by a sub-pixel/tiny deadband.
+CENTER_ENTER_WIDTH_RATIO = 0.060
+CENTER_RELEASE_WIDTH_RATIO = 0.030
+CENTER_ENTER_MIN_PX = 1.4
+CENTER_RELEASE_MIN_PX = 0.7
+
+# Heavy full-monitor debug captures are disabled during the active minigame.
+# Reference crops are written asynchronously so disk I/O cannot stall tracking.
+ACTIVE_FULL_DEBUG = False
+
+# =====================================================================
+# FORENSIC DEBUG MODE
+# =====================================================================
+FORENSIC_DEBUG = True
+
+# Nothing below writes to disk during the critical tracking loop.
+# Frames + logs are kept in RAM and written only when F9/program exit happens.
+DBG_RING_MAX_FRAMES = 260
+DBG_MAX_TRACK_ROWS = 30000
+DBG_MAX_STARTUP_ROWS = 12000
+DBG_MAX_INPUT_ROWS = 12000
+DBG_MAX_EVENTS = 4000
+DBG_MAX_FROZEN_FAILURES = 5
+
+# Approx 25 visual samples/s from the small active fishing crop.
+DBG_ACTIVE_IMAGE_INTERVAL = 0.040
+
+# Approx 10 visual samples/s during startup. Full monitor is downscaled in RAM.
+DBG_STARTUP_IMAGE_INTERVAL = 0.100
+DBG_STARTUP_IMAGE_SCALE = 0.45
+FISH_REFERENCE_CHECK_INTERVAL = 1.25
+DEBUG_SAVE_INTERVAL = 5.0
 
 # General UI scaling.
 GENERAL_SCALES = (
@@ -302,7 +378,40 @@ def load_reference(key):
     return img
 
 
+
 REF = {key: load_reference(key) for key in REF_FILES}
+
+
+def build_fish_shape_mask(image):
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+
+    # The reference crop has a dark blue background. V>=150 isolates the
+    # bright cyan fish silhouette very cleanly.
+    mask = cv2.inRange(
+        hsv,
+        (88, 120, 150),
+        (125, 255, 255),
+    )
+
+    ys, xs = np.where(mask > 0)
+
+    if len(xs) == 0:
+        return np.zeros((32, 32), dtype=np.uint8)
+
+    crop = mask[
+        int(ys.min()):int(ys.max()) + 1,
+        int(xs.min()):int(xs.max()) + 1,
+    ]
+
+    return cv2.resize(
+        crop,
+        (32, 32),
+        interpolation=cv2.INTER_NEAREST,
+    )
+
+
+FISH_SHAPE_LEFT = build_fish_shape_mask(REF["fish_left"])
+FISH_SHAPE_RIGHT = build_fish_shape_mask(REF["fish_right"])
 
 # The full minigame example is kept as an explicit visual reference/debug file.
 # It is not used as a full-screen template because its water/background can change.
@@ -323,7 +432,10 @@ if os.name != "nt":
     print("[ERROR] This script is intended for Windows.", flush=True)
     raise SystemExit(1)
 
-user32 = ctypes.windll.user32
+# use_last_error=True is required for ctypes.get_last_error() to return
+# anything. Without it the LastError logged next to every SendInput result is
+# always 0, which is exactly the number you need when SendInput fails.
+user32 = ctypes.WinDLL("user32", use_last_error=True)
 
 try:
     user32.SetProcessDPIAware()
@@ -453,8 +565,43 @@ class KEYBDINPUT(ctypes.Structure):
     ]
 
 
+class MOUSEINPUT(ctypes.Structure):
+    _fields_ = [
+        ("dx", wintypes.LONG),
+        ("dy", wintypes.LONG),
+        ("mouseData", wintypes.DWORD),
+        ("dwFlags", wintypes.DWORD),
+        ("time", wintypes.DWORD),
+        ("dwExtraInfo", ULONG_PTR),
+    ]
+
+
+class HARDWAREINPUT(ctypes.Structure):
+    _fields_ = [
+        ("uMsg", wintypes.DWORD),
+        ("wParamL", wintypes.WORD),
+        ("wParamH", wintypes.WORD),
+    ]
+
+
 class INPUTUNION(ctypes.Union):
-    _fields_ = [("ki", KEYBDINPUT)]
+    # THE UNION MUST CONTAIN ALL THREE MEMBERS.
+    #
+    # SendInput's third argument is the size of one INPUT structure, and
+    # Windows rejects the call outright unless it matches what the OS expects:
+    # 40 bytes on 64-bit Windows, 28 on 32-bit. With only KEYBDINPUT in the
+    # union the structure is 32 bytes, so every SendInput call fails with
+    # ERROR_INVALID_PARAMETER and returns 0.
+    #
+    # That is the "SendInput=0/1" in the log. Keys were only ever reaching the
+    # game through the legacy keybd_event fallback below it; the scan-code
+    # SendInput path - the one that actually matters for games that read raw
+    # input - has never once succeeded.
+    _fields_ = [
+        ("ki", KEYBDINPUT),
+        ("mi", MOUSEINPUT),
+        ("hi", HARDWAREINPUT),
+    ]
 
 
 class INPUT(ctypes.Structure):
@@ -499,10 +646,21 @@ def send_input_event(key, down):
         ),
     )
 
+    ctypes.set_last_error(0)
+
     sent = user32.SendInput(
         1,
         ctypes.byref(inp),
         ctypes.sizeof(INPUT),
+    )
+
+    send_last_error = ctypes.get_last_error()
+
+    dbg_input(
+        key,
+        "DOWN" if down else "UP",
+        sent,
+        send_last_error,
     )
 
     # Compatibility path.
@@ -517,6 +675,8 @@ def send_input_event(key, down):
     print(
         f"[INPUT] {key} {'DOWN' if down else 'UP'} "
         f"SendInput={sent}/1 "
+        f"LastError={send_last_error} "
+        f"target={TARGET_HWND} "
         f"foreground='{foreground_title()}'",
         flush=True,
     )
@@ -944,6 +1104,112 @@ def find_cyan_bar_candidates(frame):
     return candidates, cyan
 
 
+def find_cyan_bar_candidates_dynamic(frame):
+    """
+    FAST-FOLLOW v3 startup detector.
+
+    No X/Y screen-location assumptions.
+
+    The active monitor is downscaled, cyan UI geometry is segmented, and long
+    horizontal candidates are returned in full-resolution coordinates.
+    Candidate validation happens immediately with fish tracking, so unrelated
+    cyan UI elements are rejected on the same frame.
+    """
+    H, W = frame.shape[:2]
+
+    scale = STARTUP_BAR_DOWNSCALE
+
+    small_w = max(1, int(W * scale))
+    small_h = max(1, int(H * scale))
+
+    small = cv2.resize(
+        frame,
+        (small_w, small_h),
+        interpolation=cv2.INTER_AREA,
+    )
+
+    hsv = cv2.cvtColor(
+        small,
+        cv2.COLOR_BGR2HSV,
+    )
+
+    cyan = cv2.inRange(
+        hsv,
+        (88, 90, 45),
+        (125, 255, 255),
+    )
+
+    cyan = cv2.morphologyEx(
+        cyan,
+        cv2.MORPH_CLOSE,
+        np.ones((3, 3), np.uint8),
+        iterations=1,
+    )
+
+    parts = connected_components(
+        cyan,
+        minimum_area=25,
+    )
+
+    candidates = []
+
+    for c in parts:
+        x = c["x"]
+        y = c["y"]
+        w = c["w"]
+        h = c["h"]
+        area = c["area"]
+
+        aspect = w / max(h, 1)
+        density = area / max(w * h, 1)
+
+        # Geometry only. There is deliberately no y-position requirement.
+        if w < small_w * 0.14:
+            continue
+
+        if w > small_w * 0.97:
+            continue
+
+        if h < 8:
+            continue
+
+        if h > small_h * 0.20:
+            continue
+
+        if aspect < 4.0 or aspect > 32.0:
+            continue
+
+        if density < 0.04:
+            continue
+
+        full_box = (
+            int(round(x / scale)),
+            int(round(y / scale)),
+            int(round(w / scale)),
+            int(round(h / scale)),
+        )
+
+        # Prefer longer candidates. Fish+green validation is the final filter.
+        rank = (
+            -float(w)
+            - float(area) * 0.002
+            + abs(aspect - 10.0) * 0.3
+        )
+
+        candidates.append(
+            {
+                "rank": rank,
+                "box": full_box,
+            }
+        )
+
+    candidates.sort(
+        key=lambda item: item["rank"]
+    )
+
+    return candidates[:STARTUP_BAR_MAX_CANDIDATES]
+
+
 def find_fish_in_bar(frame, bar):
     H, W = frame.shape[:2]
     bx, by, bw, bh = bar
@@ -1152,19 +1418,13 @@ def track_green_target_borders(
     previous_zone=None,
 ):
     """
-    v10 robust green-target tracker.
+    FAST-FOLLOW v3 green tracker.
 
-    The user's empty green reference shows that the target is essentially one
-    vertical green rectangle. In the real minigame, when the cyan fish overlaps
-    it, that rectangle may be visually split into two green pieces.
+    Primary signal = the two bright, almost full-height neon-green vertical
+    borders. Their separation is the target's current width, so the target may
+    become wider/narrower without any fixed reference-width assumption.
 
-    So we track the OUTER green span:
-      - unobstructed target -> one continuous green run
-      - fish on target      -> two/three green runs whose OUTER edges still
-                               describe the same target
-
-    This avoids the v9 bug where one fragment could be mistaken for the whole
-    target and move the calculated center to the wrong side.
+    A broad-green fallback is used only if a border is temporarily covered.
     """
     H, W = frame.shape[:2]
     bx, by, bw, bh = map(int, local_bar)
@@ -1172,241 +1432,142 @@ def track_green_target_borders(
     if bw <= 20 or bh <= 10:
         return None
 
-    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-
-    # Include both bright borders and the darker/translucent green interior.
-    green = cv2.inRange(
-        hsv,
-        (35, 75, 50),
-        (100, 255, 255),
+    hsv = cv2.cvtColor(
+        frame,
+        cv2.COLOR_BGR2HSV,
     )
 
-    x0 = max(0, bx + 1)
-    x1 = min(W, bx + bw - 1)
-    y0 = max(0, by + 1)
-    y1 = min(H, by + bh - 1)
+    x0 = max(0, bx + 2)
+    x1 = min(W, bx + bw - 2)
+    y0 = max(0, by + 2)
+    y1 = min(H, by + bh - 2)
 
-    crop = green[y0:y1, x0:x1]
-
-    if crop.size == 0:
+    if x1 <= x0 or y1 <= y0:
         return None
 
-    inner_h = crop.shape[0]
+    inner_h = y1 - y0
 
-    # A real target column is green through a meaningful part of the bar height.
-    counts = (crop > 0).sum(axis=0).astype(np.float32)
+    bright = cv2.inRange(
+        hsv,
+        GREEN_BORDER_HSV_LOW,
+        GREEN_BORDER_HSV_HIGH,
+    )[y0:y1, x0:x1]
 
-    minimum_count = max(
-        3.0,
-        inner_h * 0.22,
+    column_counts = (
+        (bright > 0)
+        .sum(axis=0)
+        .astype(np.float32)
     )
 
-    active_cols = np.where(
-        counts >= minimum_count
+    required = max(
+        3.0,
+        inner_h * GREEN_BORDER_MIN_COLUMN_FRACTION,
+    )
+
+    active = np.where(
+        column_counts >= required
     )[0]
 
-    if len(active_cols) == 0:
-        return None
+    groups = []
 
-    # Build green runs. Small 1-2px holes are bridged because anti-aliasing /
-    # fish edges can cut tiny gaps into the target.
-    runs = []
-    start_col = prev_col = int(active_cols[0])
+    if len(active):
+        s = p = int(active[0])
 
-    for value in active_cols[1:]:
-        value = int(value)
+        for value in active[1:]:
+            value = int(value)
 
-        if value <= prev_col + 3:
-            prev_col = value
-        else:
-            runs.append(
-                (
-                    start_col,
-                    prev_col,
-                )
-            )
-            start_col = prev_col = value
+            if value <= p + 2:
+                p = value
+            else:
+                groups.append((s, p))
+                s = p = value
 
-    runs.append(
-        (
-            start_col,
-            prev_col,
+        groups.append((s, p))
+
+    borders = []
+
+    for g0, g1 in groups:
+        segment = column_counts[g0:g1 + 1]
+
+        if not len(segment):
+            continue
+
+        peak = g0 + int(np.argmax(segment))
+
+        borders.append(
+            {
+                "x": float(x0 + peak),
+                "strength": float(segment.max()),
+            }
         )
-    )
-
-    expected_width = max(
-        8.0,
-        (bh - 2.0)
-        * GREEN_REFERENCE_WIDTH_RATIO,
-    )
 
     previous_center = None
     previous_width = None
 
     if previous_zone is not None:
         px, py, pw, ph = previous_zone
-
-        previous_center = (
-            px + pw / 2.0
-        )
-
+        previous_center = px + pw / 2.0
         previous_width = float(pw)
 
-        if previous_width >= 6.0:
-            expected_width = (
-                0.82 * previous_width
-                + 0.18 * expected_width
-            )
+    pairs = []
 
-    min_width = max(
-        5.0,
-        expected_width
-        * GREEN_WIDTH_MIN_FACTOR,
-    )
+    for i in range(len(borders)):
+        for j in range(i + 1, len(borders)):
+            left = borders[i]
+            right = borders[j]
 
-    max_width = max(
-        min_width + 1.0,
-        expected_width
-        * GREEN_WIDTH_MAX_FACTOR,
-    )
+            width = right["x"] - left["x"]
 
-    candidates = []
-
-    # Consider every contiguous sequence of nearby green runs.
-    # This naturally handles:
-    #   [ GREEN GREEN GREEN ]
-    # and
-    #   [ GREEN ][cyan fish][ GREEN ]
-    for i in range(len(runs)):
-        for j in range(i, len(runs)):
-            left_local = runs[i][0]
-            right_local = runs[j][1]
-
-            span_width = (
-                right_local
-                - left_local
-                + 1
-            )
-
-            if span_width < min_width:
+            if width < 4.0:
                 continue
 
-            if span_width > max_width:
-                # Later j values can only become wider.
-                break
-
-            # Don't combine completely unrelated green UI pieces separated by a
-            # huge gap. Fish occlusion can make a gap, but the total span still
-            # needs to look like the supplied target.
-            covered_columns = 0
-
-            for k in range(i, j + 1):
-                covered_columns += (
-                    runs[k][1]
-                    - runs[k][0]
-                    + 1
-                )
-
-            coverage_ratio = (
-                covered_columns
-                / max(
-                    float(span_width),
-                    1.0,
-                )
-            )
-
-            # If the fish is sitting over the target, coverage can drop.
-            # Keep this permissive but reject very sparse unrelated pairs.
-            if coverage_ratio < 0.28:
+            if width > bw * GREEN_TARGET_MAX_WIDTH_RATIO:
                 continue
-
-            left_x = (
-                x0 + left_local
-            )
-
-            right_x = (
-                x0 + right_local
-            )
 
             center = (
-                left_x + right_x
+                left["x"]
+                + right["x"]
             ) / 2.0
 
-            width_error = abs(
-                span_width
-                - expected_width
-            ) / max(
-                expected_width,
-                1.0,
-            )
-
-            continuity_penalty = 0.0
+            # Continuity is only a preference, never a hard jump rejection.
+            continuity = 0.0
 
             if previous_center is not None:
-                jump = abs(
-                    center
-                    - previous_center
+                continuity += (
+                    abs(center - previous_center) * 0.22
                 )
 
-                if (
-                    jump
-                    > expected_width
-                    * GREEN_TRACK_MAX_JUMP_FACTOR
-                ):
-                    continue
-
-                continuity_penalty = (
-                    jump
-                    / max(
-                        expected_width,
-                        1.0,
+                if previous_width is not None:
+                    continuity += (
+                        abs(width - previous_width) * 0.015
                     )
-                    * 0.45
-                )
 
-            # Prefer spans close to expected width, close to last center, and
-            # with more actual green coverage.
+            strength_bonus = (
+                left["strength"]
+                + right["strength"]
+            ) * 0.08
+
             score = (
-                width_error
-                + continuity_penalty
-                + (1.0 - coverage_ratio)
-                * 0.12
+                continuity
+                - strength_bonus
             )
 
-            candidates.append(
+            pairs.append(
                 (
                     score,
-                    left_x,
-                    right_x,
+                    left["x"],
+                    right["x"],
                     center,
-                    float(span_width),
-                    coverage_ratio,
-                    i,
-                    j,
+                    width,
                 )
             )
 
-    if candidates:
-        candidates.sort(
-            key=lambda item: item[0],
+    if pairs:
+        pairs.sort(
+            key=lambda item: item[0]
         )
 
-        (
-            _,
-            left_x,
-            right_x,
-            center,
-            width,
-            coverage_ratio,
-            run_i,
-            run_j,
-        ) = candidates[0]
-
-        mode = (
-            "full-span"
-            if run_i == run_j
-            else "split-span"
-        )
+        _, left_x, right_x, center, width = pairs[0]
 
         return {
             "box": (
@@ -1415,93 +1576,156 @@ def track_green_target_borders(
                 max(
                     1,
                     int(round(
-                        right_x
-                        - left_x
-                        + 1
+                        right_x - left_x
                     )),
                 ),
-                int(y1 - y0),
+                int(inner_h),
             ),
             "center_x": float(center),
             "width": float(width),
-            "mode": mode,
-            "coverage": float(
-                coverage_ratio
-            ),
+            "mode": "bright-border-pair",
         }
 
-    # Last-resort continuity fallback:
-    # if only a narrow fragment is visible for one frame, infer which edge it
-    # belongs to from the previous target center/width.
-    if (
-        previous_center is not None
-        and previous_width is not None
-        and runs
-    ):
-        best_inferred = None
+    # -------------------------------------------------------------
+    # Fallback: broad green full-height span
+    # -------------------------------------------------------------
+    broad = cv2.inRange(
+        hsv,
+        (45, 100, 65),
+        (90, 255, 255),
+    )[y0:y1, x0:x1]
 
-        for r0, r1 in runs:
-            run_center = (
-                x0
-                + (r0 + r1) / 2.0
-            )
+    counts = (
+        (broad > 0)
+        .sum(axis=0)
+        .astype(np.float32)
+    )
 
-            # Interpret the visible run as either left side or right side.
-            centers = (
-                run_center
-                + previous_width / 2.0,
-                run_center
-                - previous_width / 2.0,
-            )
+    active = np.where(
+        counts >= max(
+            3.0,
+            inner_h * 0.45,
+        )
+    )[0]
 
-            for inferred_center in centers:
-                jump = abs(
-                    inferred_center
-                    - previous_center
+    if len(active):
+        runs = []
+        s = p = int(active[0])
+
+        for value in active[1:]:
+            value = int(value)
+
+            if value <= p + 3:
+                p = value
+            else:
+                runs.append((s, p))
+                s = p = value
+
+        runs.append((s, p))
+
+        spans = []
+
+        for i in range(len(runs)):
+            for j in range(i, len(runs)):
+                left_local = runs[i][0]
+                right_local = runs[j][1]
+
+                width = (
+                    right_local
+                    - left_local
+                    + 1
                 )
 
-                if (
-                    jump
-                    > expected_width
-                    * GREEN_TRACK_MAX_JUMP_FACTOR
-                ):
+                if width < 4:
                     continue
 
-                if (
-                    best_inferred is None
-                    or jump
-                    < best_inferred[0]
-                ):
-                    best_inferred = (
-                        jump,
-                        inferred_center,
+                if width > bw * GREEN_TARGET_MAX_WIDTH_RATIO:
+                    break
+
+                left_x = x0 + left_local
+                right_x = x0 + right_local
+                center = (
+                    left_x + right_x
+                ) / 2.0
+
+                covered = sum(
+                    runs[k][1]
+                    - runs[k][0]
+                    + 1
+                    for k in range(i, j + 1)
+                )
+
+                coverage = (
+                    covered
+                    / max(
+                        float(width),
+                        1.0,
+                    )
+                )
+
+                if coverage < 0.32:
+                    continue
+
+                if previous_center is not None:
+                    score = (
+                        abs(center - previous_center)
+                        + (1.0 - coverage) * 6.0
+                    )
+                else:
+                    # Fresh round target starts centered.
+                    score = (
+                        abs(
+                            center
+                            - (bx + bw / 2.0)
+                        )
+                        + (1.0 - coverage) * 6.0
                     )
 
-        if best_inferred is not None:
-            _, center = best_inferred
+                spans.append(
+                    (
+                        score,
+                        left_x,
+                        right_x,
+                        center,
+                        float(width),
+                    )
+                )
+
+        if spans:
+            spans.sort(
+                key=lambda item: item[0]
+            )
+
+            _, left_x, right_x, center, width = spans[0]
 
             return {
                 "box": (
-                    int(round(
-                        center
-                        - previous_width / 2.0
-                    )),
+                    int(round(left_x)),
                     int(y0),
                     max(
                         1,
                         int(round(
-                            previous_width
+                            right_x - left_x
                         )),
                     ),
-                    int(y1 - y0),
+                    int(inner_h),
                 ),
                 "center_x": float(center),
-                "width": float(
-                    previous_width
-                ),
-                "mode": "fragment-inferred",
-                "coverage": 0.0,
+                "width": float(width),
+                "mode": "broad-green-fallback",
             }
+
+    if previous_zone is not None:
+        px, py, pw, ph = previous_zone
+
+        return {
+            "box": previous_zone,
+            "center_x": float(
+                px + pw / 2.0
+            ),
+            "width": float(pw),
+            "mode": "previous-green-grace",
+        }
 
     return None
 
@@ -1577,47 +1801,325 @@ def fast_match_fish_in_locked_bar(
     }
 
 
-def fast_track_minigame(frame, local_bar, previous_ui=None):
+def fast_track_minigame(
+    frame,
+    local_bar,
+    previous_ui=None,
+    allow_startup_center=False,
+):
     """
-    v10 active tracker.
+    FAST-FOLLOW v3.
 
-    Fish:
-      exact user-supplied fish-left / fish-right template every frame.
+    Fish detection:
+      - high-value cyan pixels only
+      - candidate silhouette compared against supplied fish-left/right shapes
+      - no hard "fish cannot jump this far" rejection
 
-    Green target:
-      left + right bright-green border pair every frame.
+    This prevents cyan scenery/background inside the transparent bar from being
+    chosen as the fish and also allows the real fish to make a sudden move.
 
-    Neither center is inferred from a fragmented color blob anymore.
+    Green:
+      - live bright-border pair
+      - fully dynamic width
     """
     if frame is None or local_bar is None:
         return {
             "valid": False,
+            "control_ready": False,
             "bar": local_bar,
-            "fish": None,
-            "zone": None,
-            "fish_score": 0.0,
-            "fish_left_score": 0.0,
-            "fish_right_score": 0.0,
-            "fish_direction": None,
-            "fish_scale": None,
         }
 
-    previous_scale = None
+    H, W = frame.shape[:2]
+    bx, by, bw, bh = map(int, local_bar)
+
+    if bw <= 20 or bh <= 10:
+        return {
+            "valid": False,
+            "control_ready": False,
+            "bar": local_bar,
+        }
+
+    previous_fish_x = None
     previous_zone = None
+    previous_scale = None
 
     if previous_ui:
-        previous_scale = previous_ui.get(
-            "fish_scale"
+        previous_fish_x = previous_ui.get(
+            "fish_center_x"
         )
         previous_zone = previous_ui.get(
             "zone"
         )
+        previous_scale = previous_ui.get(
+            "fish_scale"
+        )
 
-    fish = fast_match_fish_in_locked_bar(
-        frame,
-        local_bar,
-        previous_scale=previous_scale,
-    )
+    x0 = max(0, bx + 3)
+    x1 = min(W, bx + bw - 3)
+    y0 = max(0, by + 3)
+    y1 = min(H, by + bh - 3)
+
+    # Convert ONLY the bar interior, not the whole frame.
+    #
+    # In ARMED_FAST this function is called once per bar candidate against the
+    # full-screen screenshot, so converting the entire 1920x1080 frame to HSV
+    # was being paid over again for every candidate - several milliseconds each
+    # time, for a region that is a few percent of the image.
+    if x1 > x0 and y1 > y0:
+        inner_hsv = cv2.cvtColor(
+            frame[y0:y1, x0:x1],
+            cv2.COLOR_BGR2HSV,
+        )
+
+        inner_cyan = cv2.inRange(
+            inner_hsv,
+            FISH_BRIGHT_HSV_LOW,
+            FISH_BRIGHT_HSV_HIGH,
+        )
+    else:
+        inner_hsv = None
+        inner_cyan = None
+
+    fish_box = None
+    fish_center_x = None
+    fish_score = 0.0
+    fish_direction = None
+    fish_scale = None
+    fish_source = None
+    left_score = 0.0
+    right_score = 0.0
+
+    if inner_cyan is not None:
+        inner = inner_cyan
+
+        parts = connected_components(
+            inner,
+            minimum_area=20,
+        )
+
+        candidates = []
+
+        expected_h = max(
+            8.0,
+            bh * 0.58,
+        )
+
+        expected_w = max(
+            8.0,
+            bh * 0.66,
+        )
+
+        # Resolution-relative size window (see FAST_FISH_*_RATIO above).
+        min_fish_area = max(
+            FAST_FISH_ABS_MIN_AREA,
+            FAST_FISH_MIN_AREA_RATIO * bh * bh,
+        )
+
+        max_fish_area = FAST_FISH_MAX_AREA_RATIO * bh * bh
+
+        min_fish_side = max(6.0, bh * 0.16)
+
+        for c in parts:
+            w = c["w"]
+            h = c["h"]
+            area = c["area"]
+
+            if area < min_fish_area or area > max_fish_area:
+                continue
+
+            if w < min_fish_side or h < min_fish_side:
+                continue
+
+            if h > bh * 0.92:
+                continue
+
+            if w > bh * 1.65:
+                continue
+
+            aspect = (
+                w / max(h, 1)
+            )
+
+            if aspect < 0.60 or aspect > 1.85:
+                continue
+
+            # Fish is vertically around the middle of the bar.
+            cx = float(
+                x0 + c["cx"]
+            )
+
+            cy = float(
+                y0 + c["cy"]
+            )
+
+            if abs(
+                cy
+                - (by + bh / 2.0)
+            ) > bh * 0.40:
+                continue
+
+            candidate_mask = inner[
+                c["y"]:c["y"] + h,
+                c["x"]:c["x"] + w,
+            ]
+
+            norm = cv2.resize(
+                candidate_mask,
+                (32, 32),
+                interpolation=cv2.INTER_NEAREST,
+            )
+
+            norm_bool = norm > 0
+            left_bool = FISH_SHAPE_LEFT > 0
+            right_bool = FISH_SHAPE_RIGHT > 0
+
+            left_union = np.logical_or(
+                norm_bool,
+                left_bool,
+            ).sum()
+
+            right_union = np.logical_or(
+                norm_bool,
+                right_bool,
+            ).sum()
+
+            left_iou = (
+                np.logical_and(
+                    norm_bool,
+                    left_bool,
+                ).sum()
+                / max(
+                    float(left_union),
+                    1.0,
+                )
+            )
+
+            right_iou = (
+                np.logical_and(
+                    norm_bool,
+                    right_bool,
+                ).sum()
+                / max(
+                    float(right_union),
+                    1.0,
+                )
+            )
+
+            shape_score = max(
+                left_iou,
+                right_iou,
+            )
+
+            if shape_score < FISH_SHAPE_MIN_SCORE:
+                continue
+
+            direction = (
+                "left"
+                if left_iou >= right_iou
+                else "right"
+            )
+
+            size_error = (
+                abs(h - expected_h)
+                / expected_h
+                + abs(w - expected_w)
+                / expected_w
+            )
+
+            continuity = 0.0
+
+            if previous_fish_x is not None:
+                # Weak preference only. Sudden real fish jumps are allowed.
+                continuity = (
+                    abs(cx - previous_fish_x)
+                    / max(
+                        float(bw),
+                        1.0,
+                    )
+                    * 0.25
+                )
+
+            rank = (
+                -shape_score * 4.0
+                + size_error * 0.45
+                + continuity
+            )
+
+            candidates.append(
+                (
+                    rank,
+                    shape_score,
+                    (
+                        int(x0 + c["x"]),
+                        int(y0 + c["y"]),
+                        int(w),
+                        int(h),
+                    ),
+                    cx,
+                    direction,
+                )
+            )
+
+        if candidates:
+            candidates.sort(
+                key=lambda item: item[0]
+            )
+
+            (
+                _,
+                fish_score,
+                fish_box,
+                fish_center_x,
+                fish_direction,
+            ) = candidates[0]
+
+            fish_source = "shape-cyan"
+
+    # Same-frame exact template fallback if the shape component is unavailable.
+    if fish_box is None:
+        fish_ref = fast_match_fish_in_locked_bar(
+            frame,
+            local_bar,
+            previous_scale=previous_scale,
+        )
+
+        left_score = float(
+            fish_ref["left_score"]
+        )
+
+        right_score = float(
+            fish_ref["right_score"]
+        )
+
+        if (
+            fish_ref["box"] is not None
+            and fish_ref["score"]
+            >= FISH_ACTIVE_MIN_SCORE
+        ):
+            fish_box = fish_ref["box"]
+            fish_score = float(
+                fish_ref["score"]
+            )
+            fish_direction = fish_ref["direction"]
+            fish_scale = fish_ref["scale"]
+            fish_center_x = (
+                fish_box[0]
+                + fish_box[2] / 2.0
+            )
+            fish_source = "template"
+
+    if fish_box is None or fish_center_x is None:
+        return {
+            "valid": False,
+            "control_ready": False,
+            "bar": local_bar,
+            "fish": None,
+            "zone": None,
+            "fish_score": 0.0,
+            "fish_left_score": left_score,
+            "fish_right_score": right_score,
+            "fish_source": None,
+        }
 
     green = track_green_target_borders(
         frame,
@@ -1626,61 +2128,92 @@ def fast_track_minigame(frame, local_bar, previous_ui=None):
     )
 
     if (
-        fish["box"] is None
-        or fish["score"] < FISH_ACTIVE_MIN_SCORE
-        or green is None
+        green is None
+        and allow_startup_center
     ):
+        # The user confirmed a fresh round starts with green centered.
+        center = (
+            bx + bw / 2.0
+        )
+
+        inferred_width = max(
+            8,
+            int(bh * 0.75),
+        )
+
+        green = {
+            "box": (
+                int(
+                    center
+                    - inferred_width / 2.0
+                ),
+                int(by + 2),
+                int(inferred_width),
+                max(
+                    1,
+                    int(bh - 4),
+                ),
+            ),
+            "center_x": float(center),
+            "width": float(inferred_width),
+            "mode": "startup-center",
+        }
+
+    if green is None:
         return {
             "valid": False,
+            "control_ready": False,
             "bar": local_bar,
-            "fish": fish["box"],
-            "zone": (
-                green["box"]
-                if green is not None
-                else None
-            ),
-            "fish_score": float(fish["score"]),
-            "fish_left_score": float(fish["left_score"]),
-            "fish_right_score": float(fish["right_score"]),
-            "fish_direction": fish["direction"],
-            "fish_scale": fish["scale"],
-            "green_mode": (
-                green["mode"]
-                if green is not None
-                else None
+            "fish": fish_box,
+            "zone": None,
+            "fish_score": fish_score,
+            "fish_left_score": left_score,
+            "fish_right_score": right_score,
+            "fish_direction": fish_direction,
+            "fish_scale": fish_scale,
+            "fish_source": fish_source,
+            "fish_center_x": float(
+                fish_center_x
             ),
         }
 
-    fx, fy, fw, fh = fish["box"]
-    fish_center_x = fx + fw / 2.0
-
     zone_box = green["box"]
-    zone_center_x = green["center_x"]
+    zone_center_x = float(
+        green["center_x"]
+    )
 
     zx, zy, zw, zh = zone_box
 
     return {
         "valid": True,
+        "control_ready": True,
         "bar": local_bar,
-        "fish": fish["box"],
-        "fish_score": float(fish["score"]),
-        "fish_left_score": float(fish["left_score"]),
-        "fish_right_score": float(fish["right_score"]),
-        "fish_direction": fish["direction"],
-        "fish_scale": fish["scale"],
+        "fish": fish_box,
+        "fish_score": float(
+            fish_score
+        ),
+        "fish_left_score": left_score,
+        "fish_right_score": right_score,
+        "fish_direction": fish_direction,
+        "fish_scale": fish_scale,
+        "fish_source": fish_source,
         "zone": zone_box,
         "green_mode": green["mode"],
-        "fish_center_x": float(fish_center_x),
-        "zone_center_x": float(zone_center_x),
+        "fish_center_x": float(
+            fish_center_x
+        ),
+        "zone_center_x": float(
+            zone_center_x
+        ),
         "error": float(
             fish_center_x
             - zone_center_x
         ),
         "inside": bool(
             fish_center_x
-            >= zx + zw * 0.04
+            >= zx + zw * 0.03
             and fish_center_x
-            <= zx + zw * 0.96
+            <= zx + zw * 0.97
         ),
         "progress": 0.0,
         "progress_box": None,
@@ -1690,75 +2223,6 @@ def fast_track_minigame(frame, local_bar, previous_ui=None):
         "ready_ref": None,
     }
 
-
-
-def fish_blob_present(frame, local_bar):
-    """
-    Sub-millisecond "has the fish appeared inside the bar yet?" test.
-
-    While ARMED_FAST waits for the bite there is only one question to answer,
-    and stock v11 answered it by running the full fish-template match - two
-    references at five scales, ~25 ms on a 1080p bar - on every loop.
-
-    The fish icon is a compact BRIGHT cyan glyph. The bar's own fill carries a
-    cyan gradient in the same hue range but it is dark: measured on the
-    supplied minigame_example.png, the fish pixels have V 65..237 (median 237)
-    while the bar gradient tops out at V 74. A brightness floor therefore
-    separates them, and a blob of roughly the right size and shape means the
-    fish is on screen.
-
-    This is a GATE, not a detector. When it says yes, the normal v11 tracker
-    runs on the same frame and produces the actual position, so nothing about
-    detection accuracy changes. When it is unsure it says yes.
-    """
-    if frame is None or local_bar is None:
-        return True
-
-    H, W = frame.shape[:2]
-    bx, by, bw, bh = map(int, local_bar)
-
-    if bw <= 20 or bh <= 10:
-        return True
-
-    # Keep the bar's own bright border outside the crop.
-    inset = max(3, int(round(bh * 0.07)))
-
-    x0 = max(0, bx + inset)
-    x1 = min(W, bx + bw - inset)
-    y0 = max(0, by + inset)
-    y1 = min(H, by + bh - inset)
-
-    if x1 <= x0 or y1 <= y0:
-        return True
-
-    hsv = cv2.cvtColor(frame[y0:y1, x0:x1], cv2.COLOR_BGR2HSV)
-
-    mask = cv2.inRange(hsv, (88, 105, 110), (123, 255, 255))
-
-    count, _, stats, _ = cv2.connectedComponentsWithStats(mask)
-
-    # Sizes relative to the bar height, so this works at any resolution.
-    min_area = max(24.0, 0.05 * bh * bh)
-    max_area = 1.60 * bh * bh
-    max_width = bw * 0.35
-
-    for index in range(1, count):
-        x, y, w, h, area = stats[index]
-
-        if area < min_area or area > max_area:
-            continue
-
-        if w > max_width:
-            continue
-
-        aspect = w / max(h, 1)
-
-        if aspect < 0.30 or aspect > 3.20:
-            continue
-
-        return True
-
-    return False
 
 
 def detect_minigame(frame):
@@ -1864,6 +2328,56 @@ def detect_minigame(frame):
 
 
 # =====================================================================
+# ASYNC IMAGE WRITER
+# =====================================================================
+
+_IMAGE_WRITE_QUEUE = queue.Queue(maxsize=128)
+
+
+def _image_writer_worker():
+    while True:
+        item = _IMAGE_WRITE_QUEUE.get()
+
+        if item is None:
+            _IMAGE_WRITE_QUEUE.task_done()
+            return
+
+        path, image = item
+
+        try:
+            cv2.imwrite(
+                str(path),
+                image,
+            )
+        except Exception:
+            pass
+
+        _IMAGE_WRITE_QUEUE.task_done()
+
+
+_IMAGE_WRITER_THREAD = threading.Thread(
+    target=_image_writer_worker,
+    name="autofish-image-writer",
+    daemon=True,
+)
+
+_IMAGE_WRITER_THREAD.start()
+
+
+def enqueue_image_write(path, image):
+    try:
+        _IMAGE_WRITE_QUEUE.put_nowait(
+            (
+                Path(path),
+                image.copy(),
+            )
+        )
+        return True
+    except queue.Full:
+        return False
+
+
+# =====================================================================
 # DEBUG IMAGE
 # =====================================================================
 
@@ -1897,7 +2411,7 @@ def save_debug(frame, state, ui, scan, monitor_index):
     raw_path = DEBUG_DIR / f"monitor_{monitor_index}_latest.png"
     overlay_path = DEBUG_DIR / f"monitor_{monitor_index}_overlay.png"
 
-    cv2.imwrite(str(raw_path), frame)
+    enqueue_image_write(raw_path, frame)
 
     overlay = frame.copy()
 
@@ -2030,7 +2544,7 @@ def save_debug(frame, state, ui, scan, monitor_index):
                 cv2.LINE_AA,
             )
 
-    cv2.imwrite(str(overlay_path), overlay)
+    enqueue_image_write(overlay_path, overlay)
 
 
 
@@ -2110,15 +2624,523 @@ def save_reference_hit(
     )
 
     path = DETECTION_DIR / filename
-    cv2.imwrite(str(path), crop)
 
-    trim_detection_folder()
-
-    print(
-        f"[SNAPSHOT] Saved exact hit crop: {filename} "
-        f"box=({x},{y},{w},{h})",
-        flush=True,
+    queued = enqueue_image_write(
+        path,
+        crop,
     )
+
+    if queued:
+        # Folder trimming is deliberately not performed in the control thread.
+        # The max-100 cleanup is cheap enough to do only on non-critical saves.
+        print(
+            f"[SNAPSHOT] Queued exact hit crop: {filename} "
+            f"box=({x},{y},{w},{h})",
+            flush=True,
+        )
+
+
+# =====================================================================
+# FORENSIC DEBUG (RAM-FIRST)
+# =====================================================================
+
+_DBG_STAMP = datetime.now().strftime("%Y%m%d_%H%M%S")
+DBG_ROOT = BASE / "debug_sessions"
+DBG_SESSION = DBG_ROOT / f"session_{_DBG_STAMP}"
+
+_DBG_RING = deque(maxlen=DBG_RING_MAX_FRAMES)
+_DBG_TRACK = deque(maxlen=DBG_MAX_TRACK_ROWS)
+_DBG_STARTUP = deque(maxlen=DBG_MAX_STARTUP_ROWS)
+_DBG_INPUT = deque(maxlen=DBG_MAX_INPUT_ROWS)
+_DBG_EVENTS = deque(maxlen=DBG_MAX_EVENTS)
+
+# A failure freezes a copy of the recent frame history in RAM so later frames
+# cannot overwrite the evidence before the user presses F9.
+_DBG_FROZEN = []
+
+_DBG_LAST_ACTIVE_IMAGE = 0.0
+_DBG_LAST_STARTUP_IMAGE = 0.0
+_DBG_FRAME_SEQ = 0
+
+
+def dbg_ui_reason(ui):
+    if ui is None:
+        return "ui_none"
+
+    if not ui.get("valid", False):
+        if ui.get("fish") is None:
+            return "fish_missing"
+
+        if ui.get("zone") is None:
+            return "green_missing"
+
+        return "invalid_other"
+
+    if not ui.get("control_ready", True):
+        return "control_not_ready"
+
+    return "ok"
+
+
+def dbg_event(kind, **data):
+    if not FORENSIC_DEBUG:
+        return
+
+    _DBG_EVENTS.append(
+        {
+            "wall_time": datetime.now().isoformat(timespec="milliseconds"),
+            "perf_time": time.perf_counter(),
+            "kind": kind,
+            **data,
+        }
+    )
+
+
+def dbg_input(
+    key,
+    action,
+    sendinput_result,
+    last_error,
+):
+    if not FORENSIC_DEBUG:
+        return
+
+    fg = user32.GetForegroundWindow()
+
+    _DBG_INPUT.append(
+        {
+            "perf_time": time.perf_counter(),
+            "key": key,
+            "action": action,
+            "sendinput_result": int(sendinput_result),
+            "last_error": int(last_error),
+            "target_hwnd": TARGET_HWND,
+            "foreground_hwnd": fg,
+            "foreground_title": hwnd_title(fg),
+        }
+    )
+
+
+def dbg_startup_row(
+    round_number,
+    monitor,
+    candidate_index,
+    bar,
+    ui,
+):
+    if not FORENSIC_DEBUG:
+        return
+
+    fish_x = ui.get("fish_center_x") if ui else None
+    green_x = ui.get("zone_center_x") if ui else None
+    zone = ui.get("zone") if ui else None
+
+    _DBG_STARTUP.append(
+        {
+            "perf_time": time.perf_counter(),
+            "round": round_number,
+            "monitor": monitor,
+            "candidate_index": candidate_index,
+            "bar_x": bar[0],
+            "bar_y": bar[1],
+            "bar_w": bar[2],
+            "bar_h": bar[3],
+            "reason": dbg_ui_reason(ui),
+            "valid": bool(ui and ui.get("valid")),
+            "control_ready": bool(ui and ui.get("control_ready")),
+            "fish_source": ui.get("fish_source") if ui else None,
+            "fish_score": ui.get("fish_score") if ui else None,
+            "fish_left_score": ui.get("fish_left_score") if ui else None,
+            "fish_right_score": ui.get("fish_right_score") if ui else None,
+            "fish_x": fish_x,
+            "green_mode": ui.get("green_mode") if ui else None,
+            "green_x": green_x,
+            "green_w": zone[2] if zone is not None else None,
+            "error": (
+                fish_x - green_x
+                if fish_x is not None and green_x is not None
+                else None
+            ),
+        }
+    )
+
+
+def dbg_track_row(
+    round_number,
+    monitor,
+    state,
+    ui,
+    desired_key,
+    failures,
+    capture_ms=None,
+    detect_ms=None,
+    loop_ms=None,
+):
+    if not FORENSIC_DEBUG:
+        return
+
+    fish_x = ui.get("fish_center_x") if ui else None
+    green_x = ui.get("zone_center_x") if ui else None
+    zone = ui.get("zone") if ui else None
+
+    _DBG_TRACK.append(
+        {
+            "perf_time": time.perf_counter(),
+            "round": round_number,
+            "monitor": monitor,
+            "state": state,
+            "reason": dbg_ui_reason(ui),
+            "valid": bool(ui and ui.get("valid")),
+            "control_ready": bool(ui and ui.get("control_ready")),
+            "fish_source": ui.get("fish_source") if ui else None,
+            "fish_direction": ui.get("fish_direction") if ui else None,
+            "fish_score": ui.get("fish_score") if ui else None,
+            "fish_left_score": ui.get("fish_left_score") if ui else None,
+            "fish_right_score": ui.get("fish_right_score") if ui else None,
+            "fish_x": fish_x,
+            "green_mode": ui.get("green_mode") if ui else None,
+            "green_x": green_x,
+            "green_w": zone[2] if zone is not None else None,
+            "error": (
+                fish_x - green_x
+                if fish_x is not None and green_x is not None
+                else None
+            ),
+            "desired_key": desired_key,
+            "held_A": held["A"],
+            "held_D": held["D"],
+            "failures": failures,
+            "capture_ms": capture_ms,
+            "detect_ms": detect_ms,
+            "loop_ms": loop_ms,
+        }
+    )
+
+
+def dbg_ring_image(
+    image,
+    kind,
+    meta,
+    scale=1.0,
+):
+    global _DBG_FRAME_SEQ
+
+    if not FORENSIC_DEBUG or image is None:
+        return
+
+    if scale != 1.0:
+        image = cv2.resize(
+            image,
+            None,
+            fx=scale,
+            fy=scale,
+            interpolation=cv2.INTER_AREA,
+        )
+
+    # Compress in RAM. No disk I/O.
+    ok, encoded = cv2.imencode(
+        ".jpg",
+        image,
+        [int(cv2.IMWRITE_JPEG_QUALITY), 88],
+    )
+
+    if not ok:
+        return
+
+    _DBG_FRAME_SEQ += 1
+
+    _DBG_RING.append(
+        {
+            "seq": _DBG_FRAME_SEQ,
+            "kind": kind,
+            "jpg": encoded.tobytes(),
+            "meta": dict(meta),
+        }
+    )
+
+
+def dbg_maybe_startup_image(image, meta):
+    global _DBG_LAST_STARTUP_IMAGE
+
+    if not FORENSIC_DEBUG:
+        return
+
+    now_dbg = time.monotonic()
+
+    if (
+        now_dbg - _DBG_LAST_STARTUP_IMAGE
+        < DBG_STARTUP_IMAGE_INTERVAL
+    ):
+        return
+
+    _DBG_LAST_STARTUP_IMAGE = now_dbg
+
+    dbg_ring_image(
+        image,
+        "startup",
+        meta,
+        scale=DBG_STARTUP_IMAGE_SCALE,
+    )
+
+
+def dbg_maybe_active_image(image, meta):
+    global _DBG_LAST_ACTIVE_IMAGE
+
+    if not FORENSIC_DEBUG:
+        return
+
+    now_dbg = time.monotonic()
+
+    if (
+        now_dbg - _DBG_LAST_ACTIVE_IMAGE
+        < DBG_ACTIVE_IMAGE_INTERVAL
+    ):
+        return
+
+    _DBG_LAST_ACTIVE_IMAGE = now_dbg
+
+    dbg_ring_image(
+        image,
+        "active",
+        meta,
+        scale=1.0,
+    )
+
+
+def dbg_freeze(reason, **data):
+    """
+    Preserve the recent visual ring IN RAM. No disk write happens here.
+    """
+    if not FORENSIC_DEBUG:
+        return
+
+    dbg_event(
+        "freeze",
+        reason=reason,
+        **data,
+    )
+
+    if len(_DBG_FROZEN) >= DBG_MAX_FROZEN_FAILURES:
+        return
+
+    _DBG_FROZEN.append(
+        {
+            "reason": reason,
+            "data": dict(data),
+            "frames": list(_DBG_RING),
+        }
+    )
+
+
+def _write_csv(path, rows):
+    rows = list(rows)
+
+    if not rows:
+        return
+
+    fields = []
+
+    for row in rows:
+        for key in row.keys():
+            if key not in fields:
+                fields.append(key)
+
+    with open(
+        path,
+        "w",
+        newline="",
+        encoding="utf-8",
+    ) as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=fields,
+        )
+
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def dbg_finalize():
+    """
+    Write all RAM diagnostics only when the program exits, then create one
+    ready-to-send ZIP.
+    """
+    if not FORENSIC_DEBUG:
+        return None
+
+    DBG_SESSION.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    try:
+        (DBG_SESSION / "events.json").write_text(
+            json.dumps(
+                list(_DBG_EVENTS),
+                ensure_ascii=False,
+                indent=2,
+                default=str,
+            ),
+            encoding="utf-8",
+        )
+
+        _write_csv(
+            DBG_SESSION / "tracker.csv",
+            _DBG_TRACK,
+        )
+
+        _write_csv(
+            DBG_SESSION / "startup_candidates.csv",
+            _DBG_STARTUP,
+        )
+
+        _write_csv(
+            DBG_SESSION / "input.csv",
+            _DBG_INPUT,
+        )
+
+        summary = (
+            "AUTOFISHING FORENSIC DEBUG\n"
+            "===========================\n\n"
+            "Send the generated debug_session_*.zip back to ChatGPT.\n\n"
+            "tracker.csv:\n"
+            "  every active A/D decision and fish/green measurement\n\n"
+            "startup_candidates.csv:\n"
+            "  every cyan-bar candidate checked before tracking started\n\n"
+            "input.csv:\n"
+            "  SendInput result, Windows LastError, target/foreground HWND\n\n"
+            "failure_* folders:\n"
+            "  recent screenshots from BEFORE the tracker failure\n"
+        )
+
+        (DBG_SESSION / "README.txt").write_text(
+            summary,
+            encoding="utf-8",
+        )
+
+        # Frozen failure evidence.
+        for index, frozen in enumerate(
+            _DBG_FROZEN,
+            start=1,
+        ):
+            safe_reason = "".join(
+                ch if ch.isalnum() or ch in "-_" else "_"
+                for ch in frozen["reason"]
+            )
+
+            failure_dir = (
+                DBG_SESSION
+                / f"failure_{index:02d}_{safe_reason}"
+            )
+
+            failure_dir.mkdir(
+                parents=True,
+                exist_ok=True,
+            )
+
+            manifest = []
+
+            for frame in frozen["frames"]:
+                filename = (
+                    f"{frame['seq']:06d}_"
+                    f"{frame['kind']}.jpg"
+                )
+
+                (failure_dir / filename).write_bytes(
+                    frame["jpg"]
+                )
+
+                manifest.append(
+                    {
+                        "filename": filename,
+                        **frame["meta"],
+                    }
+                )
+
+            (failure_dir / "manifest.json").write_text(
+                json.dumps(
+                    {
+                        "reason": frozen["reason"],
+                        "failure_data": frozen["data"],
+                        "frames": manifest,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                    default=str,
+                ),
+                encoding="utf-8",
+            )
+
+        # Also preserve the last live ring even if no explicit failure froze it.
+        tail_dir = DBG_SESSION / "last_live_ring"
+        tail_dir.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        tail_manifest = []
+
+        for frame in list(_DBG_RING):
+            filename = (
+                f"{frame['seq']:06d}_"
+                f"{frame['kind']}.jpg"
+            )
+
+            (tail_dir / filename).write_bytes(
+                frame["jpg"]
+            )
+
+            tail_manifest.append(
+                {
+                    "filename": filename,
+                    **frame["meta"],
+                }
+            )
+
+        (tail_dir / "manifest.json").write_text(
+            json.dumps(
+                tail_manifest,
+                ensure_ascii=False,
+                indent=2,
+                default=str,
+            ),
+            encoding="utf-8",
+        )
+
+        zip_path = (
+            BASE
+            / f"debug_session_{_DBG_STAMP}.zip"
+        )
+
+        if zip_path.exists():
+            zip_path.unlink()
+
+        with zipfile.ZipFile(
+            zip_path,
+            "w",
+            compression=zipfile.ZIP_DEFLATED,
+        ) as z:
+            for p in DBG_SESSION.rglob("*"):
+                if p.is_file():
+                    z.write(
+                        p,
+                        p.relative_to(DBG_SESSION),
+                    )
+
+        print(
+            f"[DEBUG-PACK] Created: {zip_path}",
+            flush=True,
+        )
+
+        return zip_path
+
+    except Exception as exc:
+        print(
+            f"[DEBUG-PACK] ERROR: {exc}",
+            flush=True,
+        )
+
+        return None
 
 
 # =====================================================================
@@ -2130,23 +3152,22 @@ def main():
 
     print("")
     print("====================================================================")
-    print(" AUTOFISHING v11 - SMOOTH TRACKER + CLEAN ROUND RESET")
+    print(" AUTOFISHING v11 FAST-FOLLOW v3 DEBUG - SMOOTH TRACKER + CLEAN ROUND RESET")
     print("====================================================================")
     print("[INFO] No specific game-window name is required.")
-    print("[INFO] Every physical monitor is scanned directly.")
-    print("[INFO] Uses YOUR exact PNG references.")
     print("[INFO] F8 = pause/resume")
     print("[INFO] F9 = quit")
     print("[INFO] cast.png -> E immediately.")
-    print("[INFO] After a catch, old minigame graphics are IGNORED.")
-    print("[INFO] A new round starts only after cast.png is seen and E is pressed.")
-    print("[INFO] After E, fresh fish/green acquisition is UNCAPPED and immediate.")
-    print("[INFO] SPACE waits at least 220ms after the ready prompt appears.")
-    print("[INFO] A/D tracking continues throughout the entire SPACE delay.")
-    print("[INFO] Active fish tracking uses exact fish-left/right references every frame.")
-    print("[INFO] Green target tracking uses its TWO bright border lines every frame.")
-    print("[INFO] v10 uses DIRECT current positions: no prediction can send it the old way.")
-    print("[INFO] Exact reference crops are saved in detections\\ (max 100).")
+    print("[INFO] FAST-FOLLOW v3 uses NO fixed minigame screen coordinates.")
+    print("[INFO] After E, the entire active monitor is checked dynamically every uncapped loop.")
+    print("[INFO] First real bar+fish frame sends A/D immediately.")
+    print("[INFO] Fish uses bright-cyan silhouette + supplied fish shape, preventing blue scenery false targets.")
+    print("[INFO] Sudden fish jumps are allowed; there is no hard position-jump rejection.")
+    print("[INFO] Green target width is measured live from bright vertical borders.")
+    print("[INFO] A/D direction always comes from CURRENT fish-vs-green position.")
+    print("[INFO] Relative motion is used only to brake before overshoot, never to choose the wrong direction.")
+    print("[INFO] Active full-screen debug I/O is disabled; image writes run asynchronously.")
+    print("[INFO] SPACE keeps the existing 220ms safety delay while A/D continues tracking.")
     print("")
 
     state = "IDLE"
@@ -2176,15 +3197,14 @@ def main():
     # Round/tracker state. These are hard-reset every time E starts a new cast.
     locked_bar = None
     fast_track_failures = 0
-
-    # Responsiveness fix state.
-    last_armed_full_reacquire = 0.0
-    armed_gate_blocked_since = None
-    armed_started_at = 0.0
     previous_fish_x = None
     previous_fish_time = None
     fish_velocity = 0.0
     previous_local_ui = None
+
+    previous_control_error = None
+    previous_control_time = None
+    relative_error_velocity = 0.0
 
     cached_progress = 0.0
     cached_progress_box = None
@@ -2195,6 +3215,9 @@ def main():
     last_progress_check = 0.0
     last_ready_check = 0.0
     last_fish_reference_check = 0.0
+
+    armed_fast_started_at = 0.0
+    last_fast_full_reacquire = 0.0
 
     tracker_cycles = 0
     tracker_fps_started = time.perf_counter()
@@ -2211,6 +3234,9 @@ def main():
         nonlocal previous_fish_time
         nonlocal fish_velocity
         nonlocal previous_local_ui
+        nonlocal previous_control_error
+        nonlocal previous_control_time
+        nonlocal relative_error_velocity
         nonlocal ready_visible_since
         nonlocal cached_progress
         nonlocal cached_progress_box
@@ -2232,6 +3258,11 @@ def main():
         previous_fish_time = None
         fish_velocity = 0.0
         previous_local_ui = None
+
+        previous_control_error = None
+        previous_control_time = None
+        relative_error_velocity = 0.0
+
         ready_visible_since = None
 
         cached_progress = 0.0
@@ -2254,9 +3285,8 @@ def main():
         nonlocal round_number
         nonlocal locked_bar
         nonlocal fast_track_failures
-        nonlocal last_armed_full_reacquire
-        nonlocal armed_gate_blocked_since
-        nonlocal armed_started_at
+        nonlocal armed_fast_started_at
+        nonlocal last_fast_full_reacquire
         global ACTIVE_MONITOR
 
         ACTIVE_MONITOR = monitor_index
@@ -2282,30 +3312,21 @@ def main():
 
         last_cast_at = time.monotonic()
 
-        # Critical v11 behavior:
-        # immediately start probing the previous fishing-bar position. No
-        # SCAN_INTERVAL wait and no waiting/bite notification is required.
-        locked_bar = last_known_bar_by_monitor.get(monitor_index)
+        # FAST-FOLLOW v3:
+        # Do not assume the next minigame is at any previous screen coordinate.
+        # ARMED_FAST dynamically scans the entire active monitor on every
+        # uncapped loop and reacts to the first real bar+fish frame.
+        locked_bar = None
         fast_track_failures = 0
-
-        last_armed_full_reacquire = 0.0
-        armed_gate_blocked_since = None
-        armed_started_at = time.monotonic()
-
+        armed_fast_started_at = time.monotonic()
+        last_fast_full_reacquire = 0.0
         state = "ARMED_FAST"
 
-        if locked_bar is not None:
-            print(
-                f"[STATE] Round {round_number}: ARMED_FAST "
-                f"(probing previous bar {locked_bar} immediately)",
-                flush=True,
-            )
-        else:
-            print(
-                f"[STATE] Round {round_number}: ARMED_FAST "
-                "(first round: searching for cyan bar immediately)",
-                flush=True,
-            )
+        print(
+            f"[STATE] Round {round_number}: ARMED_FAST "
+            "(dynamic full-monitor bar search; no fixed coordinates)",
+            flush=True,
+        )
 
     print("[STATE] IDLE", flush=True)
 
@@ -2356,173 +3377,173 @@ def main():
                     continue
 
                 # =========================================================
-                # ARMED_FAST: after E, acquire the NEW round immediately
+                # ARMED_FAST: FAST-FOLLOW v3 dynamic startup
                 # =========================================================
                 #
-                # The previous version returned to the normal screen-scanning
-                # cadence after E. That could waste the first part of a new
-                # minigame while the fish was already moving.
+                # NO fixed screen coordinates.
+                # NO previous-bar assumption.
+                # NO waiting/bite notification gate.
                 #
-                # v11 probes the known bar area as fast as possible. If the bar
-                # position is not known yet, it does a cheap cyan-bar search on
-                # the active monitor and locks it the instant it appears.
+                # Every uncapped loop:
+                #   1) one screenshot of the active monitor
+                #   2) cheap downscaled cyan-bar detection anywhere on screen
+                #   3) fish/green validation in the SAME screenshot
+                #   4) first usable fish frame -> A/D immediately
                 #
                 if (
                     state == "ARMED_FAST"
                     and ACTIVE_MONITOR in monitor_indices
                 ):
-                    armed_frame = None
-                    local_bar = None
-                    crop_origin = None
-                    local_ui = None
-
-                    # A bar is "confirmed" only when it is the one remembered
-                    # from a round that actually produced a valid minigame.
-                    # Anything else is a guess from a cyan blob that happened
-                    # to look bar-shaped, and the shortcuts below must not
-                    # trust it - otherwise the very first round throttles
-                    # itself waiting on a bogus position.
-                    armed_bar_confirmed = (
-                        locked_bar is not None
-                        and locked_bar
-                        == last_known_bar_by_monitor.get(ACTIVE_MONITOR)
+                    startup_frame = grab_monitor(
+                        sct,
+                        ACTIVE_MONITOR,
                     )
 
-                    if locked_bar is not None:
-                        (
-                            armed_frame,
-                            local_bar,
-                            crop_origin,
-                        ) = grab_locked_fishing_region(
-                            sct,
-                            ACTIVE_MONITOR,
-                            locked_bar,
+                    startup_ui = None
+                    startup_bar = None
+
+                    if startup_frame is not None:
+                        startup_candidates = (
+                            find_cyan_bar_candidates_dynamic(
+                                startup_frame
+                            )
                         )
 
-                        if armed_frame is not None:
-                            # The fish template match is the expensive part of
-                            # this loop (~25 ms). Run it only once the cheap
-                            # colour gate says the fish is actually there, so
-                            # the wait polls the bar hundreds of times a second
-                            # instead of a dozen. The gate can never blind the
-                            # script: after ARMED_GATE_SAFETY_INTERVAL of
-                            # uninterrupted "no", the match runs regardless.
-                            run_match = True
+                        for candidate_index, candidate in enumerate(startup_candidates):
+                            candidate_bar = candidate["box"]
 
-                            if ARMED_USE_FISH_GATE and armed_bar_confirmed:
-                                if fish_blob_present(armed_frame, local_bar):
-                                    armed_gate_blocked_since = None
-                                else:
-                                    if armed_gate_blocked_since is None:
-                                        armed_gate_blocked_since = now
-
-                                    run_match = (
-                                        now - armed_gate_blocked_since
-                                        >= ARMED_GATE_SAFETY_INTERVAL
-                                    )
-
-                                    if run_match:
-                                        armed_gate_blocked_since = now
-
-                            if run_match:
-                                local_ui = fast_track_minigame(
-                                    armed_frame,
-                                    local_bar,
-                                    previous_ui=None,
-                                )
-
-                    # If the previous bar location is unavailable or the UI
-                    # layout changed, reacquire the cyan bar directly.
-                    #
-                    # This costs a full-monitor screenshot plus a whole-screen
-                    # cyan search (~20 ms) and stock v11 paid it on EVERY loop
-                    # of the wait, even though the bar does not move between
-                    # rounds. It is now rate limited.
-                    if (
-                        (
-                            local_ui is None
-                            or not local_ui.get("valid")
-                        )
-                        and (
-                            not armed_bar_confirmed
-                            or now - last_armed_full_reacquire
-                            >= ARMED_FULL_REACQUIRE_INTERVAL
-                        )
-                    ):
-                        last_armed_full_reacquire = now
-
-                        full_armed_frame = grab_monitor(
-                            sct,
-                            ACTIVE_MONITOR,
-                        )
-
-                        if full_armed_frame is not None:
-                            bar_candidates, _ = find_cyan_bar_candidates(
-                                full_armed_frame
+                            candidate_ui = fast_track_minigame(
+                                startup_frame,
+                                candidate_bar,
+                                previous_ui=None,
+                                allow_startup_center=True,
                             )
 
-                            if bar_candidates:
-                                candidate_bar = bar_candidates[0]["box"]
+                            dbg_startup_row(
+                                round_number,
+                                ACTIVE_MONITOR,
+                                candidate_index,
+                                candidate_bar,
+                                candidate_ui,
+                            )
 
-                                if candidate_bar != locked_bar:
-                                    locked_bar = candidate_bar
+                            if candidate_ui.get(
+                                "control_ready"
+                            ):
+                                startup_ui = candidate_ui
+                                startup_bar = candidate_bar
+                                break
 
-                                    print(
-                                        f"[ARMED_FAST] Cyan bar appeared at "
-                                        f"{locked_bar} on M{ACTIVE_MONITOR}",
-                                        flush=True,
-                                    )
-
-                                (
-                                    armed_frame,
-                                    local_bar,
-                                    crop_origin,
-                                ) = grab_locked_fishing_region(
-                                    sct,
-                                    ACTIVE_MONITOR,
-                                    locked_bar,
-                                )
-
-                                if armed_frame is not None:
-                                    local_ui = fast_track_minigame(
-                                        armed_frame,
-                                        local_bar,
-                                        previous_ui=None,
-                                    )
+                    dbg_maybe_startup_image(
+                        startup_frame,
+                        {
+                            "round": round_number,
+                            "state": state,
+                            "monitor": ACTIVE_MONITOR,
+                            "candidate_count": (
+                                len(startup_candidates)
+                                if startup_frame is not None
+                                else 0
+                            ),
+                            "chosen_bar": startup_bar,
+                            "reason": dbg_ui_reason(startup_ui),
+                            "fish_source": (
+                                startup_ui.get("fish_source")
+                                if startup_ui
+                                else None
+                            ),
+                            "fish_score": (
+                                startup_ui.get("fish_score")
+                                if startup_ui
+                                else None
+                            ),
+                            "fish_x": (
+                                startup_ui.get("fish_center_x")
+                                if startup_ui
+                                else None
+                            ),
+                            "green_mode": (
+                                startup_ui.get("green_mode")
+                                if startup_ui
+                                else None
+                            ),
+                            "green_x": (
+                                startup_ui.get("zone_center_x")
+                                if startup_ui
+                                else None
+                            ),
+                        },
+                    )
 
                     if (
-                        local_ui is not None
-                        and local_ui.get("valid")
+                        startup_ui is not None
+                        and startup_bar is not None
                     ):
-                        # The fresh fish + fresh green target are visible NOW.
-                        # Start the high-speed controller on the very next loop,
-                        # with no normal scan delay in between.
+                        locked_bar = startup_bar
+
                         last_known_bar_by_monitor[
                             ACTIVE_MONITOR
                         ] = locked_bar
 
                         last_valid_minigame_at = now
                         fast_track_failures = 0
-                        previous_local_ui = dict(local_ui)
+                        previous_local_ui = None
+
+                        first_error = (
+                            startup_ui["fish_center_x"]
+                            - startup_ui["zone_center_x"]
+                        )
+
+                        first_band = max(
+                            CENTER_ENTER_MIN_PX,
+                            startup_ui["zone"][2]
+                            * CENTER_ENTER_WIDTH_RATIO,
+                        )
+
+                        if first_error < -first_band:
+                            first_key = "A"
+                            drive("A")
+
+                        elif first_error > first_band:
+                            first_key = "D"
+                            drive("D")
+
+                        else:
+                            first_key = "NONE"
+                            drive(None)
 
                         state = "FISHING"
 
-                        print(
-                            f"[STATE] Round {round_number}: "
-                            f"ARMED_FAST -> FISHING IMMEDIATELY "
-                            f"on M{ACTIVE_MONITOR}",
-                            flush=True,
+                        dbg_event(
+                            "instant_ad_start",
+                            round=round_number,
+                            monitor=ACTIVE_MONITOR,
+                            bar=locked_bar,
+                            first_key=first_key,
+                            first_error=first_error,
+                            fish_source=startup_ui.get("fish_source"),
+                            fish_score=startup_ui.get("fish_score"),
+                            fish_x=startup_ui.get("fish_center_x"),
+                            green_mode=startup_ui.get("green_mode"),
+                            green_x=startup_ui.get("zone_center_x"),
+                        )
+
+                        dbg_freeze(
+                            "instant_ad_start",
+                            round=round_number,
+                            first_key=first_key,
+                            bar=locked_bar,
                         )
 
                         print(
-                            f"[ARMED_FAST] Fresh fish/green acquired: "
-                            f"fishScore={local_ui.get('fish_score', 0):.3f} "
-                            f"greenMode={local_ui.get('green_mode', '?')}",
+                            f"[INSTANT-AD] Round {round_number}: "
+                            f"DYNAMIC BAR+FISH -> {first_key} NOW "
+                            f"error={first_error:+.1f}px "
+                            f"bar={locked_bar} "
+                            f"fishSource={startup_ui.get('fish_source', '?')} "
+                            f"greenMode={startup_ui.get('green_mode', '?')}",
                             flush=True,
                         )
-
-                        # No sleep at the end of this iteration because state
-                        # is now FISHING; next loop starts immediately.
 
                 # =========================================================
                 # FISHING: locked-region high-speed color tracker
@@ -2575,6 +3596,8 @@ def main():
 
                             continue
 
+                    dbg_capture_started = time.perf_counter()
+
                     fast_frame, local_bar, crop_origin = (
                         grab_locked_fishing_region(
                             sct,
@@ -2583,10 +3606,15 @@ def main():
                         )
                     )
 
+                    dbg_capture_ms = (
+                        time.perf_counter()
+                        - dbg_capture_started
+                    ) * 1000.0
+
                     if fast_frame is None:
                         fast_track_failures += 1
 
-                        if fast_track_failures >= 2:
+                        if fast_track_failures >= 7:
                             release_movement()
 
                         if fast_track_failures >= FAST_TRACK_FAIL_LIMIT:
@@ -2594,23 +3622,97 @@ def main():
 
                         continue
 
+                    dbg_detect_started = time.perf_counter()
+
                     local_ui = fast_track_minigame(
                         fast_frame,
                         local_bar,
                         previous_ui=previous_local_ui,
+                        allow_startup_center=False,
                     )
+
+                    dbg_detect_ms = (
+                        time.perf_counter()
+                        - dbg_detect_started
+                    ) * 1000.0
 
                     if not local_ui.get("valid"):
                         fast_track_failures += 1
 
-                        # One missed frame is tolerated; repeated misses release.
-                        if fast_track_failures >= 2:
+                        dbg_track_row(
+                            round_number,
+                            ACTIVE_MONITOR,
+                            state,
+                            local_ui,
+                            (
+                                "A"
+                                if held["A"]
+                                else (
+                                    "D"
+                                    if held["D"]
+                                    else "NONE"
+                                )
+                            ),
+                            fast_track_failures,
+                            capture_ms=dbg_capture_ms,
+                            detect_ms=dbg_detect_ms,
+                            loop_ms=(
+                                time.perf_counter()
+                                - loop_started
+                            ) * 1000.0,
+                        )
+
+                        dbg_maybe_active_image(
+                            fast_frame,
+                            {
+                                "round": round_number,
+                                "state": state,
+                                "monitor": ACTIVE_MONITOR,
+                                "reason": dbg_ui_reason(local_ui),
+                                "fish_source": local_ui.get("fish_source"),
+                                "fish_score": local_ui.get("fish_score"),
+                                "fish_x": local_ui.get("fish_center_x"),
+                                "green_mode": local_ui.get("green_mode"),
+                                "green_x": local_ui.get("zone_center_x"),
+                                "held_A": held["A"],
+                                "held_D": held["D"],
+                                "failures": fast_track_failures,
+                                "capture_ms": dbg_capture_ms,
+                                "detect_ms": dbg_detect_ms,
+                            },
+                        )
+
+                        # Keep the last A/D direction through a couple of
+                        # bad frames. A single detector miss must not make the
+                        # green target go AFK.
+                        if fast_track_failures >= 7:
                             release_movement()
 
-                        if fast_track_failures >= 3:
+                        if fast_track_failures >= 7:
                             previous_local_ui = None
 
                         if fast_track_failures >= FAST_TRACK_FAIL_LIMIT:
+                            dbg_event(
+                                "track_lost_reacquire",
+                                round=round_number,
+                                monitor=ACTIVE_MONITOR,
+                                failures=fast_track_failures,
+                                reason=dbg_ui_reason(local_ui),
+                                fish_source=local_ui.get("fish_source"),
+                                fish_score=local_ui.get("fish_score"),
+                                fish_x=local_ui.get("fish_center_x"),
+                                green_mode=local_ui.get("green_mode"),
+                                green_x=local_ui.get("zone_center_x"),
+                                bar=locked_bar,
+                            )
+
+                            dbg_freeze(
+                                "track_lost_reacquire",
+                                round=round_number,
+                                failures=fast_track_failures,
+                                reason=dbg_ui_reason(local_ui),
+                            )
+
                             print(
                                 f"[TRACK] Lost fish/green for "
                                 f"{fast_track_failures} frames -> reacquire",
@@ -2625,6 +3727,21 @@ def main():
                             reset_tracker()
                             state = "WAIT_CAST"
                             post_catch_started_at = now
+
+                            dbg_event(
+                                "fishing_to_wait_cast",
+                                round=round_number,
+                                monitor=ACTIVE_MONITOR,
+                                failures=fast_track_failures,
+                                reason=dbg_ui_reason(local_ui),
+                            )
+
+                            dbg_freeze(
+                                "fishing_to_wait_cast",
+                                round=round_number,
+                                failures=fast_track_failures,
+                                reason=dbg_ui_reason(local_ui),
+                            )
 
                             print(
                                 "[STATE] FISHING -> WAIT_CAST "
@@ -2666,63 +3783,160 @@ def main():
                     current_time = time.perf_counter()
 
                     # -----------------------------------------------------
-                    # v10 DIRECT CURRENT-POSITION CONTROL
+                    # FAST-FOLLOW v3 CURRENT-POSITION CONTROLLER
                     # -----------------------------------------------------
                     #
-                    # v9's velocity prediction could briefly keep pointing in
-                    # the OLD direction when the fish randomly reversed. That
-                    # is exactly the behavior we do NOT want here.
+                    # The sign of CURRENT error is the only thing allowed to
+                    # choose A vs D:
                     #
-                    # v10 therefore uses the current measured fish center and
-                    # current measured green center only. Every new frame can
-                    # reverse A <-> D immediately.
+                    #   fish left of green  -> A
+                    #   fish right of green -> D
                     #
-                    previous_fish_x = fish_x
-                    previous_fish_time = current_time
-                    fish_velocity = 0.0
-
-                    predicted_fish_x = fish_x
-                    lead = 0.0
-
+                    # Relative-error velocity is used only for EARLY RELEASE
+                    # while the target is rapidly approaching the center. It
+                    # can never command the opposite direction, which removes
+                    # the old "randomly shoots away" failure mode.
+                    #
                     error = (
                         fish_x
                         - green_x
                     )
 
-                    zone_width = float(ui["zone"][2])
+                    zone_width = float(
+                        ui["zone"][2]
+                    )
 
                     enter_band = max(
-                        CONTROL_ENTER_MIN_PX,
-                        zone_width * 0.035,
+                        CENTER_ENTER_MIN_PX,
+                        zone_width
+                        * CENTER_ENTER_WIDTH_RATIO,
                     )
 
                     release_band = max(
-                        CONTROL_RELEASE_MIN_PX,
-                        enter_band * 0.38,
+                        CENTER_RELEASE_MIN_PX,
+                        zone_width
+                        * CENTER_RELEASE_WIDTH_RATIO,
                     )
 
-                    # -----------------------------------------------------
-                    # v10 IMMEDIATE DIRECTION CONTROLLER
-                    # -----------------------------------------------------
-                    #
-                    # fish left of green  -> A immediately
-                    # fish right of green -> D immediately
-                    # centers overlap     -> release
-                    #
-                    # There is no velocity state allowed to override the sign
-                    # of the CURRENT measured error.
-                    #
+                    if (
+                        previous_control_error is not None
+                        and previous_control_time is not None
+                    ):
+                        control_dt = (
+                            current_time
+                            - previous_control_time
+                        )
+
+                        if control_dt > 0.0001:
+                            instant_rel_v = (
+                                error
+                                - previous_control_error
+                            ) / control_dt
+
+                            instant_rel_v = max(
+                                -RELATIVE_ERROR_MAX_PX_S,
+                                min(
+                                    RELATIVE_ERROR_MAX_PX_S,
+                                    instant_rel_v,
+                                ),
+                            )
+
+                            relative_error_velocity = (
+                                RELATIVE_ERROR_ALPHA
+                                * instant_rel_v
+                                + (
+                                    1.0
+                                    - RELATIVE_ERROR_ALPHA
+                                )
+                                * relative_error_velocity
+                            )
+
+                    previous_control_error = error
+                    previous_control_time = current_time
+
+                    predicted_for_brake = (
+                        error
+                        + relative_error_velocity
+                        * BRAKE_LOOKAHEAD_SECONDS
+                    )
+
+                    desired = "NONE"
+
                     if error < -enter_band:
-                        desired = "A"
-                        drive("A")
+                        # Correct direction is unconditionally LEFT/A.
+                        # If we're already closing rapidly, release a little
+                        # early instead of overshooting and oscillating.
+                        if (
+                            relative_error_velocity > 0
+                            and predicted_for_brake
+                            >= -release_band
+                        ):
+                            desired = "NONE"
+                            drive(None)
+                        else:
+                            desired = "A"
+                            drive("A")
 
                     elif error > enter_band:
-                        desired = "D"
-                        drive("D")
+                        # Correct direction is unconditionally RIGHT/D.
+                        if (
+                            relative_error_velocity < 0
+                            and predicted_for_brake
+                            <= release_band
+                        ):
+                            desired = "NONE"
+                            drive(None)
+                        else:
+                            desired = "D"
+                            drive("D")
 
                     else:
                         desired = "NONE"
                         drive(None)
+
+                    previous_fish_x = fish_x
+                    previous_fish_time = current_time
+                    fish_velocity = 0.0
+                    predicted_fish_x = fish_x
+                    lead = 0.0
+
+                    dbg_track_row(
+                        round_number,
+                        ACTIVE_MONITOR,
+                        state,
+                        ui,
+                        desired,
+                        fast_track_failures,
+                        capture_ms=dbg_capture_ms,
+                        detect_ms=dbg_detect_ms,
+                        loop_ms=(
+                            time.perf_counter()
+                            - loop_started
+                        ) * 1000.0,
+                    )
+
+                    dbg_maybe_active_image(
+                        fast_frame,
+                        {
+                            "round": round_number,
+                            "state": state,
+                            "monitor": ACTIVE_MONITOR,
+                            "reason": dbg_ui_reason(ui),
+                            "fish_source": ui.get("fish_source"),
+                            "fish_score": ui.get("fish_score"),
+                            "fish_x": fish_x,
+                            "green_mode": ui.get("green_mode"),
+                            "green_x": green_x,
+                            "green_w": zone_width,
+                            "error": error,
+                            "desired_key": desired,
+                            "held_A": held["A"],
+                            "held_D": held["D"],
+                            "failures": fast_track_failures,
+                            "capture_ms": dbg_capture_ms,
+                            "detect_ms": dbg_detect_ms,
+                        },
+                    )
 
                     raw_inside = bool(
                         fish_x
@@ -2898,6 +4112,7 @@ def main():
                             f"error={error:+.1f}px "
                             f"key={desired} "
                             f"greenMode={ui.get('green_mode', '?')} "
+                            f"fishSource={ui.get('fish_source', '?')} "
                             f"inside={'YES' if raw_inside else 'NO'} "
                             f"progress={cached_progress*100:.1f}% "
                             f"ready={cached_ready_score:.3f}/{READY_THRESHOLD:.2f}",
@@ -2958,6 +4173,24 @@ def main():
                         # the green target following the fish.
                         release_movement()
 
+                        dbg_event(
+                            "catch",
+                            round=round_number,
+                            monitor=ACTIVE_MONITOR,
+                            fish_x=fish_x,
+                            green_x=green_x,
+                            green_w=zone_width,
+                            error=error,
+                            desired_key=desired,
+                            ready_elapsed_ms=ready_elapsed * 1000.0,
+                        )
+
+                        dbg_freeze(
+                            "catch",
+                            round=round_number,
+                            ready_elapsed_ms=ready_elapsed * 1000.0,
+                        )
+
                         print(
                             f"[CATCH] Round {round_number}: "
                             f"ready visible for "
@@ -3003,7 +4236,8 @@ def main():
 
                     # Low-rate full monitor debug only.
                     if (
-                        now - last_debug_at
+                        ACTIVE_FULL_DEBUG
+                        and now - last_debug_at
                         >= DEBUG_SAVE_INTERVAL
                     ):
                         full_debug = grab_monitor(
@@ -3046,16 +4280,10 @@ def main():
                 else:
                     release_movement()
 
-                    # ARMED_FAST already did its own targeted acquisition above
-                    # and is the one window where the bar is about to appear.
-                    # Stock v11 fell through to here anyway and spent ~800 ms
-                    # per scan on detect_minigame + waiting + bite + cast over
-                    # the whole screen, which is what made the wait blind.
-                    # E has been pressed, so there is nothing here it needs.
                     if (
                         state == "ARMED_FAST"
                         and ARMED_SKIP_FULL_SCAN
-                        and now - armed_started_at
+                        and now - armed_fast_started_at
                         < ARMED_SKIP_FULL_SCAN_SECONDS
                     ):
                         pass
@@ -3315,6 +4543,32 @@ def main():
 
         finally:
             release_movement()
+
+            dbg_event(
+                "program_exit",
+                round=round_number,
+                state=state,
+                monitor=ACTIVE_MONITOR,
+            )
+
+            dbg_freeze(
+                "program_exit",
+                round=round_number,
+                state=state,
+            )
+
+            debug_zip = dbg_finalize()
+
+            if debug_zip is not None:
+                print(
+                    "[IMPORTANT] SEND THIS ZIP BACK TO CHATGPT:",
+                    flush=True,
+                )
+                print(
+                    f"[IMPORTANT] {debug_zip}",
+                    flush=True,
+                )
+
             print("[DONE] A/D released.", flush=True)
 
 
