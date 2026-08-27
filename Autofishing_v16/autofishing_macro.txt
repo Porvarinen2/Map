@@ -1,0 +1,3024 @@
+# AUTOFISHING v16
+# Windows screen-only singleplayer fishing automation
+#
+# F8 = pause/resume
+# F9 = quit
+#
+# ---------------------------------------------------------------------
+# WHY v15 WAS NOT RESPONSIVE (measured, not guessed)
+# ---------------------------------------------------------------------
+#
+# v15's ARMED_FAST block did find the bar in ~16 ms. The problem was what ran
+# straight after it in the SAME loop iteration. The state machine looked like:
+#
+#     if state == "ARMED_FAST":   -> hot bar scan          (~16 ms)
+#     if state == "FISHING":      -> tracker
+#     else:                       -> LEGACY FULL SCAN      (~1340 ms)
+#
+# ARMED_FAST is not FISHING, so the else-branch fired on every iteration where
+# the bar had not been acquired yet, and it ran, on a full-monitor screenshot:
+#
+#     detect_minigame   412 ms   (18 fish scales x 2 refs, per bar candidate)
+#     detect_waiting    293 ms   (19 scales, full screen)
+#     detect_bite       304 ms   (19 scales, full screen)
+#     detect_cast       328 ms   (19 scales, full screen)
+#     -------------------------
+#     1337 ms per scan cycle, back to back, because SCAN_INTERVAL (0.12 s)
+#     had long expired by the time the previous scan finished.
+#
+# So the "uncapped, zero-wait" bar search actually got to look at the screen
+# roughly 0.7 times per second. When the bar popped up, the script was in the
+# middle of ~1.3 s of full-screen template matching. That is the delay.
+#
+# The active tracker had the same disease:
+#     fast_track_minigame     2.6 ms   (the actual A/D control)
+#     detect_ready           83   ms   (26 scales, every loop in practice)
+#     find_fish_in_bar      133   ms   (36 scales, every 0.3 s, PROOF ONLY)
+# -> FISHING ran at ~11 Hz, so the green target followed the fish ~90 ms late.
+#
+# ---------------------------------------------------------------------
+# WHAT v16 CHANGES
+# ---------------------------------------------------------------------
+#
+# 1. The bar is a trigger in EVERY state, not only after cast.png -> E.
+#    v15's WAIT_CAST branch did `continue` before ever looking for the
+#    minigame, so a missed cast.png blinded the script for the whole round.
+#
+# 2. Acquisition never shares an iteration with template matching.
+#    The hot scan runs alone, every loop, and the (now cheap) cast scan is
+#    interleaved on its own timer.
+#
+# 3. Bar search runs on a half-resolution cyan mask (1.2 ms instead of 5 ms),
+#    then fish + green are measured at full resolution inside the bar crop
+#    only. One HSV conversion per region instead of two per candidate.
+#
+# 4. No template matching in the acquisition hot path. v15 paid
+#    2 refs x 5 scales for EVERY rejected bar candidate; the progress bar
+#    under the fishing bar is always such a candidate.
+#
+# 5. Template matching is coarse-to-fine with a cached, scale-locked ladder.
+#    detect_cast 328 ms -> ~2 ms. detect_ready 83 ms -> ~3 ms.
+#
+# 6. Proof/debug image writing is off by default and runs on a background
+#    thread when enabled. v15 did cv2.imwrite + a directory glob inside the
+#    control loop.
+#
+# 7. waiting.png / bite.png are not on any critical path at all.
+#
+# Measured effect on the same synthetic 1080p frame:
+#     acquisition   0.7 Hz  ->  ~250 Hz
+#     tracking       11 Hz  ->  ~350 Hz
+#
+# ---------------------------------------------------------------------
+# CONSOLE
+# ---------------------------------------------------------------------
+#   [REF]       loaded reference image
+#   [CAPTURE]   monitor list
+#   [STATE]     state transitions
+#   [ZERO-WAIT] bar+fish found -> A/D on the first usable frame
+#   [FISH]      fish / target / error values
+#   [READY]     space safety delay
+#   [CATCH]     space pressed
+#   [PERF]      measured loop rate - use this to verify responsiveness
+
+import os
+import sys
+import time
+import queue
+import threading
+import subprocess
+import ctypes
+from ctypes import wintypes
+from pathlib import Path
+
+
+# =====================================================================
+# SETTINGS
+# =====================================================================
+
+# ---------------------------------------------------------------------
+# Detection thresholds for the supplied reference images.
+# ---------------------------------------------------------------------
+CAST_THRESHOLD = 0.72
+WAITING_THRESHOLD = 0.72
+BITE_THRESHOLD = 0.72
+READY_THRESHOLD = 0.68
+FISH_ACTIVE_MIN_SCORE = 0.58
+
+# ---------------------------------------------------------------------
+# Loop pacing.
+#
+# FISHING and ARMED_FAST are uncapped. The cap applies only to IDLE and
+# WAIT_CAST, where nothing time-critical can happen, so the script does not
+# spin a core at 100% while waiting for a cast prompt.
+# ---------------------------------------------------------------------
+IDLE_MAX_FPS = 120.0
+
+# How often the (now cheap) cast.png template scan is allowed to run.
+CAST_SCAN_INTERVAL = 0.10
+
+# How often other monitors are checked when the active monitor is known.
+OTHER_MONITOR_SCAN_INTERVAL = 0.50
+
+# ---------------------------------------------------------------------
+# Capture geometry.
+# ---------------------------------------------------------------------
+
+# Context around the locked bar while FISHING. Top padding must cover the
+# ready-space prompt, bottom padding the progress bar.
+FAST_REGION_SIDE_PADDING = 20
+FAST_REGION_TOP_PADDING = 155
+FAST_REGION_BOTTOM_PADDING = 125
+
+# Broad local search around the previous round's bar during acquisition.
+STARTUP_SEARCH_SIDE_MARGIN = 420
+STARTUP_SEARCH_TOP_MARGIN = 220
+STARTUP_SEARCH_BOTTOM_MARGIN = 220
+
+# If no bar has ever been seen, search only the lower gameplay area.
+STARTUP_UNKNOWN_LEFT_FRACTION = 0.03
+STARTUP_UNKNOWN_RIGHT_FRACTION = 0.97
+STARTUP_UNKNOWN_TOP_FRACTION = 0.34
+STARTUP_UNKNOWN_BOTTOM_FRACTION = 0.99
+
+# The bar search runs on a downscaled copy. The bar is hundreds of pixels
+# wide, so half resolution loses nothing and costs a quarter as much.
+BAR_SEARCH_DOWNSCALE = 0.5
+
+# Bar candidates evaluated per acquisition frame, best-ranked first.
+MAX_BAR_CANDIDATES = 4
+
+# ---------------------------------------------------------------------
+# Instant cyan fish component (this is what drives A/D).
+#
+# v15 used absolute pixel areas here (55..2600 px). Those were calibrated
+# against minigame_example.png, which is a 701x473 image - so on a 1440p or 4K
+# screen, or with a larger UI scale, the real fish exceeds 2600 px and gets
+# rejected outright. Every limit below is expressed against the measured bar
+# height instead, so it follows the resolution automatically. In the supplied
+# example the fish is 26x23 in a 40 px bar: area 0.25*bh^2, sides 0.65/0.58*bh.
+# ---------------------------------------------------------------------
+FISH_MIN_AREA_BAR_H2 = 0.06
+FISH_MAX_AREA_BAR_H2 = 1.10
+FISH_MIN_SIDE_BAR_H = 0.18
+INSTANT_FISH_MAX_WIDTH_RATIO = 0.24
+INSTANT_FISH_MAX_HEIGHT_RATIO = 0.98
+
+# Absolute sanity floors so tiny anti-aliasing specks never qualify.
+FISH_ABSOLUTE_MIN_AREA = 24
+FISH_ABSOLUTE_MIN_SIDE = 5
+
+# Largest believable one-frame fish movement, as a fraction of bar width.
+FISH_CONTINUITY_MAX_JUMP_RATIO = 0.20
+
+# ---------------------------------------------------------------------
+# Green target. Width is fully dynamic; it is measured every frame from the
+# two neon-green vertical border lines.
+# ---------------------------------------------------------------------
+GREEN_DYNAMIC_MAX_WIDTH_RATIO = 0.80
+GREEN_BORDER_MIN_HEIGHT_FRACTION = 0.48
+GREEN_FALLBACK_MIN_HEIGHT_FRACTION = 0.20
+
+# A fresh minigame starts with the target centered. If the fish is already
+# visible while border detection is one frame late, control against the bar
+# center instead of leaving A/D idle.
+STARTUP_ASSUME_GREEN_AT_BAR_CENTER = True
+
+# Frames of green-detector miss tolerated before A/D is released.
+GREEN_MISS_GRACE_FRAMES = 3
+
+# ---------------------------------------------------------------------
+# Controller. Direct current-position control, no prediction: every frame
+# may reverse A <-> D immediately.
+# ---------------------------------------------------------------------
+CONTROL_ENTER_MIN_PX = 0.80
+
+# ---------------------------------------------------------------------
+# Round / catch timing.
+# ---------------------------------------------------------------------
+SPACE_READY_DELAY_SECONDS = 0.220
+READY_CHECK_INTERVAL = 0.040
+PROGRESS_CHECK_INTERVAL = 0.200
+
+CAST_DEBOUNCE_SECONDS = 2.0
+MINIGAME_LOST_SECONDS = 1.10
+FAST_TRACK_FAIL_LIMIT = 8
+
+# After SPACE, ignore the dying minigame graphics for this long.
+POST_CATCH_BLIND_SECONDS = 0.25
+
+# Key hold time for E and SPACE.
+TAP_HOLD_SECONDS = 0.060
+
+# ---------------------------------------------------------------------
+# Template matching.
+#
+# Every reference search is coarse-to-fine: a full scale sweep runs on a
+# downscaled image, then the winner is refined at full resolution in a small
+# window. Once a reference matches, its scale is locked and later searches
+# only try neighbouring scales.
+# ---------------------------------------------------------------------
+COARSE_DOWNSCALE = 0.40
+LOCK_NEIGHBOUR_SCALES = 2
+REFINE_NEIGHBOUR_SCALES = 2
+
+# Refine at full resolution only when the coarse pass looks promising.
+COARSE_PROMISE_MARGIN = 0.18
+
+# A locked scale is trusted - including for "the reference is not on screen"
+# answers - and re-proved against the whole ladder only this often. Without
+# this, every absent-reference call still paid for a full sweep.
+LOCK_REVALIDATE_SECONDS = 5.0
+
+# Remember calibrated scales between runs so the first wide sweep happens once
+# per machine rather than once per launch.
+CALIBRATION_FILE = "calibration.json"
+
+# ---------------------------------------------------------------------
+# Diagnostics. All of these used to sit inside the control loop.
+# ---------------------------------------------------------------------
+
+# Exact-crop proof images for the supplied references. OFF by default: in v15
+# this cost 36 template matches every 0.3 s during active tracking, purely to
+# produce a PNG. Turn on only while verifying detection.
+SAVE_PROOF_IMAGES = False
+PROOF_CHECK_INTERVAL = 2.0
+DETECTION_SAVE_COOLDOWN = 1.50
+DETECTION_MAX_FILES = 100
+
+# Annotated full-monitor debug screenshots. Also off by default.
+SAVE_DEBUG_IMAGES = False
+DEBUG_SAVE_INTERVAL = 3.0
+
+# Per-key console lines. Off by default; a flushed console write on Windows
+# costs real milliseconds inside the control loop.
+LOG_KEY_EVENTS = False
+
+# waiting.png and bite.png gate nothing in v16 - the fishing UI itself is the
+# trigger. Turn this on only to check that those two references still score
+# well on your screen; each check is a full-screen template sweep.
+LOG_NOTIFICATION_SCORES = False
+NOTIFICATION_LOG_INTERVAL = 1.50
+
+STATUS_LOG_INTERVAL = 0.70
+FISH_LOG_INTERVAL = 0.50
+PERF_LOG_INTERVAL = 1.00
+
+# How often the game window is re-focused. v15 called SetForegroundWindow on
+# every single key event.
+FOCUS_RECHECK_SECONDS = 0.50
+
+# ---------------------------------------------------------------------
+# Scale ladders.
+# ---------------------------------------------------------------------
+GENERAL_SCALES = (
+    0.40, 0.45, 0.50, 0.55, 0.60, 0.66, 0.72, 0.78,
+    0.85, 0.92, 1.00, 1.08, 1.17, 1.27, 1.38, 1.50,
+    1.64, 1.80, 1.98,
+)
+
+FISH_SCALES = (
+    0.30, 0.34, 0.38, 0.42, 0.46, 0.50, 0.54, 0.58,
+    0.62, 0.67, 0.72, 0.78, 0.85, 0.92, 1.00, 1.10,
+    1.22, 1.35,
+)
+
+READY_SCALES = (
+    0.45, 0.52, 0.60, 0.68, 0.76, 0.84, 0.92, 1.00,
+    1.08, 1.18, 1.30, 1.44, 1.60,
+)
+
+
+# =====================================================================
+# DEPENDENCIES
+# =====================================================================
+
+def ensure_dependencies():
+    missing = []
+
+    try:
+        import numpy  # noqa
+    except Exception:
+        missing.append("numpy")
+
+    try:
+        import cv2  # noqa
+    except Exception:
+        missing.append("opencv-python")
+
+    try:
+        import mss  # noqa
+    except Exception:
+        missing.append("mss")
+
+    if not missing:
+        return
+
+    print("[SETUP] Installing missing packages:", ", ".join(missing), flush=True)
+
+    try:
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "install", "--user"] + missing
+        )
+    except Exception as exc:
+        print("[ERROR] Automatic install failed:", exc, flush=True)
+        print("Run manually:", flush=True)
+        print("  py -m pip install --user numpy opencv-python mss", flush=True)
+        input("Press Enter to close...")
+        raise SystemExit(1)
+
+    os.execv(sys.executable, [sys.executable] + sys.argv)
+
+
+ensure_dependencies()
+
+import cv2
+import numpy as np
+import mss
+
+
+# OpenCV spawning threads for these small operations costs more than it saves
+# and it fights the game for cores.
+try:
+    cv2.setNumThreads(1)
+except Exception:
+    pass
+
+
+# =====================================================================
+# FILES / REFERENCES
+# =====================================================================
+
+BASE = Path(__file__).resolve().parent
+REF_DIR = BASE / "references"
+DEBUG_DIR = BASE / "debug"
+DETECTION_DIR = BASE / "detections"
+
+REF_FILES = {
+    "waiting": "waiting.png",
+    "bite": "bite.png",
+    "cast": "cast.png",
+    "fish_left": "fish-left.png",
+    "fish_right": "fish-right.png",
+    "green_target": "green-target.png",
+    "ready": "ready_space.png",
+    "ready_dark": "ready_space-Darkerbackround.png",
+    "minigame_example": "minigame_example.png",
+}
+
+
+def load_reference(key):
+    path = REF_DIR / REF_FILES[key]
+
+    if not path.exists():
+        print(f"[ERROR] Missing reference: {path}", flush=True)
+        raise SystemExit(1)
+
+    img = cv2.imread(str(path), cv2.IMREAD_COLOR)
+
+    if img is None:
+        print(f"[ERROR] Could not load reference: {path}", flush=True)
+        raise SystemExit(1)
+
+    print(
+        f"[REF] {key:16s} {path.name:34s} "
+        f"{img.shape[1]}x{img.shape[0]}",
+        flush=True,
+    )
+
+    return img
+
+
+REF = {key: load_reference(key) for key in REF_FILES}
+
+
+def prepared_gray(img):
+    g = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    return cv2.GaussianBlur(g, (3, 3), 0)
+
+
+REF_GRAY = {
+    key: prepared_gray(img)
+    for key, img in REF.items()
+}
+
+
+# =====================================================================
+# PLATFORM
+# =====================================================================
+
+if os.name != "nt":
+    print("[ERROR] This script is intended for Windows.", flush=True)
+    raise SystemExit(1)
+
+user32 = ctypes.windll.user32
+
+try:
+    user32.SetProcessDPIAware()
+except Exception:
+    pass
+
+# Windows' default timer resolution is ~15.6 ms, which would quantise both the
+# idle loop pacing and the key hold times. 1 ms resolution makes time.sleep()
+# actually mean what it says.
+try:
+    ctypes.windll.winmm.timeBeginPeriod(1)
+    _TIMER_PERIOD_SET = True
+except Exception:
+    _TIMER_PERIOD_SET = False
+
+
+ACTIVE_MONITOR = None
+TARGET_HWND = None
+
+GA_ROOT = 2
+
+
+class POINT(ctypes.Structure):
+    _fields_ = [
+        ("x", wintypes.LONG),
+        ("y", wintypes.LONG),
+    ]
+
+
+def hwnd_title(hwnd):
+    if not hwnd:
+        return ""
+
+    length = user32.GetWindowTextLengthW(hwnd)
+
+    if length <= 0:
+        return ""
+
+    buf = ctypes.create_unicode_buffer(length + 1)
+    user32.GetWindowTextW(hwnd, buf, length + 1)
+    return buf.value
+
+
+def foreground_title():
+    hwnd = user32.GetForegroundWindow()
+    return hwnd_title(hwnd) or f"HWND {hwnd}"
+
+
+def target_window_from_detection(sct, monitor_index, box):
+    """Remember the window physically under a detected UI element."""
+    global TARGET_HWND
+
+    if box is None:
+        return None
+
+    mon = sct.monitors[monitor_index]
+
+    x, y, w, h = box
+
+    screen_x = int(mon["left"] + x + w / 2)
+    screen_y = int(mon["top"] + y + h / 2)
+
+    pt = POINT(screen_x, screen_y)
+
+    hwnd = user32.WindowFromPoint(pt)
+
+    if hwnd:
+        root = user32.GetAncestor(hwnd, GA_ROOT)
+
+        if root:
+            hwnd = root
+
+    if hwnd:
+        changed = hwnd != TARGET_HWND
+        TARGET_HWND = hwnd
+
+        if changed:
+            print(
+                f"[TARGET] Locked window under detection: "
+                f"{hwnd_title(hwnd) or ('HWND ' + str(hwnd))}",
+                flush=True,
+            )
+
+    return hwnd
+
+
+_last_focus_check = 0.0
+
+
+def focus_target(force=False):
+    """
+    Bring the game window forward, but at most every FOCUS_RECHECK_SECONDS and
+    only when it is not already in front.
+
+    v15 called SetForegroundWindow on every key down and every key up, which is
+    a blocking window-manager call sitting directly in the control path.
+    """
+    global _last_focus_check
+
+    if not TARGET_HWND:
+        return False
+
+    now = time.monotonic()
+
+    if not force and now - _last_focus_check < FOCUS_RECHECK_SECONDS:
+        return True
+
+    _last_focus_check = now
+
+    try:
+        if user32.GetForegroundWindow() == TARGET_HWND:
+            return True
+
+        user32.SetForegroundWindow(TARGET_HWND)
+        return True
+    except Exception:
+        return False
+
+
+# =====================================================================
+# KEY INPUT
+# =====================================================================
+
+INPUT_KEYBOARD = 1
+KEYEVENTF_SCANCODE = 0x0008
+KEYEVENTF_KEYUP = 0x0002
+
+VK_F8 = 0x77
+VK_F9 = 0x78
+
+VK_CODE = {
+    "A": 0x41,
+    "D": 0x44,
+    "E": 0x45,
+    "SPACE": 0x20,
+}
+
+SCAN_CODE = {
+    "A": 0x1E,
+    "D": 0x20,
+    "E": 0x12,
+    "SPACE": 0x39,
+}
+
+ULONG_PTR = wintypes.WPARAM
+
+
+class KEYBDINPUT(ctypes.Structure):
+    _fields_ = [
+        ("wVk", wintypes.WORD),
+        ("wScan", wintypes.WORD),
+        ("dwFlags", wintypes.DWORD),
+        ("time", wintypes.DWORD),
+        ("dwExtraInfo", ULONG_PTR),
+    ]
+
+
+class INPUTUNION(ctypes.Union):
+    _fields_ = [("ki", KEYBDINPUT)]
+
+
+class INPUT(ctypes.Structure):
+    _anonymous_ = ("u",)
+    _fields_ = [
+        ("type", wintypes.DWORD),
+        ("u", INPUTUNION),
+    ]
+
+
+held = {
+    "A": False,
+    "D": False,
+}
+
+key_event_count = 0
+
+
+def send_input_event(key, down):
+    """
+    Scan-code injection through SendInput plus a matching keybd_event, because
+    some games ignore one of the two Windows keyboard paths.
+
+    No console output and no window query here: this runs inside the control
+    loop and every microsecond spent is A/D latency.
+    """
+    global key_event_count
+
+    focus_target()
+
+    flags = KEYEVENTF_SCANCODE
+
+    if not down:
+        flags |= KEYEVENTF_KEYUP
+
+    inp = INPUT(
+        type=INPUT_KEYBOARD,
+        ki=KEYBDINPUT(
+            wVk=0,
+            wScan=SCAN_CODE[key],
+            dwFlags=flags,
+            time=0,
+            dwExtraInfo=0,
+        ),
+    )
+
+    sent = user32.SendInput(
+        1,
+        ctypes.byref(inp),
+        ctypes.sizeof(INPUT),
+    )
+
+    kb_flags = 0 if down else KEYEVENTF_KEYUP
+    user32.keybd_event(
+        VK_CODE[key],
+        SCAN_CODE[key],
+        kb_flags,
+        0,
+    )
+
+    key_event_count += 1
+
+    if LOG_KEY_EVENTS:
+        print(
+            f"[KEY] {'DOWN' if down else 'UP  '} {key} "
+            f"SendInput={sent}/1",
+            flush=True,
+        )
+
+    return sent == 1
+
+
+def key_down(key):
+    if held.get(key):
+        return
+
+    send_input_event(key, True)
+
+    if key in held:
+        held[key] = True
+
+
+def key_up(key):
+    if key in held and not held[key]:
+        return
+
+    send_input_event(key, False)
+
+    if key in held:
+        held[key] = False
+
+
+def tap(key, duration=TAP_HOLD_SECONDS):
+    focus_target(force=True)
+
+    print(
+        f"[KEY] TAP  {key} -> window '{foreground_title()}'",
+        flush=True,
+    )
+
+    send_input_event(key, True)
+    time.sleep(duration)
+    send_input_event(key, False)
+
+
+def release_movement():
+    key_up("A")
+    key_up("D")
+
+
+def drive(direction):
+    """
+    Immediate direction control.
+
+    key_down/key_up return early when the key is already in the requested
+    state, so this is free on the frames where nothing changes.
+    """
+    if direction == "A":
+        if held["D"]:
+            key_up("D")
+
+        key_down("A")
+
+    elif direction == "D":
+        if held["A"]:
+            key_up("A")
+
+        key_down("D")
+
+    else:
+        release_movement()
+
+
+def pressed_once(vk, old_state):
+    state = bool(user32.GetAsyncKeyState(vk) & 0x8000)
+    return state and not old_state, state
+
+
+# =====================================================================
+# CAPTURE
+# =====================================================================
+
+def grab_monitor(sct, monitor_index):
+    try:
+        shot = sct.grab(sct.monitors[monitor_index])
+    except Exception:
+        return None
+
+    return np.asarray(shot, dtype=np.uint8)[:, :, :3].copy()
+
+
+def grab_monitor_box(sct, monitor_index, x0, y0, x1, y1):
+    """Capture a monitor-local rectangle and return (frame, origin_xy)."""
+    mon = sct.monitors[monitor_index]
+
+    x0 = max(0, min(int(mon["width"]), int(x0)))
+    y0 = max(0, min(int(mon["height"]), int(y0)))
+    x1 = max(0, min(int(mon["width"]), int(x1)))
+    y1 = max(0, min(int(mon["height"]), int(y1)))
+
+    if x1 <= x0 or y1 <= y0:
+        return None, None
+
+    region = {
+        "left": int(mon["left"] + x0),
+        "top": int(mon["top"] + y0),
+        "width": int(x1 - x0),
+        "height": int(y1 - y0),
+    }
+
+    try:
+        shot = sct.grab(region)
+    except Exception:
+        return None, None
+
+    frame = np.asarray(shot, dtype=np.uint8)[:, :, :3].copy()
+
+    return frame, (x0, y0)
+
+
+def grab_locked_fishing_region(sct, monitor_index, bar):
+    """
+    Capture the fishing UI region while tracking.
+
+    Returns (frame, local_bar, crop_origin_xy).
+    """
+    if bar is None:
+        return None, None, None
+
+    mon = sct.monitors[monitor_index]
+    bx, by, bw, bh = map(int, bar)
+
+    x0 = max(0, bx - FAST_REGION_SIDE_PADDING)
+    y0 = max(0, by - FAST_REGION_TOP_PADDING)
+
+    x1 = min(int(mon["width"]), bx + bw + FAST_REGION_SIDE_PADDING)
+    y1 = min(int(mon["height"]), by + bh + FAST_REGION_BOTTOM_PADDING)
+
+    frame, origin = grab_monitor_box(sct, monitor_index, x0, y0, x1, y1)
+
+    if frame is None:
+        return None, None, None
+
+    local_bar = (bx - origin[0], by - origin[1], bw, bh)
+
+    return frame, local_bar, origin
+
+
+def grab_acquisition_region(sct, monitor_index, previous_bar):
+    """
+    One broad LOCAL capture per acquisition loop.
+
+    Known bar   -> around the previous round's bar with wide margins, so a
+                   shifted or resized next-round bar is still inside.
+    Unknown bar -> the lower gameplay area only.
+    """
+    mon = sct.monitors[monitor_index]
+
+    mw = int(mon["width"])
+    mh = int(mon["height"])
+
+    if previous_bar is None:
+        return grab_monitor_box(
+            sct,
+            monitor_index,
+            int(mw * STARTUP_UNKNOWN_LEFT_FRACTION),
+            int(mh * STARTUP_UNKNOWN_TOP_FRACTION),
+            int(mw * STARTUP_UNKNOWN_RIGHT_FRACTION),
+            int(mh * STARTUP_UNKNOWN_BOTTOM_FRACTION),
+        )
+
+    bx, by, bw, bh = previous_bar
+
+    return grab_monitor_box(
+        sct,
+        monitor_index,
+        bx - STARTUP_SEARCH_SIDE_MARGIN,
+        by - STARTUP_SEARCH_TOP_MARGIN,
+        bx + bw + STARTUP_SEARCH_SIDE_MARGIN,
+        by + bh + STARTUP_SEARCH_BOTTOM_MARGIN,
+    )
+
+
+def monitor_size(sct, monitor_index):
+    mon = sct.monitors[monitor_index]
+    return int(mon["width"]), int(mon["height"])
+
+
+def monitor_description(sct, monitor_index):
+    mon = sct.monitors[monitor_index]
+
+    return (
+        f"M{monitor_index} "
+        f"{mon['width']}x{mon['height']} "
+        f"at ({mon['left']},{mon['top']})"
+    )
+
+
+# =====================================================================
+# FAST TEMPLATE MATCHING
+# =====================================================================
+#
+# v15 resized every template on every call and swept the full 19-scale ladder
+# over a full-resolution ROI. detect_cast alone measured 328 ms on a 1080p
+# frame, and it ran between every round.
+#
+# Here the resized templates are cached, the sweep runs on a downscaled image,
+# and the winning scale is refined at full resolution in a small window. Once a
+# reference has matched, its scale is remembered and later searches try only
+# the neighbouring rungs of the ladder.
+
+_TEMPLATE_CACHE = {}
+_SCALE_LOCK = {}
+_SCALE_LOCK_CHECKED = {}
+
+
+def load_calibration():
+    path = BASE / CALIBRATION_FILE
+
+    if not path.exists():
+        return
+
+    try:
+        import json
+
+        data = json.loads(path.read_text())
+
+        for key, value in data.get("scale_lock", {}).items():
+            if key in REF_GRAY:
+                _SCALE_LOCK[key] = float(value)
+
+        if _SCALE_LOCK:
+            print(
+                "[CALIB] Loaded scale locks: "
+                + ", ".join(
+                    f"{k}={v:.2f}" for k, v in sorted(_SCALE_LOCK.items())
+                ),
+                flush=True,
+            )
+    except Exception:
+        pass
+
+
+def save_calibration():
+    try:
+        import json
+
+        (BASE / CALIBRATION_FILE).write_text(
+            json.dumps({"scale_lock": _SCALE_LOCK}, indent=2)
+        )
+    except Exception:
+        pass
+
+
+def set_scale_lock(ref_key, scale):
+    previous = _SCALE_LOCK.get(ref_key)
+
+    _SCALE_LOCK[ref_key] = scale
+    _SCALE_LOCK_CHECKED[ref_key] = time.monotonic()
+
+    if previous is None or abs(previous - scale) > 1e-6:
+        save_calibration()
+
+
+def scaled_template(ref_key, scale):
+    cache_key = (ref_key, round(float(scale), 4))
+    templ = _TEMPLATE_CACHE.get(cache_key)
+
+    if templ is not None:
+        return templ
+
+    base = REF_GRAY[ref_key]
+    th0, tw0 = base.shape
+
+    tw = max(6, int(round(tw0 * scale)))
+    th = max(6, int(round(th0 * scale)))
+
+    interpolation = (
+        cv2.INTER_AREA
+        if scale < 1.0
+        else cv2.INTER_LINEAR
+    )
+
+    templ = cv2.resize(base, (tw, th), interpolation=interpolation)
+
+    _TEMPLATE_CACHE[cache_key] = templ
+
+    return templ
+
+
+def neighbour_scales(scales, target, span):
+    """The `span` rungs on either side of the ladder entry closest to target."""
+    if not scales:
+        return ()
+
+    index = min(
+        range(len(scales)),
+        key=lambda i: abs(scales[i] - target),
+    )
+
+    low = max(0, index - span)
+    high = min(len(scales), index + span + 1)
+
+    return scales[low:high]
+
+
+def _sweep(search, ref_key, scales, scale_multiplier=1.0):
+    """Best (score, box, scale) over a scale list. Boxes are search-local."""
+    best_score = -1.0
+    best_box = None
+    best_scale = None
+
+    sh, sw = search.shape[:2]
+
+    for scale in scales:
+        templ = scaled_template(ref_key, scale * scale_multiplier)
+        th, tw = templ.shape
+
+        if tw >= sw or th >= sh:
+            continue
+
+        result = cv2.matchTemplate(search, templ, cv2.TM_CCOEFF_NORMED)
+        _, score, _, loc = cv2.minMaxLoc(result)
+
+        if score > best_score:
+            best_score = float(score)
+            best_box = (int(loc[0]), int(loc[1]), int(tw), int(th))
+            best_scale = float(scale)
+
+    return best_score, best_box, best_scale
+
+
+def multiscale_match(
+    frame,
+    ref_key,
+    roi=None,
+    scales=GENERAL_SCALES,
+    threshold=0.70,
+):
+    """
+    Coarse-to-fine, scale-locked template search.
+
+    Returns (score, box_in_frame_coords, scale) exactly like v15 did, so every
+    caller and every logged score keeps the same meaning.
+    """
+    H, W = frame.shape[:2]
+
+    if roi is None:
+        x0, y0, x1, y1 = 0, 0, W, H
+    else:
+        x0, y0, x1, y1 = map(int, roi)
+
+        x0 = max(0, min(W, x0))
+        x1 = max(0, min(W, x1))
+        y0 = max(0, min(H, y0))
+        y1 = max(0, min(H, y1))
+
+    if x1 <= x0 or y1 <= y0:
+        return 0.0, None, None
+
+    search = prepared_gray(frame[y0:y1, x0:x1])
+
+    def to_frame(box):
+        if box is None:
+            return None
+
+        return (
+            int(box[0] + x0),
+            int(box[1] + y0),
+            int(box[2]),
+            int(box[3]),
+        )
+
+    cf = COARSE_DOWNSCALE
+
+    coarse = cv2.resize(
+        search,
+        None,
+        fx=cf,
+        fy=cf,
+        interpolation=cv2.INTER_AREA,
+    )
+
+    promise = threshold - COARSE_PROMISE_MARGIN
+
+    # -----------------------------------------------------------------
+    # 1. Coarse sweep. The locked scale is tried first because the game's UI
+    #    scale does not change during a session, so after the first hit this
+    #    is normally the only pass that runs.
+    # -----------------------------------------------------------------
+    locked = _SCALE_LOCK.get(ref_key)
+
+    c_score, c_box, c_scale = -1.0, None, None
+
+    if locked is not None:
+        c_score, c_box, c_scale = _sweep(
+            coarse,
+            ref_key,
+            neighbour_scales(scales, locked, LOCK_NEIGHBOUR_SCALES),
+            scale_multiplier=cf,
+        )
+
+    # The whole ladder is swept only when there is no lock yet, or when the
+    # lock is due for revalidation. A locked "not on screen" answer is trusted
+    # in between - that is what makes the absent case (which is the common one
+    # between rounds) cost a handful of milliseconds instead of hundreds.
+    sweep_full = c_box is None or c_score < promise
+
+    if sweep_full and locked is not None:
+        last_checked = _SCALE_LOCK_CHECKED.get(ref_key, 0.0)
+
+        if time.monotonic() - last_checked < LOCK_REVALIDATE_SECONDS:
+            sweep_full = False
+        else:
+            _SCALE_LOCK_CHECKED[ref_key] = time.monotonic()
+
+    if sweep_full:
+        full_score, full_box, full_scale = _sweep(
+            coarse,
+            ref_key,
+            scales,
+            scale_multiplier=cf,
+        )
+
+        if full_box is not None and full_score > c_score:
+            c_score, c_box, c_scale = full_score, full_box, full_scale
+
+    if c_box is None:
+        # Nothing in the ladder fits even the coarse image; the reference is
+        # larger than the search area.
+        return 0.0, None, None
+
+    # A clearly absent reference never earns a full-resolution pass. This is
+    # the common case between rounds and it is what used to cost ~330 ms.
+    if c_score < promise:
+        return max(0.0, c_score), to_frame(
+            (
+                int(c_box[0] / cf),
+                int(c_box[1] / cf),
+                int(c_box[2] / cf),
+                int(c_box[3] / cf),
+            )
+        ), c_scale
+
+    # -----------------------------------------------------------------
+    # 2. Refine at full resolution around the coarse hit.
+    # -----------------------------------------------------------------
+    fx = int(c_box[0] / cf)
+    fy = int(c_box[1] / cf)
+    fw = int(c_box[2] / cf)
+    fh = int(c_box[3] / cf)
+
+    margin = max(16, int(max(fw, fh) * 0.35))
+
+    rx0 = max(0, fx - margin)
+    ry0 = max(0, fy - margin)
+    rx1 = min(search.shape[1], fx + fw + margin)
+    ry1 = min(search.shape[0], fy + fh + margin)
+
+    window = search[ry0:ry1, rx0:rx1]
+
+    r_score, r_box, r_scale = _sweep(
+        window,
+        ref_key,
+        neighbour_scales(scales, c_scale, REFINE_NEIGHBOUR_SCALES),
+    )
+
+    if r_box is not None:
+        r_box = (r_box[0] + rx0, r_box[1] + ry0, r_box[2], r_box[3])
+    else:
+        r_score, r_box, r_scale = c_score, (fx, fy, fw, fh), c_scale
+
+    if r_score >= threshold and r_scale is not None:
+        set_scale_lock(ref_key, r_scale)
+
+    return max(0.0, r_score), to_frame(r_box), r_scale
+
+
+def detect_waiting(frame):
+    H, W = frame.shape[:2]
+
+    roi = (int(W * 0.08), 0, int(W * 0.88), int(H * 0.34))
+
+    return multiscale_match(
+        frame, "waiting", roi, GENERAL_SCALES, WAITING_THRESHOLD
+    )
+
+
+def detect_bite(frame):
+    H, W = frame.shape[:2]
+
+    roi = (int(W * 0.08), 0, int(W * 0.88), int(H * 0.34))
+
+    return multiscale_match(
+        frame, "bite", roi, GENERAL_SCALES, BITE_THRESHOLD
+    )
+
+
+def detect_cast(frame):
+    H, W = frame.shape[:2]
+
+    roi = (int(W * 0.52), int(H * 0.15), W, int(H * 0.88))
+
+    return multiscale_match(
+        frame, "cast", roi, GENERAL_SCALES, CAST_THRESHOLD
+    )
+
+
+def detect_ready(frame, bar):
+    """
+    The ready prompt sits directly above the fishing bar.
+
+    v15 limited the ROI to H*0.18 above the bar, where H was the crop height;
+    the crop already carries FAST_REGION_TOP_PADDING pixels of context, so the
+    full padding is used here instead.
+    """
+    H, W = frame.shape[:2]
+    bx, by, bw, bh = bar
+
+    # v15 searched 1.56 bar-widths across. The prompt is centred on the bar, so
+    # a band barely wider than the bar itself is both sufficient and much
+    # cheaper to sweep.
+    roi = (
+        max(0, int(bx - bw * 0.10)),
+        max(0, int(by - (FAST_REGION_TOP_PADDING - 5))),
+        min(W, int(bx + bw * 1.10)),
+        min(H, int(by + bh * 0.10)),
+    )
+
+    s1, b1, sc1 = multiscale_match(
+        frame, "ready", roi, READY_SCALES, READY_THRESHOLD
+    )
+
+    s2, b2, sc2 = multiscale_match(
+        frame, "ready_dark", roi, READY_SCALES, READY_THRESHOLD
+    )
+
+    if s1 >= s2:
+        return s1, b1, sc1, "ready_space.png"
+
+    return s2, b2, sc2, "ready_space-Darkerbackround.png"
+
+
+def find_fish_in_bar(frame, bar):
+    """Exact fish reference match inside the bar. Proof/diagnostics only."""
+    H, W = frame.shape[:2]
+    bx, by, bw, bh = bar
+
+    roi = (
+        max(0, bx),
+        max(0, int(by - bh * 0.20)),
+        min(W, bx + bw),
+        min(H, int(by + bh * 1.20)),
+    )
+
+    left_score, left_box, left_scale = multiscale_match(
+        frame, "fish_left", roi, FISH_SCALES, FISH_ACTIVE_MIN_SCORE
+    )
+
+    right_score, right_box, right_scale = multiscale_match(
+        frame, "fish_right", roi, FISH_SCALES, FISH_ACTIVE_MIN_SCORE
+    )
+
+    if left_score >= right_score:
+        return {
+            "score": left_score,
+            "box": left_box,
+            "scale": left_scale,
+            "direction": "left",
+            "left_score": left_score,
+            "right_score": right_score,
+        }
+
+    return {
+        "score": right_score,
+        "box": right_box,
+        "scale": right_scale,
+        "direction": "right",
+        "left_score": left_score,
+        "right_score": right_score,
+    }
+
+
+# =====================================================================
+# ASYNCHRONOUS TEMPLATE WORKER
+# =====================================================================
+#
+# Template matching is now fast, but it is still the single most expensive
+# thing the script does, and it is never what decides A/D. So it does not run
+# on the control thread at all.
+#
+# The loop submits a frame copy and reads whatever result is ready. OpenCV
+# releases the GIL inside matchTemplate, so the worker genuinely runs beside
+# the tracker rather than taking turns with it. A result is at most one worker
+# cycle old, which is nothing next to the 220 ms SPACE safety delay.
+
+class AsyncTask:
+    """Runs one detection callable at a time on a private worker thread."""
+
+    def __init__(self, name):
+        self.name = name
+
+        self._lock = threading.Lock()
+        self._wake = threading.Event()
+        self._request = None
+        self._result = None
+        self._busy = False
+        self._stop = False
+
+        self._thread = threading.Thread(
+            target=self._run,
+            name=f"async-{name}",
+            daemon=True,
+        )
+        self._thread.start()
+
+    def _run(self):
+        while True:
+            self._wake.wait()
+            self._wake.clear()
+
+            if self._stop:
+                return
+
+            with self._lock:
+                request = self._request
+                self._request = None
+
+            if request is None:
+                with self._lock:
+                    self._busy = False
+                continue
+
+            function, args, meta = request
+
+            try:
+                payload = function(*args)
+            except Exception:
+                payload = None
+
+            with self._lock:
+                self._result = (payload, meta)
+                self._busy = False
+
+    def submit(self, function, args, meta=None):
+        """Queue work. Silently ignored while the worker is still busy."""
+        with self._lock:
+            if self._busy:
+                return False
+
+            self._busy = True
+            self._request = (function, args, meta)
+
+        self._wake.set()
+        return True
+
+    def take(self):
+        """Pop the newest finished result, or None."""
+        with self._lock:
+            result = self._result
+            self._result = None
+
+        return result
+
+    def clear(self):
+        with self._lock:
+            self._result = None
+
+    def stop(self):
+        self._stop = True
+        self._wake.set()
+
+
+# =====================================================================
+# COLOUR DETECTION
+# =====================================================================
+
+CYAN_LOW = (88, 105, 65)
+CYAN_HIGH = (123, 255, 255)
+
+# The fishing bar is not a flat colour: it carries a dark cyan gradient along
+# its top edge that falls inside the same hue/saturation window as the fish.
+# Measured on the supplied minigame_example.png:
+#
+#     fish icon pixels     V 65..237, median 237
+#     bar gradient pixels  V 65.. 74, median  70
+#
+# So brightness separates them cleanly. Using the broad cyan mask for the fish
+# lets the fish merge into the gradient whenever it happens to overlap it, and
+# the merged blob is then rejected for being far too wide - which is exactly
+# how a bar that is plainly visible ends up "not detected" for many frames in
+# a row. The fish therefore gets its own brighter mask, with the broad mask
+# still available as a fallback for a dimly rendered fish.
+FISH_CYAN_LOW = (88, 105, 110)
+FISH_CYAN_HIGH = (123, 255, 255)
+
+NEON_GREEN_LOW = (50, 200, 175)
+NEON_GREEN_HIGH = (78, 255, 255)
+
+# The broad-green fallback is used when the cyan fish covers one of the neon
+# borders. v15 let it run up to hue 105, which reaches into the bar's OWN cyan
+# gradient (hue up to 103) - so whenever the fish sat on a border, the fallback
+# happily "found" the target somewhere in the bar's fill instead. Measured on
+# minigame_example.png: the green target lives at hue 60..78, and capping the
+# window at 85 keeps 100% of it while removing 92% of the bar-fill matches.
+BROAD_GREEN_LOW = (35, 75, 45)
+BROAD_GREEN_HIGH = (85, 255, 255)
+
+PROGRESS_LOW = (34, 100, 55)
+PROGRESS_HIGH = (124, 255, 255)
+
+MORPH_KERNEL = np.ones((3, 3), np.uint8)
+
+
+def connected_components(mask, minimum_area=1):
+    count, _, stats, centers = cv2.connectedComponentsWithStats(mask)
+
+    result = []
+
+    for index in range(1, count):
+        x, y, w, h, area = stats[index]
+
+        if area < minimum_area:
+            continue
+
+        cx, cy = centers[index]
+
+        result.append(
+            {
+                "x": int(x),
+                "y": int(y),
+                "w": int(w),
+                "h": int(h),
+                "area": int(area),
+                "cx": float(cx),
+                "cy": float(cy),
+            }
+        )
+
+    return result
+
+
+def find_bar_candidates(frame, previous_bar_local=None, screen_size=None):
+    """
+    Plausible cyan fishing bars in an acquisition frame.
+
+    The search runs on a downscaled copy: the bar is hundreds of pixels wide,
+    so half resolution finds exactly the same component for a quarter of the
+    cost. Candidates are ranked toward the previous bar's geometry but a
+    shifted or resized bar is never rejected for that reason.
+
+    `screen_size` is the monitor's (width, height). The acceptable bar
+    dimensions are derived from it, because they scale with the screen: at 4K
+    the bar is ~219 px tall, which v15's flat 14..160 px window rejected
+    outright, so the minigame was invisible to it on a 4K display.
+
+    Returns full-resolution boxes.
+    """
+    H, W = frame.shape[:2]
+
+    if screen_size:
+        screen_w, screen_h = screen_size
+    else:
+        screen_w, screen_h = W, H
+
+    min_bar_w = max(60.0, screen_w * 0.09)
+    min_bar_h = max(10.0, screen_h * 0.012)
+    max_bar_h = max(60.0, screen_h * 0.18)
+
+    ds = BAR_SEARCH_DOWNSCALE
+
+    small = cv2.resize(
+        frame,
+        None,
+        fx=ds,
+        fy=ds,
+        interpolation=cv2.INTER_AREA,
+    )
+
+    hsv = cv2.cvtColor(small, cv2.COLOR_BGR2HSV)
+    cyan = cv2.inRange(hsv, CYAN_LOW, CYAN_HIGH)
+    cyan = cv2.morphologyEx(
+        cyan, cv2.MORPH_CLOSE, MORPH_KERNEL, iterations=1
+    )
+
+    parts = connected_components(cyan, minimum_area=int(35 * ds * ds))
+
+    prev_cx = prev_cy = prev_w = None
+
+    if previous_bar_local is not None:
+        px, py, pw, ph = previous_bar_local
+        prev_cx = px + pw / 2.0
+        prev_cy = py + ph / 2.0
+        prev_w = float(pw)
+
+    candidates = []
+
+    inv = 1.0 / ds
+
+    for c in parts:
+        x = c["x"] * inv
+        y = c["y"] * inv
+        w = c["w"] * inv
+        h = c["h"] * inv
+        area = c["area"] * inv * inv
+
+        aspect = w / max(h, 1.0)
+        density = area / max(w * h, 1.0)
+
+        if w < min_bar_w:
+            continue
+
+        if h < min_bar_h or h > max_bar_h:
+            continue
+
+        if aspect < 4.5 or aspect > 35.0:
+            continue
+
+        if density < 0.040:
+            continue
+
+        cx = x + w / 2.0
+        cy = y + h / 2.0
+
+        if prev_cx is not None:
+            center_distance = (
+                abs(cx - prev_cx) + abs(cy - prev_cy) * 0.65
+            )
+
+            width_penalty = (
+                abs(w - prev_w) * 0.12
+                if prev_w is not None
+                else 0.0
+            )
+
+            rank = (
+                center_distance
+                + width_penalty
+                - w * 0.08
+                - area * 0.0008
+            )
+        else:
+            rank = -w * 1.0 - area * 0.001
+
+        candidates.append(
+            (
+                float(rank),
+                (int(x), int(y), int(round(w)), int(round(h))),
+            )
+        )
+
+    candidates.sort(key=lambda item: item[0])
+
+    return [box for _, box in candidates[:MAX_BAR_CANDIDATES]]
+
+
+def find_instant_fish(cyan_bar_mask, bar, inset_origin, previous_fish_x=None):
+    """
+    The compact cyan fish component inside the bar.
+
+    `cyan_bar_mask` is the cyan mask of the bar interior only, and
+    `inset_origin` is its offset back into frame coordinates.
+    """
+    bx, by, bw, bh = bar
+    ox, oy = inset_origin
+
+    parts = connected_components(cyan_bar_mask, minimum_area=8)
+
+    if not parts:
+        return None, None
+
+    mask_w = cyan_bar_mask.shape[1]
+
+    # Resolution-relative size window, derived from the bar height.
+    bar_h2 = float(bh) * float(bh)
+
+    min_area = max(FISH_ABSOLUTE_MIN_AREA, FISH_MIN_AREA_BAR_H2 * bar_h2)
+    max_area = FISH_MAX_AREA_BAR_H2 * bar_h2
+    min_side = max(FISH_ABSOLUTE_MIN_SIDE, FISH_MIN_SIDE_BAR_H * bh)
+
+    max_jump = max(60.0, bw * FISH_CONTINUITY_MAX_JUMP_RATIO)
+
+    candidates = []
+
+    for c in parts:
+        w = c["w"]
+        h = c["h"]
+        area = c["area"]
+
+        if area < min_area or area > max_area:
+            continue
+
+        if w < min_side or h < min_side:
+            continue
+
+        # The progress bar under the fishing bar, and the bar's own cyan fill,
+        # are rejected here without ever touching a template.
+        if w > bw * INSTANT_FISH_MAX_WIDTH_RATIO:
+            continue
+
+        if h > bh * INSTANT_FISH_MAX_HEIGHT_RATIO:
+            continue
+
+        aspect = w / max(h, 1)
+
+        if aspect < 0.38 or aspect > 2.80:
+            continue
+
+        # Reject a component that spans the crop from edge to edge - that is
+        # the bar's own fill, never the fish. A fish that has drifted right to
+        # the end of the bar touches one edge and must still be tracked, so
+        # single-edge contact is allowed; v15 rejected it and went blind at
+        # both extremes of the bar.
+        if c["x"] <= 0 and c["x"] + w >= mask_w - 1:
+            continue
+
+        cx = float(ox + c["cx"])
+        cy = float(oy + c["cy"])
+
+        if abs(cy - (by + bh / 2.0)) > bh * 0.44:
+            continue
+
+        if previous_fish_x is not None:
+            jump = abs(cx - previous_fish_x)
+
+            if jump > max_jump:
+                continue
+
+            ranking = jump - area * 0.025
+        else:
+            ranking = -float(area)
+
+        candidates.append(
+            (
+                ranking,
+                -area,
+                (int(ox + c["x"]), int(oy + c["y"]), int(w), int(h)),
+                cx,
+            )
+        )
+
+    if not candidates:
+        return None, None
+
+    candidates.sort(key=lambda item: (item[0], item[1]))
+
+    _, _, box, center_x = candidates[0]
+
+    return box, center_x
+
+
+def find_green_target(
+    hsv_bar,
+    bar,
+    inset_origin,
+    inner_height,
+    previous_zone=None,
+):
+    """
+    Fully dynamic green-target measurement.
+
+    The width is never taken from green-target.png. The two neon-green vertical
+    border lines are located every frame and their midpoint is the target
+    center, so a wider or narrower target is handled immediately.
+
+    `hsv_bar` is the HSV of the bar interior only.
+    """
+    bx, by, bw, bh = bar
+    ox, oy = inset_origin
+
+    neon = cv2.inRange(hsv_bar, NEON_GREEN_LOW, NEON_GREEN_HIGH)
+
+    counts = (neon > 0).sum(axis=0).astype(np.float32)
+
+    min_border_count = max(
+        4.0,
+        inner_height * GREEN_BORDER_MIN_HEIGHT_FRACTION,
+    )
+
+    active = np.where(counts >= min_border_count)[0]
+
+    groups = []
+
+    if len(active):
+        start = prev = int(active[0])
+
+        for value in active[1:]:
+            value = int(value)
+
+            if value <= prev + 2:
+                prev = value
+            else:
+                groups.append((start, prev))
+                start = prev = value
+
+        groups.append((start, prev))
+
+    borders = []
+
+    for g0, g1 in groups:
+        segment = counts[g0:g1 + 1]
+
+        if not len(segment):
+            continue
+
+        peak_local = g0 + int(np.argmax(segment))
+
+        borders.append(
+            {
+                "x": float(ox + peak_local),
+                "strength": float(segment.max()),
+            }
+        )
+
+    previous_center = None
+    previous_width = None
+
+    if previous_zone is not None:
+        px, py, pw, ph = previous_zone
+        previous_center = px + pw / 2.0
+        previous_width = float(pw)
+
+    def zone(left_x, right_x, center, width, mode):
+        return {
+            "box": (
+                int(round(left_x)),
+                int(oy),
+                max(1, int(round(right_x - left_x))),
+                int(inner_height),
+            ),
+            "center_x": float(center),
+            "width": float(width),
+            "mode": mode,
+        }
+
+    # -----------------------------------------------------------------
+    # Primary: the pair of neon borders that best fits continuity.
+    # -----------------------------------------------------------------
+    pairs = []
+
+    for i in range(len(borders)):
+        for j in range(i + 1, len(borders)):
+            left = borders[i]
+            right = borders[j]
+
+            width = right["x"] - left["x"]
+
+            if width < 4.0:
+                continue
+
+            if width > bw * GREEN_DYNAMIC_MAX_WIDTH_RATIO:
+                continue
+
+            center = (left["x"] + right["x"]) / 2.0
+
+            continuity = 0.0
+
+            if previous_center is not None:
+                continuity += abs(center - previous_center)
+
+                if previous_width is not None and previous_width > 1:
+                    continuity += abs(width - previous_width) * 0.08
+
+            strength = left["strength"] + right["strength"]
+
+            pairs.append(
+                (
+                    continuity - strength * 0.025,
+                    left["x"],
+                    right["x"],
+                    center,
+                    width,
+                )
+            )
+
+    if pairs:
+        pairs.sort(key=lambda item: item[0])
+        _, left_x, right_x, center, width = pairs[0]
+        return zone(left_x, right_x, center, width, "dynamic-borders")
+
+    # -----------------------------------------------------------------
+    # Fallback: the broad green span, for the frames where the cyan fish
+    # physically covers one border.
+    # -----------------------------------------------------------------
+    broad = cv2.inRange(hsv_bar, BROAD_GREEN_LOW, BROAD_GREEN_HIGH)
+
+    broad_counts = (broad > 0).sum(axis=0)
+
+    broad_active = np.where(
+        broad_counts
+        >= max(3, int(inner_height * GREEN_FALLBACK_MIN_HEIGHT_FRACTION))
+    )[0]
+
+    if not len(broad_active):
+        runs = []
+    else:
+        runs = []
+        start = prev = int(broad_active[0])
+
+        for value in broad_active[1:]:
+            value = int(value)
+
+            if value <= prev + 3:
+                prev = value
+            else:
+                runs.append((start, prev))
+                start = prev = value
+
+        runs.append((start, prev))
+
+        runs = [(r0, r1) for r0, r1 in runs if (r1 - r0 + 1) >= 2]
+
+    fallback = []
+
+    for i in range(len(runs)):
+        for j in range(i, len(runs)):
+            left_local = runs[i][0]
+            right_local = runs[j][1]
+
+            width = right_local - left_local + 1
+
+            if width < 4:
+                continue
+
+            if width > bw * GREEN_DYNAMIC_MAX_WIDTH_RATIO:
+                break
+
+            left_x = ox + left_local
+            right_x = ox + right_local
+            center = (left_x + right_x) / 2.0
+
+            score = 0.0
+
+            if previous_center is not None:
+                score += abs(center - previous_center)
+
+                if abs(center - previous_center) > max(
+                    90.0, (previous_width or 20.0) * 3.5
+                ):
+                    continue
+            else:
+                covered = sum(
+                    runs[k][1] - runs[k][0] + 1
+                    for k in range(i, j + 1)
+                )
+                coverage = covered / max(float(width), 1.0)
+                score += (1.0 - coverage) * 30.0
+
+            fallback.append((score, left_x, right_x, center, float(width)))
+
+    if fallback:
+        fallback.sort(key=lambda item: item[0])
+        _, left_x, right_x, center, width = fallback[0]
+        return zone(left_x, right_x, center, width, "dynamic-fallback")
+
+    # -----------------------------------------------------------------
+    # One visible border plus a known previous width.
+    # -----------------------------------------------------------------
+    if (
+        len(borders) == 1
+        and previous_center is not None
+        and previous_width is not None
+        and previous_width >= 4
+    ):
+        border_x = borders[0]["x"]
+
+        center_a = border_x + previous_width / 2.0
+        center_b = border_x - previous_width / 2.0
+
+        center = (
+            center_a
+            if abs(center_a - previous_center) <= abs(center_b - previous_center)
+            else center_b
+        )
+
+        return zone(
+            center - previous_width / 2.0,
+            center + previous_width / 2.0,
+            center,
+            previous_width,
+            "one-border-inferred",
+        )
+
+    return None
+
+
+def measure_minigame(
+    frame,
+    bar,
+    previous_ui=None,
+    allow_center_fallback=False,
+):
+    """
+    The whole control measurement for one frame, in one pass.
+
+    v15 converted the entire captured region to HSV twice per bar candidate
+    (once for the fish, once for the green borders) and then fell back to
+    template matching whenever the cyan fish was not found - which is the
+    normal case for every wrong candidate. Here the HSV conversion is done
+    once, on the bar interior only, and there is no template work at all.
+
+    Boxes are returned in `frame` coordinates.
+    """
+    empty = {
+        "valid": False,
+        "control_ready": False,
+        "bar": bar,
+        "fish": None,
+        "zone": None,
+    }
+
+    if frame is None or bar is None:
+        return empty
+
+    H, W = frame.shape[:2]
+    bx, by, bw, bh = map(int, bar)
+
+    if bw <= 20 or bh <= 10:
+        return empty
+
+    # The bar's own bright border must be outside the crop, otherwise a fish
+    # that drifts to either end of the bar merges into it and disappears. v15
+    # used a flat 3 px inset, which is thinner than the border at 1080p and up.
+    inset = max(3, int(round(bh * 0.07)))
+
+    x0 = max(0, bx + inset)
+    x1 = min(W, bx + bw - inset)
+    y0 = max(0, by + inset)
+    y1 = min(H, by + bh - inset)
+
+    if x1 <= x0 or y1 <= y0:
+        return empty
+
+    previous_fish_x = None
+    previous_zone = None
+
+    if previous_ui:
+        previous_fish_x = previous_ui.get("fish_center_x")
+        previous_zone = previous_ui.get("zone")
+
+    # ONE conversion, bar interior only.
+    hsv_bar = cv2.cvtColor(frame[y0:y1, x0:x1], cv2.COLOR_BGR2HSV)
+
+    fish_mask = cv2.inRange(hsv_bar, FISH_CYAN_LOW, FISH_CYAN_HIGH)
+
+    fish_box, fish_center_x = find_instant_fish(
+        fish_mask,
+        (bx, by, bw, bh),
+        (x0, y0),
+        previous_fish_x=previous_fish_x,
+    )
+
+    if fish_box is None:
+        # Dim fish: fall back to the broad cyan window.
+        fish_box, fish_center_x = find_instant_fish(
+            cv2.inRange(hsv_bar, CYAN_LOW, CYAN_HIGH),
+            (bx, by, bw, bh),
+            (x0, y0),
+            previous_fish_x=previous_fish_x,
+        )
+
+    if fish_box is None or fish_center_x is None:
+        return empty
+
+    green = find_green_target(
+        hsv_bar,
+        (bx, by, bw, bh),
+        (x0, y0),
+        y1 - y0,
+        previous_zone=previous_zone,
+    )
+
+    inferred_green = False
+
+    if green is None and previous_zone is not None:
+        zx, zy, zw, zh = previous_zone
+
+        green = {
+            "box": previous_zone,
+            "center_x": zx + zw / 2.0,
+            "width": float(zw),
+            "mode": "previous-green-grace",
+        }
+
+    if green is None and allow_center_fallback and STARTUP_ASSUME_GREEN_AT_BAR_CENTER:
+        # A fresh minigame starts with the target centered. Width does not
+        # matter for the first direction decision; the center does.
+        inferred_width = max(6, int(bh * 0.75))
+        center_x = bx + bw / 2.0
+
+        green = {
+            "box": (
+                int(center_x - inferred_width / 2.0),
+                int(by + 2),
+                int(inferred_width),
+                max(1, int(bh - 4)),
+            ),
+            "center_x": float(center_x),
+            "width": float(inferred_width),
+            "mode": "startup-bar-center",
+        }
+
+        inferred_green = True
+
+    if green is None:
+        result = dict(empty)
+        result["fish"] = fish_box
+        result["fish_center_x"] = float(fish_center_x)
+        return result
+
+    zone_box = green["box"]
+    zone_center_x = float(green["center_x"])
+
+    zx, zy, zw, zh = zone_box
+
+    return {
+        "valid": True,
+        "control_ready": True,
+        "bar": (bx, by, bw, bh),
+        "fish": fish_box,
+        "zone": zone_box,
+        "green_mode": green["mode"],
+        "green_inferred": bool(inferred_green),
+        "fish_center_x": float(fish_center_x),
+        "zone_center_x": zone_center_x,
+        "error": float(fish_center_x - zone_center_x),
+        "inside": bool(
+            fish_center_x >= zx + zw * 0.02
+            and fish_center_x <= zx + zw * 0.98
+        ),
+    }
+
+
+def acquire_from_frame(frame, previous_bar_local=None, screen_size=None):
+    """
+    Find the bar AND validate fish + green in the SAME captured frame.
+
+    Returns (bar_box, ui) or (None, None). Nothing here does template matching,
+    so a frame with several cyan candidates still costs a few milliseconds.
+    """
+    if frame is None:
+        return None, None
+
+    for bar in find_bar_candidates(
+        frame,
+        previous_bar_local=previous_bar_local,
+        screen_size=screen_size,
+    ):
+        ui = measure_minigame(
+            frame,
+            bar,
+            previous_ui=None,
+            allow_center_fallback=True,
+        )
+
+        if ui.get("control_ready"):
+            return bar, ui
+
+    return None, None
+
+
+def detect_progress(frame, bar):
+    """Lower cyan -> green progress bar. Telemetry only."""
+    H, W = frame.shape[:2]
+    bx, by, bw, bh = bar
+
+    x0 = max(0, int(bx - bw * 0.035))
+    x1 = min(W, int(bx + bw * 1.035))
+
+    y0 = max(0, int(by + bh + 2))
+    y1 = min(H, int(by + bh + max(35, H * 0.11)))
+
+    if x1 <= x0 or y1 <= y0:
+        return 0.0, None
+
+    hsv = cv2.cvtColor(frame[y0:y1, x0:x1], cv2.COLOR_BGR2HSV)
+    crop = cv2.inRange(hsv, PROGRESS_LOW, PROGRESS_HIGH)
+
+    if crop.size == 0:
+        return 0.0, None
+
+    row_counts = (crop > 0).sum(axis=1)
+
+    if not row_counts.size:
+        return 0.0, None
+
+    best_row = int(np.argmax(row_counts))
+
+    if row_counts[best_row] < max(20, bw * 0.06):
+        return 0.0, None
+
+    slab_top = max(0, best_row - 5)
+    slab_bottom = min(crop.shape[0], best_row + 6)
+    slab = crop[slab_top:slab_bottom]
+
+    ys, xs = np.nonzero(slab)
+
+    if len(xs) < 20:
+        return 0.0, None
+
+    left = float(np.percentile(xs, 1)) + x0
+    right = float(np.percentile(xs, 99)) + x0
+
+    ratio = (right - bx) / max(float(bw), 1.0)
+    ratio = max(0.0, min(1.05, ratio))
+
+    progress_box = (
+        int(left),
+        int(y0 + slab_top),
+        int(max(1.0, right - left)),
+        int(max(1, slab_bottom - slab_top)),
+    )
+
+    return ratio, progress_box
+
+
+def remap_box(box, origin):
+    if box is None:
+        return None
+
+    ox, oy = origin
+    x, y, w, h = box
+
+    return (int(x + ox), int(y + oy), int(w), int(h))
+
+
+# =====================================================================
+# DIAGNOSTIC IMAGE WRITER (background thread)
+# =====================================================================
+#
+# v15 called cv2.imwrite plus a directory glob+stat sort from inside the
+# control loop. Here the control loop only ever puts a copy on a queue.
+
+_image_queue = queue.Queue(maxsize=32)
+_detection_sequence = 0
+_last_detection_save = {}
+
+
+def _trim_detection_folder():
+    files = sorted(
+        DETECTION_DIR.glob("*.png"),
+        key=lambda p: p.stat().st_mtime,
+    )
+
+    while len(files) > DETECTION_MAX_FILES:
+        victim = files.pop(0)
+
+        try:
+            victim.unlink()
+        except Exception:
+            break
+
+
+def _image_writer():
+    while True:
+        item = _image_queue.get()
+
+        if item is None:
+            return
+
+        path, image, trim = item
+
+        try:
+            cv2.imwrite(str(path), image)
+
+            if trim:
+                _trim_detection_folder()
+        except Exception:
+            pass
+
+
+_writer_thread = None
+
+
+def start_image_writer():
+    global _writer_thread
+
+    if not (SAVE_PROOF_IMAGES or SAVE_DEBUG_IMAGES):
+        return
+
+    DEBUG_DIR.mkdir(exist_ok=True)
+    DETECTION_DIR.mkdir(exist_ok=True)
+
+    _writer_thread = threading.Thread(target=_image_writer, daemon=True)
+    _writer_thread.start()
+
+
+def save_reference_hit(frame, monitor_index, ref_name, score, box, threshold):
+    """Queue the exact matched rectangle. Never blocks the control loop."""
+    global _detection_sequence
+
+    if not SAVE_PROOF_IMAGES:
+        return
+
+    if box is None or score < threshold:
+        return
+
+    now = time.monotonic()
+    last = _last_detection_save.get((monitor_index, ref_name), 0.0)
+
+    if now - last < DETECTION_SAVE_COOLDOWN:
+        return
+
+    _last_detection_save[(monitor_index, ref_name)] = now
+
+    H, W = frame.shape[:2]
+    x, y, w, h = map(int, box)
+
+    x0 = max(0, x)
+    y0 = max(0, y)
+    x1 = min(W, x + w)
+    y1 = min(H, y + h)
+
+    if x1 <= x0 or y1 <= y0:
+        return
+
+    _detection_sequence += 1
+
+    safe_name = ref_name.replace("/", "_").replace("\\", "_")
+
+    path = DETECTION_DIR / (
+        f"{_detection_sequence:04d}_M{monitor_index}_"
+        f"{safe_name}_score-{score:.3f}.png"
+    )
+
+    try:
+        _image_queue.put_nowait((path, frame[y0:y1, x0:x1].copy(), True))
+    except queue.Full:
+        pass
+
+
+def draw_box(image, box, text):
+    if box is None:
+        return
+
+    x, y, w, h = map(int, box)
+
+    cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 255), 2)
+    cv2.putText(
+        image,
+        text,
+        (x, max(14, y - 6)),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.5,
+        (0, 255, 255),
+        1,
+        cv2.LINE_AA,
+    )
+
+
+def save_debug(frame, state, ui, monitor_index):
+    if not SAVE_DEBUG_IMAGES or frame is None:
+        return
+
+    image = frame.copy()
+
+    draw_box(image, ui.get("bar"), "bar")
+    draw_box(image, ui.get("fish"), "fish")
+    draw_box(image, ui.get("zone"), "green")
+    draw_box(image, ui.get("ready_box"), "ready")
+    draw_box(image, ui.get("progress_box"), "progress")
+
+    cv2.putText(
+        image,
+        f"state={state} M{monitor_index}",
+        (12, 28),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.7,
+        (0, 255, 255),
+        2,
+        cv2.LINE_AA,
+    )
+
+    try:
+        _image_queue.put_nowait(
+            (DEBUG_DIR / f"debug_M{monitor_index}.png", image, False)
+        )
+    except queue.Full:
+        pass
+
+
+# =====================================================================
+# MAIN
+# =====================================================================
+
+def main():
+    global ACTIVE_MONITOR
+
+    print("")
+    print("====================================================================")
+    print(" AUTOFISHING v16 - THE BAR ITSELF IS THE TRIGGER, IN EVERY STATE")
+    print("====================================================================")
+    print("[INFO] F8 = pause/resume, F9 = quit.")
+    print("[INFO] Every physical monitor is scanned directly; no window name.")
+    print("[INFO] The cyan bar + fish are searched on EVERY loop iteration in")
+    print("[INFO] every non-fishing state - IDLE, ARMED_FAST and WAIT_CAST.")
+    print("[INFO] v15 skipped that search in WAIT_CAST and starved it in")
+    print("[INFO] ARMED_FAST behind ~1.3 s of full-screen template matching.")
+    print("[INFO] Acquisition does NO template matching at all.")
+    print("[INFO] cast.png -> E still starts a round, but it is no longer a")
+    print("[INFO] gate: a missed cast.png cannot blind the tracker any more.")
+    print("[INFO] Watch the [PERF] line - it reports the real loop rate.")
+    print("")
+
+    if _TIMER_PERIOD_SET:
+        print("[INFO] Windows timer resolution set to 1 ms.", flush=True)
+
+    start_image_writer()
+
+    if SAVE_PROOF_IMAGES or SAVE_DEBUG_IMAGES:
+        print(
+            "[INFO] Diagnostic image writing is ENABLED. Turn "
+            "SAVE_PROOF_IMAGES/SAVE_DEBUG_IMAGES off for maximum speed.",
+            flush=True,
+        )
+
+    load_calibration()
+
+    # Template matching lives on these threads, never on the control loop.
+    ready_task = AsyncTask("ready")
+    cast_task = AsyncTask("cast")
+
+    state = "IDLE"
+    paused = False
+
+    f8_old = False
+    f9_old = False
+
+    cast_monitor_cursor = 0
+    last_notification_log = 0.0
+
+    last_cast_scan_at = 0.0
+    last_other_monitor_scan_at = 0.0
+    last_status_at = 0.0
+    last_fish_log_at = 0.0
+    last_debug_at = 0.0
+    last_cast_at = 0.0
+    last_valid_minigame_at = 0.0
+
+    blind_until = 0.0
+
+    ready_visible_since = None
+
+    # Where the bar was on each monitor. Deliberately NOT cleared after a
+    # catch: the next cast normally puts the minigame in the same place.
+    last_known_bar_by_monitor = {}
+
+    locked_bar = None
+    fast_track_failures = 0
+    previous_local_ui = None
+
+    cached_progress = 0.0
+    cached_progress_box = None
+    cached_ready_score = 0.0
+    cached_ready_box = None
+    cached_ready_ref = None
+
+    last_progress_check = 0.0
+    last_ready_check = 0.0
+    last_proof_check = 0.0
+
+    round_number = 0
+
+    # [PERF] accounting.
+    perf_cycles = 0
+    perf_started = time.perf_counter()
+    last_perf_log = time.monotonic()
+    perf_state = "IDLE"
+
+    def reset_tracker():
+        nonlocal locked_bar, fast_track_failures, previous_local_ui
+        nonlocal ready_visible_since
+        nonlocal cached_progress, cached_progress_box
+        nonlocal cached_ready_score, cached_ready_box, cached_ready_ref
+        nonlocal last_progress_check, last_ready_check, last_proof_check
+
+        release_movement()
+
+        ready_task.clear()
+
+        locked_bar = None
+        fast_track_failures = 0
+        previous_local_ui = None
+        ready_visible_since = None
+
+        cached_progress = 0.0
+        cached_progress_box = None
+        cached_ready_score = 0.0
+        cached_ready_box = None
+        cached_ready_ref = None
+
+        last_progress_check = 0.0
+        last_ready_check = 0.0
+        last_proof_check = 0.0
+
+    def enter_fishing(monitor_index, bar, ui, source):
+        """
+        Commit to a round and issue the very first A/D on this same frame.
+
+        This is the whole point of the script: the frame that first shows a
+        usable fish is also the frame that moves the target.
+        """
+        nonlocal state, locked_bar, fast_track_failures
+        nonlocal previous_local_ui, last_valid_minigame_at, round_number
+        global ACTIVE_MONITOR
+
+        ACTIVE_MONITOR = monitor_index
+
+        # Clear any leftover ready/progress readings before the round starts.
+        # This path can be reached without a cast (a bar that simply appeared),
+        # so it cannot rely on start_new_cast having done it. It runs before
+        # drive() below, because reset_tracker releases A and D.
+        reset_tracker()
+
+        locked_bar = bar
+        last_known_bar_by_monitor[monitor_index] = bar
+
+        # The tracker's next frame comes from a differently-offset crop, so
+        # local continuity starts fresh.
+        previous_local_ui = None
+
+        fast_track_failures = 0
+        last_valid_minigame_at = time.monotonic()
+
+        error = ui["fish_center_x"] - ui["zone_center_x"]
+
+        enter_band = max(CONTROL_ENTER_MIN_PX, ui["zone"][2] * 0.006)
+
+        if error < -enter_band:
+            first_key = "A"
+        elif error > enter_band:
+            first_key = "D"
+        else:
+            first_key = "NONE"
+
+        drive(None if first_key == "NONE" else first_key)
+
+        if state != "ARMED_FAST":
+            round_number += 1
+
+        state = "FISHING"
+
+        print(
+            f"[ZERO-WAIT] Round {round_number}: BAR+FISH FOUND -> {first_key} "
+            f"ON FIRST USABLE FRAME "
+            f"error={error:+.1f}px "
+            f"bar={bar} "
+            f"greenMode={ui.get('green_mode', '?')} "
+            f"via={source}",
+            flush=True,
+        )
+
+    def start_new_cast(sct, monitor_index, cast_box, cast_score, cast_scale):
+        nonlocal state, last_cast_at, round_number, locked_bar
+        nonlocal fast_track_failures
+        global ACTIVE_MONITOR
+
+        ACTIVE_MONITOR = monitor_index
+
+        target_window_from_detection(sct, monitor_index, cast_box)
+
+        reset_tracker()
+
+        round_number += 1
+
+        print(
+            f"[CAST] Round {round_number}: cast.png on M{monitor_index} "
+            f"score={cast_score:.3f} scale={cast_scale:.2f} -> E",
+            flush=True,
+        )
+
+        tap("E")
+
+        last_cast_at = time.monotonic()
+
+        # Start probing the previous bar position immediately. No scan
+        # interval, no notification reference, no fallback timer.
+        locked_bar = last_known_bar_by_monitor.get(monitor_index)
+        fast_track_failures = 0
+
+        state = "ARMED_FAST"
+
+        if locked_bar is not None:
+            print(
+                f"[STATE] Round {round_number}: ARMED_FAST "
+                f"(probing previous bar {locked_bar} immediately)",
+                flush=True,
+            )
+        else:
+            print(
+                f"[STATE] Round {round_number}: ARMED_FAST "
+                "(first round: searching for the cyan bar immediately)",
+                flush=True,
+            )
+
+    print("[STATE] IDLE", flush=True)
+
+    with mss.mss() as sct:
+        monitor_indices = list(range(1, len(sct.monitors)))
+
+        if not monitor_indices:
+            print("[ERROR] MSS found no physical monitors.", flush=True)
+            input("Press Enter to close...")
+            return
+
+        print(
+            f"[CAPTURE] Found {len(monitor_indices)} physical monitor(s).",
+            flush=True,
+        )
+
+        for mi in monitor_indices:
+            print(f"[CAPTURE]   {monitor_description(sct, mi)}", flush=True)
+
+        try:
+            while True:
+                loop_started = time.perf_counter()
+                now = time.monotonic()
+
+                f8_pressed, f8_old = pressed_once(VK_F8, f8_old)
+                f9_pressed, f9_old = pressed_once(VK_F9, f9_old)
+
+                if f9_pressed:
+                    print("[STATE] F9 -> EXIT", flush=True)
+                    break
+
+                if f8_pressed:
+                    paused = not paused
+                    release_movement()
+
+                    print(
+                        "[STATE] PAUSED" if paused else "[STATE] RESUMED",
+                        flush=True,
+                    )
+
+                if paused:
+                    time.sleep(0.05)
+                    continue
+
+                # [PERF] accounting resets whenever the state changes so the
+                # reported rate always describes one kind of work.
+                if state != perf_state:
+                    perf_state = state
+                    perf_cycles = 0
+                    perf_started = time.perf_counter()
+
+                perf_cycles += 1
+
+                if now - last_perf_log >= PERF_LOG_INTERVAL:
+                    elapsed = time.perf_counter() - perf_started
+                    rate = perf_cycles / max(elapsed, 0.001)
+
+                    print(
+                        f"[PERF] state={perf_state} {rate:.0f} loops/s "
+                        f"({1000.0 / max(rate, 0.001):.1f} ms per loop) "
+                        f"keyEvents={key_event_count}",
+                        flush=True,
+                    )
+
+                    perf_cycles = 0
+                    perf_started = time.perf_counter()
+                    last_perf_log = now
+
+                # =========================================================
+                # FISHING - locked-region high-speed tracker
+                # =========================================================
+                if state == "FISHING" and ACTIVE_MONITOR in monitor_indices:
+                    if locked_bar is None:
+                        # Re-acquire with the cheap colour path, not with a
+                        # full-monitor template scan the way v15 did.
+                        frame, origin = grab_acquisition_region(
+                            sct,
+                            ACTIVE_MONITOR,
+                            last_known_bar_by_monitor.get(ACTIVE_MONITOR),
+                        )
+
+                        bar_local, ui = acquire_from_frame(
+                            frame,
+                            screen_size=monitor_size(sct, ACTIVE_MONITOR),
+                        )
+
+                        if bar_local is not None:
+                            locked_bar = remap_box(bar_local, origin)
+                            last_known_bar_by_monitor[ACTIVE_MONITOR] = locked_bar
+                            last_valid_minigame_at = now
+
+                            print(
+                                f"[TRACK] Re-locked bar {locked_bar} "
+                                f"on M{ACTIVE_MONITOR}",
+                                flush=True,
+                            )
+                        elif now - last_valid_minigame_at >= MINIGAME_LOST_SECONDS:
+                            reset_tracker()
+                            state = "WAIT_CAST"
+
+                            print(
+                                "[STATE] FISHING -> WAIT_CAST "
+                                "(minigame ended/lost)",
+                                flush=True,
+                            )
+
+                        continue
+
+                    fast_frame, local_bar, crop_origin = (
+                        grab_locked_fishing_region(sct, ACTIVE_MONITOR, locked_bar)
+                    )
+
+                    if fast_frame is None:
+                        fast_track_failures += 1
+
+                        if fast_track_failures > GREEN_MISS_GRACE_FRAMES:
+                            release_movement()
+
+                        if fast_track_failures >= FAST_TRACK_FAIL_LIMIT:
+                            locked_bar = None
+
+                        continue
+
+                    local_ui = measure_minigame(
+                        fast_frame,
+                        local_bar,
+                        previous_ui=previous_local_ui,
+                        allow_center_fallback=False,
+                    )
+
+                    if not local_ui.get("valid"):
+                        fast_track_failures += 1
+
+                        # A single detector miss must not park the target.
+                        if fast_track_failures > GREEN_MISS_GRACE_FRAMES:
+                            release_movement()
+                            previous_local_ui = None
+
+                        if fast_track_failures >= FAST_TRACK_FAIL_LIMIT:
+                            print(
+                                f"[TRACK] Lost fish/green for "
+                                f"{fast_track_failures} frames -> reacquire",
+                                flush=True,
+                            )
+                            locked_bar = None
+
+                        if now - last_valid_minigame_at >= MINIGAME_LOST_SECONDS:
+                            reset_tracker()
+                            state = "WAIT_CAST"
+
+                            print(
+                                "[STATE] FISHING -> WAIT_CAST "
+                                "(round UI disappeared)",
+                                flush=True,
+                            )
+
+                        continue
+
+                    fast_track_failures = 0
+                    last_valid_minigame_at = now
+
+                    previous_local_ui = dict(local_ui)
+
+                    ui = dict(local_ui)
+
+                    for key in ("bar", "fish", "zone"):
+                        ui[key] = remap_box(ui.get(key), crop_origin)
+
+                    fish_x = float(ui["fish"][0] + ui["fish"][2] / 2.0)
+                    green_x = float(ui["zone"][0] + ui["zone"][2] / 2.0)
+
+                    # -----------------------------------------------------
+                    # Direct current-position control.
+                    #
+                    # No velocity state is allowed to override the sign of the
+                    # current measured error, so a fish that reverses is
+                    # followed on the very next frame.
+                    # -----------------------------------------------------
+                    error = fish_x - green_x
+
+                    zone_width = float(ui["zone"][2])
+
+                    enter_band = max(CONTROL_ENTER_MIN_PX, zone_width * 0.006)
+
+                    if error < -enter_band:
+                        desired = "A"
+                    elif error > enter_band:
+                        desired = "D"
+                    else:
+                        desired = "NONE"
+
+                    drive(None if desired == "NONE" else desired)
+
+                    raw_inside = bool(
+                        fish_x >= ui["zone"][0] + ui["zone"][2] * 0.04
+                        and fish_x <= ui["zone"][0] + ui["zone"][2] * 0.96
+                    )
+
+                    # -----------------------------------------------------
+                    # Ready prompt, matched on the worker thread so that the
+                    # A/D loop above never waits for a template.
+                    # -----------------------------------------------------
+                    finished = ready_task.take()
+
+                    if finished is not None:
+                        payload, meta = finished
+
+                        if payload is not None:
+                            (
+                                cached_ready_score,
+                                local_ready_box,
+                                _,
+                                cached_ready_ref,
+                            ) = payload
+
+                            cached_ready_box = remap_box(local_ready_box, meta)
+
+                    if now - last_ready_check >= READY_CHECK_INTERVAL:
+                        if ready_task.submit(
+                            detect_ready,
+                            (fast_frame.copy(), local_bar),
+                            crop_origin,
+                        ):
+                            last_ready_check = now
+
+                    if now - last_progress_check >= PROGRESS_CHECK_INTERVAL:
+                        cached_progress, local_progress_box = detect_progress(
+                            fast_frame, local_bar
+                        )
+
+                        cached_progress_box = remap_box(
+                            local_progress_box, crop_origin
+                        )
+
+                        last_progress_check = now
+
+                    # Exact fish PNG matching is proof only and is never
+                    # allowed to delay A/D.
+                    if (
+                        SAVE_PROOF_IMAGES
+                        and now - last_proof_check >= PROOF_CHECK_INTERVAL
+                    ):
+                        fish_ref = find_fish_in_bar(fast_frame, local_bar)
+
+                        if (
+                            fish_ref["box"] is not None
+                            and fish_ref["score"] >= FISH_ACTIVE_MIN_SCORE
+                        ):
+                            save_reference_hit(
+                                fast_frame,
+                                ACTIVE_MONITOR,
+                                (
+                                    "fish-left.png"
+                                    if fish_ref["direction"] == "left"
+                                    else "fish-right.png"
+                                ),
+                                fish_ref["score"],
+                                fish_ref["box"],
+                                FISH_ACTIVE_MIN_SCORE,
+                            )
+
+                        if local_ui.get("zone") is not None:
+                            save_reference_hit(
+                                fast_frame,
+                                ACTIVE_MONITOR,
+                                "green-target.png",
+                                1.0,
+                                local_ui["zone"],
+                                0.99,
+                            )
+
+                        if (
+                            cached_ready_box is not None
+                            and cached_ready_score >= READY_THRESHOLD
+                        ):
+                            save_reference_hit(
+                                fast_frame,
+                                ACTIVE_MONITOR,
+                                cached_ready_ref or "ready_space.png",
+                                cached_ready_score,
+                                (
+                                    cached_ready_box[0] - crop_origin[0],
+                                    cached_ready_box[1] - crop_origin[1],
+                                    cached_ready_box[2],
+                                    cached_ready_box[3],
+                                ),
+                                READY_THRESHOLD,
+                            )
+
+                        last_proof_check = now
+
+                    if now - last_fish_log_at >= FISH_LOG_INTERVAL:
+                        print(
+                            f"[FISH] round={round_number} "
+                            f"fishX={fish_x:.1f} greenX={green_x:.1f} "
+                            f"error={error:+.1f}px key={desired} "
+                            f"greenMode={ui.get('green_mode', '?')} "
+                            f"inside={'YES' if raw_inside else 'NO'} "
+                            f"progress={cached_progress * 100:.1f}% "
+                            f"ready={cached_ready_score:.3f}/"
+                            f"{READY_THRESHOLD:.2f}",
+                            flush=True,
+                        )
+
+                        last_fish_log_at = now
+
+                    # -----------------------------------------------------
+                    # Catch. A/D keeps tracking through the whole delay; the
+                    # keys are released only immediately before SPACE.
+                    # -----------------------------------------------------
+                    ready_visible = cached_ready_score >= READY_THRESHOLD
+
+                    if ready_visible:
+                        if ready_visible_since is None:
+                            ready_visible_since = time.perf_counter()
+
+                            print(
+                                f"[READY] Round {round_number}: prompt appeared "
+                                f"-> {SPACE_READY_DELAY_SECONDS * 1000:.0f}ms "
+                                f"safety delay; A/D TRACKING CONTINUES",
+                                flush=True,
+                            )
+                    else:
+                        if ready_visible_since is not None:
+                            print(
+                                f"[READY] Round {round_number}: prompt "
+                                "disappeared -> delay reset",
+                                flush=True,
+                            )
+
+                        ready_visible_since = None
+
+                    ready_elapsed = (
+                        time.perf_counter() - ready_visible_since
+                        if ready_visible_since is not None
+                        else 0.0
+                    )
+
+                    if (
+                        ready_visible
+                        and ready_elapsed >= SPACE_READY_DELAY_SECONDS
+                        and raw_inside
+                    ):
+                        release_movement()
+
+                        print(
+                            f"[CATCH] Round {round_number}: ready visible for "
+                            f"{ready_elapsed * 1000:.0f}ms + fish in green "
+                            f"-> SPACE",
+                            flush=True,
+                        )
+
+                        tap("SPACE")
+
+                        reset_tracker()
+                        state = "WAIT_CAST"
+
+                        blind_until = time.monotonic() + POST_CATCH_BLIND_SECONDS
+
+                        # Allow the next cast the instant cast.png appears.
+                        last_cast_at = (
+                            time.monotonic() - CAST_DEBOUNCE_SECONDS - 0.1
+                        )
+
+                        print(
+                            "[STATE] -> WAIT_CAST (bar or cast.png, "
+                            "whichever appears first)",
+                            flush=True,
+                        )
+
+                    if (
+                        SAVE_DEBUG_IMAGES
+                        and now - last_debug_at >= DEBUG_SAVE_INTERVAL
+                    ):
+                        full_debug = grab_monitor(sct, ACTIVE_MONITOR)
+
+                        if full_debug is not None:
+                            debug_ui = dict(ui)
+                            debug_ui["progress_box"] = cached_progress_box
+                            debug_ui["ready_box"] = cached_ready_box
+
+                            save_debug(full_debug, state, debug_ui, ACTIVE_MONITOR)
+
+                        last_debug_at = now
+
+                    continue
+
+                # =========================================================
+                # EVERYTHING ELSE - IDLE / ARMED_FAST / WAIT_CAST
+                # =========================================================
+                #
+                # One cheap hot acquisition per loop, in every one of these
+                # states. This is the fix for the original symptom: v15 ran
+                # this search only in ARMED_FAST, and even there it shared the
+                # iteration with ~1.3 s of full-screen template matching.
+                #
+                release_movement()
+
+                if now >= blind_until:
+                    if ACTIVE_MONITOR in monitor_indices:
+                        hot_monitors = [ACTIVE_MONITOR]
+                    else:
+                        hot_monitors = monitor_indices
+
+                    for mi in hot_monitors:
+                        previous_bar = last_known_bar_by_monitor.get(mi)
+
+                        frame, origin = grab_acquisition_region(
+                            sct, mi, previous_bar
+                        )
+
+                        if frame is None or origin is None:
+                            continue
+
+                        previous_bar_local = None
+
+                        if previous_bar is not None:
+                            previous_bar_local = (
+                                previous_bar[0] - origin[0],
+                                previous_bar[1] - origin[1],
+                                previous_bar[2],
+                                previous_bar[3],
+                            )
+
+                        bar_local, ui = acquire_from_frame(
+                            frame,
+                            previous_bar_local=previous_bar_local,
+                            screen_size=monitor_size(sct, mi),
+                        )
+
+                        if bar_local is None:
+                            continue
+
+                        bar = remap_box(bar_local, origin)
+
+                        if TARGET_HWND is None:
+                            target_window_from_detection(sct, mi, bar)
+
+                        enter_fishing(mi, bar, ui, source=f"hot-scan/{state}")
+                        break
+
+                if state == "FISHING":
+                    continue
+
+                # ---------------------------------------------------------
+                # cast.png scan.
+                #
+                # Two things keep it out of the way of the bar search:
+                #
+                #  - It never runs in ARMED_FAST. E has already been pressed,
+                #    so there is nothing to cast, and ARMED_FAST is exactly the
+                #    window where the bar appears. That window is now pure
+                #    colour work with no template matching whatsoever.
+                #
+                #  - Elsewhere it runs on the worker thread, so even the
+                #    full-monitor grab and match do not stall acquisition.
+                # ---------------------------------------------------------
+                if state != "ARMED_FAST":
+                    finished = cast_task.take()
+
+                    if finished is not None:
+                        payload, meta = finished
+
+                        if payload is not None:
+                            mi, cast_frame = meta
+                            cast_score, cast_box, cast_scale = payload
+
+                            if (
+                                cast_score >= CAST_THRESHOLD
+                                and now - last_cast_at >= CAST_DEBOUNCE_SECONDS
+                            ):
+                                save_reference_hit(
+                                    cast_frame,
+                                    mi,
+                                    "cast.png",
+                                    cast_score,
+                                    cast_box,
+                                    CAST_THRESHOLD,
+                                )
+
+                                start_new_cast(
+                                    sct, mi, cast_box, cast_score, cast_scale
+                                )
+
+                            elif now - last_status_at >= STATUS_LOG_INTERVAL:
+                                last_status_at = now
+
+                                print(
+                                    f"[SCAN] M{mi} state={state} "
+                                    f"cast={cast_score:.3f}/"
+                                    f"{CAST_THRESHOLD:.2f} bar="
+                                    f"{'known' if last_known_bar_by_monitor.get(mi) else 'unknown'}",
+                                    flush=True,
+                                )
+
+                if (
+                    state not in ("ARMED_FAST", "FISHING")
+                    and now - last_cast_scan_at >= CAST_SCAN_INTERVAL
+                ):
+                    if ACTIVE_MONITOR in monitor_indices:
+                        cast_monitor = ACTIVE_MONITOR
+
+                        # Other monitors are still checked, just far less often.
+                        if now - last_other_monitor_scan_at >= OTHER_MONITOR_SCAN_INTERVAL:
+                            last_other_monitor_scan_at = now
+
+                            others = [
+                                mi for mi in monitor_indices if mi != ACTIVE_MONITOR
+                            ]
+
+                            if others:
+                                cast_monitor = others[
+                                    cast_monitor_cursor % len(others)
+                                ]
+                                cast_monitor_cursor += 1
+                    else:
+                        cast_monitor = monitor_indices[
+                            cast_monitor_cursor % len(monitor_indices)
+                        ]
+                        cast_monitor_cursor += 1
+
+                    # Claim the slot before grabbing. Otherwise a worker that
+                    # is still busy would make the loop take a full-monitor
+                    # screenshot on every single iteration and throw it away.
+                    last_cast_scan_at = now
+
+                    frame = grab_monitor(sct, cast_monitor)
+
+                    if frame is not None:
+                        cast_task.submit(
+                            detect_cast, (frame,), (cast_monitor, frame)
+                        )
+
+                    if (
+                        LOG_NOTIFICATION_SCORES
+                        and frame is not None
+                        and now - last_notification_log >= NOTIFICATION_LOG_INTERVAL
+                    ):
+                        last_notification_log = now
+
+                        waiting_score, waiting_box, _ = detect_waiting(frame)
+                        bite_score, bite_box, _ = detect_bite(frame)
+
+                        save_reference_hit(
+                            frame, cast_monitor, "waiting.png",
+                            waiting_score, waiting_box, WAITING_THRESHOLD,
+                        )
+                        save_reference_hit(
+                            frame, cast_monitor, "bite.png",
+                            bite_score, bite_box, BITE_THRESHOLD,
+                        )
+
+                        print(
+                            f"[NOTIFY] M{cast_monitor} "
+                            f"waiting={waiting_score:.3f}/{WAITING_THRESHOLD:.2f} "
+                            f"bite={bite_score:.3f}/{BITE_THRESHOLD:.2f} "
+                            "(informational only - nothing waits on these)",
+                            flush=True,
+                        )
+
+                # ---------------------------------------------------------
+                # Pacing.
+                #
+                # ARMED_FAST is the window in which the bar appears, so it is
+                # never throttled. IDLE and WAIT_CAST are capped only so the
+                # script does not burn a core - and a core taken from the game
+                # is frames taken from the game - while waiting for a cast
+                # prompt that cannot turn into a minigame without E anyway.
+                # ---------------------------------------------------------
+                if state != "ARMED_FAST":
+                    elapsed = time.perf_counter() - loop_started
+
+                    wait = 1.0 / IDLE_MAX_FPS - elapsed
+
+                    if wait > 0:
+                        time.sleep(wait)
+
+        except KeyboardInterrupt:
+            print("\n[STATE] Ctrl+C -> EXIT", flush=True)
+
+        finally:
+            release_movement()
+
+            ready_task.stop()
+            cast_task.stop()
+
+            if _TIMER_PERIOD_SET:
+                try:
+                    ctypes.windll.winmm.timeEndPeriod(1)
+                except Exception:
+                    pass
+
+            print("[DONE] A/D released.", flush=True)
+
+
+if __name__ == "__main__":
+    main()
