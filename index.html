@@ -16,159 +16,117 @@ img{max-width:100%}[hidden]{display:none!important}</style>
 <style>
 /* ============================================================
    Ilmavirtalaboratorio — 24 m2 yksio, 3D-ilmavirtaussimulaatio
-   Visuaalinen linja: pohjoismainen mittalaite / CFD-jalkikasittely.
-   Yksi tietoinen tumma maailma; kaikki varit maalataan eksplisiittisesti.
+   Pohjoismainen mittalaite / CFD-jalkikasittely. Yksi tumma maailma.
    ============================================================ */
 :root{
-  --void:#080D12;
-  --panel:#111922;
-  --panel-2:#16212C;
-  --panel-3:#1C2A37;
-  --edge:#22303D;
-  --edge-2:#2E4152;
-  --text:#DDE7EF;
-  --dim:#93A7B8;
-  --faint:#5F7488;
-
-  /* Termiset signaalit — divergoiva pari, neutraali keskikohta */
-  --warm:#D96A22;
-  --warm-hi:#F08A3E;
-  --cool:#2E8FBF;
-  --cool-hi:#54B4E2;
-  --neutral:#8A98A6;
-  --violet:#8560D8;
-
-  --good:#3FA98A;
-  --warn:#C9962E;
-  --crit:#C9503F;
-
-  --t-xs:10px; --t-sm:11.5px; --t-md:13px; --t-lg:15px;
-  --rail-w:322px;
-  --r:3px;
-  --mono:"IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
-  --cond:"IBM Plex Sans Condensed", "IBM Plex Sans", system-ui, sans-serif;
-  --sans:"IBM Plex Sans", system-ui, -apple-system, sans-serif;
+  --void:#080D12; --panel:#111922; --panel-2:#16212C; --panel-3:#1C2A37;
+  --edge:#22303D; --edge-2:#2E4152;
+  --text:#DDE7EF; --dim:#93A7B8; --faint:#5F7488;
+  --warm:#D96A22; --warm-hi:#F08A3E; --cool:#2E8FBF; --cool-hi:#54B4E2;
+  --neutral:#8A98A6; --violet:#8560D8;
+  --good:#3FA98A; --warn:#C9962E; --crit:#C9503F;
+  --t-xs:10px; --t-sm:11.5px; --t-md:13px;
+  --tabw:62px; --panw:302px; --r:3px;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  --cond:"IBM Plex Sans Condensed","IBM Plex Sans",system-ui,sans-serif;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,sans-serif;
 }
 *{box-sizing:border-box}
 html,body{height:100%}
-body{
-  margin:0; background:var(--void); color:var(--text);
-  font-family:var(--sans); font-size:var(--t-md); line-height:1.45;
-  -webkit-font-smoothing:antialiased; overflow:hidden;
-}
-button,input,select{font:inherit; color:inherit}
-:focus-visible{outline:2px solid var(--warm-hi); outline-offset:2px}
-@media (prefers-reduced-motion:reduce){*{transition:none !important; animation:none !important}}
+body{margin:0;background:var(--void);color:var(--text);font-family:var(--sans);
+  font-size:var(--t-md);line-height:1.45;-webkit-font-smoothing:antialiased;overflow:hidden}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--warm-hi);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 
-/* ---------- runko ---------- */
-#app{
-  position:fixed; inset:0;
-  display:grid;
-  grid-template-columns:var(--rail-w) 1fr;
-  grid-template-rows:46px 1fr;
-  grid-template-areas:"top top" "rail stage";
-}
-#topbar{
-  grid-area:top; display:flex; align-items:center; gap:14px;
-  padding:0 14px 0 16px; background:var(--panel);
-  border-bottom:1px solid var(--edge); z-index:30;
-}
-.brand{display:flex; align-items:baseline; gap:9px; margin-right:2px}
-.brand b{
-  font-family:var(--cond); font-weight:700; font-size:15px;
-  letter-spacing:.02em; white-space:nowrap;
-}
-.brand span{
-  font-family:var(--mono); font-size:var(--t-xs); color:var(--faint);
-  letter-spacing:.06em; white-space:nowrap;
-}
-.tb-sep{width:1px; height:22px; background:var(--edge); flex:none}
+#app{position:fixed;inset:0;display:grid;
+  grid-template-columns:var(--tabw) var(--panw) 1fr;
+  grid-template-rows:48px 1fr;
+  grid-template-areas:"top top top" "tabs panel stage"}
+
+/* ---------- ylapalkki ---------- */
+#topbar{grid-area:top;display:flex;align-items:center;gap:10px;padding:0 12px 0 14px;
+  background:var(--panel);border-bottom:1px solid var(--edge);z-index:30}
+.brand{display:flex;align-items:baseline;gap:9px;margin-right:2px}
+.brand b{font-family:var(--cond);font-weight:700;font-size:15px;white-space:nowrap}
+.brand span{font-family:var(--mono);font-size:var(--t-xs);color:var(--faint);
+  letter-spacing:.06em;white-space:nowrap}
+.tb-sep{width:1px;height:22px;background:var(--edge);flex:none}
 .tb-spacer{flex:1}
+#clock{font-family:var(--mono);font-size:var(--t-sm);color:var(--faint);
+  font-variant-numeric:tabular-nums;white-space:nowrap}
 
-/* ---------- napit ---------- */
-.btn{
-  background:var(--panel-2); border:1px solid var(--edge-2); color:var(--text);
-  border-radius:var(--r); padding:5px 11px; cursor:pointer;
-  font-family:var(--cond); font-size:var(--t-sm); font-weight:600;
-  letter-spacing:.05em; text-transform:uppercase; white-space:nowrap;
-  transition:background .12s, border-color .12s, color .12s;
-}
-.btn:hover{background:var(--panel-3); border-color:var(--faint)}
-.btn.on{background:var(--warm); border-color:var(--warm); color:#120A04}
-.btn.ghost{background:transparent; border-color:var(--edge)}
+.btn{background:var(--panel-2);border:1px solid var(--edge-2);color:var(--text);
+  border-radius:var(--r);padding:5px 11px;cursor:pointer;font-family:var(--cond);
+  font-size:var(--t-sm);font-weight:600;letter-spacing:.05em;text-transform:uppercase;
+  white-space:nowrap;transition:background .12s,border-color .12s,color .12s}
+.btn:hover{background:var(--panel-3);border-color:var(--faint)}
+.btn.on{background:var(--warm);border-color:var(--warm);color:#120A04}
+.btn.ghost{background:transparent;border-color:var(--edge)}
 .btn.ghost:hover{background:var(--panel-2)}
-.btn.sm{padding:3px 8px; font-size:var(--t-xs)}
-.seg{display:flex; border:1px solid var(--edge-2); border-radius:var(--r); overflow:hidden}
-.seg button{
-  background:var(--panel-2); border:0; border-right:1px solid var(--edge-2);
-  padding:5px 10px; cursor:pointer; font-family:var(--cond); font-weight:600;
-  font-size:var(--t-sm); letter-spacing:.04em; color:var(--dim);
-  transition:background .12s,color .12s;
-}
+.btn.sm{padding:3px 8px;font-size:var(--t-xs)}
+.btn.wide{width:100%;justify-content:center;text-align:center}
+.btn.danger:hover{border-color:var(--crit);color:var(--crit)}
+.seg{display:flex;border:1px solid var(--edge-2);border-radius:var(--r);overflow:hidden}
+.seg button{background:var(--panel-2);border:0;border-right:1px solid var(--edge-2);
+  padding:5px 10px;cursor:pointer;font-family:var(--cond);font-weight:600;
+  font-size:var(--t-sm);letter-spacing:.04em;color:var(--dim);transition:background .12s,color .12s}
 .seg button:last-child{border-right:0}
-.seg button:hover{background:var(--panel-3); color:var(--text)}
-.seg button.on{background:var(--edge-2); color:var(--text)}
+.seg button:hover{background:var(--panel-3);color:var(--text)}
+.seg button.on{background:var(--edge-2);color:var(--text)}
+.seg.grow{width:100%} .seg.grow button{flex:1}
+select.sel{background:var(--panel-2);border:1px solid var(--edge-2);border-radius:var(--r);
+  padding:5px 8px;font-family:var(--cond);font-size:var(--t-sm);cursor:pointer}
 
-/* ---------- ohjausrima ---------- */
-#rail{
-  grid-area:rail; background:var(--panel); border-right:1px solid var(--edge);
-  overflow-y:auto; overscroll-behavior:contain; z-index:20;
-  scrollbar-width:thin; scrollbar-color:var(--edge-2) transparent;
-}
-#rail::-webkit-scrollbar{width:9px}
-#rail::-webkit-scrollbar-thumb{background:var(--edge-2); border:3px solid var(--panel); border-radius:5px}
-.grp{border-bottom:1px solid var(--edge)}
-.grp>summary{
-  list-style:none; cursor:pointer; display:flex; align-items:center; gap:8px;
-  padding:9px 14px; user-select:none;
-  font-family:var(--cond); font-weight:600; font-size:var(--t-sm);
-  letter-spacing:.11em; text-transform:uppercase; color:var(--dim);
-}
-.grp>summary::-webkit-details-marker{display:none}
-.grp>summary:hover{color:var(--text); background:var(--panel-2)}
-.grp>summary::before{
-  content:""; width:6px; height:6px; flex:none; border-right:1.4px solid var(--faint);
-  border-bottom:1.4px solid var(--faint); transform:rotate(-45deg) translate(-1px,1px);
-  transition:transform .15s;
-}
-.grp[open]>summary::before{transform:rotate(45deg) translate(0,0)}
-.grp>summary .tag{
-  margin-left:auto; font-family:var(--mono); font-size:var(--t-xs);
-  color:var(--faint); letter-spacing:0; text-transform:none;
-  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:46%;
-}
-.grp>summary>:first-child{white-space:nowrap}
-.grp-body{padding:4px 14px 14px; display:flex; flex-direction:column; gap:11px}
+/* ---------- valilehtirima ---------- */
+#tabs{grid-area:tabs;background:var(--panel);border-right:1px solid var(--edge);
+  display:flex;flex-direction:column;padding-top:6px;gap:2px;z-index:22;overflow:hidden}
+.tab{background:none;border:0;border-left:2px solid transparent;cursor:pointer;
+  padding:9px 2px 7px;display:flex;flex-direction:column;align-items:center;gap:4px;
+  color:var(--faint);transition:color .12s,background .12s}
+.tab svg{width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.6;
+  stroke-linecap:round;stroke-linejoin:round}
+.tab span{font-family:var(--cond);font-size:9.5px;font-weight:600;letter-spacing:.05em;
+  text-transform:uppercase}
+.tab:hover{color:var(--dim);background:var(--panel-2)}
+.tab.on{color:var(--warm-hi);border-left-color:var(--warm);background:var(--panel-2)}
+.tab .badge{position:absolute;margin:-26px 0 0 20px;background:var(--warm);color:#120A04;
+  border-radius:8px;font-family:var(--mono);font-size:8.5px;padding:0 4px;font-weight:600}
 
-/* ---------- kentat ---------- */
-.f{display:flex; flex-direction:column; gap:5px}
-.f-top{display:flex; align-items:baseline; gap:8px}
-.f-top label{
-  font-family:var(--cond); font-size:var(--t-sm); color:var(--dim);
-  letter-spacing:.02em; flex:1; min-width:0;
-}
-.f-val{
-  font-family:var(--mono); font-size:var(--t-sm); font-weight:500;
-  font-variant-numeric:tabular-nums; color:var(--text); white-space:nowrap;
-}
-.f-val em{font-style:normal; color:var(--faint); font-size:var(--t-xs); margin-left:2px}
-input[type=range]{
-  -webkit-appearance:none; appearance:none; width:100%; height:16px;
-  background:transparent; cursor:pointer; margin:0;
-}
-input[type=range]::-webkit-slider-runnable-track{
-  height:3px; background:var(--edge-2); border-radius:2px;
-}
-input[type=range]::-moz-range-track{height:3px; background:var(--edge-2); border-radius:2px}
-input[type=range]::-webkit-slider-thumb{
-  -webkit-appearance:none; width:13px; height:13px; margin-top:-5px;
-  border-radius:50%; background:var(--text); border:2px solid var(--panel);
-  box-shadow:0 0 0 1px var(--faint);
-}
-input[type=range]::-moz-range-thumb{
-  width:13px; height:13px; border-radius:50%; background:var(--text);
-  border:2px solid var(--panel); box-shadow:0 0 0 1px var(--faint);
-}
+/* ---------- paneeli ---------- */
+#panel{grid-area:panel;background:var(--panel);border-right:1px solid var(--edge);
+  overflow-y:auto;overscroll-behavior:contain;z-index:20;
+  scrollbar-width:thin;scrollbar-color:var(--edge-2) transparent}
+#panel::-webkit-scrollbar{width:9px}
+#panel::-webkit-scrollbar-thumb{background:var(--edge-2);border:3px solid var(--panel);border-radius:5px}
+.page{display:none;padding:12px 14px 26px;flex-direction:column;gap:13px}
+.page.on{display:flex}
+.page-h{display:flex;align-items:baseline;gap:8px;padding-bottom:2px;
+  border-bottom:1px solid var(--edge);margin-bottom:2px}
+.page-h b{font-family:var(--cond);font-size:13px;font-weight:700;letter-spacing:.09em;
+  text-transform:uppercase}
+.page-h i{font-style:normal;margin-left:auto;font-family:var(--mono);font-size:var(--t-xs);
+  color:var(--faint)}
+.sec{display:flex;flex-direction:column;gap:10px}
+.sec-t{font-family:var(--cond);font-size:var(--t-xs);font-weight:600;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--faint);display:flex;align-items:center;gap:7px}
+.sec-t::after{content:"";flex:1;height:1px;background:var(--edge)}
+
+.f{display:flex;flex-direction:column;gap:5px}
+.f-top{display:flex;align-items:baseline;gap:8px}
+.f-top label{font-family:var(--cond);font-size:var(--t-sm);color:var(--dim);flex:1;min-width:0}
+.f-val{font-family:var(--mono);font-size:var(--t-sm);font-weight:500;
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+.f-val em{font-style:normal;color:var(--faint);font-size:var(--t-xs);margin-left:2px}
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:16px;
+  background:transparent;cursor:pointer;margin:0}
+input[type=range]::-webkit-slider-runnable-track{height:3px;background:var(--edge-2);border-radius:2px}
+input[type=range]::-moz-range-track{height:3px;background:var(--edge-2);border-radius:2px}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;
+  margin-top:-5px;border-radius:50%;background:var(--text);border:2px solid var(--panel);
+  box-shadow:0 0 0 1px var(--faint)}
+input[type=range]::-moz-range-thumb{width:13px;height:13px;border-radius:50%;
+  background:var(--text);border:2px solid var(--panel);box-shadow:0 0 0 1px var(--faint)}
 input[type=range]:hover::-webkit-slider-thumb{box-shadow:0 0 0 1px var(--warm)}
 input[type=range]:hover::-moz-range-thumb{box-shadow:0 0 0 1px var(--warm)}
 .f.warm input[type=range]::-webkit-slider-thumb{background:var(--warm-hi)}
@@ -176,433 +134,501 @@ input[type=range]:hover::-moz-range-thumb{box-shadow:0 0 0 1px var(--warm)}
 .f.cool input[type=range]::-webkit-slider-thumb{background:var(--cool-hi)}
 .f.cool input[type=range]::-moz-range-thumb{background:var(--cool-hi)}
 
-.row{display:flex; gap:7px; flex-wrap:wrap}
+.row{display:flex;gap:7px;flex-wrap:wrap}
 .row.tight{gap:5px}
-.chk{
-  display:flex; align-items:center; gap:8px; cursor:pointer;
-  font-family:var(--cond); font-size:var(--t-sm); color:var(--dim);
-}
+.chk{display:flex;align-items:center;gap:8px;cursor:pointer;font-family:var(--cond);
+  font-size:var(--t-sm);color:var(--dim)}
 .chk:hover{color:var(--text)}
-.chk input{
-  appearance:none; -webkit-appearance:none; width:15px; height:15px; flex:none; margin:0;
-  border:1px solid var(--edge-2); border-radius:2px; background:var(--panel-2);
-  position:relative; cursor:pointer;
-}
-.chk input:checked{background:var(--warm); border-color:var(--warm)}
-.chk input:checked::after{
-  content:""; position:absolute; left:4px; top:1px; width:4px; height:8px;
-  border:solid #120A04; border-width:0 2px 2px 0; transform:rotate(42deg);
-}
-.note{font-size:var(--t-xs); color:var(--faint); line-height:1.5}
-.note b{color:var(--dim); font-weight:500}
-hr.sep{border:0; border-top:1px dashed var(--edge-2); margin:2px 0}
+.chk input{appearance:none;-webkit-appearance:none;width:15px;height:15px;flex:none;margin:0;
+  border:1px solid var(--edge-2);border-radius:2px;background:var(--panel-2);position:relative;cursor:pointer}
+.chk input:checked{background:var(--warm);border-color:var(--warm)}
+.chk input:checked::after{content:"";position:absolute;left:4px;top:1px;width:4px;height:8px;
+  border:solid #120A04;border-width:0 2px 2px 0;transform:rotate(42deg)}
+.note{font-size:var(--t-xs);color:var(--faint);line-height:1.55}
+.note b{color:var(--dim);font-weight:500}
+.note.warn{color:var(--warn)}
+hr.sep{border:0;border-top:1px dashed var(--edge-2);margin:1px 0}
+
+/* laitekortti */
+.dev{border:1px solid var(--edge);border-radius:var(--r);overflow:hidden}
+.dev-h{display:flex;align-items:center;gap:8px;padding:7px 9px;background:var(--panel-2)}
+.dev-h b{font-family:var(--cond);font-size:var(--t-sm);font-weight:600;letter-spacing:.03em}
+.dev-h .w{margin-left:auto;font-family:var(--mono);font-size:var(--t-sm);font-weight:500;
+  color:var(--warm-hi);font-variant-numeric:tabular-nums}
+.dev-b{padding:9px;display:flex;flex-direction:column;gap:9px}
+.spec{font-family:var(--mono);font-size:var(--t-xs);color:var(--faint);line-height:1.65}
+.spec b{color:var(--dim);font-weight:500}
+
+/* kalustelista */
+.flist{display:flex;flex-direction:column;gap:4px}
+.fitem{display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--edge);
+  border-radius:var(--r);cursor:pointer;background:var(--panel-2);transition:border-color .12s,background .12s}
+.fitem:hover{border-color:var(--faint)}
+.fitem.sel{border-color:var(--warm);background:var(--panel-3)}
+.fitem.stored{opacity:.5}
+.fitem .nm{font-family:var(--cond);font-size:var(--t-sm);flex:1;min-width:0;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fitem .sz{font-family:var(--mono);font-size:9.5px;color:var(--faint);white-space:nowrap}
+.fitem .tg{width:22px;height:18px;border-radius:2px;border:1px solid var(--edge-2);flex:none;
+  display:grid;place-items:center;font-family:var(--mono);font-size:10px;color:var(--faint)}
+.fitem.stored .tg{color:var(--faint)}
+.fitem:not(.stored) .tg{background:var(--good);border-color:var(--good);color:#04120D}
 
 /* ---------- nayttamo ---------- */
-#stage{grid-area:stage; position:relative; overflow:hidden; background:var(--void)}
-#gl{display:block; width:100%; height:100%; touch-action:none; cursor:grab}
-#gl.drag{cursor:grabbing}
-#gl.pick{cursor:crosshair}
-
-.ov{position:absolute; z-index:10}
-.card{
-  background:rgba(17,25,34,.90); border:1px solid var(--edge);
-  border-radius:var(--r); backdrop-filter:blur(9px);
-}
+#stage{grid-area:stage;position:relative;overflow:hidden;background:var(--void)}
+#gl{display:block;width:100%;height:100%;touch-action:none;cursor:grab}
+#gl.drag{cursor:grabbing} #gl.pick{cursor:crosshair} #gl.move{cursor:move}
+.ov{position:absolute;z-index:10}
+.card{background:rgba(17,25,34,.90);border:1px solid var(--edge);border-radius:var(--r);
+  backdrop-filter:blur(9px)}
 .card.fold>.card-h{cursor:pointer}
-.card.fold>.card-h::after{content:'–'; margin-left:6px; color:var(--faint)}
-.card.folded>.card-h::after{content:'+'}
-.card.folded>*:not(.card-h){display:none !important}
-.card-h{
-  display:flex; align-items:center; gap:6px; padding:6px 9px;
-  border-bottom:1px solid var(--edge);
-  font-family:var(--cond); font-size:var(--t-xs); font-weight:600;
-  letter-spacing:.13em; text-transform:uppercase; color:var(--faint);
-  white-space:nowrap; overflow:hidden;
-}
-.card-h .hint{margin-left:auto; font-family:var(--mono); letter-spacing:0;
-  overflow:hidden; text-overflow:ellipsis}
+.card.fold>.card-h::after{content:"–";margin-left:6px;color:var(--faint)}
+.card.folded>.card-h::after{content:"+"}
+.card.folded>*:not(.card-h){display:none!important}
+.card-h{display:flex;align-items:center;gap:6px;padding:6px 9px;border-bottom:1px solid var(--edge);
+  font-family:var(--cond);font-size:var(--t-xs);font-weight:600;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--faint);white-space:nowrap;overflow:hidden}
+.card-h .hint{margin-left:auto;font-family:var(--mono);letter-spacing:0;overflow:hidden;
+  text-overflow:ellipsis;text-transform:none}
 
-/* mittarit */
-#hud{top:10px; right:10px; width:246px; display:flex; flex-direction:column; gap:8px}
+#hud{top:10px;right:10px;width:250px;display:flex;flex-direction:column;gap:8px}
 .meters{padding:2px 0}
-.m{
-  display:grid; grid-template-columns:1fr auto; align-items:baseline;
-  gap:8px; padding:4px 9px;
-}
+.m{display:grid;grid-template-columns:1fr auto;align-items:baseline;gap:8px;padding:4px 9px}
 .m:hover{background:var(--panel-2)}
-.m .k{font-family:var(--cond); font-size:var(--t-sm); color:var(--dim);
-  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0}
-.m .v{
-  white-space:nowrap; font-family:var(--mono); font-size:15px; font-weight:500;
-  font-variant-numeric:tabular-nums; letter-spacing:-.01em;
-}
-.m .v u{text-decoration:none; font-size:var(--t-xs); color:var(--faint); margin-left:3px}
-.m.hero{padding:7px 9px 6px}
-.m.hero .v{font-size:23px; font-weight:600}
+.m .k{font-family:var(--cond);font-size:var(--t-sm);color:var(--dim);white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;min-width:0}
+.m .v{white-space:nowrap;font-family:var(--mono);font-size:15px;font-weight:500;
+  font-variant-numeric:tabular-nums}
+.m .v u{text-decoration:none;font-size:var(--t-xs);color:var(--faint);margin-left:3px}
+.m.hero{padding:7px 9px 6px} .m.hero .v{font-size:23px;font-weight:600}
 .m.split{grid-template-columns:1fr auto auto}
-.pill{
-  font-family:var(--cond); font-size:var(--t-xs); font-weight:600;
-  letter-spacing:.07em; text-transform:uppercase;
-  padding:1px 6px; border-radius:9px; border:1px solid currentColor;
-}
+.pill{font-family:var(--cond);font-size:var(--t-xs);font-weight:600;letter-spacing:.07em;
+  text-transform:uppercase;padding:1px 6px;border-radius:9px;border:1px solid currentColor}
 .pill.ok{color:var(--good)} .pill.wr{color:var(--warn)} .pill.cr{color:var(--crit)}
-.bar{height:2px; background:var(--edge); margin:0 9px 5px; border-radius:2px; overflow:hidden}
-.bar i{display:block; height:100%; background:var(--warm); border-radius:2px; transition:width .2s}
+.bar{height:2px;background:var(--edge);margin:0 9px 5px;border-radius:2px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--warm);border-radius:2px;transition:width .2s}
 
-/* pohjapiirros */
-#planbox{left:10px; bottom:10px; width:330px}
-#plan{display:block; width:100%; height:auto; cursor:crosshair; border-radius:0 0 var(--r) var(--r)}
-.plan-legend{
-  display:flex; gap:10px; flex-wrap:wrap; padding:5px 9px;
-  border-top:1px solid var(--edge);
-  font-family:var(--mono); font-size:var(--t-xs); color:var(--faint);
-}
-.plan-legend i{display:inline-block; width:7px; height:7px; border-radius:50%; margin-right:4px; vertical-align:middle}
+#planbox{left:10px;bottom:10px;width:340px}
+#plan{display:block;width:100%;height:auto;cursor:crosshair;border-radius:0 0 var(--r) var(--r)}
+.plan-legend{display:flex;gap:10px;flex-wrap:wrap;padding:5px 9px;border-top:1px solid var(--edge);
+  font-family:var(--mono);font-size:var(--t-xs);color:var(--faint)}
+.plan-legend i{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:4px;
+  vertical-align:middle}
 
-/* sparklinet */
-#charts{right:10px; bottom:10px; width:246px; display:flex; flex-direction:column}
-.spark{padding:6px 9px 4px; border-bottom:1px solid var(--edge)}
+#charts{right:10px;bottom:10px;width:250px;display:flex;flex-direction:column}
+.spark{padding:6px 9px 4px;border-bottom:1px solid var(--edge)}
 .spark:last-child{border-bottom:0}
-.spark-h{display:flex; align-items:baseline; gap:6px; margin-bottom:1px}
-.spark-h .dot{width:7px; height:7px; border-radius:50%; flex:none; align-self:center}
-.spark-h .lbl{
-  font-family:var(--cond); font-size:var(--t-xs); letter-spacing:.09em;
-  text-transform:uppercase; color:var(--faint); flex:1;
-}
-.spark-h .num{
-  font-family:var(--mono); font-size:var(--t-md); font-weight:500;
-  font-variant-numeric:tabular-nums;
-}
-.spark-h .num u{text-decoration:none; font-size:var(--t-xs); color:var(--faint); margin-left:2px}
-.spark canvas{display:block; width:100%; height:26px}
+.spark-h{display:flex;align-items:baseline;gap:6px;margin-bottom:1px}
+.spark-h .dot{width:7px;height:7px;border-radius:50%;flex:none;align-self:center}
+.spark-h .lbl{font-family:var(--cond);font-size:var(--t-xs);letter-spacing:.09em;
+  text-transform:uppercase;color:var(--faint);flex:1}
+.spark-h .num{font-family:var(--mono);font-size:var(--t-md);font-weight:500;
+  font-variant-numeric:tabular-nums}
+.spark-h .num u{text-decoration:none;font-size:var(--t-xs);color:var(--faint);margin-left:2px}
+.spark canvas{display:block;width:100%;height:26px}
 
-/* varikartan legenda */
-#legend{left:10px; top:10px; width:330px}
+#legend{left:10px;top:10px;width:340px}
 .lg-body{padding:7px 9px 8px}
-.lg-scale{height:9px; border-radius:2px; border:1px solid var(--edge)}
-.lg-ticks{
-  display:flex; justify-content:space-between; margin-top:3px;
-  font-family:var(--mono); font-size:var(--t-xs); color:var(--faint);
-  font-variant-numeric:tabular-nums;
-}
-#viewmodes{display:flex; gap:4px; padding:6px 9px; border-top:1px solid var(--edge); flex-wrap:wrap}
+.lg-scale{height:9px;border-radius:2px;border:1px solid var(--edge)}
+.lg-ticks{display:flex;justify-content:space-between;margin-top:3px;font-family:var(--mono);
+  font-size:var(--t-xs);color:var(--faint);font-variant-numeric:tabular-nums}
+#viewmodes{display:flex;gap:4px;padding:6px 9px;border-top:1px solid var(--edge);flex-wrap:wrap}
 
-/* vinkki */
-#tip{
-  position:absolute; z-index:40; pointer-events:none; opacity:0;
-  transform:translate(-50%,-100%) translateY(-9px);
-  background:rgba(8,13,18,.96); border:1px solid var(--edge-2);
-  border-radius:var(--r); padding:5px 8px; white-space:nowrap;
-  font-family:var(--mono); font-size:var(--t-xs); line-height:1.6;
-  transition:opacity .1s;
-}
-#tip b{color:var(--warm-hi); font-weight:500}
+/* valitun esineen tyokalupalkki */
+#selbar{left:50%;bottom:12px;transform:translateX(-50%);display:none;align-items:center;gap:8px;
+  padding:7px 10px;z-index:16}
+#selbar.on{display:flex}
+#selbar .nm{font-family:var(--cond);font-size:var(--t-sm);font-weight:600;letter-spacing:.04em;
+  padding-right:4px;border-right:1px solid var(--edge);margin-right:2px}
+#selbar .kb{font-family:var(--mono);font-size:9.5px;color:var(--faint);margin-left:4px}
 
-#toast{
-  position:absolute; left:50%; bottom:22px; transform:translateX(-50%);
-  z-index:45; pointer-events:none; opacity:0; transition:opacity .25s;
-  background:rgba(8,13,18,.96); border:1px solid var(--edge-2);
-  border-radius:var(--r); padding:6px 13px;
-  font-family:var(--cond); font-size:var(--t-sm); letter-spacing:.03em;
-}
+#tip{position:absolute;z-index:40;pointer-events:none;opacity:0;
+  transform:translate(-50%,-100%) translateY(-9px);background:rgba(8,13,18,.96);
+  border:1px solid var(--edge-2);border-radius:var(--r);padding:5px 8px;white-space:nowrap;
+  font-family:var(--mono);font-size:var(--t-xs);line-height:1.6;transition:opacity .1s}
+#tip b{color:var(--warm-hi);font-weight:500}
+#toast{position:absolute;left:50%;bottom:64px;transform:translateX(-50%);z-index:45;
+  pointer-events:none;opacity:0;transition:opacity .25s;background:rgba(8,13,18,.96);
+  border:1px solid var(--edge-2);border-radius:var(--r);padding:6px 13px;
+  font-family:var(--cond);font-size:var(--t-sm);letter-spacing:.03em}
 #toast.show{opacity:1}
+#boot{position:fixed;inset:0;z-index:99;display:grid;place-items:center;background:var(--void);
+  text-align:center}
+#boot .bt{font-family:var(--cond);font-weight:700;font-size:19px}
+#boot .bs{font-family:var(--mono);font-size:var(--t-sm);color:var(--faint);margin-top:6px}
+#boot.gone{opacity:0;pointer-events:none;transition:opacity .4s}
+#panelToggle{display:none}
 
-#boot{
-  position:fixed; inset:0; z-index:99; display:grid; place-items:center;
-  background:var(--void); gap:12px; text-align:center;
+@media (max-width:1280px){
+  :root{--panw:280px}
+  #planbox{width:280px} #legend{width:280px}
 }
-#boot .bt{font-family:var(--cond); font-weight:700; font-size:19px; letter-spacing:.02em}
-#boot .bs{font-family:var(--mono); font-size:var(--t-sm); color:var(--faint); margin-top:6px}
-#boot.gone{opacity:0; pointer-events:none; transition:opacity .4s}
-
-#railToggle{display:none}
-
-@media (max-width:1180px){
-  #planbox{width:270px}
-  #legend{width:270px}
-}
-@media (max-width:900px){
-  :root{--rail-w:0px}
-  #app{grid-template-columns:1fr; grid-template-areas:"top" "stage"}
-  #topbar{
-    overflow-x:auto; overflow-y:hidden; flex-wrap:nowrap;
-    padding-right:104px; scrollbar-width:none;
-  }
+@media (max-width:1000px){
+  :root{--tabw:0px;--panw:0px}
+  #app{grid-template-columns:1fr;grid-template-areas:"top" "stage"}
+  #topbar{overflow-x:auto;overflow-y:hidden;flex-wrap:nowrap;padding-right:104px;scrollbar-width:none}
   #topbar::-webkit-scrollbar{height:0}
   #topbar>*{flex:none}
-  .brand span{display:none}
-  .tb-spacer{display:none}
-  #rail{
-    position:fixed; left:0; right:0; bottom:0; top:auto; max-height:64vh; width:100%;
-    border-right:0; border-top:1px solid var(--edge-2);
-    transform:translateY(100%); transition:transform .22s; z-index:50;
-    box-shadow:0 -18px 40px rgba(0,0,0,.5);
-  }
-  #rail.open{transform:translateY(0)}
-  #railToggle{display:inline-flex; position:fixed; right:9px; top:7px; z-index:60;
-    background:var(--panel-2); box-shadow:-14px 0 14px 8px var(--panel)}
-  #planbox{width:196px; bottom:8px; left:8px}
-  #charts{display:none}
-  #hud{width:168px; top:56px; right:8px}
-  #legend{width:196px; top:56px; left:8px}
+  .brand span{display:none} .tb-spacer{display:none}
+  #tabs{position:fixed;left:0;right:0;bottom:0;top:auto;width:100%;height:56px;
+    flex-direction:row;border-right:0;border-top:1px solid var(--edge-2);z-index:52;
+    transform:translateY(100%);transition:transform .22s;padding:0}
+  #tabs.open{transform:translateY(0)}
+  .tab{flex:1;min-width:0;border-left:0;border-top:2px solid transparent;padding:7px 1px}
+  .tab span{font-size:8px;letter-spacing:0;max-width:100%;overflow:hidden;white-space:nowrap}
+  .tab svg{width:17px;height:17px}
+  .tab.on{border-left-color:transparent;border-top-color:var(--warm)}
+  #panel{position:fixed;left:0;right:0;bottom:56px;top:auto;width:100%;max-height:52vh;
+    border-right:0;border-top:1px solid var(--edge);z-index:51;
+    transform:translateY(150%);transition:transform .22s}
+  #panel.open{transform:translateY(0)}
+  #panelToggle{display:inline-flex;position:fixed;right:9px;top:7px;z-index:60;
+    background:var(--panel-2);box-shadow:-14px 0 14px 8px var(--panel)}
+  #planbox{width:200px;bottom:8px;left:8px} #charts{display:none}
+  #hud{width:172px;top:56px;right:8px} #legend{width:200px;top:56px;left:8px}
   .m{padding:3px 8px} .m .v{font-size:var(--t-md)} .m.hero .v{font-size:18px}
-  #legend .card-h,#planbox .card-h{padding:5px 8px}
-  #viewmodes{padding:5px 8px}
 }
 @media (max-width:640px){
   #planbox .card-h .hint{display:none}
-  #hud{top:auto; bottom:8px; right:8px; width:150px}
-  #legend{width:170px}
-  #planbox{width:170px; bottom:auto; top:56px; left:8px}
-  #legend{top:auto; bottom:8px; left:8px}
-  .m:nth-child(n+7){display:none}
+  #hud{top:auto;bottom:70px;right:8px;width:152px}
+  #legend{width:174px;top:auto;bottom:70px;left:8px}
+  #planbox{width:174px;bottom:auto;top:56px;left:8px}
+  #selbar{bottom:120px} .m:nth-child(n+8){display:none}
 }
 </style>
 
 <div id="app">
 
   <header id="topbar">
-    <div class="brand">
-      <b>Ilmavirtalaboratorio</b>
-      <span>YKSIO 24 m&sup2; &middot; CFD</span>
-    </div>
+    <div class="brand"><b>Ilmavirtalaboratorio</b><span>YKSI&Ouml; 24 m&sup2; &middot; CFD</span></div>
     <div class="tb-sep"></div>
     <button class="btn on" id="btnPlay">Pause</button>
     <div class="seg" id="segSpeed">
-      <button data-v="1" class="on">1&times;</button>
-      <button data-v="3">3&times;</button>
-      <button data-v="8">8&times;</button>
+      <button data-v="1" class="on">1&times;</button><button data-v="3">3&times;</button><button data-v="8">8&times;</button>
     </div>
     <button class="btn ghost" id="btnReset">Nollaa</button>
     <div class="tb-sep"></div>
-    <div class="seg" id="segPreset">
-      <button data-p="talvi">Talvi</button>
-      <button data-p="tuuletus">Tuuletus</button>
-      <button data-p="suihku">Suihkun j&auml;lkeen</button>
-      <button data-p="lasitettu">Lasitettu</button>
-      <button data-p="helle">Helle</button>
-    </div>
+    <select class="sel" id="selPreset">
+      <option value="">Skenaario&hellip;</option>
+      <option value="talvi">Talvipakkanen &minus;12 &deg;C</option>
+      <option value="tuuletus">Ristituuletus</option>
+      <option value="suihku">Suihkun j&auml;lkeen</option>
+      <option value="lasitettu">Lasitettu parveke</option>
+      <option value="helle">Kes&auml;helle + peli-ilta</option>
+      <option value="peli-ilta">Peli-ilta talvella</option>
+    </select>
+    <button class="btn ghost" id="btnEdit">Muokkaa kalusteita</button>
     <div class="tb-spacer"></div>
-    <span class="f-val" id="clock" style="color:var(--faint)">00:00</span>
+    <span id="clock">00:00</span>
     <div class="seg" id="segCam">
-      <button data-c="iso" class="on">Iso</button>
-      <button data-c="top">Pohja</button>
-      <button data-c="parveke">Parveke</button>
-      <button data-c="leikkaus">Leikkaus</button>
+      <button data-c="iso" class="on">Iso</button><button data-c="top">Pohja</button>
+      <button data-c="parveke">Parveke</button><button data-c="leikkaus">Leikkaus</button>
     </div>
-    <button class="btn ghost" id="railToggle">S&auml;&auml;t&ouml;t</button>
+    <button class="btn ghost" id="panelToggle">Valikko</button>
   </header>
 
-  <aside id="rail">
+  <nav id="tabs">
+    <button class="tab on" data-t="saa"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></svg><span>S&auml;&auml;</span></button>
+    <button class="tab" data-t="aukot"><svg viewBox="0 0 24 24"><path d="M4 21V4a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v17M4 21h16M15 12h.01"/><path d="M18 21V8l-3-2"/></svg><span>Aukot</span></button>
+    <button class="tab" data-t="iv"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.4"/><path d="M12 9.6c0-3 1-5.6 3-5.6s2.6 2.4 1 4.4-3.2 1.2-4 1.2M9.6 12c-3 0-5.6-1-5.6-3s2.4-2.6 4.4-1 1.2 3.2 1.2 4M14.4 12c3 0 5.6 1 5.6 3s-2.4 2.6-4.4 1-1.2-3.2-1.2-4M12 14.4c0 3-1 5.6-3 5.6s-2.6-2.4-1-4.4 3.2-1.2 4-1.2"/></svg><span>Ilmanv.</span></button>
+    <button class="tab" data-t="ilmasto"><svg viewBox="0 0 24 24"><path d="M10 13.5V5a2 2 0 1 1 4 0v8.5a4 4 0 1 1-4 0z"/><path d="M12 9v6"/></svg><span>Ilmasto</span></button>
+    <button class="tab" data-t="laitteet"><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/></svg><span>Laitteet</span></button>
+    <button class="tab" data-t="kalusteet"><svg viewBox="0 0 24 24"><path d="M3 11V8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v3"/><path d="M2 12.5a2 2 0 0 1 4 0V16h12v-3.5a2 2 0 0 1 4 0V19H2z"/></svg><span>Kalusteet</span></button>
+    <button class="tab" data-t="nakyma"><svg viewBox="0 0 24 24"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/></svg><span>N&auml;kym&auml;</span></button>
+    <button class="tab" data-t="tiedot"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.5M12 7.6v.1"/></svg><span>Tiedot</span></button>
+  </nav>
 
-    <details class="grp" open>
-      <summary>Ulkoilma ja parveke <span class="tag" id="tagOut">10 &deg;C</span></summary>
-      <div class="grp-body">
-        <div class="f cool">
-          <div class="f-top"><label for="cOutT">Ulkol&auml;mp&ouml;tila</label><span class="f-val" id="vOutT">10.0<em>&deg;C</em></span></div>
-          <input type="range" id="cOutT" min="-25" max="32" step="0.5" value="10">
-        </div>
-        <div class="f cool">
-          <div class="f-top"><label for="cOutRH">Ulkoilman kosteus</label><span class="f-val" id="vOutRH">80<em>%RH</em></span></div>
-          <input type="range" id="cOutRH" min="10" max="100" step="1" value="80">
-        </div>
-        <hr class="sep">
-        <div class="f">
-          <div class="f-top"><label for="cWind">Tuulen nopeus</label><span class="f-val" id="vWind">5.0<em>m/s</em></span></div>
-          <input type="range" id="cWind" min="0" max="18" step="0.5" value="5">
-        </div>
-        <div class="f">
-          <div class="f-top"><label for="cWindDir">Tuulen suunta</label><span class="f-val" id="vWindDir">0<em>&deg; kohti julkisivua</em></span></div>
-          <input type="range" id="cWindDir" min="0" max="350" step="10" value="0">
-        </div>
-        <div class="note" id="noteCp">Tuulenpaine julkisivulla <b id="nCp">+10.5 Pa</b> (C<sub>p</sub> = 0.70). Vastapaine ajaa ilmaa sis&auml;&auml;n avoimesta ovesta.</div>
-        <hr class="sep">
-        <div class="f warm">
-          <div class="f-top"><label for="cSolar">Auringons&auml;teily julkisivulle</label><span class="f-val" id="vSolar">0<em>W/m&sup2;</em></span></div>
-          <input type="range" id="cSolar" min="0" max="800" step="25" value="0">
-        </div>
-        <div class="f">
-          <div class="f-top"><label for="cGlaze">Parvekelasitus</label><span class="f-val" id="vGlaze">0<em>% suljettu</em></span></div>
-          <input type="range" id="cGlaze" min="0" max="100" step="5" value="0">
-        </div>
-        <div class="row tight">
-          <button class="btn sm ghost" data-glaze="0">Avoin</button>
+  <aside id="panel">
+
+    <!-- ============ SÄÄ ============ -->
+    <section class="page on" data-p="saa">
+      <div class="page-h"><b>Ulkoilma ja s&auml;&auml;</b><i id="hOut">10 &deg;C</i></div>
+      <div class="sec">
+        <div class="f cool"><div class="f-top"><label for="cOutT">Ulkol&auml;mp&ouml;tila</label><span class="f-val" id="vOutT">10.0<em>&deg;C</em></span></div>
+          <input type="range" id="cOutT" min="-28" max="34" step="0.5" value="10"></div>
+        <div class="f cool"><div class="f-top"><label for="cOutRH">Ulkoilman kosteus</label><span class="f-val" id="vOutRH">80<em>%RH</em></span></div>
+          <input type="range" id="cOutRH" min="10" max="100" step="1" value="80"></div>
+        <div class="f warm"><div class="f-top"><label for="cSolar">Auringons&auml;teily julkisivulle</label><span class="f-val" id="vSolar">0<em>W/m&sup2;</em></span></div>
+          <input type="range" id="cSolar" min="0" max="800" step="25" value="0"></div>
+      </div>
+      <div class="sec">
+        <div class="sec-t">Tuuli</div>
+        <div class="f"><div class="f-top"><label for="cWind">Tuulen nopeus</label><span class="f-val" id="vWind">5.0<em>m/s</em></span></div>
+          <input type="range" id="cWind" min="0" max="20" step="0.5" value="5"></div>
+        <div class="f"><div class="f-top"><label for="cWindDir">Tuulen suunta</label><span class="f-val" id="vWindDir">0<em>&deg;</em></span></div>
+          <input type="range" id="cWindDir" min="0" max="350" step="10" value="0"></div>
+        <div class="note" id="noteCp"></div>
+        <div class="note">Asunto on <b>3. kerroksessa</b>, joten tuulen nopeus kasvaa hieman korkeuden mukana ja parvekkeen edess&auml; on 3,2 m simuloitua ulkoilmaa.</div>
+      </div>
+    </section>
+
+    <!-- ============ AUKOT ============ -->
+    <section class="page" data-p="aukot">
+      <div class="page-h"><b>Ovet, ikkunat, lasitus</b><i id="hOpen">kiinni</i></div>
+      <div class="sec">
+        <div class="sec-t">Julkisivu</div>
+        <div class="f warm"><div class="f-top"><label for="cDoor">Parvekkeen ovi</label><span class="f-val" id="vDoor">0<em>% auki</em></span></div>
+          <input type="range" id="cDoor" min="0" max="100" step="5" value="0"></div>
+        <div class="row tight"><button class="btn sm ghost" data-door="0">Kiinni</button>
+          <button class="btn sm ghost" data-door="35">Raolleen</button>
+          <button class="btn sm ghost" data-door="100">Auki</button></div>
+        <div class="f warm"><div class="f-top"><label for="cWin">Yl&auml;ikkuna sis&auml;&auml;np&auml;in</label><span class="f-val" id="vWin">0<em>&deg;</em></span></div>
+          <input type="range" id="cWin" min="0" max="100" step="5" value="0"></div>
+        <div class="f"><div class="f-top"><label for="cVent">Korvausilmaventtiili</label><span class="f-val" id="vVent">100<em>% auki</em></span></div>
+          <input type="range" id="cVent" min="0" max="100" step="10" value="100"></div>
+        <div class="note">Venttiili tuo t&auml;ysin auki n. <b>9 l/s</b> 10 Pa:n alipaineella. Ilman sit&auml; poistoilmanvaihto vet&auml;&auml; asunnon voimakkaaseen alipaineeseen.</div>
+      </div>
+      <div class="sec">
+        <div class="sec-t">Parvekelasitus</div>
+        <div class="f"><div class="f-top"><label for="cGlaze">Lasitettu osuus</label><span class="f-val" id="vGlaze">0<em>%</em></span></div>
+          <input type="range" id="cGlaze" min="0" max="100" step="5" value="0"></div>
+        <div class="row tight"><button class="btn sm ghost" data-glaze="0">Avoin</button>
           <button class="btn sm ghost" data-glaze="50">Puoliksi</button>
-          <button class="btn sm ghost" data-glaze="100">T&auml;ysin lasitettu</button>
-        </div>
-        <div class="note">Lasituksessa on aina n. 3 % rakoja yl&auml;- ja alareunassa &mdash; siksi lasitettu parveke l&auml;mpenee ulkoilmaa l&auml;mpim&auml;mm&auml;ksi mutta ei ole ilmatiivis.</div>
+          <button class="btn sm ghost" data-glaze="100">Kiinni</button></div>
+        <div class="note">Lasituksessa on aina n. 3 % rakoja yl&auml;- ja alareunassa, joten lasitettu parveke l&auml;mpenee mutta ei ole ilmatiivis.</div>
       </div>
-    </details>
-
-    <details class="grp" open>
-      <summary>Ovi ja ikkunat <span class="tag" id="tagDoor">kiinni</span></summary>
-      <div class="grp-body">
-        <div class="f warm">
-          <div class="f-top"><label for="cDoor">Parvekkeen ovi</label><span class="f-val" id="vDoor">0<em>% auki</em></span></div>
-          <input type="range" id="cDoor" min="0" max="100" step="5" value="0">
-        </div>
-        <div class="f warm">
-          <div class="f-top"><label for="cWin">Yl&auml;ikkuna sis&auml;&auml;np&auml;in</label><span class="f-val" id="vWin">0<em>&deg;</em></span></div>
-          <input type="range" id="cWin" min="0" max="100" step="5" value="0">
-        </div>
-        <div class="f">
-          <div class="f-top"><label for="cVent">Korvausilmaventtiili</label><span class="f-val" id="vVent">100<em>% auki</em></span></div>
-          <input type="range" id="cVent" min="0" max="100" step="10" value="100">
-        </div>
+      <div class="sec">
+        <div class="sec-t">Sis&auml;ovet</div>
         <label class="chk"><input type="checkbox" id="cBathDoor"> Kylpyhuoneen ovi auki</label>
-        <div class="note">Suljetunkin oven alla on 20 mm rako &mdash; se on kylpyhuoneen ainoa korvausilmareitti.</div>
+        <div class="note">Ovi aukeaa eteiseen ulko-oven viereen ja k&auml;&auml;ntyy 90&deg; sein&auml;&auml; vasten. Suljetunkin oven alla on 20 mm rako.</div>
       </div>
-    </details>
+    </section>
 
-    <details class="grp" open>
-      <summary>Sis&auml;ilma <span class="tag" id="tagIn">21 &deg;C / 40 %</span></summary>
-      <div class="grp-body">
-        <div class="f warm">
-          <div class="f-top"><label for="cSetT">Tavoitel&auml;mp&ouml;tila</label><span class="f-val" id="vSetT">21.0<em>&deg;C</em></span></div>
-          <input type="range" id="cSetT" min="14" max="28" step="0.5" value="21">
-        </div>
-        <div class="f cool">
-          <div class="f-top"><label for="cSetRH">Tavoitekosteus</label><span class="f-val" id="vSetRH">40<em>%RH</em></span></div>
-          <input type="range" id="cSetRH" min="15" max="70" step="1" value="40">
-        </div>
-        <div class="f">
-          <div class="f-top"><label for="cRadMax">Patterin maksimiteho</label><span class="f-val" id="vRadMax">800<em>W</em></span></div>
-          <input type="range" id="cRadMax" min="0" max="2500" step="50" value="800">
-        </div>
+    <!-- ============ ILMANVAIHTO ============ -->
+    <section class="page" data-p="iv">
+      <div class="page-h"><b>Ilmanvaihto</b><i id="hVent">28 l/s</i></div>
+      <div class="sec">
+        <div class="sec-t">Poistoilmakanavat</div>
+        <div class="f"><div class="f-top"><label for="cDuctA">Kanava A &mdash; OH/KT, pohjoinen</label><span class="f-val" id="vDuctA">8<em>l/s</em></span></div>
+          <input type="range" id="cDuctA" min="0" max="40" step="1" value="8"></div>
+        <div class="f"><div class="f-top"><label for="cDuctB">Kanava B &mdash; OH/KT, etel&auml;inen</label><span class="f-val" id="vDuctB">8<em>l/s</em></span></div>
+          <input type="range" id="cDuctB" min="0" max="40" step="1" value="8"></div>
+        <div class="f"><div class="f-top"><label for="cDuctC">Kylpyhuone &mdash; suihkun yl&auml;puolella</label><span class="f-val" id="vDuctC">12<em>l/s</em></span></div>
+          <input type="range" id="cDuctC" min="0" max="40" step="1" value="12"></div>
+        <label class="chk"><input type="checkbox" id="cBoost"> Tehostus &times;1,8</label>
+        <div class="note">A ja B ovat pohjapiirroksen punaiset pallot: OH:n ja PSH:n v&auml;lisess&auml; seiniss&auml; <b>50 mm katosta alasp&auml;in</b> (2,40 m). Kylpyhuoneen venttiili on katossa suihkun yl&auml;puolella.</div>
+      </div>
+      <div class="sec">
+        <div class="sec-t">Rakennuksen vaippa</div>
+        <div class="f"><div class="f-top"><label for="cLeak">Ilmanvuotoluku n<sub>50</sub></label><span class="f-val" id="vLeak">2.0<em>1/h</em></span></div>
+          <input type="range" id="cLeak" min="0.3" max="8" step="0.1" value="2"></div>
+        <div class="note">Vuotoilma seuraa potenssilakia q = C&middot;&Delta;p<sup>0,65</sup>. Pienempi luku = tiiviimpi talo = suurempi alipaine samalla poistolla.</div>
+      </div>
+    </section>
+
+    <!-- ============ ILMASTO ============ -->
+    <section class="page" data-p="ilmasto">
+      <div class="page-h"><b>L&auml;mp&ouml; ja kosteus</b><i id="hClim">21 &deg;C / 40 %</i></div>
+      <div class="sec">
+        <div class="sec-t">Asunnon tavoitteet</div>
+        <div class="f warm"><div class="f-top"><label for="cSetT">Tavoitel&auml;mp&ouml;tila</label><span class="f-val" id="vSetT">21.0<em>&deg;C</em></span></div>
+          <input type="range" id="cSetT" min="14" max="28" step="0.5" value="21"></div>
+        <div class="f cool"><div class="f-top"><label for="cSetRH">Tavoitekosteus</label><span class="f-val" id="vSetRH">40<em>%RH</em></span></div>
+          <input type="range" id="cSetRH" min="15" max="70" step="1" value="40"></div>
+        <div class="f"><div class="f-top"><label for="cRadMax">Patterin maksimiteho</label><span class="f-val" id="vRadMax">800<em>W</em></span></div>
+          <input type="range" id="cRadMax" min="0" max="2500" step="50" value="800"></div>
         <label class="chk"><input type="checkbox" id="cThermo" checked> Termostaatti s&auml;&auml;t&auml;&auml; patteria</label>
         <label class="chk"><input type="checkbox" id="cHumid" checked> Kosteuss&auml;&auml;t&ouml; pit&auml;&auml; tavoitteen</label>
-        <label class="chk"><input type="checkbox" id="cPerson"> Henkil&ouml; huoneessa (100 W, 50 g/h)</label>
-        <label class="chk"><input type="checkbox" id="cCook"> Ruoanlaitto liedell&auml; (1200 W, 400 g/h)</label>
       </div>
-    </details>
-
-    <details class="grp">
-      <summary>Kylpyhuone PSH <span class="tag" id="tagBath">22 &deg;C / 45 %</span></summary>
-      <div class="grp-body">
-        <div class="f warm">
-          <div class="f-top"><label for="cBathT">Tavoitel&auml;mp&ouml;tila</label><span class="f-val" id="vBathT">22.0<em>&deg;C</em></span></div>
-          <input type="range" id="cBathT" min="15" max="32" step="0.5" value="22">
-        </div>
-        <div class="f cool">
-          <div class="f-top"><label for="cBathRH">Tavoitekosteus</label><span class="f-val" id="vBathRH">45<em>%RH</em></span></div>
-          <input type="range" id="cBathRH" min="20" max="95" step="1" value="45">
-        </div>
+      <div class="sec">
+        <div class="sec-t">Sis&auml;iset kuormat</div>
+        <label class="chk"><input type="checkbox" id="cPerson"> Asukas paikalla (100 W, 50 g/h)</label>
+        <label class="chk"><input type="checkbox" id="cCook"> Ruoanlaitto liedell&auml; (1200 W, 400 g/h)</label>
+        <div class="note">Tietokoneiden ja television l&auml;mm&ouml;ntuotto s&auml;&auml;detaan <b>Laitteet</b>-v&auml;lilehdell&auml;.</div>
+      </div>
+      <div class="sec">
+        <div class="sec-t">Kylpyhuone</div>
+        <div class="f warm"><div class="f-top"><label for="cBathT">Tavoitel&auml;mp&ouml;tila</label><span class="f-val" id="vBathT">22.0<em>&deg;C</em></span></div>
+          <input type="range" id="cBathT" min="15" max="32" step="0.5" value="22"></div>
+        <div class="f cool"><div class="f-top"><label for="cBathRH">Tavoitekosteus</label><span class="f-val" id="vBathRH">45<em>%RH</em></span></div>
+          <input type="range" id="cBathRH" min="20" max="95" step="1" value="45"></div>
         <label class="chk"><input type="checkbox" id="cBathHeat" checked> Lattial&auml;mmitys p&auml;&auml;ll&auml;</label>
         <label class="chk"><input type="checkbox" id="cBathHumid" checked> Kosteuss&auml;&auml;t&ouml; pit&auml;&auml; tavoitteen</label>
         <hr class="sep">
         <label class="chk"><input type="checkbox" id="cShower"> Suihku p&auml;&auml;ll&auml;</label>
-        <div class="f">
-          <div class="f-top"><label for="cShowerG">Suihkun kosteustuotto</label><span class="f-val" id="vShowerG">900<em>g/h</em></span></div>
-          <input type="range" id="cShowerG" min="0" max="3000" step="50" value="900">
+        <div class="f"><div class="f-top"><label for="cShowerG">Suihkun kosteustuotto</label><span class="f-val" id="vShowerG">900<em>g/h</em></span></div>
+          <input type="range" id="cShowerG" min="0" max="3000" step="50" value="900"></div>
+        <label class="chk"><input type="checkbox" id="cWash"> Pyykinpesukone k&auml;ynniss&auml; (200 W)</label>
+      </div>
+    </section>
+
+    <!-- ============ LAITTEET ============ -->
+    <section class="page" data-p="laitteet">
+      <div class="page-h"><b>Laitteet ja l&auml;mp&ouml;kuorma</b><i id="hDev">0 W</i></div>
+
+      <div class="dev">
+        <div class="dev-h"><b>Setup-tietokone</b><span class="w" id="wSetup">190 W</span></div>
+        <div class="dev-b">
+          <div class="seg grow" id="segPc">
+            <button data-v="0" class="on">Ty&ouml;p&ouml;yt&auml;</button><button data-v="1">Keskikova</button><button data-v="2">Maksimi</button>
+          </div>
+          <div class="note" id="notePc"></div>
+          <label class="chk"><input type="checkbox" id="cMon" checked> N&auml;yt&ouml;t ja oheislaitteet p&auml;&auml;ll&auml; (70 W)</label>
+          <hr class="sep">
+          <div class="spec">
+            <b>i9-14900K</b> &middot; <b>RTX 3070 8GB</b><br>
+            192GB DDR5 6000 &middot; Z790 AORUS ELITE AX<br>
+            H150i ELITE LCD + 13&times; AF120 RGB<br>
+            2&times; 990 PRO 2TB + 4TB HDD &middot; 1000 W<br>
+            Samsung 4K 60Hz 27&quot; + 1080p 240Hz 27&quot;
+          </div>
         </div>
       </div>
-    </details>
 
-    <details class="grp" open>
-      <summary>Poistoilmakanavat <span class="tag" id="tagVent">22 l/s</span></summary>
-      <div class="grp-body">
-        <div class="note">Kaksi kanavaa OH:n ja PSH:n v&auml;lisess&auml; seiniss&auml;, <b>50 mm katosta alasp&auml;in</b> (korkeus 2,40 m).</div>
-        <div class="f">
-          <div class="f-top"><label for="cDuctA">Kanava A (pohjoinen)</label><span class="f-val" id="vDuctA">10<em>l/s</em></span></div>
-          <input type="range" id="cDuctA" min="0" max="40" step="1" value="10">
+      <div class="dev">
+        <div class="dev-h"><b>TV-tietokone</b><span class="w" id="wTvpc">85 W</span></div>
+        <div class="dev-b">
+          <div class="seg grow" id="segTvpc">
+            <button data-v="0">Lepotila</button><button data-v="1" class="on">YouTube / elokuva</button><button data-v="2">Pelit</button>
+          </div>
+          <div class="note" id="noteTvpc"></div>
+          <div class="spec"><b>i5-8400</b> &middot; <b>GTX 1060 6GB</b> &middot; 32GB DDR4</div>
         </div>
-        <div class="f">
-          <div class="f-top"><label for="cDuctB">Kanava B (etel&auml;inen)</label><span class="f-val" id="vDuctB">12<em>l/s</em></span></div>
-          <input type="range" id="cDuctB" min="0" max="40" step="1" value="12">
-        </div>
-        <label class="chk"><input type="checkbox" id="cBoost"> Tehostus &times;1,8</label>
-        <hr class="sep">
-        <div class="f">
-          <div class="f-top"><label for="cLeak">Vaipan tiiviys n<sub>50</sub></label><span class="f-val" id="vLeak">2.0<em>1/h</em></span></div>
-          <input type="range" id="cLeak" min="0.3" max="8" step="0.1" value="2">
-        </div>
-        <div class="note">Vuotoilma tulee sis&auml;&auml;n vaipan l&auml;pi alipaineen mukaan &mdash; potenssilaki q = C&middot;&Delta;p<sup>0,65</sup>.</div>
       </div>
-    </details>
 
-    <details class="grp" open>
-      <summary>Tornituuletin <span class="tag" id="tagFan">pois</span></summary>
-      <div class="grp-body">
-        <div class="f warm">
-          <div class="f-top"><label for="cFan">Puhallusnopeus</label><span class="f-val" id="vFan">0<em>&mdash; pois</em></span></div>
-          <input type="range" id="cFan" min="0" max="5" step="1" value="0">
+      <div class="dev">
+        <div class="dev-h"><b>Televisio</b><span class="w" id="wTv">110 W</span></div>
+        <div class="dev-b">
+          <label class="chk"><input type="checkbox" id="cTv" checked> Televisio p&auml;&auml;ll&auml;</label>
+          <div class="spec">Samsung 55&quot; LED &middot; 110 W k&auml;yt&ouml;ss&auml;, 0,5 W valmiustilassa</div>
         </div>
-        <div class="f">
-          <div class="f-top"><label for="cFanDir">Puhallussuunta</label><span class="f-val" id="vFanDir">0<em>&deg;</em></span></div>
-          <input type="range" id="cFanDir" min="0" max="355" step="5" value="0">
-        </div>
-        <div class="f">
-          <div class="f-top"><label for="cFanH">Puhallusaukon korkeus</label><span class="f-val" id="vFanH">0.95<em>m</em></span></div>
-          <input type="range" id="cFanH" min="0.4" max="1.4" step="0.05" value="0.95">
-        </div>
-        <label class="chk"><input type="checkbox" id="cFanOsc"> K&auml;&auml;ntyy edestakaisin (&plusmn;40&deg;)</label>
-        <div class="note">Raahaa tuuletinta suoraan 3D-n&auml;kym&auml;ss&auml; tai pohjapiirroksessa. Puhallusaukko on 0,15 m leve&auml; ja 0,60 m korkea.</div>
       </div>
-    </details>
 
-    <details class="grp" open>
-      <summary>Visualisointi</summary>
-      <div class="grp-body">
-        <div class="f">
-          <div class="f-top"><label for="cParts">Merkkihiukkaset</label><span class="f-val" id="vParts">22000<em>kpl</em></span></div>
-          <input type="range" id="cParts" min="0" max="48000" step="2000" value="22000">
+      <div class="dev">
+        <div class="dev-h"><b>Minijää&shy;kaappi</b><span class="w" id="wFridge">20 W</span></div>
+        <div class="dev-b">
+          <label class="chk"><input type="checkbox" id="cFridge" checked> Jääkaappi p&auml;&auml;ll&auml;</label>
+          <div class="spec">845 &times; 540 &times; 548 mm &middot; kompressori 55 W, k&auml;yntijakso n. 35 %</div>
         </div>
-        <div class="f">
-          <div class="f-top"><label for="cSlice">Leikkaustason korkeus</label><span class="f-val" id="vSlice">1.10<em>m</em></span></div>
-          <input type="range" id="cSlice" min="0.1" max="2.4" step="0.05" value="1.1">
+      </div>
+
+      <div class="dev">
+        <div class="dev-h"><b>Tuuletin</b><span class="w" id="wFan">0 W</span></div>
+        <div class="dev-b">
+          <div class="f warm"><div class="f-top"><label for="cFan">Puhallusnopeus</label><span class="f-val" id="vFan">0<em>pois</em></span></div>
+            <input type="range" id="cFan" min="0" max="5" step="1" value="0"></div>
+          <div class="f"><div class="f-top"><label for="cFanDir">Suunta</label><span class="f-val" id="vFanDir">0<em>&deg;</em></span></div>
+            <input type="range" id="cFanDir" min="0" max="355" step="5" value="0"></div>
+          <div class="f"><div class="f-top"><label for="cFanH">Puhallusaukon korkeus</label><span class="f-val" id="vFanH">0.95<em>m</em></span></div>
+            <input type="range" id="cFanH" min="0.35" max="1.45" step="0.05" value="0.95"></div>
+          <label class="chk"><input type="checkbox" id="cFanOsc"> K&auml;&auml;ntyy edestakaisin (&plusmn;40&deg;)</label>
+          <div class="note">Py&ouml;re&auml; potkuripuhallin, siipikeh&auml;n halkaisija 40 cm. Raahaa 3D-n&auml;kym&auml;ss&auml; tai pohjapiirroksessa.</div>
         </div>
+      </div>
+    </section>
+
+    <!-- ============ KALUSTEET ============ -->
+    <section class="page" data-p="kalusteet">
+      <div class="page-h"><b>Kalusteet</b><i id="hFurn">0 / 0</i></div>
+      <div class="sec">
+        <button class="btn wide" id="btnEdit2">Muokkaustila pois</button>
+        <div class="note" id="noteEdit">Muokkaustilassa: <b>klikkaa</b> valitaksesi, <b>raahaa</b> siirt&auml;&auml;ksesi,
+          <b>R</b> / <b>Shift+R</b> py&ouml;ritt&auml;&auml; 15&deg;, <b>Del</b> siirt&auml;&auml; varastoon, <b>Esc</b> poistaa valinnan.</div>
+      </div>
+      <div class="sec" id="selBox" style="display:none">
+        <div class="sec-t">Valittu</div>
+        <div class="f"><div class="f-top"><label id="selName">&mdash;</label><span class="f-val" id="selSize">&mdash;</span></div></div>
+        <div class="f"><div class="f-top"><label for="cRot">Kiertokulma</label><span class="f-val" id="vRot">0<em>&deg;</em></span></div>
+          <input type="range" id="cRot" min="0" max="355" step="5" value="0"></div>
+        <div class="row tight">
+          <button class="btn sm ghost" id="btnRotL">&minus;45&deg;</button>
+          <button class="btn sm ghost" id="btnRotR">+45&deg;</button>
+          <button class="btn sm ghost" id="btnStore">Varastoon</button>
+        </div>
+      </div>
+      <div class="sec">
+        <div class="sec-t">Huoneistossa ja varastossa</div>
+        <div class="flist" id="flist"></div>
+        <div class="note">Klikkaa rivi&auml; valitaksesi, klikkaa vasenta merkki&auml; siirt&auml;&auml;ksesi kalusteen varastoon tai takaisin huoneistoon.
+          Kalusteet est&auml;v&auml;t ilman kulkua ja vaikuttavat virtauskuvioon.</div>
+        <button class="btn wide ghost" id="btnResetFurn">Palauta oletusasettelu</button>
+      </div>
+    </section>
+
+    <!-- ============ NÄKYMÄ ============ -->
+    <section class="page" data-p="nakyma">
+      <div class="page-h"><b>N&auml;kym&auml;</b><i id="hView">L&auml;mp&ouml;tila</i></div>
+      <div class="sec">
+        <div class="sec-t">V&auml;ritetty suure</div>
+        <div class="seg grow" id="segField2" style="flex-wrap:wrap">
+          <button data-f="temp" class="on">L&auml;mp&ouml;</button><button data-f="rh">Kosteus</button><button data-f="speed">Nopeus</button>
+        </div>
+        <div class="seg grow" id="segField3">
+          <button data-f="press">Paine</button><button data-f="age">Ilman ik&auml;</button>
+        </div>
+      </div>
+      <div class="sec">
+        <div class="sec-t">Virtauksen esitys</div>
+        <div class="f"><div class="f-top"><label for="cParts">Merkkihiukkaset</label><span class="f-val" id="vParts">22000<em>kpl</em></span></div>
+          <input type="range" id="cParts" min="0" max="48000" step="2000" value="22000"></div>
+        <div class="f"><div class="f-top"><label for="cSlice">Leikkaustason korkeus</label><span class="f-val" id="vSlice">1.10<em>m</em></span></div>
+          <input type="range" id="cSlice" min="0.1" max="2.4" step="0.05" value="1.1"></div>
         <div class="row tight">
           <label class="chk"><input type="checkbox" id="cShowSlice" checked> Leikkaustaso</label>
           <label class="chk"><input type="checkbox" id="cShowVec"> Nuolet</label>
         </div>
+      </div>
+      <div class="sec">
+        <div class="sec-t">Malli</div>
         <div class="row tight">
           <label class="chk"><input type="checkbox" id="cShowFurn" checked> Kalusteet</label>
-          <label class="chk"><input type="checkbox" id="cShowWalls" checked> Seinien leikkaus</label>
+          <label class="chk"><input type="checkbox" id="cShowWalls" checked> Sein&auml;leikkaus</label>
         </div>
         <div class="row tight">
           <label class="chk"><input type="checkbox" id="cShadows"> Varjot</label>
-          <label class="chk"><input type="checkbox" id="cVort" checked> Py&ouml;rteiden vahvistus</label>
+          <label class="chk"><input type="checkbox" id="cVort" checked> Py&ouml;rteet</label>
         </div>
-        <hr class="sep">
-        <div class="f">
-          <div class="f-top"><label>Laskentaverkko</label><span class="f-val" id="vRes">0.125 m</span></div>
-          <div class="seg" id="segRes" style="width:100%">
-            <button data-r="0.1667" style="flex:1">Kevyt</button>
-            <button data-r="0.125" class="on" style="flex:1">Normaali</button>
-            <button data-r="0.1" style="flex:1">Tarkka</button>
-          </div>
-        </div>
-        <div class="note" id="noteGrid">Verkko 80 &times; 35 &times; 24 = 67 200 solua &middot; <b id="nFps">&mdash;</b></div>
       </div>
-    </details>
+      <div class="sec">
+        <div class="sec-t">Laskentatarkkuus</div>
+        <div class="seg grow" id="segRes">
+          <button data-r="0.17">Kevyt</button><button data-r="0.15" class="on">Normaali</button><button data-r="0.13">Tarkka</button>
+        </div>
+        <div class="note" id="noteGrid"></div>
+      </div>
+    </section>
 
-    <details class="grp">
-      <summary>Tietoa mallista</summary>
-      <div class="grp-body">
-        <div class="note">
-          Ratkaisin on 3D Navier&ndash;Stokes puristumattomalle ilmalle MAC-hilassa:
-          semi-Lagrangen advektio, Boussinesq-noste, SOR-painekorjaus ja py&ouml;rteiden vahvistus.
-          L&auml;mp&ouml;tila ja absoluuttinen kosteus kulkevat skalaareina virtauksen mukana;
-          suhteellinen kosteus lasketaan Magnuksen kaavalla ja kastepiste pinnoille erikseen.
-        </div>
-        <div class="note">
-          Mitat pohjapiirroksesta: sis&auml;tilat 7,00 &times; 3,375 m (23,0 m&sup2;),
-          huonekorkeus 2,50 m, parveke 2,00 &times; 3,375 m (6,75 m&sup2;).
-          PSH 3,5 m&sup2;, ET 2,6 m&sup2;, OH+KT 16,9 m&sup2;.
-        </div>
-        <div class="note">
-          Painekent&auml;n reunaehto ulkona on tuulenpaine &frac12;&rho;U&sup2;C<sub>p</sub>,
-          joten tuulen suunta vaikuttaa siihen, painaako tuuli ilmaa sis&auml;&auml;n vai imeek&ouml; se sit&auml; ulos.
+    <!-- ============ TIEDOT ============ -->
+    <section class="page" data-p="tiedot">
+      <div class="page-h"><b>Mallista</b><i>CFD</i></div>
+      <div class="sec">
+        <div class="sec-t">Mitat</div>
+        <div class="spec">
+          Sis&auml;tilat 7,00 &times; 3,375 m &middot; h 2,50 m<br>
+          OH + KT 16,9 m&sup2; &middot; PSH 3,5 m&sup2; &middot; ET 2,6 m&sup2;<br>
+          Parveke 2,00 &times; 3,375 m &middot; 3. kerros<br>
+          Ulkoilmaa parvekkeen edess&auml; 3,2 m
         </div>
       </div>
-    </details>
+      <div class="sec">
+        <div class="sec-t">Ratkaisin</div>
+        <div class="note">
+          Puristumaton Navier&ndash;Stokes MAC-hilassa: semi-Lagrangen advektio, Boussinesq-noste,
+          py&ouml;rteiden vahvistus ja SOR-painekorjaus muuttuvalla liikkuvuudella. Jokaisella hilakasvolla
+          on kerroin, joka vastaa kasvon vapaata aukkopinta-alaa &mdash; sama mekanismi hoitaa umpisein&auml;n,
+          puoliksi auki olevan oven, kallistetun yl&auml;ikkunan, lasituksen raot, vaipan vuotoilman
+          <em>ja kalusteet</em>.
+        </div>
+        <div class="note">
+          L&auml;hes suljetun asunnon keskipainemoodi ratkaistaan erikseen kahden solmun verkkona
+          (ulko &rarr; parveke &rarr; sis&auml;tila), joten massatase toteutuu tarkasti ja paine-ero on
+          fysikaalinen eik&auml; iteraatiom&auml;&auml;r&auml;st&auml; riippuva. Ulkoilman painereunaehto on
+          &frac12;&rho;U&sup2;C<sub>p</sub> plus hydrostaattinen poikkeama, joten sek&auml; tuulen suunta
+          ett&auml; savupiippuvaikutus vaikuttavat.
+        </div>
+      </div>
+      <div class="sec">
+        <div class="sec-t">Mittaukset juuri nyt</div>
+        <div class="spec" id="infoLive">&mdash;</div>
+      </div>
+    </section>
 
   </aside>
 
   <main id="stage">
     <canvas id="gl"></canvas>
 
-    <div class="ov card" id="legend">
+    <div class="ov card fold" id="legend">
       <div class="card-h"><span id="lgTitle">L&auml;mp&ouml;tila</span><span class="hint" id="lgRange">&mdash;</span></div>
       <div class="lg-body">
         <div class="lg-scale" id="lgScale"></div>
@@ -617,15 +643,17 @@ hr.sep{border:0; border-top:1px dashed var(--edge-2); margin:2px 0}
       </div>
     </div>
 
-    <div class="ov card" id="hud">
+    <div class="ov card fold" id="hud">
       <div class="card-h">Mittarit <span class="hint" id="hudPos">1,10 m</span></div>
       <div class="meters">
         <div class="m hero"><span class="k">Oleskeluvy&ouml;hyke</span><span class="v" id="mT">21.0<u>&deg;C</u></span></div>
         <div class="m"><span class="k">Suhteellinen kosteus</span><span class="v" id="mRH">40<u>%</u></span></div>
         <div class="m"><span class="k">Parvekkeen ilma</span><span class="v" id="mBalc">10.0<u>&deg;C</u></span></div>
         <div class="m"><span class="k">Kylpyhuone</span><span class="v" id="mBath">22.0<u>&deg;C</u></span></div>
+        <div class="m"><span class="k">Laitteiden l&auml;mp&ouml;kuorma</span><span class="v" id="mDev">0<u>W</u></span></div>
         <div class="m"><span class="k">Paine-ero sis&auml;&ndash;ulko</span><span class="v" id="mDp">0.0<u>Pa</u></span></div>
         <div class="m"><span class="k">Ilmanvaihtuvuus</span><span class="v" id="mACH">0.00<u>1/h</u></span></div>
+        <div class="m"><span class="k">Ilman ik&auml;</span><span class="v" id="mAge">0<u>min</u></span></div>
         <div class="m"><span class="k">Patterin teho</span><span class="v" id="mRad">0<u>W</u></span></div>
         <div class="bar"><i id="barRad" style="width:0%"></i></div>
         <div class="m split"><span class="k">Vedon tunne</span><span class="v" id="mDR">3<u>%</u></span><span class="pill ok" id="pillDR">Hyv&auml;</span></div>
@@ -633,14 +661,14 @@ hr.sep{border:0; border-top:1px dashed var(--edge-2); margin:2px 0}
       </div>
     </div>
 
-    <div class="ov card" id="planbox">
-      <div class="card-h">Pohjapiirros <span class="hint">klikkaa = siirr&auml; tuuletin</span></div>
-      <canvas id="plan" width="660" height="380"></canvas>
+    <div class="ov card fold" id="planbox">
+      <div class="card-h">Pohjapiirros <span class="hint">raahaa kalusteita</span></div>
+      <canvas id="plan" width="680" height="380"></canvas>
       <div class="plan-legend">
-        <span><i style="background:var(--crit)"></i>poisto</span>
-        <span><i style="background:var(--warm)"></i>tuuletin</span>
-        <span><i style="background:var(--cool-hi)"></i>ovi/ikkuna</span>
-        <span><i style="background:var(--good)"></i>patteri</span>
+        <span><i style="background:#C9503F"></i>poisto</span>
+        <span><i style="background:#D96A22"></i>tuuletin</span>
+        <span><i style="background:#54B4E2"></i>ovi/ikkuna</span>
+        <span><i style="background:#3FA98A"></i>patteri</span>
       </div>
     </div>
 
@@ -659,16 +687,21 @@ hr.sep{border:0; border-top:1px dashed var(--edge-2); margin:2px 0}
       </div>
     </div>
 
+    <div class="ov card" id="selbar">
+      <span class="nm" id="selbarName">&mdash;</span>
+      <button class="btn sm ghost" id="sbRotL">&#8630; 45&deg;</button>
+      <button class="btn sm ghost" id="sbRotR">45&deg; &#8631;</button>
+      <button class="btn sm ghost danger" id="sbStore">Varastoon</button>
+      <span class="kb">R / Shift+R &middot; Del &middot; Esc</span>
+    </div>
+
     <div id="tip"></div>
     <div id="toast"></div>
   </main>
 </div>
 
 <div id="boot">
-  <div>
-    <div class="bt">Ilmavirtalaboratorio</div>
-    <div class="bs" id="bootMsg">Ladataan 3D-moottoria&hellip;</div>
-  </div>
+  <div><div class="bt">Ilmavirtalaboratorio</div><div class="bs" id="bootMsg">Ladataan 3D-moottoria&hellip;</div></div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -696,8 +729,8 @@ const airDens=T=>353/(T+273.15);
    x kasvaa parvekkeelta sisaan (lansi -> ita), y etelasta pohjoiseen, z ylos.
    ========================================================================== */
 const M = {                       // paamitat metreina
-  outDepth:0.70, balDepth:2.00, roomLen:7.00, roomDep:3.375, roomH:2.50,
-  wall:0.125, sky:0.45,
+  outDepth:3.20, balDepth:2.00, roomLen:7.00, roomDep:3.375, roomH:2.50,
+  wall:0.125, sky:1.30,
   partX:5.00,                     // OH/KT <-> oikea lohko (PSH+ET)
   bathDep:1.875,                  // PSH:n syvyys y-suunnassa
   railH:1.05,                     // parvekkeen kaiteen korkeus
@@ -739,8 +772,8 @@ function makeLayout(h){
   L.doorZ0= L.inZ0;          L.doorZ1=L.inZ0+c(M.doorH)-1;
   L.topZ0 = L.inZ0+c(M.topW0); L.topZ1=L.inZ0+c(M.topW1)-1;
   L.ventY = L.doorY0-2;      L.ventZ0=L.inZ1-2; L.ventZ1=L.inZ1-1;
-  // --- kylpyhuoneen ovi (seinassa bathWY) ---
-  L.bdX0 = L.inX1-c(1.05); L.bdX1=L.bdX0+c(0.875)-1;
+  // --- kylpyhuoneen ovi: kiinni itaseinassa, aukeaa eteiseen ulko-oven viereen ---
+  L.bdX1 = L.inX1;         L.bdX0=L.bdX1-c(0.80)+1;
   L.bdZ0 = L.inZ0;         L.bdZ1=L.inZ0+c(2.05)-1;
   // --- poistokanavat: partX-seinan OH-puoli, 50 mm katosta ---
   L.ductX = L.partX-1;
@@ -752,6 +785,13 @@ function makeLayout(h){
   L.radX0=L.inX0; L.radX1=L.inX0+Math.max(0,c(0.14)-1);
   L.radY0=L.winY0; L.radY1=L.winY1;
   L.radZ0=L.inZ0+c(0.12); L.radZ1=L.inZ0+c(0.72)-1;
+  // --- PSH:n poistoventtiili suihkun ylapuolella (katossa) ---
+  L.ductCx = L.rbX0+Math.max(0,c(0.45)-1);
+  L.ductCy = L.inY0+Math.max(0,c(0.45)-1);
+  L.ductCz = L.inZ1;
+  // --- ulkoilma: reunimmainen osa on sponssisailio, julkisivun edusta lasketaan ---
+  L.bandX0 = Math.max(1, L.faceX-c(0.80));   // simuloitu ulkoilmakaista
+  L.spgX1  = L.bandX0-1;                     // tama ja sita ulompi = sailio
   // --- maailmankoordinaatit ---
   L.x0=0; L.NC=L.NX*L.NY*L.NZ;
   L.roomVol=(L.inX1-L.inX0+1)*(L.inY1-L.inY0+1)*(L.inZ1-L.inZ0+1)*h*h*h;
@@ -791,7 +831,7 @@ class Sim{
     this.typ=new Uint8Array(NC); this.room=new Uint8Array(NC);
     this.skind=new Uint8Array(NC);
     this.dcell=new Float32Array(NC);
-    this.fanMask=new Uint8Array(NC);
+    this.objMask=new Uint8Array(NC);
     this.gOut=new Float32Array(NC); this.gMass=new Float32Array(NC);
 
     this.buildStatic();
@@ -811,7 +851,10 @@ class Sim{
     for(let k=0;k<NZ;k++)for(let j=0;j<NY;j++)for(let i=0;i<NX;i++){
       const c=this.id(i,j,k);
       let t=SOLID, r=R_NONE, s=S_NONE;
-      if(i<=L.outX1){ t=OPEN; r=R_OUT; }
+      if(i<=L.outX1){
+        if(i>=L.bandX0 && j>0 && j<NY-1 && k>0 && k<NZ-1){ t=FLUID; r=R_OUT; }
+        else { t=OPEN; r=R_OUT; }
+      }
       else if(k===L.flZ){ t=SOLID; s=(i>=L.balX0&&i<=L.balX1)?S_BALC:S_SLAB; }
       else if(k>L.inZ1){ t=SOLID; s=(i>=L.balX0&&i<=L.balX1)?S_BALC:S_SLAB; }
       else if(!inY(j)){ t=SOLID; s=(i>=L.balX0&&i<=L.balX1)?S_BALC:S_EXT; }
@@ -890,6 +933,7 @@ class Sim{
     this.lShower = box(L.inX1-3,L.inX1-1,L.inY0+1,L.inY0+3,L.inZ0+2,L.inZ0+10);
     this.lDuctA = box(L.ductX,L.ductX,L.ductA,L.ductA,L.ductZ0,L.ductZ1);
     this.lDuctB = box(L.ductX,L.ductX,L.ductB,L.ductB,L.ductZ0,L.ductZ1);
+    this.lDuctC = box(L.ductCx,L.ductCx,L.ductCy,L.ductCy,L.ductCz,L.ductCz);
     this.lBalcFloor = box(L.balX0,L.balX1,L.inY0,L.inY1,L.inZ0,L.inZ0);
     this.lSunFloor = box(L.inX0,L.inX0+Math.max(0,Math.round(1.2/this.h)),
                          L.winY0,L.winY1,L.inZ0,L.inZ0);
@@ -1000,7 +1044,7 @@ class Sim{
   }
 
   rebuildFaces(){
-    const NX=this.NX,NY=this.NY,NZ=this.NZ,typ=this.typ,d=this.dcell,fm=this.fanMask,dt=this.dt;
+    const NX=this.NX,NY=this.NY,NZ=this.NZ,typ=this.typ,d=this.dcell,fm=this.objMask,dt=this.dt;
     const fru=this.fru,frv=this.frv,frw=this.frw;
     const blk=c=>typ[c]===SOLID||fm[c]===1;
     for(let k=0;k<NZ;k++)for(let j=0;j<NY;j++)for(let i=0;i<=NX;i++){
@@ -1189,20 +1233,24 @@ advectVel(dt){
   const cu=this.cu,cv=this.cv,cw=this.cw;
   const u=this.u,v=this.v,w=this.w,fru=this.fru,frv=this.frv,frw=this.frw;
   let f;
+  const sx=this.L.spgX1;
   for(let k=0;k<NZ;k++)for(let j=0;j<NY;j++)for(let i=1;i<NX;i++){
     f=this.ui(i,j,k); if(fru[f]<=0){u[f]=0;continue;}
+    if(i<=sx)continue;
     const x=i*h,y=(j+0.5)*h,z=(k+0.5)*h;
     const S=this.sample3(cu,cv,cw,x,y,z);
     u[f]=this.sampleU(x-dt*S[0],y-dt*S[1],z-dt*S[2]);
   }
   for(let k=0;k<NZ;k++)for(let j=1;j<NY;j++)for(let i=0;i<NX;i++){
     f=this.vi(i,j,k); if(frv[f]<=0){v[f]=0;continue;}
+    if(i<=sx)continue;
     const x=(i+0.5)*h,y=j*h,z=(k+0.5)*h;
     const S=this.sample3(cu,cv,cw,x,y,z);
     v[f]=this.sampleV(x-dt*S[0],y-dt*S[1],z-dt*S[2]);
   }
   for(let k=1;k<NZ;k++)for(let j=0;j<NY;j++)for(let i=0;i<NX;i++){
     f=this.wi(i,j,k); if(frw[f]<=0){w[f]=0;continue;}
+    if(i<=sx)continue;
     const x=(i+0.5)*h,y=(j+0.5)*h,z=k*h;
     const S=this.sample3(cu,cv,cw,x,y,z);
     w[f]=this.sampleW(x-dt*S[0],y-dt*S[1],z-dt*S[2]);
@@ -1222,11 +1270,17 @@ forces(dt,P){
   }
   // ulkoilman tuuli: sponssikerros
   const L=this.L, U=P.wind, a=P.windDir*Math.PI/180;
-  const wx=U*Math.cos(a), wy=U*Math.sin(a), rel=Math.min(1,dt*1.6);
-  for(let k=1;k<NZ;k++)for(let j=0;j<NY;j++)for(let i=0;i<=Math.max(0,L.outX1-1);i++){
-    const fu=this.ui(i,j,k); this.u[fu]+=(wx-this.u[fu])*rel;
-    const fv=this.vi(i,j,k); this.v[fv]+=(wy-this.v[fv])*rel;
-    const fw=this.wi(i,j,k); this.w[fw]+=(0-this.w[fw])*rel;
+  const wx=U*Math.cos(a), wy=U*Math.sin(a);
+  // tuulen rajakerros: nopeus kasvaa korkeuden mukana (3. kerros, z0 = 0,5 m)
+  for(let k=1;k<NZ;k++){
+    const zz=(k+0.5)*this.h+7.5;                       // korkeus maasta
+    const pf=Math.min(1.35,Math.pow(zz/9.0,0.16));
+    const ux=wx*pf, uy=wy*pf, rel=1.0;
+    for(let j=0;j<NY;j++)for(let i=0;i<=L.spgX1;i++){
+      const fu=this.ui(i,j,k); this.u[fu]+=(ux-this.u[fu])*rel;
+      const fv=this.vi(i,j,k); this.v[fv]+=(uy-this.v[fv])*rel;
+      const fw=this.wi(i,j,k); this.w[fw]+=(0-this.w[fw])*rel;
+    }
   }
   if(P.fanVel>0) this.fanJet(dt,P);
 },
@@ -1401,8 +1455,12 @@ advectScalars(dt){
 
 buildAux(){
   const L=this.L,NX=this.NX;
-  const out=[]; for(let c=0;c<this.NC;c++) if(this.typ[c]===OPEN) out.push(c);
-  this.lOut=new Int32Array(out);
+  const out=[],bnd=[];
+  for(let c=0;c<this.NC;c++){
+    if(this.typ[c]===OPEN) out.push(c);
+    else if(this.typ[c]===FLUID && this.room[c]===R_OUT) bnd.push(c);
+  }
+  this.lOut=new Int32Array(out); this.lOutBand=new Int32Array(bnd);
   // ikkunapinnan viereiset ilmasolut (huurtuminen)
   const gl=[];
   for(let k=L.winZ0;k<=L.winZ1;k++)for(let j=L.winY0;j<=L.winY1;j++){
@@ -1421,6 +1479,12 @@ sources(dt,P){
   const T=this.T,q=this.q,ag=this.age;
   const wOut=wOfRH(P.Tout,P.RHout);
   for(let m=0;m<this.lOut.length;m++){const c=this.lOut[m];T[c]=P.Tout;q[c]=wOut;ag[c]=0;}
+  // simuloitu ulkoilmakaista palautuu hitaasti ulkoilman arvoihin
+  if(this.lOutBand){
+    const r=Math.min(1,dt*0.55);
+    for(let m=0;m<this.lOutBand.length;m++){const c=this.lOutBand[m];
+      T[c]+=(P.Tout-T[c])*r; q[c]+=(wOut-q[c])*r; ag[c]*=(1-r);}
+  }
 
   // johtuminen pintojen lapi
   const gO=this.gOut,gM=this.gMass,fl=this.fluid;
@@ -1492,6 +1556,15 @@ sources(dt,P){
     const d=250*dt/(this.lShower.length*C);
     for(let m=0;m<this.lShower.length;m++){q[this.lShower[m]]+=g;T[this.lShower[m]]+=d;}
   }
+  // laitteiden lampokuormat (tietokoneet, naytot, TV, jaakaappi)
+  if(this.devHeat){
+    for(let n=0;n<this.devHeat.length;n++){
+      const D=this.devHeat[n];
+      if(!D.cells.length||!D.w)continue;
+      const dT=D.w*dt/(D.cells.length*C);
+      for(let m=0;m<D.cells.length;m++)T[D.cells[m]]+=dT;
+    }
+  }
   // auringonsateily: parvekelaatta ja ikkunasta sisaan
   if(P.solar>0){
     const Ab=this.lBalcFloor.length*h*h, Aw=this.lGlass.length*h*h;
@@ -1535,7 +1608,8 @@ step(P){
   const setD=(L,Q)=>{if(!L.length)return;const s=-Q/(L.length*vc);
     for(let m=0;m<L.length;m++)this.src[L[m]]=s;};
   setD(this.lDuctA,P.ductA/1000); setD(this.lDuctB,P.ductB/1000);
-  this.QductTotal=(P.ductA+P.ductB)/1000;
+  setD(this.lDuctC,P.ductC/1000);
+  this.QductTotal=(P.ductA+P.ductB+P.ductC)/1000;
   this.project(dt,P);
   this.cellVel();
   this.extrapolate();
@@ -1574,10 +1648,9 @@ metrics(P){
           cond:this.cond, age:age, humG:this.humG, solarW:this.solarW||0};
 }
 });
-</script>
-<script>
+</script><script>
 /* ==========================================================================
-   6. 3D-NAKYMA
+   6. 3D-NAKYMA: tekstuurit, materiaalit, kohtaus, huone
    ========================================================================== */
 THREE.Object3D.DefaultUp=new THREE.Vector3(0,0,1);
 const V3=(x,y,z)=>new THREE.Vector3(x,y,z);
@@ -1591,23 +1664,21 @@ function tex(draw,w,hh,rep){
   t.anisotropy=4; return t;
 }
 const noise=(g,w,h,a)=>{const d=g.getImageData(0,0,w,h),p=d.data;
-  for(let i=0;i<p.length;i+=4){const n=(Math.random()-0.5)*a;
-    p[i]+=n;p[i+1]+=n;p[i+2]+=n;} g.putImageData(d,0,0);};
+  for(let i=0;i<p.length;i+=4){const n=(Math.random()-0.5)*a;p[i]+=n;p[i+1]+=n;p[i+2]+=n;}
+  g.putImageData(d,0,0);};
 
 const TEX={};
 function makeTextures(){
   TEX.oak=tex((g,w,h)=>{
     g.fillStyle='#c8a97f'; g.fillRect(0,0,w,h);
-    for(let y=0;y<h;y+=32){
-      for(let x=(y/32%2)*60;x<w;x+=120){
-        g.fillStyle=`hsl(${28+Math.random()*8},${32+Math.random()*10}%,${58+Math.random()*10}%)`;
-        g.fillRect(x+1,y+1,118,30);
-        g.strokeStyle='rgba(120,88,54,.35)'; g.lineWidth=1;
-        for(let s=0;s<5;s++){const yy=y+3+Math.random()*26;
-          g.beginPath(); g.moveTo(x+2,yy);
-          g.bezierCurveTo(x+40,yy+(Math.random()-.5)*5,x+80,yy+(Math.random()-.5)*5,x+118,yy);
-          g.stroke();}
-      }
+    for(let y=0;y<h;y+=32)for(let x=(y/32%2)*60;x<w;x+=120){
+      g.fillStyle=`hsl(${28+Math.random()*8},${32+Math.random()*10}%,${58+Math.random()*10}%)`;
+      g.fillRect(x+1,y+1,118,30);
+      g.strokeStyle='rgba(120,88,54,.35)'; g.lineWidth=1;
+      for(let s=0;s<5;s++){const yy=y+3+Math.random()*26;
+        g.beginPath(); g.moveTo(x+2,yy);
+        g.bezierCurveTo(x+40,yy+(Math.random()-.5)*5,x+80,yy+(Math.random()-.5)*5,x+118,yy);
+        g.stroke();}
     }
     g.strokeStyle='rgba(90,64,38,.45)'; g.lineWidth=1.5;
     for(let y=0;y<=h;y+=32){g.beginPath();g.moveTo(0,y+.5);g.lineTo(w,y+.5);g.stroke();}
@@ -1620,61 +1691,82 @@ function makeTextures(){
       g.beginPath();g.moveTo(0,i);g.lineTo(w,i);g.stroke();}
     noise(g,w,h,10);
   },256,256,[4,4]);
-  TEX.conc=tex((g,w,h)=>{
-    g.fillStyle='#9ea3a6'; g.fillRect(0,0,w,h); noise(g,w,h,26);
-  },256,256,[3,3]);
-  TEX.wall=tex((g,w,h)=>{
-    g.fillStyle='#f1f0ee'; g.fillRect(0,0,w,h); noise(g,w,h,6);
-  },128,128,[1,1]);
+  TEX.conc=tex((g,w,h)=>{g.fillStyle='#9ea3a6';g.fillRect(0,0,w,h);noise(g,w,h,26);},256,256,[3,3]);
+  TEX.wall=tex((g,w,h)=>{g.fillStyle='#f1f0ee';g.fillRect(0,0,w,h);noise(g,w,h,6);},128,128,[1,1]);
   TEX.wood=tex((g,w,h)=>{
     g.fillStyle='#d7c3a5'; g.fillRect(0,0,w,h);
     g.strokeStyle='rgba(160,130,95,.4)';
-    for(let i=0;i<40;i++){const y=Math.random()*h; g.beginPath();
-      g.moveTo(0,y); g.bezierCurveTo(w/3,y+3,2*w/3,y-3,w,y); g.stroke();}
+    for(let i=0;i<40;i++){const y=Math.random()*h;g.beginPath();g.moveTo(0,y);
+      g.bezierCurveTo(w/3,y+3,2*w/3,y-3,w,y);g.stroke();}
     noise(g,w,h,8);
   },256,64,[1,1]);
   TEX.dot=tex((g,w,h)=>{
     const gr=g.createRadialGradient(w/2,h/2,0,w/2,h/2,w/2);
-    gr.addColorStop(0,'rgba(255,255,255,1)');
-    gr.addColorStop(.45,'rgba(255,255,255,.75)');
-    gr.addColorStop(1,'rgba(255,255,255,0)');
-    g.fillStyle=gr; g.fillRect(0,0,w,h);
+    gr.addColorStop(0,'rgba(255,255,255,1)'); gr.addColorStop(.45,'rgba(255,255,255,.75)');
+    gr.addColorStop(1,'rgba(255,255,255,0)'); g.fillStyle=gr; g.fillRect(0,0,w,h);
   },32,32);
+  TEX.screen=tex((g,w,h)=>{
+    const gr=g.createLinearGradient(0,0,0,h);
+    gr.addColorStop(0,'#9fc4dd'); gr.addColorStop(.55,'#cfe0ec'); gr.addColorStop(1,'#7a8fa0');
+    g.fillStyle=gr; g.fillRect(0,0,w,h);
+    g.fillStyle='rgba(255,255,255,.55)';
+    for(let i=0;i<9;i++){const x=i*w/9;g.beginPath();g.moveTo(x,h);
+      g.lineTo(x+w/18,h*(0.42+Math.random()*0.2));g.lineTo(x+w/9,h);g.closePath();g.fill();}
+    g.fillStyle='rgba(20,30,42,.85)'; g.fillRect(0,h-h*0.07,w,h*0.07);
+  },256,144);
+  TEX.tvpic=tex((g,w,h)=>{
+    const gr=g.createLinearGradient(0,0,w,h);
+    gr.addColorStop(0,'#16324a'); gr.addColorStop(.5,'#2c5f7e'); gr.addColorStop(1,'#0e1c2a');
+    g.fillStyle=gr; g.fillRect(0,0,w,h);
+    g.fillStyle='rgba(240,138,62,.75)'; g.beginPath(); g.arc(w*0.7,h*0.32,h*0.13,0,6.2832); g.fill();
+    g.fillStyle='rgba(8,14,20,.9)';
+    g.beginPath(); g.moveTo(0,h); g.lineTo(w*0.3,h*0.55); g.lineTo(w*0.55,h*0.8);
+    g.lineTo(w*0.78,h*0.5); g.lineTo(w,h*0.75); g.lineTo(w,h); g.closePath(); g.fill();
+  },256,144);
 }
 
 const MAT={};
 function makeMaterials(){
-  const L=(o)=>new THREE.MeshLambertMaterial(o);
-  MAT.wall  = L({color:0xf3f2f0, map:TEX.wall});
-  MAT.wallF = L({color:0xf3f2f0, map:TEX.wall, transparent:true, opacity:1});
-  MAT.wallIn= L({color:0xe9e8e6, map:TEX.wall});
+  const L=o=>new THREE.MeshLambertMaterial(o);
+  MAT.wall  = L({color:0xf3f2f0,map:TEX.wall});
+  MAT.wallF = L({color:0xf3f2f0,map:TEX.wall,transparent:true,opacity:1});
+  MAT.wallIn= L({color:0xe9e8e6,map:TEX.wall});
   MAT.ceil  = L({color:0xfbfbfa});
-  MAT.floor = L({color:0xffffff, map:TEX.oak});
-  MAT.tile  = L({color:0xffffff, map:TEX.tile});
-  MAT.conc  = L({color:0xffffff, map:TEX.conc});
+  MAT.floor = L({color:0xffffff,map:TEX.oak});
+  MAT.tile  = L({color:0xffffff,map:TEX.tile});
+  MAT.conc  = L({color:0xffffff,map:TEX.conc});
   MAT.white = L({color:0xf7f7f6});
-  MAT.cab   = new THREE.MeshPhongMaterial({color:0xf4f4f3, shininess:34, specular:0x2a2a2a});
-  MAT.counter=new THREE.MeshPhongMaterial({color:0xffffff, map:TEX.wood, shininess:18});
-  MAT.steel = new THREE.MeshPhongMaterial({color:0xb9c0c6, shininess:96, specular:0x888888});
+  MAT.cab   = new THREE.MeshPhongMaterial({color:0xf4f4f3,shininess:34,specular:0x2a2a2a});
+  MAT.counter=new THREE.MeshPhongMaterial({color:0xffffff,map:TEX.wood,shininess:18});
+  MAT.steel = new THREE.MeshPhongMaterial({color:0xb9c0c6,shininess:96,specular:0x888888});
   MAT.dark  = L({color:0x2b3138});
+  MAT.black = new THREE.MeshPhongMaterial({color:0x1b2027,shininess:60});
   MAT.frame = L({color:0xf0efec});
-  MAT.glass = new THREE.MeshPhongMaterial({color:0xa8cfe0, transparent:true, opacity:0.17,
-                shininess:120, specular:0xffffff, side:THREE.DoubleSide, depthWrite:false});
-  MAT.glassFog=new THREE.MeshPhongMaterial({color:0xdfe9ee, transparent:true, opacity:0.17,
-                shininess:20, side:THREE.DoubleSide, depthWrite:false});
+  MAT.glass = new THREE.MeshPhongMaterial({color:0xa8cfe0,transparent:true,opacity:0.17,
+                shininess:120,specular:0xffffff,side:THREE.DoubleSide,depthWrite:false});
+  MAT.glassFog=new THREE.MeshPhongMaterial({color:0xdfe9ee,transparent:true,opacity:0.17,
+                shininess:20,side:THREE.DoubleSide,depthWrite:false});
   MAT.rail  = L({color:0xc9ccce});
-  MAT.duct  = new THREE.MeshPhongMaterial({color:0xd8d8d6, shininess:40});
+  MAT.duct  = new THREE.MeshPhongMaterial({color:0xd8d8d6,shininess:40});
   MAT.ductR = new THREE.MeshBasicMaterial({color:0xC9503F});
-  MAT.rad   = new THREE.MeshPhongMaterial({color:0xf2f2f0, shininess:30});
-  MAT.fanB  = new THREE.MeshPhongMaterial({color:0x30373f, shininess:60});
-  MAT.fanG  = new THREE.MeshPhongMaterial({color:0x8c959d, shininess:80});
+  MAT.rad   = new THREE.MeshPhongMaterial({color:0xf2f2f0,shininess:30});
+  MAT.fanB  = new THREE.MeshPhongMaterial({color:0x2f363e,shininess:60});
+  MAT.fanG  = new THREE.MeshPhongMaterial({color:0x99a2aa,shininess:80});
   MAT.textile=L({color:0x8d97a1});
-  MAT.ground= new THREE.MeshBasicMaterial({color:0x131b23});
+  MAT.textile2=L({color:0x6f7a86});
+  MAT.leather=new THREE.MeshPhongMaterial({color:0x3c4550,shininess:22});
+  MAT.ground= new THREE.MeshBasicMaterial({color:0x121a22});
   MAT.roofN = new THREE.MeshBasicMaterial({color:0x1b242d});
   MAT.roofC = new THREE.MeshBasicMaterial({color:0x2b3743});
+  MAT.facade= new THREE.MeshBasicMaterial({color:0x24303b});
+  MAT.winDark=new THREE.MeshBasicMaterial({color:0x0e161d});
+  MAT.screen= new THREE.MeshBasicMaterial({map:TEX.screen});
+  MAT.tvpic = new THREE.MeshBasicMaterial({map:TEX.tvpic});
+  MAT.screenOff=new THREE.MeshBasicMaterial({color:0x141a20});
+  MAT.sel   = new THREE.LineBasicMaterial({color:0xF08A3E});
+  MAT.selBad= new THREE.LineBasicMaterial({color:0xC9503F});
 }
 
-/* ---- kohtaus ---- */
 const SC={};
 function initScene(canvas){
   const r=new THREE.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance'});
@@ -1683,10 +1775,9 @@ function initScene(canvas){
   SC.renderer=r;
   const s=new THREE.Scene();
   s.background=new THREE.Color(0x0a1017);
-  s.fog=new THREE.Fog(0x0a1017,14,42);
+  s.fog=new THREE.Fog(0x0a1017,18,64);
   SC.scene=s;
-  const cam=new THREE.PerspectiveCamera(46,1,0.05,120); cam.up.set(0,0,1);
-  SC.cam=cam;
+  const cam=new THREE.PerspectiveCamera(46,1,0.05,220); cam.up.set(0,0,1); SC.cam=cam;
   s.add(new THREE.HemisphereLight(0xd6e8f5,0x38322b,0.52));
   const d=new THREE.DirectionalLight(0xfff3e2,0.72); d.position.set(-9,-4,11);
   d.castShadow=true; d.shadow.mapSize.set(1024,1024);
@@ -1695,49 +1786,37 @@ function initScene(canvas){
   const f=new THREE.DirectionalLight(0xcfe0ee,0.24); f.position.set(9,6,4); s.add(f);
   s.add(new THREE.AmbientLight(0xffffff,0.11));
   SC.root=new THREE.Group(); s.add(SC.root);
-  SC.walls=[]; SC.furniture=new THREE.Group(); SC.root.add(SC.furniture);
+  SC.walls=[];
   return r;
 }
 
-/* ---- kamera: oma orbit ---- */
-const CAM={az:-0.78,el:0.56,dist:11.2,tx:5.0,ty:1.7,tz:1.05,daz:0,del:0};
+/* ---- kamera ---- */
+const CAM={az:-0.80,el:0.54,dist:13.8,tx:7.9,ty:2.3,tz:1.05};
 function camApply(){
-  const c=SC.cam, ce=Math.cos(CAM.el), se=Math.sin(CAM.el);
+  const c=SC.cam,ce=Math.cos(CAM.el),se=Math.sin(CAM.el);
   const a=c.aspect||1.6, D=CAM.dist*(a<1.4?clamp(1.25/a,1,1.75):1);
-  c.position.set(CAM.tx+D*ce*Math.cos(CAM.az),
-                 CAM.ty+D*ce*Math.sin(CAM.az),
-                 CAM.tz+D*se);
+  c.position.set(CAM.tx+D*ce*Math.cos(CAM.az),CAM.ty+D*ce*Math.sin(CAM.az),CAM.tz+D*se);
   c.lookAt(CAM.tx,CAM.ty,CAM.tz);
 }
-const CAMPRESETS={
-  iso:{az:-0.78,el:0.56,dist:11.2,tx:5.0,ty:1.7,tz:1.05},
-  top:{az:-1.5708,el:1.47,dist:10.4,tx:5.1,ty:1.7,tz:1.1},
-  parveke:{az:3.02,el:0.13,dist:5.4,tx:4.9,ty:1.75,tz:1.35},
-  leikkaus:{az:-1.5708,el:0.07,dist:9.8,tx:5.1,ty:1.7,tz:1.25}
-};
-function camPreset(n){const p=CAMPRESETS[n]; if(!p)return; CAM.tgt=Object.assign({},p);}
+const CAMPRESETS={};
+function camPreset(n){const p=CAMPRESETS[n]; if(p)CAM.tgt=Object.assign({},p);}
 function camTick(){
   if(CAM.tgt){
     let done=true;
     for(const k of ['az','el','dist','tx','ty','tz']){
-      const d=CAM.tgt[k]-CAM[k]; if(Math.abs(d)>1e-3)done=false;
-      CAM[k]+=d*0.12;
-    }
+      const d=CAM.tgt[k]-CAM[k]; if(Math.abs(d)>1e-3)done=false; CAM[k]+=d*0.12;}
     if(done)CAM.tgt=null;
   }
   camApply();
 }
 
-/* ---- huoneen rakentaminen ---- */
+/* ---- geometrian metrikoordinaatit ---- */
 function G(L,h){
   const g={};
-  g.xFaceA=L.faceX*h; g.xFaceB=(L.faceX+1)*h;
-  g.xBalA=(L.faceX+1)*h; g.xBalB=L.facX*h;
+  g.xFaceA=L.faceX*h; g.xBalA=(L.faceX+1)*h; g.xBalB=L.facX*h;
   g.xFacA=L.facX*h;  g.xFacB=(L.facX+1)*h;
-  g.xInA=L.inX0*h;   g.xInB=(L.inX1+1)*h;
-  g.xEndB=(L.endX+1)*h;
+  g.xInA=L.inX0*h;   g.xInB=(L.inX1+1)*h;   g.xEndB=(L.endX+1)*h;
   g.yA=L.inY0*h;     g.yB=(L.inY1+1)*h;
-  g.ySA=L.wy0*h;     g.yNB=(L.wy1+1)*h;
   g.zF=L.inZ0*h;     g.zC=(L.inZ1+1)*h;
   g.xPartA=L.partX*h; g.xPartB=(L.partX+1)*h;
   g.yBathB=(L.bathY1+1)*h; g.yBathWB=(L.bathWY+1)*h;
@@ -1750,12 +1829,12 @@ function G(L,h){
   g.railZ=L.inZ0*h+M.railH;
   g.ductZ0=L.ductZ0*h; g.ductZ1=(L.ductZ1+1)*h;
   g.ductAy=(L.ductA+0.5)*h; g.ductBy=(L.ductB+0.5)*h;
+  g.ductCx=(L.ductCx+0.5)*h; g.ductCy=(L.ductCy+0.5)*h;
   g.ventY=(L.ventY+0.5)*h; g.ventZ=(L.ventZ0+0.5)*h;
   g.radX=L.radX0*h; g.radY0=L.radY0*h; g.radY1=(L.radY1+1)*h;
   g.radZ0=L.radZ0*h; g.radZ1=(L.radZ1+1)*h;
   return g;
 }
-
 function bx(mat,x0,x1,y0,y1,z0,z1,parent,tag){
   const m=new THREE.Mesh(new THREE.BoxGeometry(x1-x0,y1-y0,z1-z0),mat);
   m.position.set((x0+x1)/2,(y0+y1)/2,(z0+z1)/2);
@@ -1767,11 +1846,11 @@ function bx(mat,x0,x1,y0,y1,z0,z1,parent,tag){
 
 function buildRoom(sim){
   while(SC.root.children.length)SC.root.remove(SC.root.children[0]);
-  SC.walls.length=0; SC.furniture=new THREE.Group(); SC.root.add(SC.furniture);
+  SC.walls.length=0;
   const L=sim.L,h=sim.h,g=G(L,h); SC.G=g;
-  const t=0.125;                                  // esitysseinan paksuus
+  const t=0.125;
 
-  // --- lattiat ja katto ---
+  // --- lattiat, katto ---
   bx(MAT.floor,g.xInA,g.xPartA,g.yA,g.yB,g.zF-0.04,g.zF);
   bx(MAT.floor,g.xPartB,g.xInB,g.yBathWB,g.yB,g.zF-0.04,g.zF);
   bx(MAT.tile ,g.xPartB,g.xInB,g.yA,g.yBathB,g.zF-0.04,g.zF+0.002);
@@ -1788,14 +1867,9 @@ function buildRoom(sim){
   const F=new THREE.Group(); SC.root.add(F); F.userData.cut='-x'; SC.walls.push(F);
   const fa=g.xFacA,fb=g.xFacB;
   const px=(y0,y1,z0,z1)=>bx(MAT.wallF,fa,fb,y0,y1,z0,z1,F);
-  px(g.yA,g.winY0,g.zF,g.zC);
-  px(g.winY1,g.doorY0,g.zF,g.zC);
-  px(g.doorY1,g.yB,g.zF,g.zC);
-  px(g.winY0,g.winY1,g.zF,g.winZ0);
-  px(g.winY0,g.winY1,g.winZ1,g.zC);
-  px(g.doorY0,g.doorY1,g.topZ1,g.zC);
-  px(g.doorY0,g.doorY1,g.doorZ1,g.topZ0);
-  // karmit
+  px(g.yA,g.winY0,g.zF,g.zC); px(g.winY1,g.doorY0,g.zF,g.zC); px(g.doorY1,g.yB,g.zF,g.zC);
+  px(g.winY0,g.winY1,g.zF,g.winZ0); px(g.winY0,g.winY1,g.winZ1,g.zC);
+  px(g.doorY0,g.doorY1,g.topZ1,g.zC); px(g.doorY0,g.doorY1,g.doorZ1,g.topZ0);
   const fr=0.055;
   const frame=(y0,y1,z0,z1)=>{
     bx(MAT.frame,fa-0.01,fb+0.01,y0,y0+fr,z0,z1,F);
@@ -1806,43 +1880,40 @@ function buildRoom(sim){
   frame(g.winY0,g.winY1,g.winZ0,g.winZ1);
   frame(g.doorY0,g.doorY1,g.doorZ0,g.topZ1);
   bx(MAT.frame,fa-0.01,fb+0.01,g.doorY0,g.doorY1,g.doorZ1-0.03,g.topZ0+0.03,F);
-  // kiintea lasi
   SC.fixedGlass=bx(MAT.glass,fa+0.05,fa+0.07,g.winY0+fr,g.winY1-fr,g.winZ0+fr,g.winZ1-fr,F);
-  // ovilehti (saranat pohjoisreunassa, aukeaa parvekkeelle)
+  // parvekkeen ovi
   const dw=g.doorY1-g.doorY0-2*fr, dh=g.doorZ1-g.doorZ0-fr;
   SC.doorPivot=new THREE.Group();
-  SC.doorPivot.position.set(fa+0.02,g.doorY1-fr,g.doorZ0);
-  F.add(SC.doorPivot);
+  SC.doorPivot.position.set(fa+0.02,g.doorY1-fr,g.doorZ0); F.add(SC.doorPivot);
   const dl=new THREE.Group(); SC.doorPivot.add(dl);
   bx(MAT.frame,-0.03,0.03,-dw,-dw+0.06,0,dh,dl);
   bx(MAT.frame,-0.03,0.03,-0.06,0,0,dh,dl);
   bx(MAT.frame,-0.03,0.03,-dw,0,0,0.06,dl);
   bx(MAT.frame,-0.03,0.03,-dw,0,dh-0.06,dh,dl);
   bx(MAT.glass,-0.012,0.012,-dw+0.05,-0.05,0.06,dh-0.06,dl);
-  // ylaikkuna (kallistuu sisaanpain, sarana alareunassa)
+  bx(MAT.steel,-0.05,0.05,-dw+0.05,-dw+0.14,dh*0.48,dh*0.52,dl);
+  // ylaikkuna
   SC.topPivot=new THREE.Group();
-  SC.topPivot.position.set(fa+0.02,(g.doorY0+g.doorY1)/2,g.topZ0+0.03);
-  F.add(SC.topPivot);
+  SC.topPivot.position.set(fa+0.02,(g.doorY0+g.doorY1)/2,g.topZ0+0.03); F.add(SC.topPivot);
   const tw=g.doorY1-g.doorY0-2*fr, th=g.topZ1-g.topZ0-0.06;
   bx(MAT.frame,-0.03,0.03,-tw/2,tw/2,0,0.05,SC.topPivot);
   bx(MAT.frame,-0.03,0.03,-tw/2,tw/2,th-0.05,th,SC.topPivot);
   bx(MAT.frame,-0.03,0.03,-tw/2,-tw/2+0.05,0,th,SC.topPivot);
   bx(MAT.frame,-0.03,0.03,tw/2-0.05,tw/2,0,th,SC.topPivot);
   bx(MAT.glass,-0.012,0.012,-tw/2+0.04,tw/2-0.04,0.04,th-0.04,SC.topPivot);
-  // korvausilmaventtiili
   bx(MAT.steel,fa-0.02,fa+0.01,g.ventY-0.16,g.ventY+0.16,g.ventZ-0.03,g.ventZ+0.03,F);
 
   // --- valiseinat ---
   const wP=bx(MAT.wallIn,g.xPartA,g.xPartB,g.yA,g.yBathWB,g.zF,g.zC);
   wP.userData.cut='+x'; SC.walls.push(wP);
-  const wB=bx(MAT.wallIn,g.xPartB,g.xInB,g.yBathB,g.yBathWB,g.zF,g.zC);
-  wB.userData.cut='+y'; SC.walls.push(wB);
-  // kylpyhuoneen ovi
+  bx(MAT.wallIn,g.xPartB,g.bdX0,g.yBathB,g.yBathWB,g.zF,g.zC);       // PSH/ET-seina
+  bx(MAT.wallIn,g.bdX0,g.bdX1,g.yBathB,g.yBathWB,g.bdZ1,g.zC);       // oven ylapuoli
+  // kylpyhuoneen ovi: sarana itaseinassa, aukeaa eteiseen ulko-oven viereen
   SC.bathPivot=new THREE.Group();
-  SC.bathPivot.position.set(g.bdX0,g.yBathWB-0.02,g.zF); SC.root.add(SC.bathPivot);
+  SC.bathPivot.position.set(g.bdX1,g.yBathWB+0.02,g.zF); SC.root.add(SC.bathPivot);
   const bw=g.bdX1-g.bdX0;
-  bx(MAT.white,0,bw,-0.02,0.02,0,g.bdZ1-g.zF,SC.bathPivot);
-  bx(MAT.steel,bw-0.09,bw-0.05,-0.05,0.05,0.98,1.06,SC.bathPivot);
+  bx(MAT.white,-bw,0,-0.02,0.02,0,g.bdZ1-g.zF,SC.bathPivot);
+  bx(MAT.steel,-bw+0.05,-bw+0.09,-0.05,0.05,0.98,1.06,SC.bathPivot);
 
   // --- parveke ---
   const bal=new THREE.Group(); SC.root.add(bal);
@@ -1854,9 +1925,8 @@ function buildRoom(sim){
   SC.walls.push(bS,bN,bC);
   bx(MAT.rail,g.xFaceA-0.06,g.xFaceA+0.02,g.yA,g.yB,g.zF,g.railZ,bal);
   bx(MAT.steel,g.xFaceA-0.08,g.xFaceA+0.04,g.yA,g.yB,g.railZ-0.05,g.railZ,bal);
-  // lasituspaneelit
   SC.panes=[];
-  const NP=4, pw=(g.yB-g.yA)/NP;
+  const NP=4,pw=(g.yB-g.yA)/NP;
   for(let i=0;i<NP;i++){
     const p=new THREE.Group(); p.position.set(g.xFaceA,g.yA,0); bal.add(p);
     bx(MAT.glass,-0.02,0.01,0,pw-0.012,g.railZ,g.zC-0.02,p);
@@ -1864,26 +1934,50 @@ function buildRoom(sim){
     bx(MAT.steel,-0.03,0.02,pw-0.028,pw-0.012,g.railZ,g.zC-0.02,p);
     SC.panes.push({g:p,i:i,w:pw,y0:g.yA});
   }
-  // ulkomaisema
-  bx(MAT.ground,-46,g.xFaceA-0.4,-40,42,-15.2,-15,bal);
-  for(let i=0;i<6;i++){
-    const x=-7-i*5.6, y=-13+i*6.1;
-    bx(MAT.roofN,x-3.2,x+3.2,y-3.6,y+3.6,-15,-3.6-i*0.5,bal);
-    bx(MAT.roofC,x-3.3,x+3.3,y-3.7,y+3.7,-3.6-i*0.5,-3.4-i*0.5,bal);
+
+  // --- ulkomaisema: 3. kerros ---
+  const OUT=new THREE.Group(); SC.root.add(OUT);
+  const fx=g.xFaceA, fz=g.zF, t2=0.125;
+  // rakennuksen ulkopinta: aukko jatetaan parvekkeen kohdalle
+  bx(MAT.facade,fx-0.12,fx,g.yA-11,g.yA-t2,fz-9.4,fz+6.6,OUT);
+  bx(MAT.facade,fx-0.12,fx,g.yB+t2,g.yB+11,fz-9.4,fz+6.6,OUT);
+  bx(MAT.facade,fx-0.12,fx,g.yA-t2,g.yB+t2,g.zC+0.10,fz+6.6,OUT);
+  bx(MAT.facade,fx-0.12,fx,g.yA-t2,g.yB+t2,fz-9.4,fz-0.20,OUT);
+  for(let n=1;n<=3;n++){                                            // alemmat kerrokset
+    const z=fz-n*2.85;
+    bx(MAT.facade,fx-0.12,fx,g.yA-t2,g.yB+t2,z+2.42,z+2.65,OUT);    // parvekkeen valipohja
+    bx(MAT.roofC,fx,g.xBalB,g.yA-0.12,g.yB+0.12,z-0.20,z,OUT);      // parvekelaatta
+    bx(MAT.roofN,fx-0.06,fx+0.02,g.yA,g.yB,z,z+1.05,OUT);           // kaide
+    bx(MAT.winDark,fx-0.14,fx-0.12,g.yA+0.35,g.yA+2.0,z+0.35,z+2.2,OUT);
+  }
+  for(let n=0;n<=3;n++)for(const yy of [g.yA-3.4,g.yB+1.8]){        // naapureiden ikkunat
+    const z=fz-n*2.85;
+    bx(MAT.winDark,fx-0.14,fx-0.12,yy,yy+1.5,z+0.45,z+2.05,OUT);
+  }
+  bx(MAT.ground,-110,fx-0.5,-80,84,fz-9.6,fz-9.4,OUT);              // maanpinta
+  for(let i=0;i<7;i++){                                              // naapuritalot
+    const x=fx-11-i*7.6, y=g.yA-18+i*8.0;
+    bx(MAT.roofN,x-4.0,x+4.0,y-4.4,y+4.4,fz-9.4,fz-2.4-i*0.55,OUT);
+    bx(MAT.roofC,x-4.1,x+4.1,y-4.5,y+4.5,fz-2.4-i*0.55,fz-2.2-i*0.55,OUT);
   }
 
-  // --- poistokanavat (punaiset pallot pohjapiirroksessa) ---
+  // --- poistokanavat ---
   SC.ducts=[];
   for(const y of [g.ductAy,g.ductBy]){
     const gr=new THREE.Group(); SC.root.add(gr);
     const cyl=new THREE.Mesh(new THREE.CylinderGeometry(0.062,0.062,0.05,20),MAT.duct);
-    cyl.rotation.z=Math.PI/2; cyl.position.set(g.xPartA-0.02,y,(g.ductZ0+g.ductZ1)/2);
-    gr.add(cyl);
+    cyl.rotation.z=Math.PI/2; cyl.position.set(g.xPartA-0.02,y,(g.ductZ0+g.ductZ1)/2); gr.add(cyl);
     const ring=new THREE.Mesh(new THREE.TorusGeometry(0.072,0.008,8,22),MAT.ductR);
-    ring.rotation.y=Math.PI/2; ring.position.set(g.xPartA-0.045,y,(g.ductZ0+g.ductZ1)/2);
-    gr.add(ring);
-    SC.ducts.push({g:gr,y:y,z:(g.ductZ0+g.ductZ1)/2});
+    ring.rotation.y=Math.PI/2; ring.position.set(g.xPartA-0.045,y,(g.ductZ0+g.ductZ1)/2); gr.add(ring);
+    SC.ducts.push({g:gr,y:y,z:(g.ductZ0+g.ductZ1)/2,x:g.xPartA-0.05});
   }
+  // kylpyhuoneen poisto katossa suihkun ylapuolella
+  const dc=new THREE.Group(); SC.root.add(dc);
+  const dcm=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.07,0.04,20),MAT.duct);
+  dcm.position.set(g.ductCx,g.ductCy,g.zC-0.02); dc.add(dcm);
+  const dcr=new THREE.Mesh(new THREE.TorusGeometry(0.082,0.008,8,22),MAT.ductR);
+  dcr.position.set(g.ductCx,g.ductCy,g.zC-0.04); dc.add(dcr);
+  SC.ductC={g:dc,x:g.ductCx,y:g.ductCy};
 
   // --- patteri ---
   const rg=new THREE.Group(); SC.root.add(rg); SC.radGroup=rg;
@@ -1896,212 +1990,577 @@ function buildRoom(sim){
   SC.radGlow.position.set(g.radX+0.13,(g.radY0+g.radY1)/2,(g.radZ0+g.radZ1)/2);
   rg.add(SC.radGlow);
 
-  buildFurniture(sim,g);
+  buildFixed(sim,g);
   buildFan(g);
+  SC.furnRoot=new THREE.Group(); SC.root.add(SC.furnRoot);
 }
-</script>
-<script>
-/* ==========================================================================
-   7. KALUSTEET JA TUULETIN
-   ========================================================================== */
-function buildFurniture(sim,g){
-  const F=SC.furniture, zF=g.zF;
+
+/* ---- kiinteat kalusteet: keittio, eteinen, kylpyhuone ---- */
+function buildFixed(sim,g){
+  const F=new THREE.Group(); SC.root.add(F); SC.fixed=F;
+  const zF=g.zF;
   const K=(x0,x1,y0,y1,z0,z1,m)=>bx(m||MAT.cab,x0,x1,y0,y1,z0,z1,F);
-  // ---- keittio pohjoisseinalla ----
-  const k0=g.xInA+2.45, k1=g.xPartA-0.62, yB=g.yB;
+  const k0=g.xInA+2.45,k1=g.xPartA-0.62,yB=g.yB;
   K(k0,k1,yB-0.60,yB,zF,zF+0.86);
   K(k0,k1+0.62,yB-0.63,yB,zF+0.86,zF+0.90,MAT.counter);
-  for(let x=k0;x<k1-0.02;x+=0.60) K(x+0.01,x+0.59,yB-0.61,yB-0.605,zF+0.02,zF+0.85,MAT.white);
-  // allas + liesitaso
+  for(let x=k0;x<k1-0.02;x+=0.60)K(x+0.01,x+0.59,yB-0.61,yB-0.605,zF+0.02,zF+0.85,MAT.white);
   K(k0+0.30,k0+1.02,yB-0.52,yB-0.10,zF+0.885,zF+0.905,MAT.steel);
   K(k0+0.40,k0+0.92,yB-0.48,yB-0.14,zF+0.855,zF+0.888,MAT.steel);
   const tap=new THREE.Mesh(new THREE.CylinderGeometry(0.016,0.016,0.30,10),MAT.steel);
   tap.position.set(k0+0.66,yB-0.10,zF+1.05); F.add(tap);
   K(k0+1.20,k0+1.78,yB-0.55,yB-0.05,zF+0.895,zF+0.912,MAT.dark);
-  // astianpesukone
   K(k0,k0+0.28,yB-0.60,yB-0.585,zF+0.05,zF+0.82,MAT.steel);
-  // ylakaapit + liesituuletin
   K(k0,k0+1.10,yB-0.35,yB,zF+1.45,zF+2.22);
   K(k0+1.85,k1,yB-0.35,yB,zF+1.45,zF+2.22);
   K(k0+1.10,k0+1.85,yB-0.42,yB,zF+1.60,zF+1.72,MAT.steel);
   K(k0+1.10,k0+1.85,yB-0.42,yB-0.38,zF+1.72,zF+2.22,MAT.steel);
-  // jaakaappi/uunipylvas
   K(k1+0.02,g.xPartA,yB-0.62,yB,zF,zF+2.22);
   K(k1+0.06,g.xPartA-0.04,yB-0.635,yB-0.63,zF+0.90,zF+1.48,MAT.dark);
   K(k1+0.06,g.xPartA-0.04,yB-0.635,yB-0.63,zF+0.05,zF+0.86,MAT.steel);
-
-  // ---- eteinen ----
-  const e0=g.xPartB+0.05, e1=g.xInB-0.05;
+  // eteinen
+  const e0=g.xPartB+0.05,e1=g.xInB-0.05;
   K(e0,e0+1.10,g.yB-0.60,g.yB,zF,zF+2.25);
   K(e1-0.55,e1,g.yB-0.60,g.yB,zF,zF+2.25);
-  K(g.xInB-0.06,g.xInB-0.02,g.yBathWB+0.25,g.yBathWB+1.05,zF+0.05,zF+2.10,MAT.white); // ulko-ovi
-  K(g.xInB-0.10,g.xInB-0.02,g.yBathWB+0.28,g.yBathWB+0.34,zF+1.02,zF+1.10,MAT.steel);
-
-  // ---- kylpyhuone ----
-  const b0=g.xPartB, b1=g.xInB, ya=g.yA;
-  K(b1-0.42,b1-0.06,ya+0.30,ya+0.66,zF+0.78,zF+0.94,MAT.white);     // pesuallas
-  K(b1-0.36,b1-0.12,ya+0.34,ya+0.62,zF+0.94,zF+1.60,MAT.glassFog);   // peili
-  K(b1-0.62,b1-0.24,ya+0.95,ya+1.62,zF,zF+0.42,MAT.white);           // wc
-  K(b1-0.55,b1-0.31,ya+1.42,ya+1.60,zF+0.42,zF+0.82,MAT.white);
-  K(b0+0.04,b0+0.10,ya+0.06,ya+0.95,zF,zF+2.10,MAT.glassFog);        // suihkuseina
+  K(g.xInB-0.06,g.xInB-0.02,g.yBathWB+0.30,g.yBathWB+1.20,zF+0.05,zF+2.10,MAT.white);
+  K(g.xInB-0.11,g.xInB-0.02,g.yBathWB+0.34,g.yBathWB+0.40,zF+1.02,zF+1.10,MAT.steel);
+  // kylpyhuone
+  const b0=g.xPartB,b1=g.xInB,ya=g.yA;
+  K(b0+1.02,b0+1.40,ya+0.08,ya+0.78,zF,zF+0.42,MAT.white);          // wc-istuin
+  K(b0+1.09,b0+1.33,ya+0.60,ya+0.78,zF+0.42,zF+0.80,MAT.white);
+  K(b1-0.40,b1-0.06,ya+0.86,ya+1.20,zF+0.78,zF+0.94,MAT.white);     // pesuallas
+  K(b1-0.34,b1-0.12,ya+0.90,ya+1.16,zF+0.94,zF+1.58,MAT.glassFog);  // peili
+  K(b0+0.04,b0+0.10,ya+0.06,ya+0.98,zF,zF+2.10,MAT.glassFog);       // suihkuseina
   const sh=new THREE.Mesh(new THREE.CylinderGeometry(0.055,0.055,0.03,14),MAT.steel);
   sh.position.set(b0+0.42,ya+0.45,zF+2.05); F.add(sh);
   K(b0+0.10,b0+0.80,ya+0.05,ya+0.10,zF+0.30,zF+2.00,MAT.steel);
-  K(b0+0.30,b0+0.62,ya+0.30,ya+0.62,zF+0.002,zF+0.02,MAT.steel);     // lattiakaivo
-
-  // ---- olohuone ----
-  const s0=g.xInA+0.55;
-  K(s0,s0+2.05,g.yA+0.06,g.yA+0.92,zF,zF+0.40,MAT.textile);          // sohva
-  K(s0,s0+2.05,g.yA+0.06,g.yA+0.30,zF+0.40,zF+0.78,MAT.textile);
-  K(s0+0.02,s0+0.34,g.yA+0.30,g.yA+0.92,zF+0.40,zF+0.55,MAT.textile);
-  K(s0+1.71,s0+2.03,g.yA+0.30,g.yA+0.92,zF+0.40,zF+0.55,MAT.textile);
-  K(s0+0.55,s0+1.50,g.yA+1.15,g.yA+1.70,zF+0.36,zF+0.40,MAT.counter);// sohvapoyta
-  K(s0+0.60,s0+0.70,g.yA+1.20,g.yA+1.30,zF,zF+0.36,MAT.dark);
-  K(s0+1.35,s0+1.45,g.yA+1.55,g.yA+1.65,zF,zF+0.36,MAT.dark);
-  K(g.xPartA-0.62,g.xPartA-0.02,g.yA+0.12,g.yA+1.28,zF,zF+2.25);     // vaatekaappi
+  K(b0+0.30,b0+0.62,ya+0.30,ya+0.62,zF+0.002,zF+0.02,MAT.steel);
 }
 
+/* ---- pyorea potkuripuhallin ---- */
 function buildFan(g){
   const G0=new THREE.Group(); SC.fan=G0; SC.root.add(G0);
-  const base=new THREE.Mesh(new THREE.CylinderGeometry(0.19,0.21,0.045,26),MAT.fanB);
-  base.rotation.x=Math.PI/2; base.position.z=g.zF+0.022; G0.add(base);
-  const body=new THREE.Mesh(new THREE.CylinderGeometry(0.115,0.135,1.0,24),MAT.fanB);
-  body.rotation.x=Math.PI/2; body.scale.z=0.62;
-  body.position.set(0,0,g.zF+0.545); G0.add(body);
-  const gr=new THREE.Mesh(new THREE.BoxGeometry(0.035,0.20,0.62),MAT.fanG);
-  gr.position.set(0.10,0,g.zF+0.60); G0.add(gr); SC.fanGrille=gr;
-  for(let z=-0.28;z<=0.28;z+=0.055){
-    const sl=new THREE.Mesh(new THREE.BoxGeometry(0.012,0.19,0.022),MAT.fanB);
-    sl.position.set(0.125,0,g.zF+0.60+z); G0.add(sl);
+  const base=new THREE.Mesh(new THREE.CylinderGeometry(0.21,0.23,0.05,30),MAT.fanB);
+  base.rotation.x=Math.PI/2; base.position.z=g.zF+0.025; G0.add(base);
+  const pole=new THREE.Mesh(new THREE.CylinderGeometry(0.028,0.034,1.0,14),MAT.fanG);
+  pole.rotation.x=Math.PI/2; G0.add(pole); SC.fanPole=pole;
+  const head=new THREE.Group(); G0.add(head); SC.fanHead=head;
+  const hub=new THREE.Mesh(new THREE.CylinderGeometry(0.075,0.085,0.16,20),MAT.fanB);
+  hub.rotation.z=Math.PI/2; hub.position.x=-0.06; head.add(hub);
+  const rotor=new THREE.Group(); rotor.position.x=0.04; head.add(rotor); SC.fanRotor=rotor;
+  const cap=new THREE.Mesh(new THREE.SphereGeometry(0.05,16,12),MAT.fanG);
+  cap.scale.x=0.7; rotor.add(cap);
+  for(let i=0;i<5;i++){
+    const bl=new THREE.Mesh(new THREE.BoxGeometry(0.012,0.115,0.30),MAT.fanG);
+    const a=i*Math.PI*2/5;
+    bl.position.set(0.012,Math.cos(a)*0.165,Math.sin(a)*0.165);
+    bl.rotation.x=a; bl.rotation.y=0.42; rotor.add(bl);
   }
-  const top=new THREE.Mesh(new THREE.CylinderGeometry(0.10,0.115,0.06,24),MAT.fanG);
-  top.rotation.x=Math.PI/2; top.scale.z=0.62; top.position.set(0,0,g.zF+1.06); G0.add(top);
-  const ring=new THREE.Mesh(new THREE.TorusGeometry(0.26,0.008,6,32),
-    new THREE.MeshBasicMaterial({color:0xD96A22,transparent:true,opacity:0.65}));
+  const ringF=new THREE.Mesh(new THREE.TorusGeometry(0.20,0.009,8,34),MAT.fanG);
+  ringF.rotation.y=Math.PI/2; ringF.position.x=0.10; head.add(ringF);
+  const ringB=new THREE.Mesh(new THREE.TorusGeometry(0.20,0.009,8,34),MAT.fanG);
+  ringB.rotation.y=Math.PI/2; ringB.position.x=-0.10; head.add(ringB);
+  const ringM=new THREE.Mesh(new THREE.TorusGeometry(0.205,0.012,8,34),MAT.fanB);
+  ringM.rotation.y=Math.PI/2; ringM.position.x=0.02; head.add(ringM);
+  for(let i=0;i<14;i++){
+    const a=i*Math.PI*2/14;
+    const sp=new THREE.Mesh(new THREE.BoxGeometry(0.20,0.007,0.007),MAT.fanG);
+    sp.position.set(0.0,Math.cos(a)*0.10,Math.sin(a)*0.10);
+    sp.rotation.x=a; head.add(sp);
+    const sp2=new THREE.Mesh(new THREE.BoxGeometry(0.008,0.007,0.007),MAT.fanG);
+    sp2.position.set(0.10,Math.cos(a)*0.20,Math.sin(a)*0.20); head.add(sp2);
+  }
+  const ring=new THREE.Mesh(new THREE.TorusGeometry(0.30,0.008,6,34),
+    new THREE.MeshBasicMaterial({color:0xD96A22,transparent:true,opacity:0.6}));
   ring.position.z=g.zF+0.006; G0.add(ring); SC.fanRing=ring;
   const arrow=new THREE.Mesh(new THREE.ConeGeometry(0.055,0.16,14),
     new THREE.MeshBasicMaterial({color:0xF08A3E}));
-  arrow.rotation.z=-Math.PI/2; arrow.position.set(0.40,0,g.zF+0.03); G0.add(arrow);
+  arrow.rotation.z=-Math.PI/2; arrow.position.set(0.45,0,g.zF+0.03); G0.add(arrow);
   SC.fanArrow=arrow;
 }
-
+</script>
+<script>
 /* ==========================================================================
-   8. VARIKARTAT
+   7. KALUSTEJARJESTELMA
+   Paikallinen koordinaatisto: leveys w = x, syvyys d = y, korkeus z lattiasta.
+   Esineen "etupuoli" on paikallinen -y, joten rot = 0 katsoo etelaan.
+   ========================================================================== */
+const B=(mat,x0,x1,y0,y1,z0,z1,p)=>bx(mat,x0,x1,y0,y1,z0,z1,p);
+
+const FURN_DEFS=[
+{ id:'loftbed', label:'Parvis&auml;nky', w:2.07, d:1.52, hh:2.14, zone:'sisa',
+  blocks:[{x0:-1.00,x1:1.00,y0:-0.72,y1:0.72,z0:1.60,z1:1.95}],
+  build(G){
+    const W=1.035,D=0.76,H=2.14,BZ=1.71;
+    for(const sx of [-1,1])for(const sy of [-1,1])
+      B(MAT.wood?MAT.counter:MAT.cab,sx*W-0.035*(sx>0?2:0),sx*W+0.035*(sx<0?2:0),
+        sy*D-0.035*(sy>0?2:0),sy*D+0.035*(sy<0?2:0),0,H,G);
+    for(const sy of [-1,1]){
+      B(MAT.counter,-W,W,sy*D-0.03,sy*D+0.03,BZ-0.13,BZ,G);
+      B(MAT.counter,-W,W,sy*D-0.025,sy*D+0.025,H-0.13,H,G);
+      B(MAT.counter,-W,W,sy*D-0.02,sy*D+0.02,H-0.45,H-0.38,G);
+    }
+    B(MAT.counter,-W,-W+0.06,-D,D,BZ-0.13,H,G);
+    for(let x=-W+0.10;x<W-0.06;x+=0.115) B(MAT.counter,x,x+0.075,-D+0.03,D-0.03,BZ-0.02,BZ,G);
+    B(MAT.white,-0.98,0.98,-0.70,0.70,BZ,BZ+0.20,G);            // patja
+    B(MAT.textile,-0.98,0.98,-0.70,-0.30,BZ+0.20,BZ+0.26,G);    // tyyny
+    const lx=W+0.03;                                             // tikkaat
+    B(MAT.counter,lx-0.03,lx+0.03,-D+0.10,-D+0.16,0,H,G);
+    B(MAT.counter,lx-0.03,lx+0.03,D-0.16,D-0.10,0,H,G);
+    for(let z=0.24;z<H-0.1;z+=0.28) B(MAT.counter,lx-0.05,lx+0.05,-D+0.12,D-0.12,z,z+0.045,G);
+  }},
+
+{ id:'setup', label:'Setup: pöytä, kone, näytöt', w:1.92, d:0.82, hh:1.35, zone:'sisa',
+  device:'setup',
+  blocks:[{x0:-0.96,x1:0.64,y0:-0.40,y1:0.40,z0:0.72,z1:0.76},
+          {x0:0.66,x1:0.92,y0:-0.26,y1:0.26,z0:0.00,z1:0.52},
+          {x0:-0.86,x1:0.34,y0:0.18,y1:0.30,z0:0.76,z1:1.14}],
+  build(G){
+    const T=0.75;
+    B(MAT.white,-0.96,0.64,-0.40,0.40,T-0.025,T,G);              // TROTTEN-levy
+    for(const cx of [-0.80,0.48]){                               // A-jalat
+      B(MAT.dark,cx-0.03,cx+0.03,-0.33,-0.27,0,T-0.03,G);
+      B(MAT.dark,cx-0.03,cx+0.03,0.27,0.33,0,T-0.03,G);
+      B(MAT.dark,cx-0.03,cx+0.03,-0.33,0.33,T-0.09,T-0.03,G);
+    }
+    B(MAT.textile,-0.60,0.34,-0.34,0.20,T,T+0.004,G);            // hiirimatto
+    for(const [mx,rot] of [[-0.52,0.10],[0.06,-0.10]]){          // kaksi 27" naytto
+      const m=new THREE.Group(); m.position.set(mx,0.24,T); m.rotation.z=rot; G.add(m);
+      B(MAT.black,-0.30,0.30,-0.008,0.008,0.13,0.51,m);
+      B(MAT.screen,-0.288,0.288,-0.014,-0.010,0.145,0.497,m);
+      B(MAT.black,-0.05,0.05,-0.02,0.10,0.02,0.14,m);
+      B(MAT.black,-0.16,0.16,-0.02,0.13,0,0.02,m);
+    }
+    B(MAT.white,-0.47,-0.05,-0.24,-0.09,T,T+0.028,G);            // nappaimisto
+    B(MAT.white,0.07,0.14,-0.22,-0.10,T,T+0.035,G);              // hiiri
+    const arm=new THREE.Group(); arm.position.set(0.52,0.30,T); G.add(arm); // mikkipuomi
+    B(MAT.black,-0.02,0.02,-0.02,0.02,0,0.34,arm);
+    B(MAT.black,-0.24,0.02,-0.02,0.02,0.32,0.36,arm);
+    B(MAT.white,-0.28,-0.20,-0.04,0.04,0.16,0.32,arm);
+    B(MAT.steel,0.34,0.40,-0.30,-0.24,T,T+0.02,G);               // kuulokepidike
+    B(MAT.steel,0.365,0.375,-0.29,-0.25,T,T+0.26,G);
+    B(MAT.white,0.32,0.42,-0.32,-0.22,T+0.24,T+0.30,G);
+    B(MAT.white,-0.90,-0.80,-0.10,0.00,T,T+0.22,G);              // patsas
+    const c=new THREE.Group(); c.position.set(0.79,0,0); G.add(c); // Corsair 5000D
+    B(MAT.white,-0.125,0.125,-0.26,0.26,0,0.52,c);
+    B(new THREE.MeshBasicMaterial({color:0x7a1d16}),-0.128,-0.118,-0.22,0.22,0.05,0.47,c);
+    B(MAT.glassFog,0.118,0.128,-0.24,0.24,0.03,0.49,c);
+    B(MAT.dark,-0.10,0.10,-0.26,-0.245,0.03,0.09,c);
+  }},
+
+{ id:'chair', label:'Pelituoli (s&auml;hk&ouml;recliner)', w:0.85, d:0.95, hh:1.05, zone:'sisa',
+  blocks:[{x0:-0.42,x1:0.42,y0:-0.46,y1:0.46,z0:0.00,z1:0.82}],
+  build(G){
+    B(MAT.leather,-0.42,0.42,-0.46,0.46,0.06,0.45,G);            // runko
+    B(MAT.dark,-0.38,0.38,-0.42,0.42,0,0.06,G);
+    B(MAT.leather,-0.30,0.30,-0.42,0.20,0.45,0.50,G);            // istuin
+    B(MAT.leather,-0.36,0.36,0.28,0.46,0.45,0.92,G);             // selkanoja
+    B(MAT.leather,-0.30,0.30,0.30,0.44,0.92,1.05,G);             // niskatuki
+    for(const sx of [-1,1]) B(MAT.leather,sx*0.36-0.06,sx*0.36+0.06,-0.42,0.32,0.45,0.62,G);
+    B(MAT.dark,-0.14,-0.06,-0.47,-0.42,0.30,0.40,G);             // saatopainikkeet
+  }},
+
+{ id:'sofa', label:'Sohva', w:1.71, d:0.98, hh:0.83, zone:'sisa',
+  blocks:[{x0:-0.855,x1:0.855,y0:-0.49,y1:0.49,z0:0.00,z1:0.50},
+          {x0:-0.855,x1:0.855,y0:0.18,y1:0.49,z0:0.50,z1:0.83},
+          {x0:-0.855,x1:-0.70,y0:-0.49,y1:0.49,z0:0.50,z1:0.68},
+          {x0:0.70,x1:0.855,y0:-0.49,y1:0.49,z0:0.50,z1:0.68}],
+  build(G){
+    B(MAT.textile,-0.855,0.855,-0.49,0.49,0.06,0.42,G);
+    B(MAT.dark,-0.80,0.80,-0.44,0.44,0,0.06,G);
+    B(MAT.textile2,-0.70,0.00,-0.44,0.32,0.42,0.50,G);
+    B(MAT.textile2,0.00,0.70,-0.44,0.32,0.42,0.50,G);
+    B(MAT.textile,-0.855,0.855,0.32,0.49,0.42,0.83,G);
+    B(MAT.textile2,-0.68,-0.02,0.24,0.36,0.50,0.80,G);
+    B(MAT.textile2,0.02,0.68,0.24,0.36,0.50,0.80,G);
+    for(const sx of [-1,1]) B(MAT.textile,sx*0.775-0.08,sx*0.775+0.08,-0.49,0.49,0.42,0.68,G);
+  }},
+
+{ id:'tvstand', label:'TV-taso', w:1.80, d:0.50, hh:0.60, zone:'sisa',
+  blocks:[{x0:-0.90,x1:0.90,y0:-0.25,y1:0.25,z0:0.00,z1:0.60}],
+  build(G){
+    B(MAT.cab,-0.90,0.90,-0.25,0.25,0.04,0.60,G);
+    B(MAT.dark,-0.86,0.86,-0.22,0.22,0,0.04,G);
+    B(MAT.white,-0.88,-0.02,-0.255,-0.25,0.34,0.57,G);
+    B(MAT.white,0.02,0.88,-0.255,-0.25,0.34,0.57,G);
+    B(MAT.dark,-0.88,0.88,-0.255,-0.252,0.06,0.30,G);
+  }},
+
+{ id:'tv', label:'Televisio 55"', w:1.24, d:0.24, hh:0.78, zone:'sisa',
+  parent:'tvstand', poff:[0,0.03], device:'tv',
+  blocks:[{x0:-0.62,x1:0.62,y0:-0.03,y1:0.03,z0:0.10,z1:0.78}],
+  build(G){
+    B(MAT.dark,-0.24,0.24,-0.12,0.12,0,0.02,G);
+    B(MAT.dark,-0.03,0.03,-0.03,0.03,0.02,0.11,G);
+    B(MAT.black,-0.62,0.62,-0.02,0.02,0.11,0.79,G);
+    SC.tvScreen=B(MAT.tvpic,-0.605,0.605,-0.026,-0.022,0.125,0.775,G);
+  }},
+
+{ id:'coffeetable', label:'Sohvap&ouml;yt&auml;', w:0.90, d:0.55, hh:0.45, zone:'sisa',
+  blocks:[{x0:-0.45,x1:0.45,y0:-0.275,y1:0.275,z0:0.38,z1:0.45}],
+  build(G){
+    B(MAT.counter,-0.45,0.45,-0.275,0.275,0.41,0.45,G);
+    for(const sx of [-1,1])for(const sy of [-1,1])
+      B(MAT.dark,sx*0.40-0.02,sx*0.40+0.02,sy*0.23-0.02,sy*0.23+0.02,0,0.41,G);
+    B(MAT.dark,-0.38,0.38,-0.20,0.20,0.14,0.17,G);
+  }},
+
+{ id:'fridge', label:'Minij&auml;&auml;kaappi', w:0.54, d:0.548, hh:0.845, zone:'sisa',
+  device:'fridge',
+  blocks:[{x0:-0.27,x1:0.27,y0:-0.274,y1:0.274,z0:0.00,z1:0.845}],
+  build(G){
+    B(MAT.cab,-0.27,0.27,-0.274,0.274,0.02,0.845,G);
+    B(MAT.dark,-0.25,0.25,-0.25,0.25,0,0.02,G);
+    B(MAT.black,-0.245,0.245,-0.278,-0.272,0.08,0.80,G);
+    B(MAT.steel,0.16,0.22,-0.30,-0.278,0.34,0.62,G);
+    B(MAT.steel,-0.20,0.20,0.274,0.278,0.10,0.72,G);
+  }},
+
+{ id:'tvpc', label:'TV-tietokone', w:0.21, d:0.45, hh:0.45, zone:'sisa',
+  device:'tvpc',
+  blocks:[{x0:-0.105,x1:0.105,y0:-0.225,y1:0.225,z0:0.00,z1:0.45}],
+  build(G){
+    B(MAT.dark,-0.105,0.105,-0.225,0.225,0.015,0.45,G);
+    B(MAT.black,-0.09,0.09,-0.23,-0.222,0.03,0.43,G);
+    B(new THREE.MeshBasicMaterial({color:0x2E8FBF}),-0.06,0.06,-0.232,-0.229,0.38,0.40,G);
+    B(MAT.steel,-0.10,-0.06,-0.20,0.20,0,0.015,G);
+    B(MAT.steel,0.06,0.10,-0.20,0.20,0,0.015,G);
+  }},
+
+{ id:'washer', label:'Pyykinpesukone', w:0.60, d:0.60, hh:0.85, zone:'psh',
+  device:'washer',
+  blocks:[{x0:-0.30,x1:0.30,y0:-0.30,y1:0.30,z0:0.00,z1:0.85}],
+  build(G){
+    B(MAT.white,-0.30,0.30,-0.30,0.30,0.02,0.85,G);
+    B(MAT.dark,-0.28,0.28,-0.28,0.28,0,0.02,G);
+    B(MAT.steel,-0.28,0.28,-0.305,-0.30,0.66,0.82,G);            // ohjauspaneeli
+    const luuk=new THREE.Mesh(new THREE.CylinderGeometry(0.20,0.20,0.03,26),MAT.glassFog);
+    luuk.rotation.x=Math.PI/2; luuk.position.set(0,-0.305,0.40); G.add(luuk);
+    const kehys=new THREE.Mesh(new THREE.TorusGeometry(0.205,0.022,10,28),MAT.white);
+    kehys.rotation.x=Math.PI/2; kehys.position.set(0,-0.30,0.40); G.add(kehys);
+    B(MAT.steel,0.16,0.24,-0.312,-0.30,0.72,0.78,G);
+  }}
+];
+
+const FURN=[];
+function initFurn(){
+  FURN.length=0;
+  for(const d of FURN_DEFS) FURN.push(Object.assign({rot:0,placed:true,x:0,y:0},d));
+}
+const furnById=id=>FURN.find(f=>f.id===id);
+
+function fLocal(it,wx,wy){
+  const c=Math.cos(it.rot),s=Math.sin(it.rot),px=wx-it.x,py=wy-it.y;
+  return [px*c+py*s,-px*s+py*c];
+}
+function fWorld(it,lx,ly){
+  const c=Math.cos(it.rot),s=Math.sin(it.rot);
+  return [it.x+lx*c-ly*s,it.y+lx*s+ly*c];
+}
+/* lapsiesineet seuraavat vanhempaansa */
+function syncParents(){
+  for(const it of FURN){
+    if(!it.parent)continue;
+    const p=furnById(it.parent);
+    if(!p){it.placed=false;continue;}
+    if(!p.placed){it.placed=false;continue;}
+    const [wx,wy]=fWorld(p,it.poff[0],it.poff[1]);
+    it.x=wx; it.y=wy; it.rot=p.rot; it.zBase=p.hh;
+  }
+}
+
+/* ---- rasterointi hilaan ---- */
+const FIXED_BLOCKS=[];   // maailmakoordinaatit: [x0,x1,y0,y1,z0,z1]
+function buildFixedBlocks(g){
+  FIXED_BLOCKS.length=0;
+  const zF=g.zF, add=(a,b,c,d,e,f)=>FIXED_BLOCKS.push([a,b,c,d,e,f]);
+  const k0=g.xInA+2.45,k1=g.xPartA-0.62,yB=g.yB;
+  add(k0,g.xPartA,yB-0.62,yB,zF,zF+0.90);                        // keittiokalusteet
+  add(k0,g.xPartA,yB-0.35,yB,zF+1.45,zF+2.22);                   // ylakaapit
+  add(k1+0.02,g.xPartA,yB-0.62,yB,zF,zF+2.22);                   // jaakaappi/uunipylvas
+  const e0=g.xPartB+0.05,e1=g.xInB-0.05;
+  add(e0,e0+1.10,g.yB-0.60,g.yB,zF,zF+2.25);                     // eteisen kaapit
+  add(e1-0.55,e1,g.yB-0.60,g.yB,zF,zF+2.25);
+  const b1=g.xInB,ya=g.yA,b0=g.xPartB;
+  add(b0+1.02,b0+1.40,ya+0.08,ya+0.78,zF,zF+0.80);               // wc
+  add(b1-0.40,b1-0.06,ya+0.86,ya+1.20,zF+0.72,zF+0.94);          // pesuallas
+  add(b0+0.04,b0+0.10,ya+0.06,ya+0.98,zF,zF+2.10);               // suihkuseina
+}
+function rasterBox(sim,mask,x0,x1,y0,y1,z0,z1,out){
+  const h=sim.h,NX=sim.NX,NY=sim.NY;
+  const i0=Math.max(0,Math.floor(x0/h)),i1=Math.min(NX-1,Math.floor(x1/h));
+  const j0=Math.max(0,Math.floor(y0/h)),j1=Math.min(NY-1,Math.floor(y1/h));
+  const k0=Math.max(0,Math.floor(z0/h)),k1=Math.min(sim.NZ-1,Math.floor(z1/h));
+  for(let k=k0;k<=k1;k++)for(let j=j0;j<=j1;j++)for(let i=i0;i<=i1;i++){
+    const cx=(i+0.5)*h,cy=(j+0.5)*h,cz=(k+0.5)*h;
+    if(cx<x0||cx>x1||cy<y0||cy>y1||cz<z0||cz>z1)continue;
+    const c=i+NX*(j+NY*k);
+    if(sim.typ[c]!==FLUID)continue;
+    if(!mask[c]&&out)out.push(c);
+    mask[c]=1;
+  }
+}
+/* laajenna solua ohuemmat lohkot niin etta ne osuvat hilaan */
+function eBlocks(it,h){
+  if(it._eh===h)return it._eb;
+  const m=h*0.52, ex=b=>{
+    const o={};
+    for(const [a,b0,b1] of [['x','x0','x1'],['y','y0','y1'],['z','z0','z1']]){
+      let lo=b[b0],hi=b[b1];
+      if(hi-lo<2*m){const c=(lo+hi)/2;lo=c-m;hi=c+m;}
+      o[b0]=lo;o[b1]=hi;
+    }
+    return o;
+  };
+  it._eb=it.blocks.map(ex); it._eh=h; return it._eb;
+}
+function rasterItem(sim,mask,it,out){
+  const h=sim.h,NX=sim.NX,NY=sim.NY,zB=(sim.L.inZ0*h)+(it.zBase||0);
+  const R=Math.hypot(it.w,it.d)*0.5+h;
+  const i0=Math.max(0,Math.floor((it.x-R)/h)),i1=Math.min(NX-1,Math.ceil((it.x+R)/h));
+  const j0=Math.max(0,Math.floor((it.y-R)/h)),j1=Math.min(NY-1,Math.ceil((it.y+R)/h));
+  const k0=Math.max(0,Math.floor(zB/h)),k1=Math.min(sim.NZ-1,Math.ceil((zB+it.hh)/h));
+  for(let k=k0;k<=k1;k++){
+    const lz=(k+0.5)*h-zB;
+    for(let j=j0;j<=j1;j++)for(let i=i0;i<=i1;i++){
+      const p=fLocal(it,(i+0.5)*h,(j+0.5)*h);
+      for(const b of eBlocks(it,h)){
+        if(p[0]<b.x0||p[0]>b.x1||p[1]<b.y0||p[1]>b.y1||lz<b.z0||lz>b.z1)continue;
+        const c=i+NX*(j+NY*k);
+        if(sim.typ[c]!==FLUID)break;
+        if(!mask[c]&&out)out.push(c);
+        mask[c]=1; break;
+      }
+    }
+  }
+}
+/* kelpaako sijoitus? testataan solu solulta pohjaa vasten */
+function furnValid(sim,it,baseMask){
+  const h=sim.h,NX=sim.NX,NY=sim.NY,zB=(sim.L.inZ0*h)+(it.zBase||0);
+  const R=Math.hypot(it.w,it.d)*0.5+h;
+  const i0=Math.max(0,Math.floor((it.x-R)/h)),i1=Math.min(NX-1,Math.ceil((it.x+R)/h));
+  const j0=Math.max(0,Math.floor((it.y-R)/h)),j1=Math.min(NY-1,Math.ceil((it.y+R)/h));
+  const k0=Math.max(0,Math.floor(zB/h)),k1=Math.min(sim.NZ-1,Math.ceil((zB+it.hh)/h)-1);
+  const okRoom=r=>it.zone==='psh'?(r===R_BATH):(r===R_MAIN||r===R_HALL||r===R_BALC);
+  let any=false;
+  for(let k=k0;k<=k1;k++){
+    const lz=(k+0.5)*h-zB;
+    for(let j=j0;j<=j1;j++)for(let i=i0;i<=i1;i++){
+      const p=fLocal(it,(i+0.5)*h,(j+0.5)*h);
+      let inside=false;
+      for(const b of eBlocks(it,h))
+        if(p[0]>=b.x0&&p[0]<=b.x1&&p[1]>=b.y0&&p[1]<=b.y1&&lz>=b.z0&&lz<=b.z1){inside=true;break;}
+      if(!inside)continue;
+      any=true;
+      const c=i+NX*(j+NY*k);
+      if(sim.typ[c]!==FLUID)return false;
+      if(!okRoom(sim.room[c]))return false;
+      if(baseMask&&baseMask[c])return false;
+    }
+  }
+  return any;
+}
+/* pohjan nurkat huoneen sisalla (estaa leijumisen seinan lapi) */
+function furnFootValid(sim,it){
+  const h=sim.h,zk=sim.L.inZ0;
+  const okRoom=r=>it.zone==='psh'?(r===R_BATH):(r===R_MAIN||r===R_HALL||r===R_BALC);
+  for(const [lx,ly] of [[-it.w/2,-it.d/2],[it.w/2,-it.d/2],[-it.w/2,it.d/2],[it.w/2,it.d/2],[0,0]]){
+    const [wx,wy]=fWorld(it,lx*0.96,ly*0.96);
+    const i=Math.floor(wx/h),j=Math.floor(wy/h);
+    if(i<0||j<0||i>=sim.NX||j>=sim.NY)return false;
+    const c=i+sim.NX*(j+sim.NY*zk);
+    if(sim.typ[c]!==FLUID||!okRoom(sim.room[c]))return false;
+  }
+  return true;
+}
+
+/* ---- esteiden ja lampolahteiden paivitys ---- */
+let baseMask=null;
+function rebuildObstacles(exclude){
+  const mask=sim.objMask; mask.fill(0);
+  for(const b of FIXED_BLOCKS) rasterBox(sim,mask,b[0],b[1],b[2],b[3],b[4],b[5]);
+  syncParents();
+  sim.devHeat=[];
+  for(const it of FURN){
+    if(!it.placed||it===exclude)continue;
+    const cells=[]; rasterItem(sim,mask,it,cells); it.cells=cells;
+  }
+  // lampolahteet: esineen ympariston vapaat solut
+  const NX=sim.NX,NY=sim.NY,NXY=NX*NY,off=[-1,1,-NX,NX,-NXY,NXY];
+  for(const it of FURN){
+    if(!it.device||!it.placed||it===exclude)continue;
+    const seen=new Set(),sh=[];
+    for(const c of (it.cells||[]))for(let d=0;d<6;d++){
+      const o=c+off[d];
+      if(o<0||o>=sim.NC||mask[o]||sim.typ[o]!==FLUID||seen.has(o))continue;
+      seen.add(o); sh.push(o);
+    }
+    it.heatCells=new Int32Array(sh);
+    sim.devHeat.push({cells:it.heatCells,w:0,id:it.device});
+  }
+  sim.rebuildFaces(); sim.bindStencil();
+  buildSpawnPool(sim);
+}
+function makeBaseMask(exclude){
+  const m=new Uint8Array(sim.NC);
+  for(const b of FIXED_BLOCKS) rasterBox(sim,m,b[0],b[1],b[2],b[3],b[4],b[5]);
+  for(const it of FURN) if(it.placed&&it!==exclude) rasterItem(sim,m,it,null);
+  return m;
+}
+
+/* ---- 3D-esitys ---- */
+function buildFurnMeshes(){
+  const root=SC.furnRoot;
+  while(root.children.length)root.remove(root.children[0]);
+  SC.pickers=[];
+  for(const it of FURN){
+    const g=new THREE.Group(); root.add(g); it.g=g;
+    const inner=new THREE.Group(); g.add(inner); it.inner=inner;
+    it.build(inner);
+    const pk=new THREE.Mesh(new THREE.BoxGeometry(it.w,it.d,it.hh),
+      new THREE.MeshBasicMaterial({visible:false}));
+    pk.position.z=it.hh/2; pk.userData.item=it; g.add(pk); it.picker=pk;
+    SC.pickers.push(pk);
+    const eg=new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.BoxGeometry(it.w+0.03,it.d+0.03,it.hh+0.03)),MAT.sel);
+    eg.position.z=it.hh/2; eg.visible=false; g.add(eg); it.outline=eg;
+  }
+}
+function syncFurn(){
+  const zF=SC.G.zF;
+  syncParents();
+  for(const it of FURN){
+    if(!it.g)continue;
+    it.g.visible=it.placed&&P.showFurn;
+    it.g.position.set(it.x,it.y,zF+(it.zBase||0));
+    it.g.rotation.z=it.rot;
+  }
+}
+function furnDefaults(){
+  const g=SC.G, rx=a=>g.xInA+a, ry=b=>g.yA+b, D=Math.PI/180;
+  const S={loftbed:[3.95,0.82,0], setup:[3.88,0.44,180], chair:[3.88,1.44,0],
+           sofa:[1.25,1.30,180], coffeetable:[1.25,2.20,0], tvstand:[1.25,3.10,0],
+           fridge:[0.42,0.42,0], tvpc:[2.28,3.10,0]};
+  for(const it of FURN){
+    it.placed=true;
+    if(S[it.id]){ it.x=rx(S[it.id][0]); it.y=ry(S[it.id][1]); it.rot=S[it.id][2]*D; }
+  }
+  const w=furnById('washer');
+  if(w){ w.x=g.xInB-0.34; w.y=g.yBathB-0.34; w.rot=180*D; }
+  syncParents();
+}
+</script>
+<script>
+/* ==========================================================================
+   8. VARIKARTAT, HIUKKASET, LEIKKAUSTASO, POHJAPIIRROS
    ========================================================================== */
 function ramp(stops,t){
-  t=clamp(t,0,1); const n=stops.length-1, f=t*n, i=Math.min(n-1,f|0), u=f-i;
-  const a=stops[i], b=stops[i+1];
-  return [a[0]+(b[0]-a[0])*u, a[1]+(b[1]-a[1])*u, a[2]+(b[2]-a[2])*u];
+  t=clamp(t,0,1); const n=stops.length-1,f=t*n,i=Math.min(n-1,f|0),u=f-i;
+  const a=stops[i],b=stops[i+1];
+  return [a[0]+(b[0]-a[0])*u,a[1]+(b[1]-a[1])*u,a[2]+(b[2]-a[2])*u];
 }
 const hex2=h=>[parseInt(h.slice(1,3),16)/255,parseInt(h.slice(3,5),16)/255,parseInt(h.slice(5,7),16)/255];
 const RAMPS={
-  temp : ['#1B6FA8','#2E8FBF','#7E8C99','#D96A22','#F3B679'].map(hex2),
-  rh   : ['#171331','#4A3891','#8560D8','#B79BEC','#E6DAFB'].map(hex2),
-  speed: ['#0A1E28','#1C6285','#2E8FBF','#79C9EE','#EAF7FF'].map(hex2),
-  press: ['#146E6E','#54A8A8','#7E8C99','#9B5FAF','#C98FD8'].map(hex2),
-  age  : ['#D9E7F0','#8FA8B8','#B08A4A','#B4611A','#5C2E08'].map(hex2)
+  temp :['#1B6FA8','#2E8FBF','#7E8C99','#D96A22','#F3B679'].map(hex2),
+  rh   :['#171331','#4A3891','#8560D8','#B79BEC','#E6DAFB'].map(hex2),
+  speed:['#0A1E28','#1C6285','#2E8FBF','#79C9EE','#EAF7FF'].map(hex2),
+  press:['#146E6E','#54A8A8','#7E8C99','#9B5FAF','#C98FD8'].map(hex2),
+  age  :['#D9E7F0','#8FA8B8','#B08A4A','#B4611A','#5C2E08'].map(hex2)
 };
 const FIELDS={
-  temp :{label:'Lämpötila', unit:'°C', ramp:'temp'},
-  rh   :{label:'Suhteellinen kosteus', unit:'%', ramp:'rh'},
-  speed:{label:'Ilman nopeus', unit:'m/s', ramp:'speed'},
-  press:{label:'Painekenttä', unit:'Pa', ramp:'press'},
-  age  :{label:'Ilman ikä', unit:'min', ramp:'age'}
+  temp :{label:'Lämpötila',unit:'°C',ramp:'temp'},
+  rh   :{label:'Suhteellinen kosteus',unit:'%',ramp:'rh'},
+  speed:{label:'Ilman nopeus',unit:'m/s',ramp:'speed'},
+  press:{label:'Painekenttä',unit:'Pa',ramp:'press'},
+  age  :{label:'Ilman ikä',unit:'min',ramp:'age'}
 };
-function fieldRange(f,P,sim){
-  if(f==='temp'){const a=Math.min(P.Tout,P.setT)-1.5, b=Math.max(P.Tout,P.setT)+2.5; return [a,b];}
-  if(f==='rh')return [15,100];
-  if(f==='speed')return [0,Math.max(0.45,P.fanVel*0.55)];
-  if(f==='press')return [-Math.max(6,Math.abs(sim.lastDp||8)*1.3),Math.max(6,Math.abs(sim.lastDp||8)*1.3)];
-  return [0,30];
+function fieldRange(f,Q,s){
+  if(f==='temp'){const a=Math.min(Q.Tout,Q.setT)-1.5,b=Math.max(Q.Tout,Q.setT)+2.5;return[a,b];}
+  if(f==='rh')return[15,100];
+  if(f==='speed')return[0,Math.max(0.45,Q.fanVel*0.55)];
+  if(f==='press'){const r=Math.max(6,Math.abs(s.lastDp||8)*1.3);return[-r,r];}
+  return[0,30];
 }
-function fieldVal(sim,f,c){
-  if(f==='temp')return sim.T[c];
-  if(f==='rh')return rhOf(sim.T[c],sim.q[c]);
-  if(f==='speed')return Math.hypot(sim.cu[c],sim.cv[c],sim.cw[c]);
-  if(f==='press')return sim.p[c];
-  return sim.age[c]/60;
+function fieldVal(s,f,c){
+  if(f==='temp')return s.T[c];
+  if(f==='rh')return rhOf(s.T[c],s.q[c]);
+  if(f==='speed')return Math.hypot(s.cu[c],s.cv[c],s.cw[c]);
+  if(f==='press')return s.p[c];
+  return s.age[c]/60;
 }
 
-/* ==========================================================================
-   9. HIUKKASET
-   ========================================================================== */
+/* ---- hiukkaset ---- */
 const PT={n:0,cap:0};
 function initParticles(max){
   PT.cap=max;
   PT.pos=new Float32Array(max*3); PT.col=new Float32Array(max*3);
-  PT.life=new Float32Array(max); PT.spd=new Float32Array(max);
+  PT.life=new Float32Array(max);
   const geo=new THREE.BufferGeometry();
   geo.setAttribute('position',new THREE.BufferAttribute(PT.pos,3));
   geo.setAttribute('color',new THREE.BufferAttribute(PT.col,3));
   const mat=new THREE.ShaderMaterial({
     uniforms:{uMap:{value:TEX.dot},uSize:{value:20*Math.min(devicePixelRatio||1,1.75)},uOp:{value:0.95}},
-    vertexShader:[
-      'attribute vec3 color;','varying vec3 vC;','uniform float uSize;',
-      'void main(){',
-      '  vC=color;',
-      '  vec4 mv=modelViewMatrix*vec4(position,1.0);',
+    vertexShader:['attribute vec3 color;','varying vec3 vC;','uniform float uSize;',
+      'void main(){','  vC=color;','  vec4 mv=modelViewMatrix*vec4(position,1.0);',
       '  gl_PointSize=clamp(uSize/max(0.35,-mv.z),1.4,9.0);',
-      '  gl_Position=projectionMatrix*mv;',
-      '}'].join('\n'),
-    fragmentShader:[
-      'uniform sampler2D uMap;','uniform float uOp;','varying vec3 vC;',
-      'void main(){',
-      '  vec4 t=texture2D(uMap,gl_PointCoord);',
-      '  if(t.a<0.06)discard;',
-      '  gl_FragColor=vec4(vC,t.a*uOp);',
-      '}'].join('\n'),
-    transparent:true, depthWrite:false});
-  PT.points=new THREE.Points(geo,mat); PT.points.frustumCulled=false;
-  PT.geo=geo;
+      '  gl_Position=projectionMatrix*mv;','}'].join('\n'),
+    fragmentShader:['uniform sampler2D uMap;','uniform float uOp;','varying vec3 vC;',
+      'void main(){','  vec4 t=texture2D(uMap,gl_PointCoord);','  if(t.a<0.06)discard;',
+      '  gl_FragColor=vec4(vC,t.a*uOp);','}'].join('\n'),
+    transparent:true,depthWrite:false});
+  PT.points=new THREE.Points(geo,mat); PT.points.frustumCulled=false; PT.geo=geo;
 }
-function buildSpawnPool(sim){
+function buildSpawnPool(s){
   const a=[];
-  for(let m=0;m<sim.fluid.length;m++){const c=sim.fluid[m],r=sim.room[c];
-    if(r===R_MAIN||r===R_BATH||r===R_HALL||r===R_BALC)a.push(c);}
+  for(let m=0;m<s.fluid.length;m++){
+    const c=s.fluid[m],r=s.room[c];
+    if(s.objMask[c])continue;
+    if(r===R_MAIN||r===R_BATH||r===R_HALL||r===R_BALC)a.push(c);
+    else if(r===R_OUT&&(m%4===0))a.push(c);
+  }
   PT.pool=new Int32Array(a);
 }
-function spawnOne(sim,i){
-  const c=PT.pool[(Math.random()*PT.pool.length)|0], NX=sim.NX,NY=sim.NY,h=sim.h;
-  const ix=c%NX, iy=((c/NX)|0)%NY, iz=(c/(NX*NY))|0;
-  PT.pos[i*3]=(ix+Math.random())*h; PT.pos[i*3+1]=(iy+Math.random())*h; PT.pos[i*3+2]=(iz+Math.random())*h;
+function spawnOne(s,i){
+  if(!PT.pool||!PT.pool.length)return;
+  const c=PT.pool[(Math.random()*PT.pool.length)|0],NX=s.NX,NY=s.NY,h=s.h;
+  const ix=c%NX,iy=((c/NX)|0)%NY,iz=(c/(NX*NY))|0;
+  PT.pos[i*3]=(ix+Math.random())*h; PT.pos[i*3+1]=(iy+Math.random())*h;
+  PT.pos[i*3+2]=(iz+Math.random())*h;
   PT.life[i]=3+Math.random()*11;
 }
-function setParticleCount(sim,n){
+function setParticleCount(s,n){
   n=Math.min(n,PT.cap);
-  if(n>PT.n)for(let i=PT.n;i<n;i++)spawnOne(sim,i);
+  if(n>PT.n)for(let i=PT.n;i<n;i++)spawnOne(s,i);
   PT.n=n; PT.geo.setDrawRange(0,n);
 }
-function updateParticles(sim,dt,field,rng,colorNow){
+function updateParticles(s,dt,field,rng,colorNow){
   const n=PT.n; if(!n)return;
-  const pos=PT.pos,life=PT.life,col=PT.col,h=sim.h;
-  const R=RAMPS[FIELDS[field].ramp], lo=rng[0], sp=1/Math.max(1e-6,rng[1]-rng[0]);
-  const NX=sim.NX,NY=sim.NY,NZ=sim.NZ;
+  const pos=PT.pos,life=PT.life,col=PT.col,h=s.h;
+  const R=RAMPS[FIELDS[field].ramp],lo=rng[0],sp=1/Math.max(1e-6,rng[1]-rng[0]);
+  const NX=s.NX,NY=s.NY,NZ=s.NZ;
   for(let i=0;i<n;i++){
     const b=i*3;
     let x=pos[b],y=pos[b+1],z=pos[b+2];
-    const S=sim.sample3(sim.cu,sim.cv,sim.cw,x,y,z);
+    const S=s.sample3(s.cu,s.cv,s.cw,x,y,z);
     x+=S[0]*dt; y+=S[1]*dt; z+=S[2]*dt;
     life[i]-=dt;
-    const ix=(x/h)|0, iy=(y/h)|0, iz=(z/h)|0;
-    let bad = life[i]<=0 || ix<1 || iy<1 || iz<1 || ix>=NX-1 || iy>=NY-1 || iz>=NZ-1;
+    const ix=(x/h)|0,iy=(y/h)|0,iz=(z/h)|0;
+    let bad=life[i]<=0||ix<1||iy<1||iz<1||ix>=NX-1||iy>=NY-1||iz>=NZ-1;
     let c=0;
-    if(!bad){ c=ix+NX*(iy+NY*iz); if(sim.typ[c]!==FLUID)bad=true; }
-    if(bad){ spawnOne(sim,i); continue; }
+    if(!bad){c=ix+NX*(iy+NY*iz); if(s.typ[c]===SOLID||s.objMask[c])bad=true;}
+    if(bad){spawnOne(s,i);continue;}
     pos[b]=x; pos[b+1]=y; pos[b+2]=z;
-    PT.spd[i]=Math.hypot(S[0],S[1],S[2]);
     if(colorNow){
-      const rgb=ramp(R,(fieldVal(sim,field,c)-lo)*sp);
+      const rgb=ramp(R,(fieldVal(s,field,c)-lo)*sp);
       col[b]=rgb[0]; col[b+1]=rgb[1]; col[b+2]=rgb[2];
     }
   }
   PT.geo.attributes.position.needsUpdate=true;
   if(colorNow)PT.geo.attributes.color.needsUpdate=true;
 }
-function puff(sim,x,y,z){
-  const n=Math.min(PT.n,1400);
+function puff(s,x,y,z){
+  const n=Math.min(PT.n,1500);
   for(let i=0;i<n;i++){
-    const j=(Math.random()*PT.n)|0, b=j*3;
+    const j=(Math.random()*PT.n)|0,b=j*3;
     PT.pos[b]=x+(Math.random()-0.5)*0.30;
     PT.pos[b+1]=y+(Math.random()-0.5)*0.30;
     PT.pos[b+2]=z+(Math.random()-0.5)*0.30;
@@ -2109,63 +2568,57 @@ function puff(sim,x,y,z){
   }
 }
 
-/* ==========================================================================
-   10. LEIKKAUSTASO JA NUOLET
-   ========================================================================== */
+/* ---- leikkaustaso ja nuolet ---- */
 const SL={};
-function initSlice(sim){
-  if(SL.mesh){SC.scene.remove(SL.mesh); SL.mesh.geometry.dispose(); SL.tex.dispose();}
-  const NX=sim.NX,NY=sim.NY,h=sim.h;
+function initSlice(s){
+  if(SL.mesh){SC.scene.remove(SL.mesh);SL.mesh.geometry.dispose();SL.tex.dispose();}
+  const NX=s.NX,NY=s.NY,h=s.h;
   SL.cv=document.createElement('canvas'); SL.cv.width=NX; SL.cv.height=NY;
   SL.ctx=SL.cv.getContext('2d'); SL.img=SL.ctx.createImageData(NX,NY);
   SL.tex=new THREE.CanvasTexture(SL.cv);
   SL.tex.minFilter=SL.tex.magFilter=THREE.LinearFilter;
-  const geo=new THREE.PlaneGeometry(NX*h,NY*h);
-  SL.mesh=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({map:SL.tex,transparent:true,
-    opacity:0.52,depthWrite:false,side:THREE.DoubleSide}));
+  SL.mesh=new THREE.Mesh(new THREE.PlaneGeometry(NX*h,NY*h),
+    new THREE.MeshBasicMaterial({map:SL.tex,transparent:true,opacity:0.52,
+      depthWrite:false,side:THREE.DoubleSide}));
   SL.mesh.position.set(NX*h/2,NY*h/2,1.1);
   SC.scene.add(SL.mesh);
-  // nuolet
-  if(SL.lines){SC.scene.remove(SL.lines); SL.lines.geometry.dispose();}
-  const step=Math.max(2,Math.round(0.30/h));
-  SL.step=step;
-  const cols=Math.floor(NX/step), rows=Math.floor(NY/step);
-  SL.na=cols*rows;
-  SL.av=new Float32Array(SL.na*6*3);
+  if(SL.lines){SC.scene.remove(SL.lines);SL.lines.geometry.dispose();}
+  const step=Math.max(2,Math.round(0.30/h)); SL.step=step;
+  SL.na=Math.floor(NX/step)*Math.floor(NY/step);
+  SL.av=new Float32Array(SL.na*18);
   const g2=new THREE.BufferGeometry();
   g2.setAttribute('position',new THREE.BufferAttribute(SL.av,3));
   SL.lines=new THREE.LineSegments(g2,new THREE.LineBasicMaterial({color:0xDDE7EF,
     transparent:true,opacity:0.55}));
   SL.lines.frustumCulled=false; SC.scene.add(SL.lines);
 }
-function updateSlice(sim,field,rng,z){
-  const NX=sim.NX,NY=sim.NY,h=sim.h;
-  const k=clamp(Math.round(z/h-0.5),1,sim.NZ-2);
-  const R=RAMPS[FIELDS[field].ramp], lo=rng[0], sp=1/Math.max(1e-6,rng[1]-rng[0]);
+function updateSlice(s,field,rng,z){
+  const NX=s.NX,NY=s.NY,h=s.h;
+  const k=clamp(Math.round(z/h-0.5),1,s.NZ-2);
+  const R=RAMPS[FIELDS[field].ramp],lo=rng[0],sp=1/Math.max(1e-6,rng[1]-rng[0]);
   const d=SL.img.data; d.fill(0);
   for(let j=0;j<NY;j++)for(let i=0;i<NX;i++){
-    const c=i+NX*(j+NY*k), o=((NY-1-j)*NX+i)*4;
-    if(sim.typ[c]===OPEN){ d[o+3]=0; continue; }
-    if(sim.typ[c]===SOLID){ d[o]=20;d[o+1]=28;d[o+2]=36;d[o+3]=205; continue; }
-    const rgb=ramp(R,(fieldVal(sim,field,c)-lo)*sp);
+    const c=i+NX*(j+NY*k),o=((NY-1-j)*NX+i)*4;
+    if(s.typ[c]===OPEN){d[o+3]=0;continue;}
+    if(s.typ[c]===SOLID){d[o]=20;d[o+1]=28;d[o+2]=36;d[o+3]=205;continue;}
+    if(s.objMask[c]){d[o]=44;d[o+1]=56;d[o+2]=68;d[o+3]=215;continue;}
+    const rgb=ramp(R,(fieldVal(s,field,c)-lo)*sp);
     d[o]=rgb[0]*255; d[o+1]=rgb[1]*255; d[o+2]=rgb[2]*255; d[o+3]=235;
   }
   SL.ctx.putImageData(SL.img,0,0); SL.tex.needsUpdate=true;
   SL.mesh.position.z=(k+0.5)*h;
-  // nuolet
-  const st=SL.step, av=SL.av; let n=0;
+  const st=SL.step,av=SL.av; let n=0;
   const sc=Math.min(0.55,st*h*0.85);
   for(let j=Math.floor(st/2);j<NY;j+=st)for(let i=Math.floor(st/2);i<NX;i+=st){
     if(n>=SL.na)break;
-    const c=i+NX*(j+NY*k), b=n*18; n++;
-    if(sim.typ[c]!==FLUID){for(let q=0;q<18;q++)av[b+q]=0; continue;}
-    const ux=sim.cu[c],uy=sim.cv[c];
-    const m=Math.hypot(ux,uy), zz=(k+0.5)*h+0.012;
-    if(m<1e-4){for(let q=0;q<18;q++)av[b+q]=0; continue;}
-    const s=Math.min(1,m/0.55)*sc, dx=ux/m*s, dy=uy/m*s;
-    const x0=(i+0.5)*h-dx*0.5, y0=(j+0.5)*h-dy*0.5, x1=x0+dx, y1=y0+dy;
-    av[b]=x0;av[b+1]=y0;av[b+2]=zz;  av[b+3]=x1;av[b+4]=y1;av[b+5]=zz;
-    const hx=dx*0.30, hy=dy*0.30;
+    const c=i+NX*(j+NY*k),b=n*18; n++;
+    if(s.typ[c]!==FLUID||s.objMask[c]){for(let q=0;q<18;q++)av[b+q]=0;continue;}
+    const ux=s.cu[c],uy=s.cv[c],m=Math.hypot(ux,uy),zz=(k+0.5)*h+0.012;
+    if(m<1e-4){for(let q=0;q<18;q++)av[b+q]=0;continue;}
+    const sl=Math.min(1,m/0.55)*sc,dx=ux/m*sl,dy=uy/m*sl;
+    const x0=(i+0.5)*h-dx*0.5,y0=(j+0.5)*h-dy*0.5,x1=x0+dx,y1=y0+dy;
+    av[b]=x0;av[b+1]=y0;av[b+2]=zz; av[b+3]=x1;av[b+4]=y1;av[b+5]=zz;
+    const hx=dx*0.30,hy=dy*0.30;
     av[b+6]=x1;av[b+7]=y1;av[b+8]=zz;
     av[b+9]=x1-hx+hy*0.5;av[b+10]=y1-hy-hx*0.5;av[b+11]=zz;
     av[b+12]=x1;av[b+13]=y1;av[b+14]=zz;
@@ -2174,152 +2627,105 @@ function updateSlice(sim,field,rng,z){
   SL.lines.geometry.attributes.position.needsUpdate=true;
   SL.lines.geometry.setDrawRange(0,n*6);
 }
-</script>
-<script>
-/* ==========================================================================
-   11. TILA JA OHJAIMET
-   ========================================================================== */
-const P={
-  Tout:10,RHout:80,wind:5,windDir:0,glaze:0,solar:0,
-  door:0,win:0,vent:1,bathDoor:0,
-  setT:21,setRH:40,radMax:800,thermo:true,humid:true,person:false,cook:false,
-  setBathT:22,setBathRH:45,bathHeat:true,bathHumid:true,shower:false,showerG:900,
-  ductA:10,ductB:12,boost:false,n50:2,
-  fan:0,fanDir:0,fanH:0.95,fanOsc:false,fanX:4.6,fanY:1.7,
-  parts:22000,sliceZ:1.1,showSlice:true,showVec:false,showFurn:true,showWalls:true,
-  shadows:false,vort:true,res:0.15,field:'temp',speed:1,playing:true
-};
-const FANV=[0,1.15,1.85,2.6,3.45,4.4];
-const $=id=>document.getElementById(id);
-let sim=null, SP={}, oscT=0, needOpen=false, needFan=false;
 
-function buildSP(){
-  const a=P.windDir*Math.PI/180, cw=Math.cos(a);
-  const Cp=0.7*cw-0.3*(1-cw*cw);
-  const bo=P.boost?1.8:1;
-  SP={Tref:P.setT, Tout:P.Tout, RHout:P.RHout, Tmass:P.setT,
-      setT:P.setT, setRH:P.setRH, radMax:P.radMax, thermo:P.thermo, humid:P.humid,
-      setBathT:P.setBathT, setBathRH:P.setBathRH, bathHeat:P.bathHeat, bathHumid:P.bathHumid,
-      shower:P.shower, showerG:P.showerG, person:P.person, cook:P.cook,
-      solar:P.solar, glaze:P.glaze,
-      wind:P.wind, windDir:P.windDir, pWind:0.5*RHO0*P.wind*P.wind*Cp,
-      ductA:P.ductA*bo, ductB:P.ductB*bo,
-      vort:P.vort?0.4:0, iters:P.res>0.16?18:(P.res>0.13?15:12),
-      fanVel:FANV[P.fan], fanX:P.fanX, fanY:P.fanY,
-      fanAng:(P.fanDir+(P.fanOsc?Math.sin(oscT*0.8)*40:0))*Math.PI/180,
-      fanZ:P.fanH, Cp:Cp};
-  return SP;
-}
-function applyOpenings(){
-  sim.setOpenings({door:P.door,win:P.win,vent:P.vent,glaze:P.glaze,bathDoor:P.bathDoor,n50:P.n50});
-  buildSpawnPool(sim);
-}
-function applyFanMask(){
-  const h=sim.h, L=sim.L, fm=sim.fanMask; fm.fill(0);
-  if(true){
-    const i0=Math.floor((P.fanX-0.16)/h), i1=Math.ceil((P.fanX+0.16)/h);
-    const j0=Math.floor((P.fanY-0.16)/h), j1=Math.ceil((P.fanY+0.16)/h);
-    for(let k=L.inZ0;k<=L.inZ0+Math.round(1.02/h);k++)
-      for(let j=j0;j<=j1;j++)for(let i=i0;i<=i1;i++){
-        if(i<0||j<0||i>=sim.NX||j>=sim.NY)continue;
-        const dx=(i+0.5)*h-P.fanX, dy=(j+0.5)*h-P.fanY;
-        if(dx*dx+dy*dy>0.0225)continue;
-        const c=sim.id(i,j,k); if(sim.typ[c]===FLUID)fm[c]=1;
-      }
-  }
-  sim.rebuildFaces(); sim.bindStencil();
-}
-
-/* ==========================================================================
-   12. POHJAPIIRROS-MINIKARTTA
-   ========================================================================== */
+/* ---- pohjapiirros ---- */
 const PL={};
 function drawPlan(field,rng){
-  const cv=$('plan'), g=cv.getContext('2d');
-  const NX=sim.NX,NY=sim.NY,h=sim.h,L=sim.L;
-  const x0=L.faceX*h, x1=(L.endX+1)*h, y0=(L.wy0-1)*h, y1=(L.wy1+2)*h;
-  const pad=8, sx=(cv.width-pad*2)/(x1-x0), sy=(cv.height-pad*2)/(y1-y0);
-  const s=Math.min(sx,sy);
+  const cv=$('plan'),g=cv.getContext('2d');
+  const NX=sim.NX,NY=sim.NY,h=sim.h,L=sim.L,G0=SC.G;
+  const x0=L.faceX*h-0.15,x1=(L.endX+1)*h+0.05,y0=(L.wy0-1)*h,y1=(L.wy1+2)*h;
+  const pad=8,s=Math.min((cv.width-pad*2)/(x1-x0),(cv.height-pad*2)/(y1-y0));
   const ox=pad+((cv.width-pad*2)-(x1-x0)*s)/2, oy=pad+((cv.height-pad*2)-(y1-y0)*s)/2;
   PL.s=s; PL.ox=ox; PL.oy=oy; PL.x0=x0; PL.y1=y1;
   const W=x=>ox+(x-x0)*s, H=y=>oy+(y1-y)*s;
   g.fillStyle='#0d151d'; g.fillRect(0,0,cv.width,cv.height);
-  // kenttaleikkaus
   const k=clamp(Math.round(P.sliceZ/h-0.5),1,sim.NZ-2);
-  const R=RAMPS[FIELDS[field].ramp], lo=rng[0], sp=1/Math.max(1e-6,rng[1]-rng[0]);
+  const R=RAMPS[FIELDS[field].ramp],lo=rng[0],sp=1/Math.max(1e-6,rng[1]-rng[0]);
   for(let j=L.wy0;j<=L.wy1;j++)for(let i=L.faceX;i<=L.endX;i++){
     const c=i+NX*(j+NY*k);
-    if(sim.typ[c]===SOLID){g.fillStyle='#1b2732';}
+    if(sim.typ[c]===SOLID)g.fillStyle='#1b2732';
+    else if(sim.objMask[c])g.fillStyle='#2c3947';
     else{const rgb=ramp(R,(fieldVal(sim,field,c)-lo)*sp);
       g.fillStyle=`rgb(${rgb[0]*255|0},${rgb[1]*255|0},${rgb[2]*255|0})`;}
     g.fillRect(W(i*h)-0.5,H((j+1)*h)-0.5,s*h+1,s*h+1);
   }
-  // virtausnuolet
   g.strokeStyle='rgba(221,231,239,.5)'; g.lineWidth=1;
   const st=Math.max(2,Math.round(0.42/h));
   g.beginPath();
   for(let j=L.wy0;j<=L.wy1;j+=st)for(let i=L.faceX;i<=L.endX;i+=st){
-    const c=i+NX*(j+NY*k); if(sim.typ[c]!==FLUID)continue;
+    const c=i+NX*(j+NY*k);
+    if(sim.typ[c]!==FLUID||sim.objMask[c])continue;
     const m=Math.hypot(sim.cu[c],sim.cv[c]); if(m<0.02)continue;
     const l=Math.min(1,m/0.5)*st*h*s*0.9;
-    const ax=W((i+0.5)*h), ay=H((j+0.5)*h);
-    const dx=sim.cu[c]/m*l, dy=-sim.cv[c]/m*l;
+    const ax=W((i+0.5)*h),ay=H((j+0.5)*h);
+    const dx=sim.cu[c]/m*l,dy=-sim.cv[c]/m*l;
     g.moveTo(ax-dx/2,ay-dy/2); g.lineTo(ax+dx/2,ay+dy/2);
     g.lineTo(ax+dx/2-dx*0.34+dy*0.2,ay+dy/2-dy*0.34-dx*0.2);
   }
   g.stroke();
-  // aukot
-  const G0=SC.G;
+  // kalusteiden aarirajat
+  for(const it of FURN){
+    if(!it.placed||it.parent)continue;
+    const pts=[[-it.w/2,-it.d/2],[it.w/2,-it.d/2],[it.w/2,it.d/2],[-it.w/2,it.d/2]]
+      .map(p=>fWorld(it,p[0],p[1]));
+    g.beginPath(); g.moveTo(W(pts[0][0]),H(pts[0][1]));
+    for(let i=1;i<4;i++)g.lineTo(W(pts[i][0]),H(pts[i][1]));
+    g.closePath();
+    const on=(SEL.item===it);
+    g.strokeStyle=on?'#F08A3E':'rgba(221,231,239,.55)'; g.lineWidth=on?2:1; g.stroke();
+    if(on){g.fillStyle='rgba(240,138,62,.12)'; g.fill();}
+    const f=fWorld(it,0,-it.d/2-0.10);
+    g.strokeStyle=on?'#F08A3E':'rgba(221,231,239,.35)';
+    g.beginPath(); g.moveTo(W(it.x),H(it.y)); g.lineTo(W(f[0]),H(f[1])); g.stroke();
+  }
   g.lineWidth=3; g.strokeStyle='#54B4E2';
   if(P.door>0){g.beginPath();g.moveTo(W(G0.xFacA),H(G0.doorY0));g.lineTo(W(G0.xFacA),H(G0.doorY1));g.stroke();}
   g.strokeStyle='#2E8FBF'; g.beginPath();
   g.moveTo(W(G0.xFacA),H(G0.winY0)); g.lineTo(W(G0.xFacA),H(G0.winY1)); g.stroke();
-  // patteri
-  g.strokeStyle='#3FA98A'; g.lineWidth=3; g.beginPath();
+  g.strokeStyle='#3FA98A'; g.beginPath();
   g.moveTo(W(G0.radX+0.06),H(G0.radY0)); g.lineTo(W(G0.radX+0.06),H(G0.radY1)); g.stroke();
-  // poistokanavat
   for(const d of SC.ducts){
-    g.fillStyle='#C9503F'; g.beginPath();
-    g.arc(W(G0.xPartA-0.05),H(d.y),5.5,0,6.2832); g.fill();
-    g.strokeStyle='rgba(201,80,63,.55)'; g.lineWidth=2; g.beginPath();
-    g.arc(W(G0.xPartA-0.05),H(d.y),9,0,6.2832); g.stroke();
+    g.fillStyle='#C9503F'; g.beginPath(); g.arc(W(d.x),H(d.y),5.5,0,6.2832); g.fill();
+    g.strokeStyle='rgba(201,80,63,.55)'; g.lineWidth=2;
+    g.beginPath(); g.arc(W(d.x),H(d.y),9,0,6.2832); g.stroke();
   }
-  // tuuletin
-  const fx=W(P.fanX), fy=H(P.fanY);
+  if(SC.ductC){
+    g.fillStyle='#C9503F'; g.beginPath(); g.arc(W(SC.ductC.x),H(SC.ductC.y),4.5,0,6.2832); g.fill();
+    g.strokeStyle='rgba(201,80,63,.45)'; g.lineWidth=1.5;
+    g.beginPath(); g.arc(W(SC.ductC.x),H(SC.ductC.y),8,0,6.2832); g.stroke();
+  }
+  const fx=W(P.fanX),fy=H(P.fanY);
   g.fillStyle='#D96A22'; g.beginPath(); g.arc(fx,fy,7,0,6.2832); g.fill();
   g.strokeStyle='#F08A3E'; g.lineWidth=2;
-  const fa=-(SP.fanAng||0);
+  const fa=-(Q.fanAng||0);
   g.beginPath(); g.moveTo(fx,fy); g.lineTo(fx+Math.cos(fa)*22,fy+Math.sin(fa)*22); g.stroke();
   g.beginPath(); g.moveTo(fx+Math.cos(fa)*22,fy+Math.sin(fa)*22);
   g.lineTo(fx+Math.cos(fa+2.6)*10,fy+Math.sin(fa+2.6)*10);
   g.moveTo(fx+Math.cos(fa)*22,fy+Math.sin(fa)*22);
   g.lineTo(fx+Math.cos(fa-2.6)*10,fy+Math.sin(fa-2.6)*10); g.stroke();
-  // nimikkeet
   g.font='600 11px "IBM Plex Sans Condensed",sans-serif'; g.fillStyle='rgba(221,231,239,.72)';
-  g.fillText('OH',W(G0.xInA+0.9),H(G0.yA+0.9));
-  g.fillText('KT',W(G0.xInA+3.6),H(G0.yB-0.5));
-  g.fillText('PSH',W(G0.xPartB+0.5),H(G0.yA+0.9));
-  g.fillText('ET',W(G0.xPartB+0.5),H(G0.yB-0.5));
-  g.fillText('PARVEKE',W(G0.xBalA+0.15),H(G0.yA+1.4));
+  g.fillText('OH',W(G0.xInA+0.55),H(G0.yA+0.42));
+  g.fillText('KT',W(G0.xInA+3.5),H(G0.yB-0.28));
+  g.fillText('PSH',W(G0.xPartB+0.12),H(G0.yA+0.30));
+  g.fillText('ET',W(G0.xPartB+0.12),H(G0.yB-0.28));
+  g.save(); g.translate(W(G0.xBalA+0.5),H(G0.yA+1.6)); g.rotate(-Math.PI/2);
+  g.fillText('PARVEKE',0,0); g.restore();
 }
 function planToWorld(ev){
-  const cv=$('plan'), r=cv.getBoundingClientRect();
+  const cv=$('plan'),r=cv.getBoundingClientRect();
   const px=(ev.clientX-r.left)*cv.width/r.width, py=(ev.clientY-r.top)*cv.height/r.height;
   return {x:PL.x0+(px-PL.ox)/PL.s, y:PL.y1-(py-PL.oy)/PL.s};
 }
 
-/* ==========================================================================
-   13. SPARKLINET
-   ========================================================================== */
+/* ---- sparklinet ---- */
 const CH={T:[],RH:[],dP:[],max:150};
 function pushCh(m){
   CH.T.push(m.T); CH.RH.push(m.RH); CH.dP.push(m.dP);
-  for(const k of ['T','RH','dP']) if(CH[k].length>CH.max)CH[k].shift();
+  for(const k of ['T','RH','dP'])if(CH[k].length>CH.max)CH[k].shift();
 }
-function sparkline(id,arr,color,fmt){
-  const cv=$(id), g=cv.getContext('2d'), W=cv.width, H=cv.height;
-  g.clearRect(0,0,W,H);
-  if(arr.length<2)return;
+function sparkline(id,arr,color){
+  const cv=$(id),g=cv.getContext('2d'),W=cv.width,H=cv.height;
+  g.clearRect(0,0,W,H); if(arr.length<2)return;
   let lo=Infinity,hi=-Infinity;
   for(const v of arr){if(v<lo)lo=v;if(v>hi)hi=v;}
   const pad=(hi-lo)*0.18||0.5; lo-=pad; hi+=pad;
@@ -2333,44 +2739,393 @@ function sparkline(id,arr,color,fmt){
   g.beginPath(); g.moveTo(X(0),Y(arr[0]));
   for(let i=1;i<arr.length;i++)g.lineTo(X(i),Y(arr[i]));
   g.strokeStyle=color; g.lineWidth=2; g.lineJoin='round'; g.stroke();
-  const lx=X(arr.length-1), ly=Y(arr[arr.length-1]);
+  const lx=X(arr.length-1),ly=Y(arr[arr.length-1]);
   g.fillStyle=color; g.beginPath(); g.arc(lx,ly,3,0,6.2832); g.fill();
   g.strokeStyle='#111922'; g.lineWidth=2; g.beginPath(); g.arc(lx,ly,3,0,6.2832); g.stroke();
 }
-
+</script>
+<script>
 /* ==========================================================================
-   14. MITTARIT
+   9. TILA, LAITETEHOT, KAYTTOLIITTYMA, SILMUKKA
    ========================================================================== */
-function setPill(el,cls,txt){el.className='pill '+cls; el.textContent=txt;}
+const $=id=>document.getElementById(id);
+const P={
+  Tout:10,RHout:80,wind:5,windDir:0,solar:0,glaze:0,
+  door:0,win:0,vent:1,bathDoor:0,
+  setT:21,setRH:40,radMax:800,thermo:true,humid:true,person:false,cook:false,
+  setBathT:22,setBathRH:45,bathHeat:true,bathHumid:true,shower:false,showerG:900,wash:false,
+  ductA:8,ductB:8,ductC:12,boost:false,n50:2,
+  pcLoad:0,monitors:true,tvpcLoad:1,tvOn:true,fridgeOn:true,
+  fan:0,fanDir:0,fanH:0.95,fanOsc:false,fanX:4.6,fanY:1.7,
+  parts:22000,sliceZ:1.1,showSlice:true,showVec:false,showFurn:true,showWalls:true,
+  shadows:false,vort:true,res:0.15,field:'temp',speed:1,playing:true,edit:false
+};
+const FANV=[0,1.15,1.85,2.6,3.45,4.4];
+const FANW=[0,15,22,32,45,60];
+const PC_W=[190,425,575];
+const PC_TXT=[
+ 'Kevyt ty&ouml;p&ouml;yt&auml;k&auml;ytt&ouml;: i9 n. 35 W, RTX 3070 n. 18 W, muistit, levyt ja 13 tuuletinta n. 55 W. Verkosta n. 120 W.',
+ 'Keskikova kuorma (esports, striimaus, 1440p): i9 n. 95 W, RTX 3070 n. 165 W. Verkosta n. 355 W.',
+ 'Raskas peli t&auml;ydell&auml; kuormalla: i9 n. 165 W, RTX 3070 koko 220 W TGP. Verkosta n. 505 W.'];
+const TVPC_W=[55,85,230];
+const TVPC_TXT=[
+ 'Lepotila / ty&ouml;p&ouml;yt&auml;: i5-8400 n. 15 W, GTX 1060 n. 10 W. Verkosta n. 55 W.',
+ 'YouTube ja elokuvat: laitteistokiihdytetty videodekoodaus, verkosta n. 85 W.',
+ 'Pelit: i5-8400 65 W ja GTX 1060 120 W t&auml;ysill&auml;, verkosta n. 230 W.'];
+const TV_W=110, FRIDGE_W=20, WASH_W=200;
+
+let sim=null,Q={},oscT=0,needOpen=false,needObs=false,fanSpin=0;
+const SEL={item:null,drag:null};
+
+function devWatts(){
+  const d={};
+  d.setup=PC_W[P.pcLoad]-(P.monitors?0:70);
+  d.tvpc=TVPC_W[P.tvpcLoad];
+  d.tv=P.tvOn?TV_W:0.5;
+  d.fridge=P.fridgeOn?FRIDGE_W:0;
+  d.washer=P.wash?WASH_W:0;
+  d.fan=FANW[P.fan];
+  return d;
+}
+function totalWatts(){
+  const d=devWatts(); let t=0;
+  for(const it of FURN) if(it.device&&it.placed) t+=d[it.device]||0;
+  return t+d.fan;
+}
+function updateDevHeat(){
+  const d=devWatts();
+  if(!sim.devHeat)return;
+  for(const s of sim.devHeat) s.w=d[s.id]||0;
+}
+
+function buildQ(){
+  const a=P.windDir*Math.PI/180,cw=Math.cos(a);
+  const Cp=0.7*cw-0.3*(1-cw*cw), bo=P.boost?1.8:1;
+  Q={Tref:P.setT,Tout:P.Tout,RHout:P.RHout,Tmass:P.setT,
+     setT:P.setT,setRH:P.setRH,radMax:P.radMax,thermo:P.thermo,humid:P.humid,
+     setBathT:P.setBathT,setBathRH:P.setBathRH,bathHeat:P.bathHeat,bathHumid:P.bathHumid,
+     shower:P.shower,showerG:P.showerG+(P.wash?20:0),person:P.person,cook:P.cook,
+     solar:P.solar,glaze:P.glaze,
+     wind:P.wind,windDir:P.windDir,pWind:0.5*RHO0*P.wind*P.wind*Cp,
+     ductA:P.ductA*bo,ductB:P.ductB*bo,ductC:P.ductC*bo,
+     vort:P.vort?0.4:0,iters:P.res>0.16?18:(P.res>0.14?15:12),
+     fanVel:FANV[P.fan],fanX:P.fanX,fanY:P.fanY,
+     fanAng:(P.fanDir+(P.fanOsc?Math.sin(oscT*0.8)*40:0))*Math.PI/180,
+     fanZ:P.fanH,Cp:Cp};
+  return Q;
+}
+function applyOpenings(){
+  sim.setOpenings({door:P.door,win:P.win,vent:P.vent,glaze:P.glaze,
+                   bathDoor:P.bathDoor,n50:P.n50});
+  rebuildObstacles();
+}
+
+/* ---------- valinta ja siirto ---------- */
+function selectItem(it){
+  if(SEL.item&&SEL.item.outline)SEL.item.outline.visible=false;
+  SEL.item=it;
+  if(it){ it.outline.visible=true; it.outline.material=MAT.sel; }
+  $('selbar').classList.toggle('on',!!it&&P.edit);
+  $('selBox').style.display=it?'flex':'none';
+  if(it){
+    $('selName').textContent=it.label.replace(/&[a-z]+;/g,m=>({'&auml;':'ä','&ouml;':'ö'}[m]||m));
+    $('selbarName').textContent=$('selName').textContent;
+    $('selSize').innerHTML=(it.w*100).toFixed(0)+' × '+(it.d*100).toFixed(0)+' × '+(it.hh*100).toFixed(0)+'<em>cm</em>';
+    $('cRot').value=Math.round((it.rot*180/Math.PI+360)%360/5)*5;
+    $('vRot').innerHTML=Math.round((it.rot*180/Math.PI+360)%360)+'<em>°</em>';
+  }
+  renderFlist();
+}
+function rotateSel(deg){
+  const it=SEL.item; if(!it||it.parent)return;
+  const old=it.rot; it.rot=(it.rot+deg*Math.PI/180)%(Math.PI*2);
+  const bm=makeBaseMask(it);
+  if(!furnValid(sim,it,bm)||!furnFootValid(sim,it)){ it.rot=old; toast('Ei mahdu tuohon asentoon'); }
+  else { rebuildObstacles(); selectItem(it); syncFurn(); }
+}
+function togglePlaced(it){
+  if(it.placed){
+    it.placed=false;
+    for(const c of FURN) if(c.parent===it.id) c.placed=false;
+    if(SEL.item===it)selectItem(null);
+    rebuildObstacles(); syncFurn(); renderFlist();
+    toast(stripEnt(it.label)+' varastoon'); return;
+  }
+  if(it.parent){
+    const p=furnById(it.parent);
+    if(!p||!p.placed){toast('Sijoita ensin '+stripEnt(p?p.label:'')); return;}
+    it.placed=true; rebuildObstacles(); syncFurn(); renderFlist(); return;
+  }
+  if(findSpot(it)){ it.placed=true; rebuildObstacles(); syncFurn(); renderFlist(); selectItem(it); }
+  else toast('Huoneistossa ei ole tilaa');
+}
+const stripEnt=s=>s.replace(/&auml;/g,'ä').replace(/&ouml;/g,'ö').replace(/&shy;/g,'');
+function findSpot(it){
+  const g=SC.G,h=sim.h,bm=makeBaseMask(it);
+  const ox=it.x,oy=it.y;
+  if(furnValid(sim,it,bm)&&furnFootValid(sim,it))return true;
+  const x0=it.zone==='psh'?g.xPartB:g.xInA, x1=it.zone==='psh'?g.xInB:g.xInB;
+  const y0=g.yA, y1=it.zone==='psh'?g.yBathB:g.yB;
+  for(let y=y0+0.25;y<y1;y+=0.15)for(let x=x0+0.25;x<x1;x+=0.15){
+    it.x=x; it.y=y;
+    if(furnValid(sim,it,bm)&&furnFootValid(sim,it))return true;
+  }
+  it.x=ox; it.y=oy; return false;
+}
+function resetFurniture(){
+  furnDefaults();
+  for(const it of FURN) if(!it.parent&&!findSpot(it)) it.placed=false;
+  rebuildObstacles(); syncFurn(); renderFlist(); selectItem(null);
+}
+function renderFlist(){
+  const el=$('flist'); if(!el)return;
+  el.innerHTML='';
+  for(const it of FURN){
+    const row=document.createElement('div');
+    row.className='fitem'+(it.placed?'':' stored')+(SEL.item===it?' sel':'');
+    const tg=document.createElement('span'); tg.className='tg'; tg.textContent=it.placed?'✓':'–';
+    tg.title=it.placed?'Siirrä varastoon':'Sijoita huoneistoon';
+    tg.addEventListener('click',e=>{e.stopPropagation();togglePlaced(it);});
+    const nm=document.createElement('span'); nm.className='nm'; nm.innerHTML=it.label;
+    const sz=document.createElement('span'); sz.className='sz';
+    sz.textContent=(it.w*100).toFixed(0)+'×'+(it.d*100).toFixed(0);
+    row.append(tg,nm,sz);
+    row.addEventListener('click',()=>{ if(it.placed){P.edit=true;setEdit();selectItem(it);} });
+    el.appendChild(row);
+  }
+  $('hFurn').textContent=FURN.filter(f=>f.placed).length+' / '+FURN.length;
+}
+function setEdit(){
+  $('btnEdit').classList.toggle('on',P.edit);
+  $('btnEdit').textContent=P.edit?'Muokkaus päällä':'Muokkaa kalusteita';
+  $('btnEdit2').textContent=P.edit?'Muokkaustila pois':'Muokkaustila päälle';
+  $('btnEdit2').classList.toggle('on',P.edit);
+  $('selbar').classList.toggle('on',!!SEL.item&&P.edit);
+  if(!P.edit)selectItem(null);
+}
+
+/* ---------- ohjainten kytkenta ---------- */
+const BINDS=[];
+function bindRange(id,key,fmt,opt){
+  const el=$(id),lab=$('v'+id.slice(1)),o=opt||{},sc=o.scale||1;
+  const apply=()=>{P[key]=parseFloat(el.value)*sc;lab.innerHTML=fmt(P[key]);if(o.after)o.after();};
+  el.addEventListener('input',apply);
+  BINDS.push({refresh:()=>{el.value=P[key]/sc;lab.innerHTML=fmt(P[key]);}});
+  apply();
+}
+function bindChk(id,key,opt){
+  const el=$(id),o=opt||{};
+  const apply=()=>{P[key]=el.checked?(o.on!==undefined?o.on:true):(o.off!==undefined?o.off:false);
+    if(o.after)o.after();};
+  el.addEventListener('change',apply);
+  BINDS.push({refresh:()=>{el.checked=o.on!==undefined?P[key]===o.on:!!P[key];}});
+  apply();
+}
+function bindSeg(id,fn,cur){
+  const box=$(id); if(!box)return;
+  box.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{
+    box.querySelectorAll('button').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on'); fn(b.dataset);
+  }));
+  BINDS.push({refresh:()=>{if(!cur)return;const v=cur();
+    box.querySelectorAll('button').forEach(x=>x.classList.toggle('on',Object.values(x.dataset)[0]===String(v)));}});
+}
+function syncUI(){BINDS.forEach(b=>b.refresh());updateCpNote();updateDevUI();}
+function updateCpNote(){
+  const a=P.windDir*Math.PI/180,cw=Math.cos(a);
+  const Cp=0.7*cw-0.3*(1-cw*cw),pw=0.5*RHO0*P.wind*P.wind*Cp;
+  $('noteCp').innerHTML='Tuulenpaine julkisivulla <b>'+(pw>=0?'+':'')+pw.toFixed(1)+
+    ' Pa</b> (C<sub>p</sub> = '+Cp.toFixed(2)+'). '+
+    (pw>0?'Tuuli painaa ilmaa sisään avoimesta aukosta.':'Tuuli imee ilmaa ulos julkisivun aukoista.');
+}
+function updateDevUI(){
+  const d=devWatts();
+  $('wSetup').textContent=d.setup.toFixed(0)+' W';
+  $('wTvpc').textContent=d.tvpc.toFixed(0)+' W';
+  $('wTv').textContent=d.tv.toFixed(0)+' W';
+  $('wFridge').textContent=d.fridge.toFixed(0)+' W';
+  $('wFan').textContent=d.fan.toFixed(0)+' W';
+  $('notePc').innerHTML=PC_TXT[P.pcLoad];
+  $('noteTvpc').innerHTML=TVPC_TXT[P.tvpcLoad];
+  $('hDev').textContent=totalWatts().toFixed(0)+' W';
+  if(SC.tvScreen)SC.tvScreen.material=P.tvOn?MAT.tvpic:MAT.screenOff;
+  updateDevHeat();
+}
+
+function bindUI(){
+  const O=()=>{needOpen=true;};
+  document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
+    document.querySelectorAll('.page').forEach(x=>x.classList.remove('on'));
+    t.classList.add('on');
+    document.querySelector('.page[data-p="'+t.dataset.t+'"]').classList.add('on');
+    if(t.dataset.t==='kalusteet'&&!P.edit){P.edit=true;setEdit();}
+    if(innerWidth<=1000)$('panel').classList.add('open');
+  }));
+  bindRange('cOutT','Tout',v=>v.toFixed(1)+'<em>°C</em>',{after:()=>{$('hOut').textContent=P.Tout.toFixed(0)+' °C';}});
+  bindRange('cOutRH','RHout',v=>v.toFixed(0)+'<em>%RH</em>');
+  bindRange('cSolar','solar',v=>v.toFixed(0)+'<em>W/m²</em>');
+  bindRange('cWind','wind',v=>v.toFixed(1)+'<em>m/s</em>',{after:updateCpNote});
+  bindRange('cWindDir','windDir',v=>v.toFixed(0)+'<em>°</em>',{after:updateCpNote});
+  bindRange('cGlaze','glaze',v=>(v*100).toFixed(0)+'<em>%</em>',{scale:0.01,after:O});
+  bindRange('cDoor','door',v=>(v*100).toFixed(0)+'<em>% auki</em>',{scale:0.01,after:()=>{
+    O();$('hOpen').textContent=P.door<=0?'kiinni':(P.door>=1?'auki':(P.door*100).toFixed(0)+' %');}});
+  bindRange('cWin','win',v=>(v*35).toFixed(0)+'<em>°</em>',{scale:0.01,after:O});
+  bindRange('cVent','vent',v=>(v*100).toFixed(0)+'<em>% auki</em>',{scale:0.01,after:O});
+  bindChk('cBathDoor','bathDoor',{on:1,off:0,after:O});
+  const dt=()=>{const b=P.boost?1.8:1;$('hVent').textContent=((P.ductA+P.ductB+P.ductC)*b).toFixed(0)+' l/s';};
+  bindRange('cDuctA','ductA',v=>v.toFixed(0)+'<em>l/s</em>',{after:dt});
+  bindRange('cDuctB','ductB',v=>v.toFixed(0)+'<em>l/s</em>',{after:dt});
+  bindRange('cDuctC','ductC',v=>v.toFixed(0)+'<em>l/s</em>',{after:dt});
+  bindChk('cBoost','boost',{after:dt});
+  bindRange('cLeak','n50',v=>v.toFixed(1)+'<em>1/h</em>',{after:O});
+  const ct=()=>{$('hClim').textContent=P.setT.toFixed(0)+' °C / '+P.setRH.toFixed(0)+' %';};
+  bindRange('cSetT','setT',v=>v.toFixed(1)+'<em>°C</em>',{after:ct});
+  bindRange('cSetRH','setRH',v=>v.toFixed(0)+'<em>%RH</em>',{after:ct});
+  bindRange('cRadMax','radMax',v=>v.toFixed(0)+'<em>W</em>');
+  bindChk('cThermo','thermo'); bindChk('cHumid','humid');
+  bindChk('cPerson','person'); bindChk('cCook','cook');
+  bindRange('cBathT','setBathT',v=>v.toFixed(1)+'<em>°C</em>');
+  bindRange('cBathRH','setBathRH',v=>v.toFixed(0)+'<em>%RH</em>');
+  bindChk('cBathHeat','bathHeat'); bindChk('cBathHumid','bathHumid');
+  bindChk('cShower','shower');
+  bindRange('cShowerG','showerG',v=>v.toFixed(0)+'<em>g/h</em>');
+  bindChk('cWash','wash',{after:updateDevUI});
+  bindSeg('segPc',d=>{P.pcLoad=parseInt(d.v);updateDevUI();},()=>P.pcLoad);
+  bindSeg('segTvpc',d=>{P.tvpcLoad=parseInt(d.v);updateDevUI();},()=>P.tvpcLoad);
+  bindChk('cMon','monitors',{after:updateDevUI});
+  bindChk('cTv','tvOn',{after:updateDevUI});
+  bindChk('cFridge','fridgeOn',{after:updateDevUI});
+  bindRange('cFan','fan',v=>v?v+'<em>/5 · '+FANV[v].toFixed(1)+' m/s</em>':'0<em>pois</em>',{after:updateDevUI});
+  bindRange('cFanDir','fanDir',v=>v.toFixed(0)+'<em>°</em>');
+  bindRange('cFanH','fanH',v=>v.toFixed(2)+'<em>m</em>');
+  bindChk('cFanOsc','fanOsc');
+  bindRange('cParts','parts',v=>v.toFixed(0)+'<em>kpl</em>',{after:()=>setParticleCount(sim,P.parts)});
+  bindRange('cSlice','sliceZ',v=>v.toFixed(2)+'<em>m</em>',{after:()=>{$('hudPos').textContent=P.sliceZ.toFixed(2)+' m';}});
+  bindChk('cShowSlice','showSlice'); bindChk('cShowVec','showVec');
+  bindChk('cShowFurn','showFurn',{after:syncFurn}); bindChk('cShowWalls','showWalls');
+  bindChk('cShadows','shadows',{after:()=>{SC.renderer.shadowMap.enabled=P.shadows;
+    SC.scene.traverse(o=>{if(o.material)o.material.needsUpdate=true;});}});
+  bindChk('cVort','vort');
+  bindSeg('segRes',d=>{P.res=parseFloat(d.r);rebuildAll();},()=>P.res);
+  bindSeg('segSpeed',d=>{P.speed=parseInt(d.v);},()=>P.speed);
+  bindSeg('segCam',d=>camPreset(d.c));
+  const setField=f=>{
+    P.field=f; $('hView').textContent=FIELDS[f].label;
+    document.querySelectorAll('#viewmodes button').forEach(x=>{
+      const on=x.dataset.f===f; x.classList.toggle('on',on); x.classList.toggle('ghost',!on);});
+    for(const id of ['segField2','segField3'])
+      document.querySelectorAll('#'+id+' button').forEach(x=>x.classList.toggle('on',x.dataset.f===f));
+  };
+  document.querySelectorAll('#viewmodes button,#segField2 button,#segField3 button')
+    .forEach(b=>b.addEventListener('click',()=>setField(b.dataset.f)));
+  SC.setField=setField;
+  document.querySelectorAll('[data-glaze]').forEach(b=>b.addEventListener('click',()=>{
+    P.glaze=parseFloat(b.dataset.glaze)/100;needOpen=true;syncUI();}));
+  document.querySelectorAll('[data-door]').forEach(b=>b.addEventListener('click',()=>{
+    P.door=parseFloat(b.dataset.door)/100;needOpen=true;syncUI();}));
+  $('btnPlay').addEventListener('click',()=>{P.playing=!P.playing;
+    $('btnPlay').textContent=P.playing?'Pause':'Jatka'; $('btnPlay').classList.toggle('on',P.playing);});
+  $('btnReset').addEventListener('click',()=>{
+    sim.reset({Tin:P.setT,RHin:P.setRH,Tout:P.Tout,RHout:P.RHout,Tbath:P.setBathT,RHbath:P.setBathRH});
+    CH.T.length=CH.RH.length=CH.dP.length=0;
+    for(let i=0;i<PT.n;i++)spawnOne(sim,i); toast('Simulaatio nollattu');});
+  $('selPreset').addEventListener('change',e=>{if(e.target.value){applyPreset(e.target.value);e.target.value='';}});
+  $('btnEdit').addEventListener('click',()=>{P.edit=!P.edit;setEdit();});
+  $('btnEdit2').addEventListener('click',()=>{P.edit=!P.edit;setEdit();});
+  $('btnRotL').addEventListener('click',()=>rotateSel(-45));
+  $('btnRotR').addEventListener('click',()=>rotateSel(45));
+  $('sbRotL').addEventListener('click',()=>rotateSel(-45));
+  $('sbRotR').addEventListener('click',()=>rotateSel(45));
+  $('btnStore').addEventListener('click',()=>{if(SEL.item)togglePlaced(SEL.item);});
+  $('sbStore').addEventListener('click',()=>{if(SEL.item)togglePlaced(SEL.item);});
+  $('btnResetFurn').addEventListener('click',()=>{resetFurniture();toast('Oletusasettelu palautettu');});
+  $('cRot').addEventListener('input',e=>{
+    const it=SEL.item; if(!it||it.parent)return;
+    const old=it.rot; it.rot=parseFloat(e.target.value)*Math.PI/180;
+    const bm=makeBaseMask(it);
+    if(!furnValid(sim,it,bm)||!furnFootValid(sim,it)){it.rot=old;e.target.value=Math.round(old*180/Math.PI);}
+    else{needObs=true;syncFurn();}
+    $('vRot').innerHTML=Math.round(it.rot*180/Math.PI)+'<em>°</em>';});
+  $('panelToggle').addEventListener('click',()=>{
+    const open=!$('panel').classList.contains('open');
+    $('panel').classList.toggle('open',open); $('tabs').classList.toggle('open',open);});
+  for(const id of ['planbox','legend','hud']){
+    const el=$(id); el.querySelector('.card-h').addEventListener('click',()=>el.classList.toggle('folded'));
+  }
+  if(innerWidth<=640)$('planbox').classList.add('folded');
+  addEventListener('keydown',e=>{
+    if(/input|select|textarea/i.test((e.target.tagName||'')))return;
+    if(e.key==='r'||e.key==='R'){rotateSel(e.shiftKey?-15:15);e.preventDefault();}
+    else if(e.key==='Escape')selectItem(null);
+    else if((e.key==='Delete'||e.key==='Backspace')&&SEL.item){togglePlaced(SEL.item);e.preventDefault();}
+    else if(e.key===' '){$('btnPlay').click();e.preventDefault();}
+  });
+}
+
+const PRESETS={
+  talvi:{Tout:-12,RHout:88,wind:6,windDir:20,glaze:0,solar:0,door:0,win:0,vent:1,bathDoor:0,
+    radMax:1600,setT:21,setRH:35,thermo:true,humid:true,ductA:8,ductB:8,ductC:12,boost:false,
+    fan:0,shower:false,cook:false,pcLoad:0,tvpcLoad:1,field:'temp'},
+  tuuletus:{Tout:8,RHout:75,wind:5,windDir:0,glaze:0,solar:120,door:1,win:1,vent:1,bathDoor:1,
+    radMax:1200,setT:21,setRH:40,humid:false,ductA:8,ductB:8,ductC:12,fan:0,shower:false,field:'age'},
+  suihku:{Tout:10,RHout:80,wind:4,windDir:40,glaze:0,solar:0,door:0,win:0,vent:1,bathDoor:1,
+    setBathT:24,setBathRH:45,bathHumid:false,shower:true,showerG:1400,wash:false,
+    ductA:8,ductB:8,ductC:15,boost:true,fan:0,field:'rh'},
+  lasitettu:{Tout:2,RHout:85,wind:8,windDir:0,glaze:1,solar:320,door:1,win:0,vent:1,
+    radMax:1400,setT:21,setRH:40,fan:0,field:'temp'},
+  helle:{Tout:29,RHout:45,wind:2,windDir:30,glaze:0,solar:620,door:1,win:1,vent:1,bathDoor:0,
+    setT:23,setRH:45,thermo:false,radMax:0,humid:false,fan:4,fanOsc:true,
+    pcLoad:2,tvpcLoad:0,tvOn:false,ductA:8,ductB:8,ductC:12,field:'speed'},
+  'peli-ilta':{Tout:-5,RHout:85,wind:4,windDir:15,glaze:0,solar:0,door:0,win:0,vent:1,bathDoor:0,
+    radMax:1600,setT:21,setRH:35,thermo:true,pcLoad:2,monitors:true,tvpcLoad:0,tvOn:false,
+    person:true,fan:2,fanOsc:true,ductA:8,ductB:8,ductC:12,field:'temp'}
+};
+function applyPreset(n){
+  const q=PRESETS[n]; if(!q)return;
+  Object.assign(P,q); needOpen=true; syncUI(); setParticleCount(sim,P.parts);
+  if(SC.setField)SC.setField(P.field);
+  toast('Skenaario: '+($('selPreset').querySelector('[value="'+n+'"]')||{textContent:n}).textContent);
+}
+
+/* ---------- mittarit ---------- */
+function setPill(el,cls,txt){el.className='pill '+cls;el.textContent=txt;}
 function updateHUD(m){
   sim.lastDp=m.dP;
   $('mT').innerHTML=m.T.toFixed(1)+'<u>°C</u>';
   $('mRH').innerHTML=m.RH.toFixed(0)+'<u>%</u>';
   $('mBalc').innerHTML=m.Tbalc.toFixed(1)+'<u>°C</u>';
   $('mBath').innerHTML=m.Tbath.toFixed(1)+'<u>°C · '+m.RHbath.toFixed(0)+'%</u>';
+  $('mDev').innerHTML=totalWatts().toFixed(0)+'<u>W</u>';
   $('mDp').innerHTML=(m.dP>=0?'+':'')+m.dP.toFixed(1)+'<u>Pa</u>';
   $('mACH').innerHTML=m.ach.toFixed(2)+'<u>1/h</u>';
+  $('mAge').innerHTML=(m.age/60).toFixed(1)+'<u>min</u>';
   $('mRad').innerHTML=m.radW.toFixed(0)+'<u>W</u>';
   $('barRad').style.width=(100*m.radW/Math.max(1,P.radMax))+'%';
   $('mDR').innerHTML=m.DR.toFixed(0)+'<u>%</u>';
-  setPill($('pillDR'), m.DR<15?'ok':(m.DR<30?'wr':'cr'), m.DR<15?'Hyvä':(m.DR<30?'Tuntuu':'Vetoisa'));
+  setPill($('pillDR'),m.DR<15?'ok':(m.DR<30?'wr':'cr'),m.DR<15?'Hyvä':(m.DR<30?'Tuntuu':'Vetoisa'));
   $('mGlass').innerHTML=m.glassT.toFixed(1)+'<u>°C</u>';
   const marg=m.glassT-m.dew;
-  setPill($('pillCond'), marg>2?'ok':(marg>0?'wr':'cr'), marg>2?'Kuiva':(marg>0?'Rajalla':'Huurtuu'));
+  setPill($('pillCond'),marg>2?'ok':(marg>0?'wr':'cr'),marg>2?'Kuiva':(marg>0?'Rajalla':'Huurtuu'));
   MAT.glass.opacity=clamp(0.17+(m.cond>0?0.5:0)*clamp(-marg/3,0,1),0.17,0.62);
   MAT.glass.color.setHex(marg<0?0xd7e6ec:0xa8cfe0);
   $('sT').innerHTML=m.T.toFixed(1)+'<u>°C</u>';
   $('sRH').innerHTML=m.RH.toFixed(0)+'<u>%</u>';
   $('sDp').innerHTML=(m.dP>=0?'+':'')+m.dP.toFixed(1)+'<u>Pa</u>';
-  $('tagIn').textContent=m.T.toFixed(1)+' °C / '+m.RH.toFixed(0)+' %';
-  $('tagBath').textContent=m.Tbath.toFixed(1)+' °C / '+m.RHbath.toFixed(0)+' %';
-  $('tagOut').textContent=P.Tout.toFixed(0)+' / '+m.Tbalc.toFixed(0)+' °C';
   const t=sim.time|0;
   $('clock').textContent=String((t/60)|0).padStart(2,'0')+':'+String(t%60).padStart(2,'0');
   if(SC.radGlow)SC.radGlow.material.opacity=0.30*clamp(m.radW/Math.max(1,P.radMax),0,1);
+  $('infoLive').innerHTML=
+    'Oleskeluvyöhyke <b>'+m.T.toFixed(1)+' °C</b>, <b>'+m.RH.toFixed(0)+' %RH</b><br>'+
+    'Kastepiste <b>'+m.dew.toFixed(1)+' °C</b> · ikkunan pinta <b>'+m.glassT.toFixed(1)+' °C</b><br>'+
+    'Paine-ero <b>'+m.dP.toFixed(1)+' Pa</b> · korvausilma <b>'+m.Qin.toFixed(0)+' l/s</b><br>'+
+    'Ilmanvaihtuvuus <b>'+m.ach.toFixed(2)+' 1/h</b> · ilman ikä <b>'+(m.age/60).toFixed(1)+' min</b><br>'+
+    'Ilman nopeus <b>'+m.vMean.toFixed(2)+'</b> / huippu <b>'+m.vMax.toFixed(2)+' m/s</b><br>'+
+    'Patteri <b>'+m.radW.toFixed(0)+' W</b> · laitteet <b>'+totalWatts().toFixed(0)+' W</b><br>'+
+    'Aurinko <b>'+(m.solarW||0).toFixed(0)+' W</b> · parveke <b>'+m.Tbalc.toFixed(1)+' °C</b>';
 }
 function updateLegend(rng){
-  const f=FIELDS[P.field], R=RAMPS[f.ramp];
+  const f=FIELDS[P.field],R=RAMPS[f.ramp];
   $('lgTitle').textContent=f.label;
   const cols=[]; for(let i=0;i<=8;i++){const c=ramp(R,i/8);
     cols.push(`rgb(${c[0]*255|0},${c[1]*255|0},${c[2]*255|0}) ${i/8*100}%`);}
@@ -2378,93 +3133,6 @@ function updateLegend(rng){
   const d=(rng[1]-rng[0])>8?0:1;
   $('lgA').textContent=rng[0].toFixed(d); $('lgB').textContent=((rng[0]+rng[1])/2).toFixed(d);
   $('lgC').textContent=rng[1].toFixed(d); $('lgRange').textContent=f.unit;
-}
-
-/* ==========================================================================
-   15. VUOROVAIKUTUS
-   ========================================================================== */
-const RAY=new THREE.Raycaster(), NDC=new THREE.Vector2();
-function rayFrom(ev){
-  const r=SC.renderer.domElement.getBoundingClientRect();
-  NDC.x=((ev.clientX-r.left)/r.width)*2-1;
-  NDC.y=-((ev.clientY-r.top)/r.height)*2+1;
-  RAY.setFromCamera(NDC,SC.cam); return RAY.ray;
-}
-function hitPlane(ray,z){
-  const d=ray.direction.z; if(Math.abs(d)<1e-6)return null;
-  const t=(z-ray.origin.z)/d; if(t<0)return null;
-  return V3(ray.origin.x+ray.direction.x*t, ray.origin.y+ray.direction.y*t, z);
-}
-function clampFan(x,y){
-  const h=sim.h,L=sim.L;
-  return {x:clamp(x,L.inX0*h+0.22,(L.partX)*h-0.22),
-          y:clamp(y,L.inY0*h+0.22,(L.inY1+1)*h-0.22)};
-}
-function bindCanvas(){
-  const cv=SC.renderer.domElement;
-  let mode=null, lx=0, ly=0;
-  cv.addEventListener('contextmenu',e=>e.preventDefault());
-  cv.addEventListener('pointerdown',e=>{
-    cv.setPointerCapture(e.pointerId); lx=e.clientX; ly=e.clientY;
-    const hit=hitPlane(rayFrom(e),SC.G.zF+0.5);
-    if(e.button===0&&hit&&Math.hypot(hit.x-P.fanX,hit.y-P.fanY)<0.42){mode='fan';cv.classList.add('pick');}
-    else if(e.button===2||e.shiftKey){mode='pan';}
-    else {mode='orb'; cv.classList.add('drag');}
-  });
-  cv.addEventListener('pointermove',e=>{
-    if(!mode){
-      const hit=hitPlane(rayFrom(e),SL.mesh?SL.mesh.position.z:1.1);
-      showTip(e,hit); return;
-    }
-    const dx=e.clientX-lx, dy=e.clientY-ly; lx=e.clientX; ly=e.clientY;
-    if(mode==='orb'){
-      CAM.tgt=null; CAM.az-=dx*0.0055; CAM.el=clamp(CAM.el+dy*0.0045,-0.32,1.5);
-    } else if(mode==='pan'){
-      CAM.tgt=null;
-      const s=CAM.dist*0.0016;
-      const ca=Math.cos(CAM.az), sa=Math.sin(CAM.az);
-      CAM.tx+= dx*s*sa - dy*s*ca*Math.sin(CAM.el);
-      CAM.ty+=-dx*s*ca - dy*s*sa*Math.sin(CAM.el);
-      CAM.tz=clamp(CAM.tz+dy*s*Math.cos(CAM.el),-1,5);
-    } else if(mode==='fan'){
-      const hit=hitPlane(rayFrom(e),SC.G.zF+0.5);
-      if(hit){const c=clampFan(hit.x,hit.y); P.fanX=c.x; P.fanY=c.y; needFan=true;}
-    }
-  });
-  const up=e=>{mode=null; cv.classList.remove('drag','pick'); $('tip').style.opacity=0;};
-  cv.addEventListener('pointerup',up); cv.addEventListener('pointercancel',up);
-  cv.addEventListener('pointerleave',()=>{$('tip').style.opacity=0;});
-  cv.addEventListener('wheel',e=>{
-    e.preventDefault(); CAM.tgt=null;
-    CAM.dist=clamp(CAM.dist*(1+Math.sign(e.deltaY)*0.10),2.2,34);
-  },{passive:false});
-  cv.addEventListener('dblclick',e=>{
-    const hit=hitPlane(rayFrom(e),SL.mesh?SL.mesh.position.z:1.1);
-    if(hit)puff(sim,hit.x,hit.y,hit.z);
-    toast('Savupilvi vapautettu');
-  });
-  // pohjapiirros
-  const pl=$('plan'); let pd=false;
-  const setFan=ev=>{const w=planToWorld(ev); const c=clampFan(w.x,w.y);
-    P.fanX=c.x; P.fanY=c.y; needFan=true;};
-  pl.addEventListener('pointerdown',e=>{pd=true; pl.setPointerCapture(e.pointerId); setFan(e);});
-  pl.addEventListener('pointermove',e=>{if(pd)setFan(e);});
-  pl.addEventListener('pointerup',()=>{pd=false;});
-}
-function showTip(ev,hit){
-  const el=$('tip');
-  if(!hit){el.style.opacity=0;return;}
-  const h=sim.h;
-  const i=(hit.x/h)|0, j=(hit.y/h)|0, k=(hit.z/h)|0;
-  if(i<0||j<0||k<0||i>=sim.NX||j>=sim.NY||k>=sim.NZ){el.style.opacity=0;return;}
-  const c=sim.id(i,j,k);
-  if(sim.typ[c]===SOLID){el.style.opacity=0;return;}
-  const T=sim.T[c], rh=rhOf(T,sim.q[c]);
-  const sp=Math.hypot(sim.cu[c],sim.cv[c],sim.cw[c]);
-  const r=SC.renderer.domElement.getBoundingClientRect();
-  el.style.left=(ev.clientX-r.left)+'px'; el.style.top=(ev.clientY-r.top)+'px';
-  el.innerHTML=`<b>${T.toFixed(1)} °C</b> · ${rh.toFixed(0)} % RH<br>${sp.toFixed(2)} m/s · ika ${(sim.age[c]/60).toFixed(1)} min`;
-  el.style.opacity=1;
 }
 let toastT=0;
 function toast(msg){
@@ -2474,260 +3142,277 @@ function toast(msg){
 </script>
 <script>
 /* ==========================================================================
-   16. OHJAINTEN KYTKENTA
+   10. VUOROVAIKUTUS, ANIMAATIO, SILMUKKA
    ========================================================================== */
-const BINDS=[];
-function bindRange(id,key,fmt,opt){
-  const el=$(id), lab=$('v'+id.slice(1)), o=opt||{};
-  const scale=o.scale||1;
-  const apply=()=>{P[key]=parseFloat(el.value)*scale; lab.innerHTML=fmt(P[key]); if(o.after)o.after();};
-  el.addEventListener('input',apply);
-  const b={refresh:()=>{el.value=P[key]/scale; lab.innerHTML=fmt(P[key]);}};
-  BINDS.push(b); apply(); return b;
+const RAY=new THREE.Raycaster(),NDC=new THREE.Vector2();
+function rayFrom(ev){
+  const r=SC.renderer.domElement.getBoundingClientRect();
+  NDC.x=((ev.clientX-r.left)/r.width)*2-1;
+  NDC.y=-((ev.clientY-r.top)/r.height)*2+1;
+  RAY.setFromCamera(NDC,SC.cam); return RAY.ray;
 }
-function bindChk(id,key,opt){
-  const el=$(id), o=opt||{};
-  const apply=()=>{P[key]=el.checked?(o.on!==undefined?o.on:true):(o.off!==undefined?o.off:false);
-    if(o.after)o.after();};
-  el.addEventListener('change',apply);
-  BINDS.push({refresh:()=>{el.checked=o.on!==undefined?P[key]===o.on:!!P[key];}});
-  apply();
+function hitPlane(ray,z){
+  const d=ray.direction.z; if(Math.abs(d)<1e-6)return null;
+  const t=(z-ray.origin.z)/d; if(t<0)return null;
+  return V3(ray.origin.x+ray.direction.x*t,ray.origin.y+ray.direction.y*t,z);
 }
-function bindSeg(id,fn,cur){
-  const box=$(id);
-  box.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{
-    box.querySelectorAll('button').forEach(x=>x.classList.remove('on'));
-    b.classList.add('on'); fn(b.dataset);
-  }));
-  BINDS.push({refresh:()=>{if(!cur)return; const v=cur();
-    box.querySelectorAll('button').forEach(x=>x.classList.toggle('on',
-      Object.values(x.dataset)[0]===String(v)));}});
+function clampFan(x,y){
+  const h=sim.h,L=sim.L;
+  return {x:clamp(x,L.inX0*h+0.30,L.partX*h-0.30),
+          y:clamp(y,L.inY0*h+0.30,(L.inY1+1)*h-0.30)};
 }
-function syncUI(){BINDS.forEach(b=>b.refresh()); updateCpNote();}
-function updateCpNote(){
-  const a=P.windDir*Math.PI/180, cw=Math.cos(a);
-  const Cp=0.7*cw-0.3*(1-cw*cw), pw=0.5*RHO0*P.wind*P.wind*Cp;
-  $('nCp').textContent=(pw>=0?'+':'')+pw.toFixed(1)+' Pa';
-  $('noteCp').innerHTML='Tuulenpaine julkisivulla <b id="nCp">'+(pw>=0?'+':'')+pw.toFixed(1)+
-    ' Pa</b> (C<sub>p</sub> = '+Cp.toFixed(2)+'). '+
-    (pw>0?'Tuuli painaa ilmaa sisään avoimesta aukosta.':'Tuuli imee ilmaa ulos julkisivun aukoista.');
+function pickItem(ev){
+  if(!P.edit||!SC.pickers)return null;
+  const list=SC.pickers.filter(p=>p.userData.item.placed&&P.showFurn);
+  RAY.setFromCamera(NDC,SC.cam);
+  rayFrom(ev);
+  const hits=RAY.intersectObjects(list,false);
+  return hits.length?hits[0].object.userData.item:null;
+}
+function startFurnDrag(it,ev){
+  const zb=SC.G.zF+(it.zBase||0)+0.05;
+  const hit=hitPlane(rayFrom(ev),zb); if(!hit)return false;
+  SEL.drag={it:it,gx:hit.x-it.x,gy:hit.y-it.y,z:zb,
+            ox:it.x,oy:it.y,vx:it.x,vy:it.y,mask:makeBaseMask(it)};
+  return true;
+}
+function moveFurnDrag(ev){
+  const D=SEL.drag; if(!D)return;
+  const hit=hitPlane(rayFrom(ev),D.z); if(!hit)return;
+  const it=D.it;
+  it.x=Math.round((hit.x-D.gx)/0.025)*0.025;
+  it.y=Math.round((hit.y-D.gy)/0.025)*0.025;
+  const ok=furnValid(sim,it,D.mask)&&furnFootValid(sim,it);
+  it.outline.material=ok?MAT.sel:MAT.selBad;
+  if(ok){D.vx=it.x;D.vy=it.y;}
+  syncFurn();
+}
+function endFurnDrag(){
+  const D=SEL.drag; if(!D)return;
+  const it=D.it;
+  if(!(furnValid(sim,it,D.mask)&&furnFootValid(sim,it))){it.x=D.vx;it.y=D.vy;}
+  it.outline.material=MAT.sel;
+  SEL.drag=null; syncFurn(); rebuildObstacles();
+}
+function bindCanvas(){
+  const cv=SC.renderer.domElement;
+  let mode=null,lx=0,ly=0,moved=0;
+  cv.addEventListener('contextmenu',e=>e.preventDefault());
+  cv.addEventListener('pointerdown',e=>{
+    cv.setPointerCapture(e.pointerId); lx=e.clientX; ly=e.clientY; moved=0;
+    const it=e.button===0?pickItem(e):null;
+    if(it){ selectItem(it); if(startFurnDrag(it,e)){mode='furn';cv.classList.add('move');return;} }
+    const hit=hitPlane(rayFrom(e),SC.G.zF+0.5);
+    if(e.button===0&&hit&&Math.hypot(hit.x-P.fanX,hit.y-P.fanY)<0.45){mode='fan';cv.classList.add('pick');}
+    else if(e.button===2||e.shiftKey){mode='pan';}
+    else {mode='orb';cv.classList.add('drag');}
+  });
+  cv.addEventListener('pointermove',e=>{
+    if(!mode){ showTip(e,hitPlane(rayFrom(e),SL.mesh?SL.mesh.position.z:1.1)); return; }
+    const dx=e.clientX-lx,dy=e.clientY-ly; lx=e.clientX; ly=e.clientY;
+    moved+=Math.abs(dx)+Math.abs(dy);
+    if(mode==='orb'){CAM.tgt=null;CAM.az-=dx*0.0055;CAM.el=clamp(CAM.el+dy*0.0045,-0.32,1.5);}
+    else if(mode==='pan'){
+      CAM.tgt=null; const s=CAM.dist*0.0016,ca=Math.cos(CAM.az),sa=Math.sin(CAM.az);
+      CAM.tx+=dx*s*sa-dy*s*ca*Math.sin(CAM.el);
+      CAM.ty+=-dx*s*ca-dy*s*sa*Math.sin(CAM.el);
+      CAM.tz=clamp(CAM.tz+dy*s*Math.cos(CAM.el),-1,5);
+    }
+    else if(mode==='fan'){
+      const hit=hitPlane(rayFrom(e),SC.G.zF+0.5);
+      if(hit){const c=clampFan(hit.x,hit.y);P.fanX=c.x;P.fanY=c.y;}
+    }
+    else if(mode==='furn') moveFurnDrag(e);
+  });
+  const up=()=>{
+    if(mode==='furn')endFurnDrag();
+    if(mode==='orb'&&moved<4&&P.edit)selectItem(null);
+    mode=null; cv.classList.remove('drag','pick','move'); $('tip').style.opacity=0;
+  };
+  cv.addEventListener('pointerup',up); cv.addEventListener('pointercancel',up);
+  cv.addEventListener('pointerleave',()=>{$('tip').style.opacity=0;});
+  cv.addEventListener('wheel',e=>{e.preventDefault();CAM.tgt=null;
+    CAM.dist=clamp(CAM.dist*(1+Math.sign(e.deltaY)*0.10),2.2,44);},{passive:false});
+  cv.addEventListener('dblclick',e=>{
+    const hit=hitPlane(rayFrom(e),SL.mesh?SL.mesh.position.z:1.1);
+    if(hit){puff(sim,hit.x,hit.y,hit.z);toast('Savupilvi vapautettu');}});
+
+  // pohjapiirros: kalusteiden ja tuulettimen raahaus
+  const pl=$('plan'); let pd=null;
+  pl.addEventListener('pointerdown',e=>{
+    pl.setPointerCapture(e.pointerId);
+    const w=planToWorld(e);
+    let hit=null;
+    if(P.edit)for(const it of FURN){
+      if(!it.placed||it.parent)continue;
+      const p=fLocal(it,w.x,w.y);
+      if(Math.abs(p[0])<=it.w/2&&Math.abs(p[1])<=it.d/2){hit=it;break;}
+    }
+    if(hit){selectItem(hit);pd={it:hit,gx:w.x-hit.x,gy:w.y-hit.y,vx:hit.x,vy:hit.y,mask:makeBaseMask(hit)};}
+    else{pd={fan:true};const c=clampFan(w.x,w.y);P.fanX=c.x;P.fanY=c.y;}
+  });
+  pl.addEventListener('pointermove',e=>{
+    if(!pd)return; const w=planToWorld(e);
+    if(pd.fan){const c=clampFan(w.x,w.y);P.fanX=c.x;P.fanY=c.y;return;}
+    const it=pd.it;
+    it.x=Math.round((w.x-pd.gx)/0.025)*0.025; it.y=Math.round((w.y-pd.gy)/0.025)*0.025;
+    const ok=furnValid(sim,it,pd.mask)&&furnFootValid(sim,it);
+    it.outline.material=ok?MAT.sel:MAT.selBad;
+    if(ok){pd.vx=it.x;pd.vy=it.y;}
+    syncFurn();
+  });
+  const pup=()=>{
+    if(pd&&pd.it){const it=pd.it;
+      if(!(furnValid(sim,it,pd.mask)&&furnFootValid(sim,it))){it.x=pd.vx;it.y=pd.vy;}
+      it.outline.material=MAT.sel; syncFurn(); rebuildObstacles();}
+    pd=null;
+  };
+  pl.addEventListener('pointerup',pup); pl.addEventListener('pointercancel',pup);
+}
+function showTip(ev,hit){
+  const el=$('tip');
+  if(!hit){el.style.opacity=0;return;}
+  const h=sim.h,i=(hit.x/h)|0,j=(hit.y/h)|0,k=(hit.z/h)|0;
+  if(i<0||j<0||k<0||i>=sim.NX||j>=sim.NY||k>=sim.NZ){el.style.opacity=0;return;}
+  const c=sim.id(i,j,k);
+  if(sim.typ[c]===SOLID||sim.objMask[c]){el.style.opacity=0;return;}
+  const T=sim.T[c],rh=rhOf(T,sim.q[c]);
+  const sp=Math.hypot(sim.cu[c],sim.cv[c],sim.cw[c]);
+  const r=SC.renderer.domElement.getBoundingClientRect();
+  el.style.left=(ev.clientX-r.left)+'px'; el.style.top=(ev.clientY-r.top)+'px';
+  el.innerHTML='<b>'+T.toFixed(1)+' °C</b> · '+rh.toFixed(0)+' % RH<br>'+
+    sp.toFixed(2)+' m/s · ikä '+(sim.age[c]/60).toFixed(1)+' min';
+  el.style.opacity=1;
 }
 
-function bindUI(){
-  const O=()=>{needOpen=true;};
-  bindRange('cOutT','Tout',v=>v.toFixed(1)+'<em>°C</em>');
-  bindRange('cOutRH','RHout',v=>v.toFixed(0)+'<em>%RH</em>');
-  bindRange('cWind','wind',v=>v.toFixed(1)+'<em>m/s</em>',{after:updateCpNote});
-  bindRange('cWindDir','windDir',v=>v.toFixed(0)+'<em>°</em>',{after:updateCpNote});
-  bindRange('cSolar','solar',v=>v.toFixed(0)+'<em>W/m²</em>');
-  bindRange('cGlaze','glaze',v=>(v*100).toFixed(0)+'<em>% suljettu</em>',{scale:0.01,after:O});
-  bindRange('cDoor','door',v=>(v*100).toFixed(0)+'<em>% auki</em>',{scale:0.01,after:()=>{
-    O(); $('tagDoor').textContent=P.door<=0?'kiinni':(P.door>=1?'auki':(P.door*100).toFixed(0)+' %');}});
-  bindRange('cWin','win',v=>(v*35).toFixed(0)+'<em>° sisään</em>',{scale:0.01,after:O});
-  bindRange('cVent','vent',v=>(v*100).toFixed(0)+'<em>% auki</em>',{scale:0.01,after:O});
-  bindChk('cBathDoor','bathDoor',{on:1,off:0,after:O});
-  bindRange('cSetT','setT',v=>v.toFixed(1)+'<em>°C</em>');
-  bindRange('cSetRH','setRH',v=>v.toFixed(0)+'<em>%RH</em>');
-  bindRange('cRadMax','radMax',v=>v.toFixed(0)+'<em>W</em>');
-  bindChk('cThermo','thermo'); bindChk('cHumid','humid');
-  bindChk('cPerson','person'); bindChk('cCook','cook');
-  bindRange('cBathT','setBathT',v=>v.toFixed(1)+'<em>°C</em>');
-  bindRange('cBathRH','setBathRH',v=>v.toFixed(0)+'<em>%RH</em>');
-  bindChk('cBathHeat','bathHeat'); bindChk('cBathHumid','bathHumid');
-  bindChk('cShower','shower');
-  bindRange('cShowerG','showerG',v=>v.toFixed(0)+'<em>g/h</em>');
-  const dt=()=>{const b=P.boost?1.8:1;
-    $('tagVent').textContent=((P.ductA+P.ductB)*b).toFixed(0)+' l/s';};
-  bindRange('cDuctA','ductA',v=>v.toFixed(0)+'<em>l/s</em>',{after:dt});
-  bindRange('cDuctB','ductB',v=>v.toFixed(0)+'<em>l/s</em>',{after:dt});
-  bindChk('cBoost','boost',{after:dt});
-  bindRange('cLeak','n50',v=>v.toFixed(1)+'<em>1/h</em>',{after:O});
-  const ft=()=>{$('tagFan').textContent=P.fan?FANV[P.fan].toFixed(1)+' m/s':'pois';};
-  bindRange('cFan','fan',v=>v?v+'<em>/5 · '+FANV[v].toFixed(1)+' m/s</em>':'0<em>— pois</em>',{after:ft});
-  bindRange('cFanDir','fanDir',v=>v.toFixed(0)+'<em>°</em>');
-  bindRange('cFanH','fanH',v=>v.toFixed(2)+'<em>m</em>');
-  bindChk('cFanOsc','fanOsc');
-  bindRange('cParts','parts',v=>v.toFixed(0)+'<em>kpl</em>',{after:()=>setParticleCount(sim,P.parts)});
-  bindRange('cSlice','sliceZ',v=>v.toFixed(2)+'<em>m</em>',{after:()=>{$('hudPos').textContent=P.sliceZ.toFixed(2)+' m';}});
-  bindChk('cShowSlice','showSlice'); bindChk('cShowVec','showVec');
-  bindChk('cShowFurn','showFurn'); bindChk('cShowWalls','showWalls');
-  bindChk('cShadows','shadows',{after:()=>{SC.renderer.shadowMap.enabled=P.shadows;
-    SC.scene.traverse(o=>{if(o.material)o.material.needsUpdate=true;});}});
-  bindChk('cVort','vort');
-  bindSeg('segRes',d=>{P.res=parseFloat(d.r); rebuildAll();},()=>P.res);
-  bindSeg('segSpeed',d=>{P.speed=parseInt(d.v);},()=>P.speed);
-  bindSeg('segCam',d=>camPreset(d.c));
-  bindSeg('segPreset',d=>applyPreset(d.p));
-  $('viewmodes').querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{
-    $('viewmodes').querySelectorAll('button').forEach(x=>{x.classList.remove('on');x.classList.add('ghost');});
-    b.classList.add('on'); b.classList.remove('ghost'); P.field=b.dataset.f;
-  }));
-  document.querySelectorAll('[data-glaze]').forEach(b=>b.addEventListener('click',()=>{
-    P.glaze=parseFloat(b.dataset.glaze)/100; needOpen=true; syncUI();}));
-  $('btnPlay').addEventListener('click',()=>{
-    P.playing=!P.playing;
-    $('btnPlay').textContent=P.playing?'Pause':'Jatka';
-    $('btnPlay').classList.toggle('on',P.playing);});
-  $('btnReset').addEventListener('click',()=>{
-    sim.reset({Tin:P.setT,RHin:P.setRH,Tout:P.Tout,RHout:P.RHout,Tbath:P.setBathT,RHbath:P.setBathRH});
-    CH.T.length=CH.RH.length=CH.dP.length=0;
-    for(let i=0;i<PT.n;i++)spawnOne(sim,i);
-    toast('Simulaatio nollattu');});
-  $('railToggle').addEventListener('click',()=>$('rail').classList.toggle('open'));
-  for(const id of ['planbox','legend','hud']){
-    const el=$(id); el.classList.add('fold');
-    el.querySelector('.card-h').addEventListener('click',()=>el.classList.toggle('folded'));
-  }
-  if(innerWidth<=640){$('planbox').classList.add('folded');}
-}
-
-const PRESETS={
-  talvi:{Tout:-12,RHout:88,wind:6,windDir:20,glaze:0,solar:0,door:0,win:0,vent:1,bathDoor:0,
-         radMax:1600,setT:21,setRH:35,thermo:true,humid:true,ductA:10,ductB:12,boost:false,
-         fan:0,shower:false,cook:false,field:'temp'},
-  tuuletus:{Tout:8,RHout:75,wind:5,windDir:0,glaze:0,solar:120,door:1,win:1,vent:1,bathDoor:1,
-         radMax:1200,setT:21,setRH:40,thermo:true,humid:false,ductA:10,ductB:12,boost:false,
-         fan:0,shower:false,field:'age'},
-  suihku:{Tout:10,RHout:80,wind:4,windDir:40,glaze:0,solar:0,door:0,win:0,vent:1,bathDoor:1,
-         setBathT:24,setBathRH:45,bathHumid:false,shower:true,showerG:1400,
-         ductA:12,ductB:16,boost:true,fan:0,field:'rh'},
-  lasitettu:{Tout:2,RHout:85,wind:8,windDir:0,glaze:1,solar:320,door:1,win:0,vent:1,
-         radMax:1400,setT:21,setRH:40,fan:0,field:'temp'},
-  helle:{Tout:29,RHout:45,wind:2,windDir:30,glaze:0,solar:620,door:1,win:1,vent:1,bathDoor:0,
-         setT:23,setRH:45,thermo:false,radMax:0,humid:false,fan:4,fanOsc:true,
-         ductA:10,ductB:12,field:'speed'}
-};
-function applyPreset(n){
-  const q=PRESETS[n]; if(!q)return;
-  Object.assign(P,q);
-  needOpen=true; syncUI(); setParticleCount(sim,P.parts);
-  $('viewmodes').querySelectorAll('button').forEach(x=>{
-    const on=x.dataset.f===P.field;
-    x.classList.toggle('on',on); x.classList.toggle('ghost',!on);});
-  toast('Skenaario: '+$('segPreset').querySelector(`[data-p="${n}"]`).textContent);
-}
-
-/* ==========================================================================
-   17. LEIKKAUS, ANIMAATIOT, SILMUKKA
-   ========================================================================== */
 const CUTN={'-x':[-1,0,0],'+x':[1,0,0],'-y':[0,-1,0],'+y':[0,1,0],'top':[0,0,1]};
 function updateCut(){
   const c=SC.cam.position;
-  let vx=c.x-CAM.tx, vy=c.y-CAM.ty, vz=c.z-CAM.tz;
+  let vx=c.x-CAM.tx,vy=c.y-CAM.ty,vz=c.z-CAM.tz;
   const l=Math.hypot(vx,vy,vz)||1; vx/=l; vy/=l; vz/=l;
-  let faceGhost=1;
+  let ghost=1;
   for(const w of SC.walls){
     const n=CUTN[w.userData.cut]; if(!n)continue;
     const d=n[0]*vx+n[1]*vy+n[2]*vz;
-    if(w.userData.cut==='-x'){ faceGhost=P.showWalls?clamp(1-(d-0.02)*2.6,0.10,1):1; continue; }
+    if(w.userData.cut==='-x'){ghost=P.showWalls?clamp(1-(d-0.02)*2.6,0.10,1):1;continue;}
     w.visible=P.showWalls?!(d>0.14):true;
   }
-  MAT.wallF.opacity=faceGhost;
-  MAT.wallF.transparent=faceGhost<0.99;
+  MAT.wallF.opacity=ghost; MAT.wallF.transparent=ghost<0.99;
 }
-function updateModels(){
+function updateModels(dtR){
   const g=SC.G;
   SC.doorPivot.rotation.z=-P.door*Math.PI*0.52;
   SC.topPivot.rotation.y=P.win*0.62;
-  SC.bathPivot.rotation.z=-P.bathDoor*1.45;
+  SC.bathPivot.rotation.z=-P.bathDoor*Math.PI*0.5;
   for(const p of SC.panes){
     p.g.position.y=p.y0+lerp(p.i*0.05,p.i*p.w,P.glaze);
     p.g.rotation.z=-(1-P.glaze)*1.15;
   }
   SC.fan.position.set(P.fanX,P.fanY,0);
-  SC.fan.rotation.z=SP.fanAng||0;
+  SC.fan.rotation.z=Q.fanAng||0;
+  const zF=g.zF,fh=P.fanH;
+  SC.fanPole.scale.y=fh; SC.fanPole.position.set(0,0,zF+fh*0.5);
+  SC.fanHead.position.set(0,0,zF+fh);
   const on=P.fan>0;
-  SC.fanRing.material.opacity=on?0.35+0.3*Math.abs(Math.sin(oscT*3)):0.22;
-  SC.fanArrow.visible=on;
+  if(on){fanSpin+=dtR*(6+FANV[P.fan]*7);SC.fanRotor.rotation.x=fanSpin;}
+  SC.fanRing.position.z=zF+0.006;
+  SC.fanRing.material.opacity=on?0.32+0.28*Math.abs(Math.sin(oscT*3)):0.18;
+  SC.fanArrow.visible=on; SC.fanArrow.position.z=zF+0.03;
   SC.fanArrow.scale.setScalar(on?0.7+FANV[P.fan]*0.16:0.7);
-  SC.furniture.visible=P.showFurn;
-  SL.mesh.visible=P.showSlice;
-  SL.lines.visible=P.showVec;
+  SC.fixed.visible=P.showFurn;
+  SL.mesh.visible=P.showSlice; SL.lines.visible=P.showVec;
 }
 
 let last=0,acc=0,fps=60,hudT=0,planT=0,chT=0,sliceT=0,colFlip=0,rate=1,wall=0,simd=0;
 function loop(now){
   requestAnimationFrame(loop);
   const dtR=Math.min(0.06,(now-last)/1000)||0.016; last=now;
-  fps+=( (1/Math.max(1e-3,dtR)) - fps)*0.06;
+  fps+=((1/Math.max(1e-3,dtR))-fps)*0.06;
   oscT+=dtR;
-  buildSP();
-  if(needOpen){applyOpenings(); applyFanMask(); needOpen=false;}
-  else if(needFan){applyFanMask(); needFan=false;}
-
+  buildQ();
+  if(needOpen){applyOpenings();needOpen=false;}
+  else if(needObs){rebuildObstacles();needObs=false;}
+  updateDevHeat();
   let adv=0;
   if(P.playing){
     acc+=dtR*P.speed;
     const t0=performance.now();
-    while(acc>=sim.dt && performance.now()-t0<30){sim.step(SP); acc-=sim.dt; adv+=sim.dt;}
+    while(acc>=sim.dt&&performance.now()-t0<30){sim.step(Q);acc-=sim.dt;adv+=sim.dt;}
     if(acc>0.45)acc=0.45;
   }
   wall+=dtR; simd+=adv;
-  if(wall>0.75){ rate+=(simd/wall-rate)*0.5; wall=0; simd=0; }
-  const rng=fieldRange(P.field,SP,sim);
+  if(wall>0.75){rate+=(simd/wall-rate)*0.5;wall=0;simd=0;}
+  const rng=fieldRange(P.field,Q,sim);
   colFlip=(colFlip+1)%3;
   updateParticles(sim,Math.min(adv||0,0.08),P.field,rng,colFlip===0);
-  if(now-sliceT>110){updateSlice(sim,P.field,rng,P.sliceZ); updateLegend(rng); sliceT=now;}
-  if(now-planT>170){drawPlan(P.field,rng); planT=now;}
+  if(now-sliceT>110){updateSlice(sim,P.field,rng,P.sliceZ);updateLegend(rng);sliceT=now;}
+  if(now-planT>170){drawPlan(P.field,rng);planT=now;}
   if(now-hudT>230){
-    const m=sim.metrics(SP); updateHUD(m);
-    if(now-chT>620){pushCh(m); chT=now;
-      sparkline('chT',CH.T,'#D96A22'); sparkline('chRH',CH.RH,'#2E8FBF'); sparkline('chDp',CH.dP,'#8560D8');}
+    const m=sim.metrics(Q); updateHUD(m);
+    if(now-chT>620){pushCh(m);chT=now;
+      sparkline('chT',CH.T,'#D96A22');sparkline('chRH',CH.RH,'#2E8FBF');sparkline('chDp',CH.dP,'#8560D8');}
     const ts=sim.time|0;
-    $('nFps').textContent=fps.toFixed(0)+' fps · '+String((ts/60)|0)+':'+String(ts%60).padStart(2,'0')+
+    $('noteGrid').innerHTML='Verkko '+sim.NX+' × '+sim.NY+' × '+sim.NZ+' = '+
+      sim.NC.toLocaleString('fi-FI')+' solua, '+sim.fluid.length.toLocaleString('fi-FI')+
+      ' ilmasolua<br>'+fps.toFixed(0)+' fps · '+String((ts/60)|0)+':'+String(ts%60).padStart(2,'0')+
       ' simuloitu · '+rate.toFixed(1)+'× reaaliaika';
     hudT=now;
   }
-  updateModels(); updateCut(); camTick();
+  updateModels(dtR); updateCut(); camTick();
   SC.renderer.render(SC.scene,SC.cam);
 }
-
 function resize(){
-  const st=$('stage'), w=st.clientWidth, h=st.clientHeight;
+  const st=$('stage'),w=st.clientWidth,h=st.clientHeight;
   SC.renderer.setSize(w,h,false);
   SC.cam.aspect=w/Math.max(1,h);
   SC.cam.fov=SC.cam.aspect<1.1?62:46;
   SC.cam.updateProjectionMatrix(); camApply();
 }
-
+let firstBuild=true;
 function rebuildAll(){
-  const keep=sim?{t:sim.time}:null;
   sim=new Sim(P.res);
   sim.reset({Tin:P.setT,RHin:P.setRH,Tout:P.Tout,RHout:P.RHout,Tbath:P.setBathT,RHbath:P.setBathRH});
+  buildRoom(sim);
+  buildFixedBlocks(SC.G);
+  buildFurnMeshes();
+  if(firstBuild){furnDefaults();firstBuild=false;}
   const L=sim.L,h=sim.h;
-  P.fanX=clamp(P.fanX,L.inX0*h+0.3,L.partX*h-0.3);
-  P.fanY=clamp(P.fanY,L.inY0*h+0.3,(L.inY1+1)*h-0.3);
-  applyOpenings(); applyFanMask();
-  buildRoom(sim); initSlice(sim);
-  buildSpawnPool(sim); for(let i=0;i<PT.cap;i++)spawnOne(sim,i);
+  P.fanX=clamp(P.fanX,L.inX0*h+0.35,L.partX*h-0.35);
+  P.fanY=clamp(P.fanY,L.inY0*h+0.35,(L.inY1+1)*h-0.35);
+  applyOpenings();
+  for(const it of FURN){
+    if(!it.placed||it.parent)continue;
+    const bm=makeBaseMask(it);
+    if(!(furnValid(sim,it,bm)&&furnFootValid(sim,it))&&!findSpot(it))it.placed=false;
+  }
+  rebuildObstacles(); syncFurn(); renderFlist();
+  initSlice(sim);
+  for(let i=0;i<PT.cap;i++)spawnOne(sim,i);
   setParticleCount(sim,P.parts);
-  const gg=SC.G, cx=(gg.xInA+gg.xInB)/2, cy=(gg.yA+gg.yB)/2;
-  CAMPRESETS.iso     ={az:-0.78,el:0.56,dist:11.4,tx:cx-0.35,ty:cy,tz:1.05};
-  CAMPRESETS.top     ={az:-1.5708,el:1.47,dist:11.2,tx:cx-0.55,ty:cy,tz:1.10};
-  CAMPRESETS.parveke ={az:Math.PI,el:0.12,dist:4.7,tx:gg.xInA+2.6,ty:cy,tz:1.30};
-  CAMPRESETS.leikkaus={az:-1.5708,el:0.06,dist:9.8,tx:cx-0.45,ty:cy,tz:1.25};
-  $('vRes').textContent=h.toFixed(3)+' m';
-  $('noteGrid').innerHTML=`Verkko ${sim.NX} × ${sim.NY} × ${sim.NZ} = ${(sim.NC).toLocaleString('fi-FI')} solua, `+
-    `${sim.fluid.length.toLocaleString('fi-FI')} ilmasolua · <b id="nFps">—</b>`;
+  const g=SC.G,cx=(g.xFaceA+g.xInB)/2,cy=(g.yA+g.yB)/2;
+  CAMPRESETS.iso     ={az:-0.80,el:0.54,dist:13.8,tx:cx+0.1,ty:cy,tz:1.05};
+  CAMPRESETS.top     ={az:-1.5708,el:1.47,dist:13.4,tx:cx,ty:cy,tz:1.10};
+  CAMPRESETS.parveke ={az:Math.PI,el:0.10,dist:4.4,tx:g.xInA+2.6,ty:cy,tz:1.35};
+  CAMPRESETS.leikkaus={az:-1.5708,el:0.06,dist:11.8,tx:cx,ty:cy,tz:1.25};
 }
-
 function boot(){
   if(typeof THREE==='undefined'){
-    $('bootMsg').innerHTML='3D-moottorin lataus ep&auml;onnistui.<br>Tarkista verkkoyhteys ja lataa sivu uudelleen.';
+    $('bootMsg').innerHTML='3D-moottorin lataus epäonnistui.<br>Tarkista verkkoyhteys ja lataa sivu uudelleen.';
     return;
   }
-  makeTextures(); makeMaterials();
-  initScene($('gl'));
+  makeTextures(); makeMaterials(); initScene($('gl'));
   initParticles(48000); SC.scene.add(PT.points);
+  initFurn();
   const L0=makeLayout(P.res);
-  P.fanX=L0.inX0*P.res+1.75; P.fanY=L0.inY0*P.res+0.85;
+  P.fanX=L0.inX0*P.res+1.9; P.fanY=L0.inY0*P.res+2.0;
   rebuildAll();
-  bindUI(); bindCanvas(); syncUI();
+  bindUI(); bindCanvas(); syncUI(); setEdit();
+  if(SC.setField)SC.setField(P.field);
   Object.assign(CAM,CAMPRESETS.iso); CAM.tgt=null; camApply();
   addEventListener('resize',resize); resize();
   $('hudPos').textContent=P.sliceZ.toFixed(2)+' m';
   $('boot').classList.add('gone');
-  setTimeout(()=>{const b=$('boot'); if(b&&b.parentNode)b.parentNode.removeChild(b);},600);
+  setTimeout(()=>{const b=$('boot');if(b&&b.parentNode)b.parentNode.removeChild(b);},600);
   requestAnimationFrame(loop);
 }
 if(document.readyState==='loading')addEventListener('DOMContentLoaded',boot); else boot();
