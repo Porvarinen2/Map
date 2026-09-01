@@ -41,12 +41,20 @@ kylpyhuoneen kalusteet ja patteri.
 | TV-tietokone | 21 × 45 × 45 cm | |
 | Pyykinpesukone | 60 × 60 × 85 cm | vain kylpyhuoneessa, oven vieressä |
 
-**Muokkaustila** (yläpalkin *Muokkaa kalusteita* tai Kalusteet-välilehti):
-klikkaa valitaksesi, raahaa siirtääksesi, **R** / **Shift+R** pyörittää 15°,
-**Del** siirtää varastoon, **Esc** poistaa valinnan. Kalusteita voi raahata myös
-pohjapiirroksesta. Sijoitus tarkistetaan solu solulta: seinän tai toisen
-kalusteen päälle ei voi pudottaa, mutta työpöytä mahtuu parvisängyn alle koska
-törmäystarkistus on kolmiulotteinen.
+**Muokkaustila** (yläpalkin *Muokkaa* tai Kalusteet-välilehti): klikkaa
+valitaksesi, raahaa siirtääksesi, **R** / **Shift+R** pyörittää 15°, **Del**
+siirtää varastoon, **Esc** poistaa valinnan. Kalusteita voi raahata myös
+pohjapiirroksesta, ja ne saa sijoittaa myös eteiseen ja parvekkeelle.
+
+Sijoitus tarkistetaan solu solulta: seinän tai toisen kalusteen päälle ei voi
+pudottaa, mutta työpöytä mahtuu parvisängyn alle koska törmäystarkistus on
+kolmiulotteinen. *Vapaa sijoittelu* ‑valinta sallii kalusteiden mennä toistensa
+läpi, ja yksittäisen kalusteen voi **lukita** paikalleen niin ettei se liiku
+vahingossa.
+
+**Asettelut tallentuvat** selaimeen: viimeisin järjestys palautuu automaattisesti
+kun avaat simulaation uudelleen, ja asettelun voi tallentaa nimellä ja ladata
+myöhemmin Kalusteet-välilehdeltä.
 
 ## Laitteiden teho ja lämmöntuotto
 
@@ -89,10 +97,12 @@ ei suppene SOR:lla. Sisätila ja parveke ratkaistaan siksi lisäksi kahden solmu
 verkkona (ulko → parveke → sisätila), jolloin massatase toteutuu tarkasti ja
 paine‑ero on fysikaalinen eikä iteraatiomäärästä riippuva.
 
-**Reunaehdot.** Parvekkeen edessä on 3,2 m ulkoilmaa: uloin osa on säiliö, jossa
-tuulen nopeus noudattaa rajakerrosprofiilia (3. kerros), ja julkisivun edusta
-lasketaan täysin. Ulkoilman paine on `½ρU²C_p` plus hydrostaattinen poikkeama,
-joten sekä tuulen suunta että savupiippuvaikutus vaikuttavat.
+**Reunaehdot.** Parvekkeen edessä on 4,6 m ulkoilmaa ja 2,2 m taivasta: uloin osa
+on säiliö, jossa tuulen nopeus noudattaa rajakerrosprofiilia (3. kerros), ja
+julkisivun edessä oleva 1,25 m lasketaan täysin. Ulkoilman paine on `½ρU²C_p`
+plus hydrostaattinen poikkeama, joten sekä tuulen suunta että savupiippuvaikutus
+vaikuttavat. Merkkihiukkasilla on oma budjetti ulkoilmalle, koska tuuli pyyhkäisee
+ne alueen läpi sekunnin murto-osassa.
 
 **Lämpö ja kosteus** kulkevat skalaareina virtauksen mukana. Pintojen läpi johtuu
 lämpöä U‑arvojen mukaan (julkisivu 0,17, ikkuna 1,00, ovi 1,10, välipohja 0,42,

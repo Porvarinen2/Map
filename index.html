@@ -169,6 +169,13 @@ hr.sep{border:0;border-top:1px dashed var(--edge-2);margin:1px 0}
 .fitem .nm{font-family:var(--cond);font-size:var(--t-sm);flex:1;min-width:0;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .fitem .sz{font-family:var(--mono);font-size:9.5px;color:var(--faint);white-space:nowrap}
+input.txt{flex:1;min-width:0;background:var(--panel-2);border:1px solid var(--edge-2);
+  border-radius:var(--r);padding:4px 8px;font-family:var(--cond);font-size:var(--t-sm)}
+input.txt::placeholder{color:var(--faint)}
+.fitem.locked .nm::after{content:" \2726";color:var(--warm)}
+.fitem .lk{width:20px;height:18px;border-radius:2px;border:1px solid var(--edge-2);flex:none;
+  display:grid;place-items:center;font-family:var(--mono);font-size:10px;color:var(--faint);cursor:pointer}
+.fitem.locked .lk{color:var(--warm);border-color:var(--warm)}
 .fitem .tg{width:22px;height:18px;border-radius:2px;border:1px solid var(--edge-2);flex:none;
   display:grid;place-items:center;font-family:var(--mono);font-size:10px;color:var(--faint)}
 .fitem.stored .tg{color:var(--faint)}
@@ -391,7 +398,7 @@ hr.sep{border:0;border-top:1px dashed var(--edge-2);margin:1px 0}
         <div class="f"><div class="f-top"><label for="cWindDir">Tuulen suunta</label><span class="f-val" id="vWindDir">0<em>&deg;</em></span></div>
           <input type="range" id="cWindDir" min="0" max="350" step="10" value="0"></div>
         <div class="note" id="noteCp"></div>
-        <div class="note">Asunto on <b>3. kerroksessa</b>, joten tuulen nopeus kasvaa hieman korkeuden mukana ja parvekkeen edess&auml; on 3,2 m simuloitua ulkoilmaa.</div>
+        <div class="note">Asunto on <b>3. kerroksessa</b>, joten tuulen nopeus kasvaa korkeuden mukana. Parvekkeen edess&auml; on <b>4,6 m</b> ulkoilmaa: 1,25 m lasketaan t&auml;ysin ja loppu toimii tuulis&auml;ili&ouml;n&auml;. Ulkoilman hiukkasille on oma osuus, joten virtaus n&auml;kyy my&ouml;s parvekkeen ulkopuolella.</div>
       </div>
     </section>
 
@@ -566,6 +573,7 @@ hr.sep{border:0;border-top:1px dashed var(--edge-2);margin:1px 0}
         <div class="row tight">
           <button class="btn sm ghost" id="btnRotL">&minus;45&deg;</button>
           <button class="btn sm ghost" id="btnRotR">+45&deg;</button>
+          <button class="btn sm ghost" id="btnLock">Lukitse</button>
           <button class="btn sm ghost" id="btnStore">Varastoon</button>
         </div>
       </div>
@@ -574,7 +582,18 @@ hr.sep{border:0;border-top:1px dashed var(--edge-2);margin:1px 0}
         <div class="flist" id="flist"></div>
         <div class="note">Klikkaa rivi&auml; valitaksesi, klikkaa vasenta merkki&auml; siirt&auml;&auml;ksesi kalusteen varastoon tai takaisin huoneistoon.
           Kalusteet est&auml;v&auml;t ilman kulkua ja vaikuttavat virtauskuvioon.</div>
+        <label class="chk"><input type="checkbox" id="cClip"> Vapaa sijoittelu &mdash; kalusteet saavat menn&auml; toistensa l&auml;pi</label>
         <button class="btn wide ghost" id="btnResetFurn">Palauta oletusasettelu</button>
+      </div>
+      <div class="sec">
+        <div class="sec-t">Tallennetut asettelut</div>
+        <div class="row tight">
+          <input type="text" class="txt" id="layName" placeholder="Asettelun nimi" maxlength="28">
+          <button class="btn sm" id="btnSaveLay">Tallenna</button>
+        </div>
+        <div class="flist" id="laylist"></div>
+        <div class="note">Asettelut tallentuvat t&auml;h&auml;n selaimeen. Viimeisin j&auml;rjestys palautuu
+          automaattisesti, kun avaat simulaation uudelleen.</div>
       </div>
     </section>
 
@@ -627,7 +646,7 @@ hr.sep{border:0;border-top:1px dashed var(--edge-2);margin:1px 0}
       <div class="sec">
         <div class="sec-t">Laskentatarkkuus</div>
         <div class="seg grow" id="segRes">
-          <button data-r="0.17">Kevyt</button><button data-r="0.15" class="on">Normaali</button><button data-r="0.13">Tarkka</button>
+          <button data-r="0.19">Kevyt</button><button data-r="0.16" class="on">Normaali</button><button data-r="0.14">Tarkka</button>
         </div>
         <div class="note" id="noteGrid"></div>
       </div>
@@ -642,7 +661,7 @@ hr.sep{border:0;border-top:1px dashed var(--edge-2);margin:1px 0}
           Sis&auml;tilat 7,00 &times; 3,375 m &middot; h 2,50 m<br>
           OH + KT 16,9 m&sup2; &middot; PSH 3,5 m&sup2; &middot; ET 2,6 m&sup2;<br>
           Parveke 2,00 &times; 3,375 m &middot; 3. kerros<br>
-          Ulkoilmaa parvekkeen edess&auml; 3,2 m
+          Ulkoilmaa parvekkeen edess&auml; 4,6 m, taivasta 2,2 m
         </div>
       </div>
       <div class="sec">
@@ -780,8 +799,8 @@ const airDens=T=>353/(T+273.15);
    x kasvaa parvekkeelta sisaan (lansi -> ita), y etelasta pohjoiseen, z ylos.
    ========================================================================== */
 const M = {                       // paamitat metreina
-  outDepth:3.20, balDepth:2.00, roomLen:7.00, roomDep:3.375, roomH:2.50,
-  wall:0.125, sky:1.30,
+  outDepth:4.60, balDepth:2.00, roomLen:7.00, roomDep:3.375, roomH:2.50,
+  wall:0.125, sky:2.20,
   partX:5.00,                     // OH/KT <-> oikea lohko (PSH+ET)
   bathDep:1.875,                  // PSH:n syvyys y-suunnassa
   railH:1.05,                     // parvekkeen kaiteen korkeus
@@ -802,11 +821,11 @@ function makeLayout(h){
   L.inX0 =L.facX+1;        L.inX1 =L.inX0+c(M.roomLen)-1;
   L.endX =L.inX1+1;        L.NX   =L.endX+1;
   // --- y ---
-  L.oy0=0;                 L.oy1=c(0.375)-1;
+  L.oy0=0;                 L.oy1=c(0.80)-1;
   L.wy0=L.oy1+1;                                       // etelaseina
   L.inY0=L.wy0+1;          L.inY1=L.inY0+c(M.roomDep)-1;
   L.wy1=L.inY1+1;                                      // pohjoisseina
-  L.oy2=L.wy1+1;           L.oy3=L.oy2+c(0.375)-1;     L.NY=L.oy3+1;
+  L.oy2=L.wy1+1;           L.oy3=L.oy2+c(0.80)-1;      L.NY=L.oy3+1;
   // --- z ---
   L.flZ=0;                 L.inZ0=1;  L.inZ1=L.inZ0+c(M.roomH)-1;
   L.ceZ=L.inZ1+1;          L.NZ=L.ceZ+1+c(M.sky);
@@ -841,7 +860,8 @@ function makeLayout(h){
   L.ductCy = L.inY0+Math.max(0,c(0.45)-1);
   L.ductCz = L.inZ1;
   // --- ulkoilma: reunimmainen osa on sponssisailio, julkisivun edusta lasketaan ---
-  L.bandX0 = Math.max(1, L.faceX-c(0.80));   // simuloitu ulkoilmakaista
+  L.bandX0 = Math.max(1, L.faceX-c(1.25));   // simuloitu ulkoilmakaista
+  L.bandZ1 = L.ceZ+c(0.60);                  // kaista vain katon tuntumaan asti
   L.spgX1  = L.bandX0-1;                     // tama ja sita ulompi = sailio
   // --- maailmankoordinaatit ---
   L.x0=0; L.NC=L.NX*L.NY*L.NZ;
@@ -903,7 +923,7 @@ class Sim{
       const c=this.id(i,j,k);
       let t=SOLID, r=R_NONE, s=S_NONE;
       if(i<=L.outX1){
-        if(i>=L.bandX0 && j>0 && j<NY-1 && k>0 && k<NZ-1){ t=FLUID; r=R_OUT; }
+        if(i>=L.bandX0 && j>0 && j<NY-1 && k>0 && k<=Math.min(L.bandZ1,NZ-2)){ t=FLUID; r=R_OUT; }
         else { t=OPEN; r=R_OUT; }
       }
       else if(k===L.flZ){ t=SOLID; s=(i>=L.balX0&&i<=L.balX1)?S_BALC:S_SLAB; }
@@ -1782,7 +1802,7 @@ function makeMaterials(){
   MAT.wall  = L({color:0xf3f2f0,map:TEX.wall});
   MAT.wallF = L({color:0xf3f2f0,map:TEX.wall,transparent:true,opacity:1});
   MAT.wallIn= L({color:0xe9e8e6,map:TEX.wall});
-  MAT.ceil  = L({color:0xfbfbfa});
+  MAT.ceil  = L({color:0xffffff});
   MAT.floor = L({color:0xffffff,map:TEX.oak});
   MAT.tile  = L({color:0xffffff,map:TEX.tile});
   MAT.conc  = L({color:0xffffff,map:TEX.conc});
@@ -1829,13 +1849,13 @@ function initScene(canvas){
   s.fog=new THREE.Fog(0x0a1017,18,64);
   SC.scene=s;
   const cam=new THREE.PerspectiveCamera(46,1,0.05,220); cam.up.set(0,0,1); SC.cam=cam;
-  s.add(new THREE.HemisphereLight(0xd6e8f5,0x38322b,0.52));
+  s.add(new THREE.HemisphereLight(0xdcecf8,0x3c362e,0.60));
   const d=new THREE.DirectionalLight(0xfff3e2,0.72); d.position.set(-9,-4,11);
   d.castShadow=true; d.shadow.mapSize.set(1024,1024);
   const cs=d.shadow.camera; cs.left=-8;cs.right=8;cs.top=8;cs.bottom=-8;cs.near=1;cs.far=30;
   s.add(d); SC.sun=d;
   const f=new THREE.DirectionalLight(0xcfe0ee,0.24); f.position.set(9,6,4); s.add(f);
-  s.add(new THREE.AmbientLight(0xffffff,0.11));
+  s.add(new THREE.AmbientLight(0xffffff,0.17));
   SC.root=new THREE.Group(); s.add(SC.root);
   SC.walls=[];
   return r;
@@ -1960,8 +1980,8 @@ function camMove(dt){
     const sp2=CAM.speed*(K['shift']?3.2:1)*dt;
     if(f||sd||u){
       const l=Math.hypot(f,sd,u)||1;
-      CAM.px+=(cy*cp*f - sy*sd)/l*sp2;
-      CAM.py+=(sy*cp*f + cy*sd)/l*sp2;
+      CAM.px+=(cy*cp*f + sy*sd)/l*sp2;
+      CAM.py+=(sy*cp*f - cy*sd)/l*sp2;
       CAM.pz+=(sp*f + u)/l*sp2;
       CAM.pz=clamp(CAM.pz,-6,7);
     }
@@ -1973,7 +1993,7 @@ function camMove(dt){
   const v=(K['shift']?2.9:1.35)*dt;
   if(f||sd){
     const l=Math.hypot(f,sd)||1;
-    const dx=(cy*f - sy*sd)/l*v, dy=(sy*f + cy*sd)/l*v;
+    const dx=(cy*f + sy*sd)/l*v, dy=(sy*f - cy*sd)/l*v;
     const stuck=!walkFree(CAM.px,CAM.py,NAV.eye);   // kaluste siirtyi paalle
     if(stuck||walkFree(CAM.px+dx,CAM.py,NAV.eye))CAM.px+=dx;
     if(stuck||walkFree(CAM.px,CAM.py+dy,NAV.eye))CAM.py+=dy;
@@ -2037,9 +2057,10 @@ function buildRoom(sim){
   const t=0.125;
 
   // --- lattiat, katto ---
-  bx(MAT.floor,g.xInA,g.xPartA,g.yA,g.yB,g.zF-0.04,g.zF);
-  bx(MAT.floor,g.xPartB,g.xInB,g.yBathWB,g.yB,g.zF-0.04,g.zF);
-  bx(MAT.tile ,g.xPartB,g.xInB,g.yA,g.yBathB,g.zF-0.04,g.zF+0.002);
+  bx(MAT.floor,g.xInA,g.xInB,g.yA,g.yB,g.zF-0.04,g.zF);            // yhtenainen parketti
+  bx(MAT.tile ,g.xPartB,g.xInB,g.yA,g.yBathB,g.zF-0.038,g.zF+0.004); // kylpyhuoneen laatta
+  bx(MAT.white,g.xPartB-0.01,g.xPartB+0.01,g.yA,g.yBathB,g.zF,g.zF+0.012);
+  bx(MAT.white,g.xPartB,g.xInB,g.yBathB-0.01,g.yBathB+0.01,g.zF,g.zF+0.012);
   bx(MAT.conc ,g.xBalA-0.12,g.xBalB,g.yA-0.12,g.yB+0.12,g.zF-0.18,g.zF);
   const ceil=bx(MAT.ceil,g.xFaceA,g.xEndB,g.yA-t,g.yB+t,g.zC,g.zC+0.10);
   ceil.userData.cut='top'; SC.walls.push(ceil);
@@ -2096,10 +2117,11 @@ function buildRoom(sim){
   bx(MAT.wallIn,g.bdX0,g.bdX1,g.yBathB,g.yBathWB,g.bdZ1,g.zC);       // oven ylapuoli
   // kylpyhuoneen ovi: sarana itaseinassa, aukeaa eteiseen ulko-oven viereen
   SC.bathPivot=new THREE.Group();
-  SC.bathPivot.position.set(g.bdX1,g.yBathWB+0.02,g.zF); SC.root.add(SC.bathPivot);
+  SC.bathPivot.position.set(g.bdX0,g.yBathWB+0.025,g.zF); SC.root.add(SC.bathPivot);
   const bw=g.bdX1-g.bdX0;
-  bx(MAT.white,-bw,0,-0.02,0.02,0,g.bdZ1-g.zF,SC.bathPivot);
-  bx(MAT.steel,-bw+0.05,-bw+0.09,-0.05,0.05,0.98,1.06,SC.bathPivot);
+  bx(MAT.white,0,bw,-0.021,0.021,0,g.bdZ1-g.zF,SC.bathPivot);
+  bx(MAT.steel,bw-0.10,bw-0.06,-0.055,0.055,0.98,1.06,SC.bathPivot);
+  bx(MAT.frame,-0.03,0,-0.06,0.06,0,g.bdZ1-g.zF,SC.bathPivot);
 
   // --- parveke ---
   const bal=new THREE.Group(); SC.root.add(bal);
@@ -2125,9 +2147,9 @@ function buildRoom(sim){
   const OUT=new THREE.Group(); SC.root.add(OUT);
   const fx=g.xFaceA, fz=g.zF, t2=0.125;
   // rakennuksen ulkopinta: aukko jatetaan parvekkeen kohdalle
-  bx(MAT.facade,fx-0.12,fx,g.yA-11,g.yA-t2,fz-9.4,fz+6.6,OUT);
-  bx(MAT.facade,fx-0.12,fx,g.yB+t2,g.yB+11,fz-9.4,fz+6.6,OUT);
-  bx(MAT.facade,fx-0.12,fx,g.yA-t2,g.yB+t2,g.zC+0.10,fz+6.6,OUT);
+  bx(MAT.facade,fx-0.12,fx,g.yA-2.6,g.yA-t2,fz-9.4,fz+4.2,OUT);
+  bx(MAT.facade,fx-0.12,fx,g.yB+t2,g.yB+2.6,fz-9.4,fz+4.2,OUT);
+  bx(MAT.facade,fx-0.12,fx,g.yA-t2,g.yB+t2,g.zC+0.10,fz+4.2,OUT);
   bx(MAT.facade,fx-0.12,fx,g.yA-t2,g.yB+t2,fz-9.4,fz-0.20,OUT);
   for(let n=1;n<=3;n++){                                            // alemmat kerrokset
     const z=fz-n*2.85;
@@ -2136,9 +2158,9 @@ function buildRoom(sim){
     bx(MAT.roofN,fx-0.06,fx+0.02,g.yA,g.yB,z,z+1.05,OUT);           // kaide
     bx(MAT.winDark,fx-0.14,fx-0.12,g.yA+0.35,g.yA+2.0,z+0.35,z+2.2,OUT);
   }
-  for(let n=0;n<=3;n++)for(const yy of [g.yA-3.4,g.yB+1.8]){        // naapureiden ikkunat
+  for(let n=0;n<=3;n++)for(const yy of [g.yA-2.2,g.yB+0.6]){        // naapureiden ikkunat
     const z=fz-n*2.85;
-    bx(MAT.winDark,fx-0.14,fx-0.12,yy,yy+1.5,z+0.45,z+2.05,OUT);
+    bx(MAT.winDark,fx-0.14,fx-0.12,yy,yy+1.4,z+0.45,z+2.05,OUT);
   }
   bx(MAT.ground,-110,fx-0.5,-80,84,fz-9.6,fz-9.4,OUT);              // maanpinta
   for(let i=0;i<7;i++){                                              // naapuritalot
@@ -2209,8 +2231,11 @@ function buildFixed(sim,g){
   K(k0,k0+0.28,yB-0.60,yB-0.585,zF+0.05,zF+0.82,MAT.steel);
   K(k0,k0+1.10,yB-0.35,yB,zF+1.45,zF+2.22);
   K(k0+1.85,k1,yB-0.35,yB,zF+1.45,zF+2.22);
-  K(k0+1.10,k0+1.85,yB-0.42,yB,zF+1.60,zF+1.72,MAT.steel);
-  K(k0+1.10,k0+1.85,yB-0.42,yB-0.38,zF+1.72,zF+2.22,MAT.steel);
+  K(k0,k1,yB-0.36,yB,zF+1.42,zF+1.45,MAT.white);                    // ylakaappien alalista
+  K(k0+0.02,k1-0.02,yB-0.30,yB-0.26,zF+1.415,zF+1.425,MAT.steel);   // alavalo
+  K(k0+1.10,k0+1.85,yB-0.46,yB,zF+1.56,zF+1.70,MAT.steel);          // liesikupu
+  K(k0+1.14,k0+1.81,yB-0.42,yB-0.02,zF+1.52,zF+1.57,MAT.dark);
+  K(k0+1.30,k0+1.65,yB-0.30,yB,zF+1.70,zF+2.22,MAT.steel);          // hormi seinaa vasten
   K(k1+0.02,g.xPartA,yB-0.62,yB,zF,zF+2.22);
   K(k1+0.06,g.xPartA-0.04,yB-0.635,yB-0.63,zF+0.90,zF+1.48,MAT.dark);
   K(k1+0.06,g.xPartA-0.04,yB-0.635,yB-0.63,zF+0.05,zF+0.86,MAT.steel);
@@ -2537,7 +2562,7 @@ function furnValid(sim,it,baseMask){
   const i0=Math.max(0,Math.floor((it.x-R)/h)),i1=Math.min(NX-1,Math.ceil((it.x+R)/h));
   const j0=Math.max(0,Math.floor((it.y-R)/h)),j1=Math.min(NY-1,Math.ceil((it.y+R)/h));
   const k0=Math.max(0,Math.floor(zB/h)),k1=Math.min(sim.NZ-1,Math.ceil((zB+it.hh)/h)-1);
-  const okRoom=r=>it.zone==='psh'?(r===R_BATH):(r===R_MAIN||r===R_HALL||r===R_BALC);
+  const okRoom=r=>r===R_MAIN||r===R_HALL||r===R_BATH||r===R_BALC;
   let any=false;
   for(let k=k0;k<=k1;k++){
     const lz=(k+0.5)*h-zB;
@@ -2551,7 +2576,7 @@ function furnValid(sim,it,baseMask){
       const c=i+NX*(j+NY*k);
       if(sim.typ[c]!==FLUID)return false;
       if(!okRoom(sim.room[c]))return false;
-      if(baseMask&&baseMask[c])return false;
+      if(!P.clip&&baseMask&&baseMask[c])return false;
     }
   }
   return any;
@@ -2559,7 +2584,7 @@ function furnValid(sim,it,baseMask){
 /* pohjan nurkat huoneen sisalla (estaa leijumisen seinan lapi) */
 function furnFootValid(sim,it){
   const h=sim.h,zk=sim.L.inZ0;
-  const okRoom=r=>it.zone==='psh'?(r===R_BATH):(r===R_MAIN||r===R_HALL||r===R_BALC);
+  const okRoom=r=>r===R_MAIN||r===R_HALL||r===R_BATH||r===R_BALC;
   for(const [lx,ly] of [[-it.w/2,-it.d/2],[it.w/2,-it.d/2],[-it.w/2,it.d/2],[it.w/2,it.d/2],[0,0]]){
     const [wx,wy]=fWorld(it,lx*0.96,ly*0.96);
     const i=Math.floor(wx/h),j=Math.floor(wy/h);
@@ -2706,19 +2731,24 @@ function initParticles(max){
     transparent:true,depthWrite:false});
   PT.points=new THREE.Points(geo,mat); PT.points.frustumCulled=false; PT.geo=geo;
 }
+/* Kaksi erillista syntymapoolia. Ulkoilmassa tuuli pyyhkaisee hiukkaset
+   sekunnin murto-osassa lapi, joten niille varataan oma osuus budjetista —
+   muuten ulkotila nayttaisi tyhjalta. */
 function buildSpawnPool(s){
-  const a=[];
+  const a=[],b=[];
   for(let m=0;m<s.fluid.length;m++){
-    const c=s.fluid[m],r=s.room[c];
+    const c=s.fluid[m];
     if(s.objMask[c])continue;
-    if(r===R_MAIN||r===R_BATH||r===R_HALL||r===R_BALC)a.push(c);
-    else if(r===R_OUT&&(m%4===0))a.push(c);
+    if(s.room[c]===R_OUT)b.push(c); else a.push(c);
   }
-  PT.pool=new Int32Array(a);
+  for(let c=0;c<s.NC;c+=2) if(s.typ[c]===OPEN) b.push(c);
+  PT.pool=new Int32Array(a); PT.poolOut=new Int32Array(b);
 }
 function spawnOne(s,i){
-  if(!PT.pool||!PT.pool.length)return;
-  const c=PT.pool[(Math.random()*PT.pool.length)|0],NX=s.NX,NY=s.NY,h=s.h;
+  const useOut=(PT.outStart!==undefined&&i>=PT.outStart&&PT.poolOut&&PT.poolOut.length);
+  const pool=useOut?PT.poolOut:PT.pool;
+  if(!pool||!pool.length)return;
+  const c=pool[(Math.random()*pool.length)|0],NX=s.NX,NY=s.NY,h=s.h;
   const ix=c%NX,iy=((c/NX)|0)%NY,iz=(c/(NX*NY))|0;
   PT.pos[i*3]=(ix+Math.random())*h; PT.pos[i*3+1]=(iy+Math.random())*h;
   PT.pos[i*3+2]=(iz+Math.random())*h;
@@ -2726,7 +2756,10 @@ function spawnOne(s,i){
 }
 function setParticleCount(s,n){
   n=Math.min(n,PT.cap);
+  const old=PT.outStart;
+  PT.outStart=Math.floor(n*0.74);
   if(n>PT.n)for(let i=PT.n;i<n;i++)spawnOne(s,i);
+  if(old!==PT.outStart)for(let i=Math.min(old||n,PT.outStart);i<n;i++)spawnOne(s,i);
   PT.n=n; PT.geo.setDrawRange(0,n);
 }
 function updateParticles(s,dt,field,rng,colorNow){
@@ -2961,8 +2994,8 @@ const P={
   ductA:8,ductB:8,ductC:12,boost:false,n50:2,
   pcLoad:0,monitors:true,tvpcLoad:1,tvOn:true,fridgeOn:true,
   fan:0,fanDir:0,fanH:0.95,fanOsc:false,fanX:4.6,fanY:1.7,
-  parts:22000,sliceZ:1.1,showSlice:true,showVec:false,showFurn:true,showWalls:true,
-  shadows:false,vort:true,res:0.15,field:'temp',speed:1,playing:true,edit:false
+  clip:false,parts:22000,sliceZ:1.1,showSlice:true,showVec:false,showFurn:true,showWalls:true,
+  shadows:false,vort:true,res:0.16,field:'temp',speed:1,playing:true,edit:false
 };
 const FANV=[0,1.15,1.85,2.6,3.45,4.4];
 const FANW=[0,15,22,32,45,60];
@@ -3012,7 +3045,7 @@ function buildQ(){
      solar:P.solar,glaze:P.glaze,
      wind:P.wind,windDir:P.windDir,pWind:0.5*RHO0*P.wind*P.wind*Cp,
      ductA:P.ductA*bo,ductB:P.ductB*bo,ductC:P.ductC*bo,
-     vort:P.vort?0.4:0,iters:P.res>0.16?18:(P.res>0.14?15:12),
+     vort:P.vort?0.4:0,iters:P.res>0.17?18:(P.res>0.15?15:12),
      fanVel:FANV[P.fan],fanX:P.fanX,fanY:P.fanY,
      fanAng:(P.fanDir+(P.fanOsc?Math.sin(oscT*0.8)*40:0))*Math.PI/180,
      fanZ:P.fanH,Cp:Cp};
@@ -3039,21 +3072,22 @@ function selectItem(it){
     $('cRot').value=Math.round((it.rot*180/Math.PI+360)%360/5)*5;
     $('vRot').innerHTML=Math.round((it.rot*180/Math.PI+360)%360)+'<em>°</em>';
   }
-  renderFlist();
+  updateLockBtn(); renderFlist();
 }
 function rotateSel(deg){
   const it=SEL.item; if(!it||it.parent)return;
+  if(it.lock){toast('Kaluste on lukittu paikalleen');return;}
   const old=it.rot; it.rot=(it.rot+deg*Math.PI/180)%(Math.PI*2);
   const bm=makeBaseMask(it);
   if(!furnValid(sim,it,bm)||!furnFootValid(sim,it)){ it.rot=old; toast('Ei mahdu tuohon asentoon'); }
-  else { rebuildObstacles(); selectItem(it); syncFurn(); }
+  else { rebuildObstacles(); selectItem(it); syncFurn(); markDirty(); }
 }
 function togglePlaced(it){
   if(it.placed){
     it.placed=false;
     for(const c of FURN) if(c.parent===it.id) c.placed=false;
     if(SEL.item===it)selectItem(null);
-    rebuildObstacles(); syncFurn(); renderFlist();
+    rebuildObstacles(); syncFurn(); renderFlist(); markDirty();
     toast(stripEnt(it.label)+' varastoon'); return;
   }
   if(it.parent){
@@ -3061,7 +3095,7 @@ function togglePlaced(it){
     if(!p||!p.placed){toast('Sijoita ensin '+stripEnt(p?p.label:'')); return;}
     it.placed=true; rebuildObstacles(); syncFurn(); renderFlist(); return;
   }
-  if(findSpot(it)){ it.placed=true; rebuildObstacles(); syncFurn(); renderFlist(); selectItem(it); }
+  if(findSpot(it)){ it.placed=true; rebuildObstacles(); syncFurn(); renderFlist(); selectItem(it); markDirty(); }
   else toast('Huoneistossa ei ole tilaa');
 }
 const stripEnt=s=>s.replace(/&auml;/g,'ä').replace(/&ouml;/g,'ö').replace(/&shy;/g,'');
@@ -3069,8 +3103,8 @@ function findSpot(it){
   const g=SC.G,h=sim.h,bm=makeBaseMask(it);
   const ox=it.x,oy=it.y;
   if(furnValid(sim,it,bm)&&furnFootValid(sim,it))return true;
-  const x0=it.zone==='psh'?g.xPartB:g.xInA, x1=it.zone==='psh'?g.xInB:g.xInB;
-  const y0=g.yA, y1=it.zone==='psh'?g.yBathB:g.yB;
+  const x0=it.zone==='psh'?g.xPartB:g.xBalA, x1=g.xInB;
+  const y0=g.yA, y1=g.yB;
   for(let y=y0+0.25;y<y1;y+=0.15)for(let x=x0+0.25;x<x1;x+=0.15){
     it.x=x; it.y=y;
     if(furnValid(sim,it,bm)&&furnFootValid(sim,it))return true;
@@ -3087,18 +3121,81 @@ function renderFlist(){
   el.innerHTML='';
   for(const it of FURN){
     const row=document.createElement('div');
-    row.className='fitem'+(it.placed?'':' stored')+(SEL.item===it?' sel':'');
+    row.className='fitem'+(it.placed?'':' stored')+(SEL.item===it?' sel':'')+(it.lock?' locked':'');
     const tg=document.createElement('span'); tg.className='tg'; tg.textContent=it.placed?'✓':'–';
     tg.title=it.placed?'Siirrä varastoon':'Sijoita huoneistoon';
     tg.addEventListener('click',e=>{e.stopPropagation();togglePlaced(it);});
     const nm=document.createElement('span'); nm.className='nm'; nm.innerHTML=it.label;
     const sz=document.createElement('span'); sz.className='sz';
     sz.textContent=(it.w*100).toFixed(0)+'×'+(it.d*100).toFixed(0);
-    row.append(tg,nm,sz);
+    const lk=document.createElement('span'); lk.className='lk'; lk.textContent=it.lock?'\u2726':'\u25CB';
+    lk.title=it.lock?'Vapauta lukitus':'Lukitse paikalleen';
+    lk.addEventListener('click',e=>{e.stopPropagation();
+      if(it.parent)return; it.lock=!it.lock; renderFlist(); updateLockBtn(); markDirty();});
+    row.append(tg,nm,sz,lk);
     row.addEventListener('click',()=>{ if(it.placed){P.edit=true;setEdit();selectItem(it);} });
     el.appendChild(row);
   }
   $('hFurn').textContent=FURN.filter(f=>f.placed).length+' / '+FURN.length;
+}
+function updateLockBtn(){
+  const b=$('btnLock'); if(!b)return;
+  const it=SEL.item;
+  b.textContent=it&&it.lock?'Vapauta':'Lukitse';
+  b.classList.toggle('on',!!(it&&it.lock));
+}
+/* ---- asettelujen tallennus selaimen muistiin ---- */
+const LS_KEY='ilmavirtalaboratorio.layouts.v1';
+function loadStore(){try{return JSON.parse(localStorage.getItem(LS_KEY))||{};}catch(e){return{};}}
+function saveStore(o){try{localStorage.setItem(LS_KEY,JSON.stringify(o));return true;}catch(e){return false;}}
+function layoutSnapshot(){
+  return {v:1,t:Date.now(),fan:{x:+P.fanX.toFixed(3),y:+P.fanY.toFixed(3),dir:P.fanDir},
+    items:FURN.map(f=>({id:f.id,x:+f.x.toFixed(3),y:+f.y.toFixed(3),
+      rot:+f.rot.toFixed(4),placed:!!f.placed,lock:!!f.lock}))};
+}
+function layoutApply(sn){
+  if(!sn||!sn.items)return false;
+  for(const r of sn.items){
+    const f=furnById(r.id); if(!f||f.parent)continue;
+    f.x=r.x; f.y=r.y; f.rot=r.rot; f.placed=!!r.placed; f.lock=!!r.lock;
+  }
+  if(sn.fan){P.fanX=sn.fan.x;P.fanY=sn.fan.y;if(sn.fan.dir!==undefined)P.fanDir=sn.fan.dir;}
+  syncParents();
+  for(const it of FURN){
+    if(!it.placed||it.parent)continue;
+    if(!furnFootValid(sim,it)&&!findSpot(it))it.placed=false;
+  }
+  rebuildObstacles(); syncFurn(); renderFlist(); syncUI(); selectItem(null);
+  return true;
+}
+let dirtyT=0;
+function markDirty(){dirtyT=performance.now();}
+function autoSaveTick(now){
+  if(!dirtyT||now-dirtyT<1500)return;
+  dirtyT=0;
+  const st=loadStore(); st.__auto=layoutSnapshot(); saveStore(st);
+}
+function renderLayList(){
+  const st=loadStore(), el=$('laylist'); if(!el)return;
+  el.innerHTML='';
+  const names=Object.keys(st).filter(n=>n!=='__auto').sort();
+  if(!names.length){
+    const d=document.createElement('div'); d.className='note';
+    d.textContent='Ei viel\u00e4 tallennettuja asetteluja.'; el.appendChild(d); return;
+  }
+  for(const n of names){
+    const row=document.createElement('div'); row.className='fitem';
+    const ld=document.createElement('span'); ld.className='tg'; ld.textContent='\u25B8'; ld.title='Lataa';
+    const nm=document.createElement('span'); nm.className='nm'; nm.textContent=n;
+    const cnt=document.createElement('span'); cnt.className='sz';
+    cnt.textContent=(st[n].items||[]).filter(i=>i.placed).length+' kpl';
+    const del=document.createElement('span'); del.className='lk'; del.textContent='\u00d7'; del.title='Poista';
+    del.addEventListener('click',e=>{e.stopPropagation();
+      const s2=loadStore(); delete s2[n]; saveStore(s2); renderLayList();});
+    row.append(ld,nm,cnt,del);
+    row.addEventListener('click',()=>{layoutApply(st[n]);toast('Asettelu \u201d'+n+'\u201d ladattu');});
+    el.appendChild(row);
+  }
 }
 function setEdit(){
   $('btnEdit').classList.toggle('on',P.edit);
@@ -3245,7 +3342,19 @@ function bindUI(){
   $('sbRotR').addEventListener('click',()=>rotateSel(45));
   $('btnStore').addEventListener('click',()=>{if(SEL.item)togglePlaced(SEL.item);});
   $('sbStore').addEventListener('click',()=>{if(SEL.item)togglePlaced(SEL.item);});
-  $('btnResetFurn').addEventListener('click',()=>{resetFurniture();toast('Oletusasettelu palautettu');});
+  $('btnResetFurn').addEventListener('click',()=>{resetFurniture();markDirty();toast('Oletusasettelu palautettu');});
+  $('btnLock').addEventListener('click',()=>{
+    const it=SEL.item; if(!it||it.parent)return;
+    it.lock=!it.lock; updateLockBtn(); renderFlist(); markDirty();
+    toast(it.lock?'Kaluste lukittu':'Lukitus vapautettu');});
+  bindChk('cClip','clip');
+  $('btnSaveLay').addEventListener('click',()=>{
+    const inp=$('layName');
+    const n=(inp.value||'').trim()||('Asettelu '+(Object.keys(loadStore()).filter(k=>k!=='__auto').length+1));
+    const st=loadStore(); st[n]=layoutSnapshot();
+    if(saveStore(st)){inp.value='';renderLayList();toast('Tallennettu: '+n);}
+    else toast('Tallennus ei onnistunut (selaimen muisti täynnä)');});
+  $('layName').addEventListener('keydown',e=>{if(e.key==='Enter')$('btnSaveLay').click();});
   $('cRot').addEventListener('input',e=>{
     const it=SEL.item; if(!it||it.parent)return;
     const old=it.rot; it.rot=parseFloat(e.target.value)*Math.PI/180;
@@ -3396,6 +3505,7 @@ function pickItem(ev){
   return hits.length?hits[0].object.userData.item:null;
 }
 function startFurnDrag(it,ev){
+  if(it.lock||it.parent)return false;
   const zb=SC.G.zF+(it.zBase||0)+0.05;
   const hit=hitPlane(rayFrom(ev),zb); if(!hit)return false;
   SEL.drag={it:it,gx:hit.x-it.x,gy:hit.y-it.y,z:zb,
@@ -3418,7 +3528,7 @@ function endFurnDrag(){
   const it=D.it;
   if(!(furnValid(sim,it,D.mask)&&furnFootValid(sim,it))){it.x=D.vx;it.y=D.vy;}
   it.outline.material=MAT.sel;
-  SEL.drag=null; syncFurn(); rebuildObstacles();
+  SEL.drag=null; syncFurn(); rebuildObstacles(); markDirty();
 }
 function bindCanvas(){
   const cv=SC.renderer.domElement;
@@ -3492,7 +3602,7 @@ function bindCanvas(){
     const w=planToWorld(e);
     let hit=null;
     if(P.edit)for(const it of FURN){
-      if(!it.placed||it.parent)continue;
+      if(!it.placed||it.parent||it.lock)continue;
       const p=fLocal(it,w.x,w.y);
       if(Math.abs(p[0])<=it.w/2&&Math.abs(p[1])<=it.d/2){hit=it;break;}
     }
@@ -3512,7 +3622,7 @@ function bindCanvas(){
   const pup=()=>{
     if(pd&&pd.it){const it=pd.it;
       if(!(furnValid(sim,it,pd.mask)&&furnFootValid(sim,it))){it.x=pd.vx;it.y=pd.vy;}
-      it.outline.material=MAT.sel; syncFurn(); rebuildObstacles();}
+      it.outline.material=MAT.sel; syncFurn(); rebuildObstacles(); markDirty();}
     pd=null;
   };
   pl.addEventListener('pointerup',pup); pl.addEventListener('pointercancel',pup);
@@ -3561,7 +3671,7 @@ function updateModels(dtR){
   const g=SC.G;
   SC.doorPivot.rotation.z=-P.door*Math.PI*0.52;
   SC.topPivot.rotation.y=P.win*0.62;
-  SC.bathPivot.rotation.z=-P.bathDoor*Math.PI*0.5;
+  SC.bathPivot.rotation.z=P.bathDoor*Math.PI*0.965;
   for(const p of SC.panes){
     p.g.position.y=p.y0+lerp(p.i*0.05,p.i*p.w,P.glaze);
     p.g.rotation.z=-(1-P.glaze)*1.15;
@@ -3616,6 +3726,7 @@ function loop(now){
       ' simuloitu · '+rate.toFixed(1)+'× reaaliaika';
     hudT=now;
   }
+  autoSaveTick(now);
   updateModels(dtR); updateCut(); camTick(dtR);
   SC.renderer.render(SC.scene,SC.cam);
 }
@@ -3665,6 +3776,8 @@ function boot(){
   P.fanX=L0.inX0*P.res+1.9; P.fanY=L0.inY0*P.res+2.0;
   rebuildAll();
   bindUI(); bindCanvas(); syncUI(); setEdit();
+  try{const au=loadStore().__auto; if(au)layoutApply(au);}catch(e){}
+  renderLayList();
   if(SC.setField)SC.setField(P.field);
   Object.assign(CAM,CAMPRESETS.iso); CAM.tgt=null; camApply();
   addEventListener('resize',resize); resize();
