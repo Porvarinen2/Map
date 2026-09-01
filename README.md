@@ -121,8 +121,26 @@ Vasemmassa reunassa kahdeksan välilehteä: **Sää**, **Aukot**, **Ilmanvaihto*
 toisto, nopeus, skenaariot ja kamerakulmat. Näyttämöllä värikartta, mittarit,
 pohjapiirros ja aikasarjat — kortit voi taittaa kokoon otsikosta.
 
-Hiiri: vasen veto = kierrä, oikea/shift = panoroi, rulla = zoom,
-kaksoisklikkaus = vapauta savupilvi. Välilyönti pysäyttää.
+### Kameratilat
+
+| Tila | Ohjaus |
+|---|---|
+| **Kierto** (oletus) | vasen veto kiertää, oikea/shift panoroi, rulla zoomaa |
+| **Vapaa** | **WASD** lentää, **Space**/**C** ylös ja alas, **Shift** nopeasti, rulla säätää nopeutta, hiiri katsoo |
+| **Kävely** | **WASD** kävelee 1,65 m katsekorkeudella, **Shift** juoksee, **C** menee kyykkyyn, hiiri katsoo |
+
+Kävelytilassa on pystysylinterimäinen törmäystarkistus (säde 19 cm) seiniin,
+kalusteisiin ja kiinteisiin kalusteisiin — hilakerros kerrallaan, joten myös
+pöytätaso ja parvisängyn pohja tuntuvat. Kyykyssä mahtuu matalampiin paikkoihin.
+Parvekkeelle pääsee vain jos ovi on auki. Kierto- ja kävelytilassa seiniä ei
+leikata pois, ja katossa on valaisimet.
+
+Pikanäppäimet **1** / **2** / **3** vaihtavat tilaa, **L** lukitsee hiiren
+(vapaa katselu ilman painallusta), **Esc** vapauttaa lukituksen, **P**
+pysäyttää simulaation. Kosketuslaitteilla vapaassa ja kävelytilassa on
+peukalo-ohjain vasemmassa alakulmassa.
+
+Kaksoisklikkaus vapauttaa savupilven virtausta seurattavaksi.
 
 ## Tiedostot
 

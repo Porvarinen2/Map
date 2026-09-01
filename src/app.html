@@ -231,6 +231,29 @@ hr.sep{border:0;border-top:1px dashed var(--edge-2);margin:1px 0}
   padding-right:4px;border-right:1px solid var(--edge);margin-right:2px}
 #selbar .kb{font-family:var(--mono);font-size:9.5px;color:var(--faint);margin-left:4px}
 
+#xhair{position:absolute;left:50%;top:50%;width:22px;height:22px;margin:-11px 0 0 -11px;
+  z-index:14;pointer-events:none;display:none}
+#xhair::before,#xhair::after{content:"";position:absolute;background:rgba(221,231,239,.75);
+  box-shadow:0 0 2px rgba(0,0,0,.8)}
+#xhair::before{left:10px;top:0;width:2px;height:22px}
+#xhair::after{left:0;top:10px;width:22px;height:2px}
+#app.nav #xhair{display:block}
+#navhint{left:50%;bottom:12px;transform:translateX(-50%);width:auto;max-width:min(560px,86%);
+  z-index:16;display:none}
+#app.nav #navhint{display:block}
+#app.nav.editing #navhint{bottom:60px}
+.nav-body{padding:7px 10px;display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+.kbd{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:var(--t-xs);
+  color:var(--dim)}
+.kbd b{display:inline-block;min-width:17px;padding:1px 5px;border:1px solid var(--edge-2);
+  border-radius:3px;background:var(--panel-2);color:var(--text);font-weight:500;text-align:center}
+.kbd s{text-decoration:none;color:var(--faint)}
+#stick{position:absolute;left:20px;bottom:20px;width:118px;height:118px;border-radius:50%;
+  border:1px solid var(--edge-2);background:rgba(17,25,34,.55);z-index:18;display:none;
+  touch-action:none;backdrop-filter:blur(6px)}
+#stick i{position:absolute;left:50%;top:50%;width:46px;height:46px;margin:-23px 0 0 -23px;
+  border-radius:50%;background:rgba(240,138,62,.72);border:1px solid var(--warm)}
+#app.nav.touch #stick{display:block}
 #tip{position:absolute;z-index:40;pointer-events:none;opacity:0;
   transform:translate(-50%,-100%) translateY(-9px);background:rgba(8,13,18,.96);
   border:1px solid var(--edge-2);border-radius:var(--r);padding:5px 8px;white-space:nowrap;
@@ -274,6 +297,10 @@ hr.sep{border:0;border-top:1px dashed var(--edge-2);margin:1px 0}
   #panelToggle{display:inline-flex;position:fixed;right:9px;top:7px;z-index:60;
     background:var(--panel-2);box-shadow:-14px 0 14px 8px var(--panel)}
   #planbox{width:200px;bottom:8px;left:8px} #charts{display:none}
+  #navhint{top:56px;bottom:auto;max-width:94%}
+  #app.nav #planbox,#app.nav #legend{display:none}
+  #app.nav.editing #navhint{top:56px;bottom:auto}
+  #stick{left:14px;bottom:74px;width:106px;height:106px}
   #hud{width:172px;top:56px;right:8px} #legend{width:200px;top:56px;left:8px}
   .m{padding:3px 8px} .m .v{font-size:var(--t-md)} .m.hero .v{font-size:18px}
 }
@@ -306,13 +333,19 @@ hr.sep{border:0;border-top:1px dashed var(--edge-2);margin:1px 0}
       <option value="helle">Kes&auml;helle + peli-ilta</option>
       <option value="peli-ilta">Peli-ilta talvella</option>
     </select>
-    <button class="btn ghost" id="btnEdit">Muokkaa kalusteita</button>
+    <button class="btn ghost" id="btnEdit">Muokkaa</button>
     <div class="tb-spacer"></div>
     <span id="clock">00:00</span>
-    <div class="seg" id="segCam">
-      <button data-c="iso" class="on">Iso</button><button data-c="top">Pohja</button>
-      <button data-c="parveke">Parveke</button><button data-c="leikkaus">Leikkaus</button>
+    <div class="seg" id="segMode">
+      <button data-m="orbit" class="on">Kierto</button><button data-m="free">Vapaa</button>
+      <button data-m="walk">K&auml;vely</button>
     </div>
+    <select class="sel" id="selCam" title="Kamerakulma">
+      <option value="iso">Iso-n&auml;kym&auml;</option>
+      <option value="top">Pohjakuva</option>
+      <option value="parveke">Parvekkeelta</option>
+      <option value="leikkaus">Leikkaus</option>
+    </select>
     <button class="btn ghost" id="panelToggle">Valikko</button>
   </header>
 
@@ -569,6 +602,18 @@ hr.sep{border:0;border-top:1px dashed var(--edge-2);margin:1px 0}
         </div>
       </div>
       <div class="sec">
+        <div class="sec-t">Kamera</div>
+        <div class="seg grow" id="segMode2">
+          <button data-m="orbit" class="on">Kierto</button><button data-m="free">Vapaa</button>
+          <button data-m="walk">K&auml;vely</button>
+        </div>
+        <div class="note"><b>Kierto</b> py&ouml;ritt&auml;&auml; mallia hiirell&auml;.
+          <b>Vapaa</b> lent&auml;&auml; WASD-n&auml;pp&auml;imill&auml;, Space ja C nostavat ja laskevat, rulla s&auml;&auml;t&auml;&auml; nopeutta.
+          <b>K&auml;vely</b> asettaa katseen 1,65 m korkeuteen ja t&ouml;rm&auml;&auml;
+          seiniin ja kalusteisiin &mdash; C menee kyykkyyn. Pikan&auml;pp&auml;imet <b>1</b>, <b>2</b> ja <b>3</b>,
+          <b>L</b> lukitsee hiiren.</div>
+      </div>
+      <div class="sec">
         <div class="sec-t">Laskentatarkkuus</div>
         <div class="seg grow" id="segRes">
           <button data-r="0.17">Kevyt</button><button data-r="0.15" class="on">Normaali</button><button data-r="0.13">Tarkka</button>
@@ -684,6 +729,12 @@ hr.sep{border:0;border-top:1px dashed var(--edge-2);margin:1px 0}
       <span class="kb">R / Shift+R &middot; Del &middot; Esc</span>
     </div>
 
+    <div id="xhair"></div>
+    <div class="ov card" id="navhint">
+      <div class="card-h"><span id="navTitle">Vapaa kamera</span><span class="hint" id="navSpeed">3.2 m/s</span></div>
+      <div class="nav-body" id="navBody"></div>
+    </div>
+    <div id="stick"><i></i></div>
     <div id="tip"></div>
     <div id="toast"></div>
   </main>
@@ -1780,22 +1831,157 @@ function initScene(canvas){
 }
 
 /* ---- kamera ---- */
-const CAM={az:-0.80,el:0.54,dist:13.8,tx:7.9,ty:2.3,tz:1.05};
+const CAM={mode:'orbit',az:-0.80,el:0.54,dist:13.8,tx:7.9,ty:2.3,tz:1.05,
+           px:0,py:0,pz:1.7,yaw:0,pitch:0,speed:3.2};
+const NAV={keys:{},lock:false,eye:1.65,eyeT:1.65,sx:0,sy:0,touch:false,sliceWas:null};
+const EYE_STAND=1.65, EYE_CROUCH=1.05;
+
 function camApply(){
-  const c=SC.cam,ce=Math.cos(CAM.el),se=Math.sin(CAM.el);
-  const a=c.aspect||1.6, D=CAM.dist*(a<1.4?clamp(1.25/a,1,1.75):1);
-  c.position.set(CAM.tx+D*ce*Math.cos(CAM.az),CAM.ty+D*ce*Math.sin(CAM.az),CAM.tz+D*se);
-  c.lookAt(CAM.tx,CAM.ty,CAM.tz);
+  const c=SC.cam;
+  if(CAM.mode==='orbit'){
+    const ce=Math.cos(CAM.el),se=Math.sin(CAM.el);
+    const a=c.aspect||1.6, D=CAM.dist*(a<1.4?clamp(1.25/a,1,1.75):1);
+    c.position.set(CAM.tx+D*ce*Math.cos(CAM.az),CAM.ty+D*ce*Math.sin(CAM.az),CAM.tz+D*se);
+    c.lookAt(CAM.tx,CAM.ty,CAM.tz);
+  } else {
+    const cp=Math.cos(CAM.pitch);
+    c.position.set(CAM.px,CAM.py,CAM.pz);
+    c.lookAt(CAM.px+Math.cos(CAM.yaw)*cp,CAM.py+Math.sin(CAM.yaw)*cp,CAM.pz+Math.sin(CAM.pitch));
+  }
 }
 const CAMPRESETS={};
-function camPreset(n){const p=CAMPRESETS[n]; if(p)CAM.tgt=Object.assign({},p);}
-function camTick(){
-  if(CAM.tgt){
-    let done=true;
-    for(const k of ['az','el','dist','tx','ty','tz']){
-      const d=CAM.tgt[k]-CAM[k]; if(Math.abs(d)>1e-3)done=false; CAM[k]+=d*0.12;}
-    if(done)CAM.tgt=null;
+function camPreset(n){
+  const p=CAMPRESETS[n]; if(!p)return;
+  if(CAM.mode!=='orbit')setCamMode('orbit',true);
+  CAM.tgt=Object.assign({},p);
+}
+/* ---- kavelyn tormaystarkistus: pystysylinteri r = 0,24 m ---- */
+/* Kavelijaa mallinnetaan pystysylinterina: sade 0,19 m, korkeus silmien
+   tasoon + 8 cm. Tarkistus tehdaan hilakerros kerrallaan, jolloin myos ohuet
+   tasot (poytalevy, sangyn pohja) osuvat varmasti. */
+const WALK_R=0.19, WALK_PTS=[[0,0],[1,0],[0.5,0.866],[-0.5,0.866],[-1,0],[-0.5,-0.866],[0.5,-0.866]];
+function walkFree(x,y,eye){
+  const h=sim.h,zF=SC.G.zF,NX=sim.NX,NY=sim.NY;
+  const okRoom=q=>q===R_MAIN||q===R_HALL||q===R_BATH||q===R_BALC;
+  const k0=Math.floor((zF+0.08)/h), k1=Math.floor((zF+eye+0.08)/h);
+  if(k0<0||k1>=sim.NZ)return false;
+  for(let n=0;n<WALK_PTS.length;n++){
+    const px=x+WALK_PTS[n][0]*WALK_R, py=y+WALK_PTS[n][1]*WALK_R;
+    const i=Math.floor(px/h), j=Math.floor(py/h);
+    if(i<0||j<0||i>=NX||j>=NY)return false;
+    const base=i+NX*j*1;
+    for(let k=k0;k<=k1;k++){
+      const c=i+NX*(j+NY*k);
+      if(sim.typ[c]!==FLUID||sim.objMask[c]||!okRoom(sim.room[c]))return false;
+    }
   }
+  return true;
+}
+function findWalkSpot(){
+  const g=SC.G;
+  for(let ry=0.5;ry<3.0;ry+=0.2)for(let rx=0.5;rx<4.6;rx+=0.2)
+    if(walkFree(g.xInA+rx,g.yA+ry,EYE_STAND))return [g.xInA+rx,g.yA+ry];
+  return [g.xInA+2.0,g.yA+1.7];
+}
+function setCamMode(m,silent){
+  if(CAM.mode===m)return;
+  const prev=CAM.mode;
+  if(prev==='orbit'){
+    const p=SC.cam.position;
+    CAM.px=p.x; CAM.py=p.y; CAM.pz=p.z;
+    CAM.yaw=CAM.az+Math.PI; CAM.pitch=-CAM.el;
+  }
+  if(m==='walk'){
+    let x=CAM.px,y=CAM.py;
+    if(!walkFree(x,y,EYE_STAND)){
+      if(prev==='orbit'&&walkFree(CAM.tx,CAM.ty,EYE_STAND)){x=CAM.tx;y=CAM.ty;}
+      else {const s2=findWalkSpot();x=s2[0];y=s2[1];}
+    }
+    CAM.px=x; CAM.py=y; NAV.eye=NAV.eyeT=EYE_STAND; CAM.pz=SC.G.zF+NAV.eye;
+    CAM.pitch=clamp(CAM.pitch,-0.9,0.9);
+    if(NAV.sliceWas===null){NAV.sliceWas=P.showSlice;P.showSlice=false;$('cShowSlice').checked=false;}
+  } else if(NAV.sliceWas!==null){
+    P.showSlice=NAV.sliceWas; $('cShowSlice').checked=NAV.sliceWas; NAV.sliceWas=null;
+  }
+  if(m==='orbit'){
+    const d=4.5,cp=Math.cos(CAM.pitch);
+    CAM.tx=CAM.px+Math.cos(CAM.yaw)*cp*d;
+    CAM.ty=CAM.py+Math.sin(CAM.yaw)*cp*d;
+    CAM.tz=clamp(CAM.pz+Math.sin(CAM.pitch)*d,-0.5,3);
+    CAM.az=CAM.yaw+Math.PI; CAM.el=clamp(-CAM.pitch,-0.32,1.5); CAM.dist=d;
+    CAM.tgt=null;
+    if(document.pointerLockElement)document.exitPointerLock();
+  }
+  CAM.mode=m; CAM.tgt=null;
+  document.getElementById('app').classList.toggle('nav',m!=='orbit');
+  document.getElementById('app').classList.toggle('touch',NAV.touch);
+  for(const id of ['segMode','segMode2']){
+    const sm=$(id);
+    if(sm)sm.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.m===m));
+  }
+  navHint();
+  if(!silent&&m!=='orbit')toast(m==='walk'?'Kävelytila — WASD liikkuu, hiiri katsoo':'Vapaa kamera — WASD + Space/C');
+  camApply();
+}
+function navHint(){
+  if(CAM.mode==='orbit')return;
+  const walk=CAM.mode==='walk';
+  $('navTitle').textContent=walk?'Kävelytila':'Vapaa kamera';
+  $('navSpeed').textContent=walk?(NAV.keys['shift']?'juoksu':'kävely'):CAM.speed.toFixed(1)+' m/s';
+  $('navBody').innerHTML=
+    '<span class="kbd"><b>W</b><b>A</b><b>S</b><b>D</b><s>liiku</s></span>'+
+    (walk?'<span class="kbd"><b>Shift</b><s>juokse</s></span><span class="kbd"><b>C</b><s>kyykky</s></span>'
+         :'<span class="kbd"><b>Space</b><b>C</b><s>ylös/alas</s></span><span class="kbd"><s>rulla&nbsp;=&nbsp;nopeus</s></span>')+
+    '<span class="kbd"><s>hiiri&nbsp;=&nbsp;katso</s></span>'+
+    '<span class="kbd"><b>L</b><s>lukitus</s></span>'+
+    '<span class="kbd"><b>1</b><b>2</b><b>3</b><s>tila</s></span>';
+}
+function camMove(dt){
+  if(CAM.mode==='orbit')return;
+  const K=NAV.keys;
+  let f=(K['w']?1:0)-(K['s']?1:0)+NAV.sy;
+  let sd=(K['d']?1:0)-(K['a']?1:0)+NAV.sx;
+  f=clamp(f,-1,1); sd=clamp(sd,-1,1);
+  const cy=Math.cos(CAM.yaw),sy=Math.sin(CAM.yaw);
+  if(CAM.mode==='free'){
+    let u=(K[' ']?1:0)-(K['c']?1:0);
+    const cp=Math.cos(CAM.pitch),sp=Math.sin(CAM.pitch);
+    const sp2=CAM.speed*(K['shift']?3.2:1)*dt;
+    if(f||sd||u){
+      const l=Math.hypot(f,sd,u)||1;
+      CAM.px+=(cy*cp*f - sy*sd)/l*sp2;
+      CAM.py+=(sy*cp*f + cy*sd)/l*sp2;
+      CAM.pz+=(sp*f + u)/l*sp2;
+      CAM.pz=clamp(CAM.pz,-6,7);
+    }
+    return;
+  }
+  // kavely
+  NAV.eyeT=K['c']?EYE_CROUCH:EYE_STAND;
+  NAV.eye+=(NAV.eyeT-NAV.eye)*Math.min(1,dt*9);
+  const v=(K['shift']?2.9:1.35)*dt;
+  if(f||sd){
+    const l=Math.hypot(f,sd)||1;
+    const dx=(cy*f - sy*sd)/l*v, dy=(sy*f + cy*sd)/l*v;
+    const stuck=!walkFree(CAM.px,CAM.py,NAV.eye);   // kaluste siirtyi paalle
+    if(stuck||walkFree(CAM.px+dx,CAM.py,NAV.eye))CAM.px+=dx;
+    if(stuck||walkFree(CAM.px,CAM.py+dy,NAV.eye))CAM.py+=dy;
+  }
+  CAM.pz=SC.G.zF+NAV.eye;
+}
+function camLook(dx,dy){
+  CAM.yaw-=dx*0.0026;
+  CAM.pitch=clamp(CAM.pitch-dy*0.0026,-1.45,1.45);
+}
+function camTick(dtR){
+  if(CAM.mode==='orbit'){
+    if(CAM.tgt){
+      let done=true;
+      for(const k of ['az','el','dist','tx','ty','tz']){
+        const d=CAM.tgt[k]-CAM[k]; if(Math.abs(d)>1e-3)done=false; CAM[k]+=d*0.12;}
+      if(done)CAM.tgt=null;
+    }
+  } else camMove(dtR||0.016);
   camApply();
 }
 
@@ -1979,6 +2165,17 @@ function buildRoom(sim){
   SC.radGlow.position.set(g.radX+0.13,(g.radY0+g.radY1)/2,(g.radZ0+g.radZ1)/2);
   rg.add(SC.radGlow);
 
+  // kattovalaisimet: nakyvat myos kavelytilassa kun seinia ei leikata
+  const lampAt=(x,y,int,dist)=>{
+    const l=new THREE.PointLight(0xfff2e0,int,dist,1.7);
+    l.position.set(x,y,g.zC-0.22); SC.root.add(l);
+    const c=new THREE.Mesh(new THREE.CylinderGeometry(0.11,0.13,0.07,18),MAT.white);
+    c.rotation.x=Math.PI/2; c.position.set(x,y,g.zC-0.05); SC.root.add(c);
+  };
+  lampAt(g.xInA+1.5,(g.yA+g.yB)/2,0.42,7.5);
+  lampAt(g.xInA+3.9,(g.yA+g.yB)/2,0.40,7.5);
+  lampAt(g.xPartB+0.9,g.yA+0.9,0.34,4.5);
+  lampAt(g.xPartB+0.9,g.yB-0.7,0.30,4.0);
   buildFixed(sim,g);
   buildFan(g);
   SC.furnRoot=new THREE.Group(); SC.root.add(SC.furnRoot);
@@ -2683,6 +2880,13 @@ function drawPlan(field,rng){
     g.strokeStyle='rgba(201,80,63,.45)'; g.lineWidth=1.5;
     g.beginPath(); g.arc(W(SC.ductC.x),H(SC.ductC.y),8,0,6.2832); g.stroke();
   }
+  if(CAM.mode!=='orbit'){
+    const cxp=W(CAM.px),cyp=H(CAM.py),ca=-CAM.yaw;
+    g.fillStyle='rgba(84,180,226,.22)'; g.beginPath(); g.moveTo(cxp,cyp);
+    g.arc(cxp,cyp,30,ca-0.5,ca+0.5); g.closePath(); g.fill();
+    g.fillStyle='#54B4E2'; g.beginPath(); g.arc(cxp,cyp,5,0,6.2832); g.fill();
+    g.strokeStyle='#0d151d'; g.lineWidth=1.5; g.stroke();
+  }
   const fx=W(P.fanX),fy=H(P.fanY);
   g.fillStyle='#D96A22'; g.beginPath(); g.arc(fx,fy,7,0,6.2832); g.fill();
   g.strokeStyle='#F08A3E'; g.lineWidth=2;
@@ -2815,6 +3019,7 @@ function selectItem(it){
   SEL.item=it;
   if(it){ it.outline.visible=true; it.outline.material=MAT.sel; }
   $('selbar').classList.toggle('on',!!it&&P.edit);
+  document.getElementById('app').classList.toggle('editing',!!it&&P.edit);
   $('selBox').style.display=it?'flex':'none';
   if(it){
     $('selName').textContent=it.label.replace(/&[a-z]+;/g,m=>({'&auml;':'ä','&ouml;':'ö'}[m]||m));
@@ -2886,10 +3091,11 @@ function renderFlist(){
 }
 function setEdit(){
   $('btnEdit').classList.toggle('on',P.edit);
-  $('btnEdit').textContent=P.edit?'Muokkaus päällä':'Muokkaa kalusteita';
+  $('btnEdit').textContent=P.edit?'Muokkaus päällä':'Muokkaa';
   $('btnEdit2').textContent=P.edit?'Muokkaustila pois':'Muokkaustila päälle';
   $('btnEdit2').classList.toggle('on',P.edit);
   $('selbar').classList.toggle('on',!!SEL.item&&P.edit);
+  document.getElementById('app').classList.toggle('editing',!!SEL.item&&P.edit);
   if(!P.edit)selectItem(null);
 }
 
@@ -2998,7 +3204,7 @@ function bindUI(){
   bindChk('cVort','vort');
   bindSeg('segRes',d=>{P.res=parseFloat(d.r);rebuildAll();},()=>P.res);
   bindSeg('segSpeed',d=>{P.speed=parseInt(d.v);},()=>P.speed);
-  bindSeg('segCam',d=>camPreset(d.c));
+  $('selCam').addEventListener('change',e=>{camPreset(e.target.value);});
   const setField=f=>{
     P.field=f; $('hView').textContent=FIELDS[f].label;
     document.querySelectorAll('#viewmodes button').forEach(x=>{
@@ -3043,13 +3249,33 @@ function bindUI(){
     const el=$(id); el.querySelector('.card-h').addEventListener('click',()=>el.classList.toggle('folded'));
   }
   if(innerWidth<=640)$('planbox').classList.add('folded');
+  const MOVEK='wasdc ';
   addEventListener('keydown',e=>{
     if(/input|select|textarea/i.test((e.target.tagName||'')))return;
-    if(e.key==='r'||e.key==='R'){rotateSel(e.shiftKey?-15:15);e.preventDefault();}
-    else if(e.key==='Escape')selectItem(null);
-    else if((e.key==='Delete'||e.key==='Backspace')&&SEL.item){togglePlaced(SEL.item);e.preventDefault();}
-    else if(e.key===' '){$('btnPlay').click();e.preventDefault();}
+    const k=e.key.length===1?e.key.toLowerCase():e.key;
+    if(k==='Shift')NAV.keys['shift']=true;
+    if(k.length===1&&MOVEK.indexOf(k)>=0){NAV.keys[k]=true; if(CAM.mode!=='orbit')e.preventDefault();}
+    if(k==='1')setCamMode('orbit');
+    else if(k==='2')setCamMode('free');
+    else if(k==='3')setCamMode('walk');
+    else if(k==='l'){toggleLock();e.preventDefault();}
+    else if(k==='p'){$('btnPlay').click();e.preventDefault();}
+    else if(k==='r'){rotateSel(e.shiftKey?-15:15);e.preventDefault();}
+    else if(k==='Escape'){if(NAV.lock)document.exitPointerLock();else selectItem(null);}
+    else if((k==='Delete'||k==='Backspace')&&SEL.item){togglePlaced(SEL.item);e.preventDefault();}
+    else if(k===' '&&CAM.mode==='orbit'){$('btnPlay').click();e.preventDefault();}
+    if(CAM.mode!=='orbit')navHint();
   });
+  addEventListener('keyup',e=>{
+    const k=e.key.length===1?e.key.toLowerCase():e.key;
+    if(k==='Shift')NAV.keys['shift']=false;
+    if(k.length===1)NAV.keys[k]=false;
+    if(CAM.mode!=='orbit')navHint();
+  });
+  addEventListener('blur',()=>{for(const k in NAV.keys)NAV.keys[k]=false;NAV.sx=NAV.sy=0;});
+  bindSeg('segMode',d=>setCamMode(d.m),()=>CAM.mode);
+  bindSeg('segMode2',d=>setCamMode(d.m),()=>CAM.mode);
+  NAV.touch=matchMedia('(pointer: coarse)').matches;
 }
 
 const PRESETS={
@@ -3191,6 +3417,7 @@ function bindCanvas(){
     cv.setPointerCapture(e.pointerId); lx=e.clientX; ly=e.clientY; moved=0;
     const it=e.button===0?pickItem(e):null;
     if(it){ selectItem(it); if(startFurnDrag(it,e)){mode='furn';cv.classList.add('move');return;} }
+    if(CAM.mode!=='orbit'){ mode='look'; cv.classList.add('drag'); return; }
     const hit=hitPlane(rayFrom(e),SC.G.zF+0.5);
     if(e.button===0&&hit&&Math.hypot(hit.x-P.fanX,hit.y-P.fanY)<0.45){mode='fan';cv.classList.add('pick');}
     else if(e.button===2||e.shiftKey){mode='pan';}
@@ -3200,7 +3427,8 @@ function bindCanvas(){
     if(!mode){ showTip(e,hitPlane(rayFrom(e),SL.mesh?SL.mesh.position.z:1.1)); return; }
     const dx=e.clientX-lx,dy=e.clientY-ly; lx=e.clientX; ly=e.clientY;
     moved+=Math.abs(dx)+Math.abs(dy);
-    if(mode==='orb'){CAM.tgt=null;CAM.az-=dx*0.0055;CAM.el=clamp(CAM.el+dy*0.0045,-0.32,1.5);}
+    if(mode==='look'){camLook(dx,dy);}
+    else if(mode==='orb'){CAM.tgt=null;CAM.az-=dx*0.0055;CAM.el=clamp(CAM.el+dy*0.0045,-0.32,1.5);}
     else if(mode==='pan'){
       CAM.tgt=null; const s=CAM.dist*0.0016,ca=Math.cos(CAM.az),sa=Math.sin(CAM.az);
       CAM.tx+=dx*s*sa-dy*s*ca*Math.sin(CAM.el);
@@ -3220,12 +3448,32 @@ function bindCanvas(){
   };
   cv.addEventListener('pointerup',up); cv.addEventListener('pointercancel',up);
   cv.addEventListener('pointerleave',()=>{$('tip').style.opacity=0;});
-  cv.addEventListener('wheel',e=>{e.preventDefault();CAM.tgt=null;
-    CAM.dist=clamp(CAM.dist*(1+Math.sign(e.deltaY)*0.10),2.2,44);},{passive:false});
+  cv.addEventListener('wheel',e=>{
+    e.preventDefault();
+    if(CAM.mode==='free'){CAM.speed=clamp(CAM.speed*(1-Math.sign(e.deltaY)*0.15),0.4,22);navHint();return;}
+    if(CAM.mode==='walk')return;
+    CAM.tgt=null; CAM.dist=clamp(CAM.dist*(1+Math.sign(e.deltaY)*0.10),2.2,44);},{passive:false});
   cv.addEventListener('dblclick',e=>{
     const hit=hitPlane(rayFrom(e),SL.mesh?SL.mesh.position.z:1.1);
     if(hit){puff(sim,hit.x,hit.y,hit.z);toast('Savupilvi vapautettu');}});
 
+  // hiiren lukitus vapaassa ja kavelytilassa
+  document.addEventListener('pointerlockchange',()=>{
+    NAV.lock=document.pointerLockElement===cv; navHint();});
+  document.addEventListener('mousemove',e=>{
+    if(NAV.lock&&CAM.mode!=='orbit')camLook(e.movementX||0,e.movementY||0);});
+  // kosketusohjain
+  const st=$('stick'),knob=st.firstElementChild; let sid=null;
+  const stickMove=e=>{
+    const r=st.getBoundingClientRect();
+    let dx=(e.clientX-r.left-r.width/2)/(r.width/2), dy=(e.clientY-r.top-r.height/2)/(r.height/2);
+    const m=Math.hypot(dx,dy); if(m>1){dx/=m;dy/=m;}
+    NAV.sx=dx; NAV.sy=-dy;
+    knob.style.transform='translate('+(dx*34)+'px,'+(dy*34)+'px)';};
+  st.addEventListener('pointerdown',e=>{sid=e.pointerId;st.setPointerCapture(sid);stickMove(e);e.preventDefault();});
+  st.addEventListener('pointermove',e=>{if(sid===e.pointerId)stickMove(e);});
+  const stickEnd=()=>{sid=null;NAV.sx=0;NAV.sy=0;knob.style.transform='';};
+  st.addEventListener('pointerup',stickEnd); st.addEventListener('pointercancel',stickEnd);
   // pohjapiirros: kalusteiden ja tuulettimen raahaus
   const pl=$('plan'); let pd=null;
   pl.addEventListener('pointerdown',e=>{
@@ -3258,6 +3506,12 @@ function bindCanvas(){
   };
   pl.addEventListener('pointerup',pup); pl.addEventListener('pointercancel',pup);
 }
+function toggleLock(){
+  const cv=SC.renderer.domElement;
+  if(document.pointerLockElement===cv){document.exitPointerLock();return;}
+  if(CAM.mode==='orbit'){toast('Hiiren lukitus toimii vapaassa ja kävelytilassa');return;}
+  if(cv.requestPointerLock)cv.requestPointerLock();
+}
 function showTip(ev,hit){
   const el=$('tip');
   if(!hit){el.style.opacity=0;return;}
@@ -3276,6 +3530,10 @@ function showTip(ev,hit){
 
 const CUTN={'-x':[-1,0,0],'+x':[1,0,0],'-y':[0,-1,0],'+y':[0,1,0],'top':[0,0,1]};
 function updateCut(){
+  if(CAM.mode!=='orbit'){
+    for(const w of SC.walls)w.visible=true;
+    MAT.wallF.opacity=1; MAT.wallF.transparent=false; return;
+  }
   const c=SC.cam.position;
   let vx=c.x-CAM.tx,vy=c.y-CAM.ty,vz=c.z-CAM.tz;
   const l=Math.hypot(vx,vy,vz)||1; vx/=l; vy/=l; vz/=l;
@@ -3347,7 +3605,7 @@ function loop(now){
       ' simuloitu · '+rate.toFixed(1)+'× reaaliaika';
     hudT=now;
   }
-  updateModels(dtR); updateCut(); camTick();
+  updateModels(dtR); updateCut(); camTick(dtR);
   SC.renderer.render(SC.scene,SC.cam);
 }
 function resize(){
