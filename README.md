@@ -97,6 +97,11 @@ ei suppene SOR:lla. Sisätila ja parveke ratkaistaan siksi lisäksi kahden solmu
 verkkona (ulko → parveke → sisätila), jolloin massatase toteutuu tarkasti ja
 paine‑ero on fysikaalinen eikä iteraatiomäärästä riippuva.
 
+**Huonegeometria.** Eteisen ja keittotilan välissä on 0,96 m aukko, jonka molemmin
+puolin jää seinäpieli kuten pohjapiirroksessa; eteisen kaapisto on yhtenäinen ja
+sen keskellä on avoin naulakkokomero tankoineen ja hattuhyllyineen. Liesituuletin
+on integroitu yläkaappiin, joten keittiössä on yhtenäinen kaapistorivi ilman rakoja.
+
 **Reunaehdot.** Parvekkeen edessä on 4,6 m ulkoilmaa ja 2,2 m taivasta: uloin osa
 on säiliö, jossa tuulen nopeus noudattaa rajakerrosprofiilia (3. kerros), ja
 julkisivun edessä oleva 1,25 m lasketaan täysin. Ulkoilman paine on `½ρU²C_p`
