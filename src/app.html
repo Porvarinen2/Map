@@ -544,7 +544,15 @@ input.txt::placeholder{color:var(--faint)}
             <input type="range" id="cFanDir" min="0" max="355" step="5" value="0"></div>
           <div class="f"><div class="f-top"><label for="cFanH">Puhallusaukon korkeus</label><span class="f-val" id="vFanH">0.95<em>m</em></span></div>
             <input type="range" id="cFanH" min="0.35" max="1.45" step="0.05" value="0.95"></div>
+          <div class="f"><div class="f-top"><label for="cFanTilt">Kallistus</label><span class="f-val" id="vFanTilt">0<em>&deg;</em></span></div>
+            <input type="range" id="cFanTilt" min="-30" max="90" step="5" value="0"></div>
+          <div class="row tight"><button class="btn sm ghost" data-tilt="-30">Alas</button>
+            <button class="btn sm ghost" data-tilt="0">Suoraan</button>
+            <button class="btn sm ghost" data-tilt="90">Yl&ouml;s</button></div>
           <label class="chk"><input type="checkbox" id="cFanOsc"> K&auml;&auml;ntyy edestakaisin (&plusmn;40&deg;)</label>
+          <div class="note"><b>Kallistus</b> k&auml;&auml;nt&auml;&auml; puhallusp&auml;&auml;n pystysuunnassa:
+            &minus;30&deg; osoittaa alaviistoon lattiaan, 0&deg; suoraan eteenp&auml;in ja +90&deg;
+            suoraan kattoon, jolloin ilma kiert&auml;&auml; koko huoneen katon kautta.</div>
           <div class="note">Py&ouml;re&auml; potkuripuhallin, siipikeh&auml;n halkaisija 40 cm. Se on my&ouml;s
             kaluste: raahaa 3D-n&auml;kym&auml;ss&auml; tai pohjapiirroksessa, ja <b>Kalusteet</b>-v&auml;lilehdelt&auml;
             sen voi lukita tai siirt&auml;&auml; varastoon. Tuuletin mahtuu vain olohuoneeseen ja keitti&ouml;&ouml;n
@@ -1354,23 +1362,31 @@ forces(dt,P){
   if(P.fanVel>0) this.fanJet(dt,P);
 },
 
+/* Suihku on lieriomainen: akseli osoittaa vaakakulmaan fanAng ja
+   pystykulmaan fanTilt (alas negatiivinen, suoraan ylos +90 astetta). */
 fanJet(dt,P){
-  const h=this.h,L=this.L;
-  const dx=Math.cos(P.fanAng), dy=Math.sin(P.fanAng);
-  const zc=P.fanZ, z0=Math.max(L.inZ0,Math.round((zc-0.30)/h)), z1=Math.min(L.inZ1,Math.round((zc+0.30)/h));
-  const i0=Math.max(1,Math.floor((P.fanX-0.6)/h)), i1=Math.min(this.NX-2,Math.ceil((P.fanX+0.6)/h));
-  const j0=Math.max(1,Math.floor((P.fanY-0.6)/h)), j1=Math.min(this.NY-2,Math.ceil((P.fanY+0.6)/h));
+  const h=this.h,L=this.L,RJ=0.22;
+  const tl=P.fanTilt||0, ct=Math.cos(tl), st=Math.sin(tl);
+  const dx=Math.cos(P.fanAng)*ct, dy=Math.sin(P.fanAng)*ct, dz=st;
+  const zc=P.fanZ, R=0.46+RJ;
+  const z0=Math.max(L.inZ0,Math.floor((zc-R)/h)), z1=Math.min(L.inZ1,Math.ceil((zc+R)/h));
+  const i0=Math.max(1,Math.floor((P.fanX-R)/h)), i1=Math.min(this.NX-2,Math.ceil((P.fanX+R)/h));
+  const j0=Math.max(1,Math.floor((P.fanY-R)/h)), j1=Math.min(this.NY-2,Math.ceil((P.fanY+R)/h));
   const V=P.fanVel, bl=Math.min(1,dt*22);
+  const tx=V*dx, ty=V*dy, tz=V*dz;
   for(let k=z0;k<=z1;k++)for(let j=j0;j<=j1;j++)for(let i=i0;i<=i1;i++){
     const c=this.id(i,j,k); if(this.typ[c]!==FLUID)continue;
-    const px=(i+0.5)*h-P.fanX, py=(j+0.5)*h-P.fanY;
-    const al=px*dx+py*dy, pe=-px*dy+py*dx;
-    if(al<0.10||al>0.46||Math.abs(pe)>0.21)continue;
-    const tx=V*dx, ty=V*dy;
+    const px=(i+0.5)*h-P.fanX, py=(j+0.5)*h-P.fanY, pz=(k+0.5)*h-zc;
+    const al=px*dx+py*dy+pz*dz;
+    if(al<0.10||al>0.46)continue;
+    const ex=px-al*dx, ey=py-al*dy, ez=pz-al*dz;
+    if(ex*ex+ey*ey+ez*ez>RJ*RJ)continue;
     let f=this.ui(i,j,k);   if(this.fru[f]>0)this.u[f]+=(tx-this.u[f])*bl;
     f=this.ui(i+1,j,k);     if(this.fru[f]>0)this.u[f]+=(tx-this.u[f])*bl;
     f=this.vi(i,j,k);       if(this.frv[f]>0)this.v[f]+=(ty-this.v[f])*bl;
     f=this.vi(i,j+1,k);     if(this.frv[f]>0)this.v[f]+=(ty-this.v[f])*bl;
+    f=this.wi(i,j,k);       if(this.frw[f]>0)this.w[f]+=(tz-this.w[f])*bl;
+    f=this.wi(i,j,k+1);     if(this.frw[f]>0)this.w[f]+=(tz-this.w[f])*bl;
   }
 },
 
@@ -2316,6 +2332,9 @@ function buildFan(g){
     const sp2=new THREE.Mesh(new THREE.BoxGeometry(0.008,0.007,0.007),MAT.fanG);
     sp2.position.set(0.10,Math.cos(a)*0.20,Math.sin(a)*0.20); head.add(sp2);
   }
+  const jet=new THREE.Mesh(new THREE.ConeGeometry(0.05,0.15,14),
+    new THREE.MeshBasicMaterial({color:0xF08A3E}));
+  jet.rotation.z=-Math.PI/2; jet.position.x=0.32; head.add(jet); SC.fanJet=jet;
   const ring=new THREE.Mesh(new THREE.TorusGeometry(0.30,0.008,6,34),
     new THREE.MeshBasicMaterial({color:0xD96A22,transparent:true,opacity:0.6}));
   ring.position.z=g.zF+0.006; G0.add(ring); SC.fanRing=ring;
@@ -2970,12 +2989,12 @@ function drawPlan(field,rng){
   const fx=W(P.fanX),fy=H(P.fanY);
   g.fillStyle='#D96A22'; g.beginPath(); g.arc(fx,fy,7,0,6.2832); g.fill();
   g.strokeStyle='#F08A3E'; g.lineWidth=2;
-  const fa=-(Q.fanAng||0);
-  g.beginPath(); g.moveTo(fx,fy); g.lineTo(fx+Math.cos(fa)*22,fy+Math.sin(fa)*22); g.stroke();
-  g.beginPath(); g.moveTo(fx+Math.cos(fa)*22,fy+Math.sin(fa)*22);
-  g.lineTo(fx+Math.cos(fa+2.6)*10,fy+Math.sin(fa+2.6)*10);
-  g.moveTo(fx+Math.cos(fa)*22,fy+Math.sin(fa)*22);
-  g.lineTo(fx+Math.cos(fa-2.6)*10,fy+Math.sin(fa-2.6)*10); g.stroke();
+  const fa=-(Q.fanAng||0), fl=22*Math.max(0.14,Math.cos(Q.fanTilt||0));
+  g.beginPath(); g.moveTo(fx,fy); g.lineTo(fx+Math.cos(fa)*fl,fy+Math.sin(fa)*fl); g.stroke();
+  g.beginPath(); g.moveTo(fx+Math.cos(fa)*fl,fy+Math.sin(fa)*fl);
+  g.lineTo(fx+Math.cos(fa+2.6)*fl*0.45,fy+Math.sin(fa+2.6)*fl*0.45);
+  g.moveTo(fx+Math.cos(fa)*fl,fy+Math.sin(fa)*fl);
+  g.lineTo(fx+Math.cos(fa-2.6)*fl*0.45,fy+Math.sin(fa-2.6)*fl*0.45); g.stroke();
   g.font='600 11px "IBM Plex Sans Condensed",sans-serif'; g.fillStyle='rgba(221,231,239,.72)';
   g.fillText('OH',W(G0.xInA+0.55),H(G0.yA+0.42));
   g.fillText('KT',W(G0.xInA+3.5),H(G0.yB-0.28));
@@ -3029,7 +3048,7 @@ const P={
   setBathT:22,setBathRH:45,bathHeat:true,bathHumid:true,shower:false,showerG:900,wash:false,
   ductA:8,ductB:8,ductC:12,boost:false,n50:2,
   pcLoad:0,monitors:true,tvpcLoad:1,tvOn:true,fridgeOn:true,
-  fan:0,fanDir:0,fanH:0.95,fanOsc:false,fanX:4.6,fanY:1.7,
+  fan:0,fanDir:0,fanH:0.95,fanTilt:0,fanOsc:false,fanX:4.6,fanY:1.7,
   clip:false,parts:22000,sliceZ:1.1,showSlice:true,showVec:false,showFurn:true,showWalls:true,
   shadows:false,vort:true,res:0.16,field:'temp',speed:1,playing:true,edit:false
 };
@@ -3085,7 +3104,7 @@ function buildQ(){
      vort:P.vort?0.4:0,iters:P.res>0.17?18:(P.res>0.15?15:12),
      fanVel:fanPlaced()?FANV[P.fan]:0,fanX:P.fanX,fanY:P.fanY,
      fanAng:(P.fanDir+(P.fanOsc?Math.sin(oscT*0.8)*40:0))*Math.PI/180,
-     fanZ:P.fanH,Cp:Cp};
+     fanZ:P.fanH+(sim?sim.L.inZ0*sim.h:0),fanTilt:P.fanTilt*Math.PI/180,Cp:Cp};
   return Q;
 }
 function applyOpenings(){
@@ -3341,6 +3360,10 @@ function bindUI(){
     const fn=furnById('fan'); if(fn&&Math.abs(fn.rot-P.fanDir*Math.PI/180)>1e-4){
       fn.rot=P.fanDir*Math.PI/180; if(fn.g)fn.g.rotation.z=fn.rot;}}});
   bindRange('cFanH','fanH',v=>v.toFixed(2)+'<em>m</em>');
+  bindRange('cFanTilt','fanTilt',v=>(v>0?'+':'')+v.toFixed(0)+'<em>&deg;'+
+    (v>60?' ylos':(v<-10?' alas':''))+'</em>');
+  document.querySelectorAll('[data-tilt]').forEach(b=>b.addEventListener('click',()=>{
+    P.fanTilt=parseFloat(b.dataset.tilt);syncUI();}));
   bindChk('cFanOsc','fanOsc');
   bindRange('cParts','parts',v=>v.toFixed(0)+'<em>kpl</em>',{after:()=>setParticleCount(sim,P.parts)});
   bindRange('cSlice','sliceZ',v=>v.toFixed(2)+'<em>m</em>',{after:()=>{$('hudPos').textContent=P.sliceZ.toFixed(2)+' m';}});
@@ -3732,12 +3755,16 @@ function updateModels(dtR){
   const zF=g.zF,fh=P.fanH;
   SC.fanPole.scale.y=fh; SC.fanPole.position.set(0,0,zF+fh*0.5);
   SC.fanHead.position.set(0,0,zF+fh);
+  const tilt=P.fanTilt*Math.PI/180;
+  SC.fanHead.rotation.y=-tilt;                       // +tilt kallistaa ylospain
   const on=P.fan>0;
   if(on){fanSpin+=dtR*(6+FANV[P.fan]*7);SC.fanRotor.rotation.x=fanSpin;}
   SC.fanRing.position.z=zF+0.006;
   SC.fanRing.material.opacity=on?0.32+0.28*Math.abs(Math.sin(oscT*3)):0.18;
-  SC.fanArrow.visible=on; SC.fanArrow.position.z=zF+0.03;
-  SC.fanArrow.scale.setScalar(on?0.7+FANV[P.fan]*0.16:0.7);
+  SC.fanJet.visible=on;
+  const ct=Math.cos(tilt);
+  SC.fanArrow.visible=on&&ct>0.20; SC.fanArrow.position.z=zF+0.03;
+  SC.fanArrow.scale.setScalar((on?0.7+FANV[P.fan]*0.16:0.7)*Math.max(0.3,ct));
   SC.fixed.visible=P.showFurn;
   SL.mesh.visible=P.showSlice; SL.lines.visible=P.showVec;
 }

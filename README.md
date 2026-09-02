@@ -40,7 +40,7 @@ kylpyhuoneen kalusteet ja patteri.
 | Minijääkaappi | 54 × 54,8 × 84,5 cm | |
 | TV-tietokone | 21 × 45 × 45 cm | |
 | Pyykinpesukone | 60 × 60 × 85 cm | oletuksena kylpyhuoneessa oven vieressä |
-| Tuuletin | ⌀40 cm, korkeus säädettävä | vain olohuoneeseen ja keittiöön — ei eteiseen, kylpyhuoneeseen tai parvekkeelle |
+| Tuuletin | ⌀40 cm, korkeus ja kallistus säädettävät | vain olohuoneeseen ja keittiöön — ei eteiseen, kylpyhuoneeseen tai parvekkeelle |
 
 **Muokkaustila** (yläpalkin *Muokkaa* tai Kalusteet-välilehti): klikkaa
 valitaksesi, raahaa siirtääksesi, **R** / **Shift+R** pyörittää 15°, **Del**
@@ -77,6 +77,12 @@ lepotila **55 W**, YouTube ja elokuvat **85 W**, pelit **230 W**.
 Lisäksi televisio 110 W, minijääkaappi 20 W (keskiteho), pyykinpesukone 200 W ja
 tuuletin 0–60 W. Mittaripaneeli näyttää yhteenlasketun lämpökuorman reaaliajassa
 — sillä on selvä vaikutus siihen, tarvitseeko patteri lämmittää lainkaan.
+
+**Tuulettimen suihku** on lieriö, jonka akselilla on sekä vaakakulma (0–355°)
+että kallistus **−30…+90°**: −30° puhaltaa alaviistoon lattiaan, 0° suoraan
+eteenpäin ja +90° suoraan kattoon, jolloin ilma kiertää huoneen katon kautta.
+Puhallusaukon korkeus on 0,35–1,45 m lattiasta ja suihku syötetään
+nopeuskenttään juuri siltä korkeudelta, jolla puhalluspää 3D-mallissa on.
 
 ## Laskentamalli
 
