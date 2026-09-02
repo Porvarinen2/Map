@@ -39,7 +39,8 @@ kylpyhuoneen kalusteet ja patteri.
 | Sohvapöytä | 90 × 55 × 45 cm | |
 | Minijääkaappi | 54 × 54,8 × 84,5 cm | |
 | TV-tietokone | 21 × 45 × 45 cm | |
-| Pyykinpesukone | 60 × 60 × 85 cm | vain kylpyhuoneessa, oven vieressä |
+| Pyykinpesukone | 60 × 60 × 85 cm | oletuksena kylpyhuoneessa oven vieressä |
+| Tuuletin | ⌀40 cm, korkeus säädettävä | vain olohuoneeseen ja keittiöön — ei eteiseen, kylpyhuoneeseen tai parvekkeelle |
 
 **Muokkaustila** (yläpalkin *Muokkaa* tai Kalusteet-välilehti): klikkaa
 valitaksesi, raahaa siirtääksesi, **R** / **Shift+R** pyörittää 15°, **Del**
@@ -99,8 +100,9 @@ paine‑ero on fysikaalinen eikä iteraatiomäärästä riippuva.
 
 **Huonegeometria.** Mitat seuraavat pohjapiirrosta: PSH 1,76 m ja ET 1,44 m syvät,
 eteisen ja keittotilan välissä 0,96 m aukko karmilistoineen ja seinäpieli sen
-molemmin puolin. Kylpyhuoneen ovi on aukon itäreunassa ja aukeaa eteiseen 90°
-seinää vasten ulko-oven viereen. Eteisen kaapisto on yhtenäinen ja sen keskellä on
+molemmin puolin. Kylpyhuoneen oven sarana, aukeamissuunta ja kulma (0–180°) ovat säädettävissä
+Aukot-välilehdeltä: oikea sarana asettaa oven 90°:ssa ulkoseinää vasten
+ulko-oven viereen, vasen sarana taittaa sen 180°:seen seinää vasten. Eteisen kaapisto on yhtenäinen ja sen keskellä on
 avoin naulakkokomero tankoineen, henkareineen ja hattuhyllyineen. Liesituuletin on
 integroitu yläkaappiin, joten keittiössä on yhtenäinen kaapistorivi ilman rakoja.
 

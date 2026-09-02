@@ -418,8 +418,17 @@ input.txt::placeholder{color:var(--faint)}
       </div>
       <div class="sec">
         <div class="sec-t">Sis&auml;ovet</div>
-        <label class="chk"><input type="checkbox" id="cBathDoor"> Kylpyhuoneen ovi auki</label>
-        <div class="note">Ovi aukeaa eteiseen ulko-oven viereen ja k&auml;&auml;ntyy 90&deg; sein&auml;&auml; vasten. Suljetunkin oven alla on 20 mm rako.</div>
+        <div class="f warm"><div class="f-top"><label for="cBathDoor">Kylpyhuoneen ovi</label><span class="f-val" id="vBathDoor">0<em>&deg;</em></span></div>
+          <input type="range" id="cBathDoor" min="0" max="180" step="5" value="0"></div>
+        <div class="seg grow" id="segHinge">
+          <button data-h="L">Sarana vasen</button><button data-h="R" class="on">Sarana oikea</button>
+        </div>
+        <div class="seg grow" id="segSwing">
+          <button data-s="et" class="on">Aukeaa eteiseen</button><button data-s="psh">Kylpyhuoneeseen</button>
+        </div>
+        <div class="note">Sarana <b>oikea</b> = aukon it&auml;reuna ulko-oven puolella; ovi asettuu
+          90&deg;:ssa ulkoseinaa vasten. Sarana <b>vasen</b> = aukon l&auml;nsireuna, jolloin ovi taittuu
+          180&deg;:seen sein&auml;&auml; vasten eik&auml; tuki k&auml;yt&auml;v&auml;&auml;. Suljetunkin oven alla on 20 mm rako.</div>
       </div>
     </section>
 
@@ -541,7 +550,10 @@ input.txt::placeholder{color:var(--faint)}
           <div class="f"><div class="f-top"><label for="cFanH">Puhallusaukon korkeus</label><span class="f-val" id="vFanH">0.95<em>m</em></span></div>
             <input type="range" id="cFanH" min="0.35" max="1.45" step="0.05" value="0.95"></div>
           <label class="chk"><input type="checkbox" id="cFanOsc"> K&auml;&auml;ntyy edestakaisin (&plusmn;40&deg;)</label>
-          <div class="note">Py&ouml;re&auml; potkuripuhallin, siipikeh&auml;n halkaisija 40 cm. Raahaa 3D-n&auml;kym&auml;ss&auml; tai pohjapiirroksessa.</div>
+          <div class="note">Py&ouml;re&auml; potkuripuhallin, siipikeh&auml;n halkaisija 40 cm. Se on my&ouml;s
+            kaluste: raahaa 3D-n&auml;kym&auml;ss&auml; tai pohjapiirroksessa, ja <b>Kalusteet</b>-v&auml;lilehdelt&auml;
+            sen voi lukita tai siirt&auml;&auml; varastoon. Tuuletin mahtuu vain olohuoneeseen ja keitti&ouml;&ouml;n
+            &mdash; ei eteiseen, kylpyhuoneeseen tai parvekkeelle.</div>
         </div>
       </div>
     </section>
@@ -2114,12 +2126,11 @@ function buildRoom(sim){
   const wB2=bx(MAT.wallIn,g.bdX0,g.bdX1,g.yBathB,g.yBathWB,g.bdZ1,g.zC);  // oven ylapuoli
   wB1.userData.cut='-y'; wB2.userData.cut='-y'; SC.walls.push(wB1,wB2);
   // kylpyhuoneen ovi: sarana itaseinassa, aukeaa eteiseen ulko-oven viereen
-  SC.bathPivot=new THREE.Group();
-  SC.bathPivot.position.set(g.bdX1-0.10,g.yBathWB+0.03,g.zF); SC.root.add(SC.bathPivot);
-  const bw=g.bdX1-g.bdX0-0.03;
-  bx(MAT.white,-bw,0,-0.021,0.021,0,g.bdZ1-g.zF,SC.bathPivot);          // ovilehti
-  bx(MAT.steel,-bw+0.06,-bw+0.10,-0.055,0.055,0.98,1.06,SC.bathPivot);  // painike
-  bx(MAT.frame,0,0.03,-0.06,0.06,0,g.bdZ1-g.zF,SC.bathPivot);           // saranapieli
+  SC.bathPivot=new THREE.Group(); SC.root.add(SC.bathPivot);
+  const bw=g.bdX1-g.bdX0-0.03; SC.bathW=bw;
+  bx(MAT.white,0,bw,-0.021,0.021,0,g.bdZ1-g.zF,SC.bathPivot);           // ovilehti
+  bx(MAT.steel,bw-0.10,bw-0.06,-0.055,0.055,0.98,1.06,SC.bathPivot);    // painike
+  bx(MAT.frame,-0.03,0,-0.06,0.06,0,g.bdZ1-g.zF,SC.bathPivot);          // saranapieli
   bx(MAT.frame,g.bdX0-0.03,g.bdX0,g.yBathB,g.yBathWB,g.zF,g.bdZ1);      // karmi lansipuolella
   bx(MAT.frame,g.bdX0,g.bdX1,g.yBathB,g.yBathWB,g.bdZ1-0.03,g.bdZ1);    // karmin ylapuu
 
@@ -2464,6 +2475,10 @@ const FURN_DEFS=[
     B(MAT.steel,0.06,0.10,-0.20,0.20,0,0.015,G);
   }},
 
+{ id:'fan', label:'Tuuletin', w:0.46, d:0.46, hh:1.50, zone:'oh', device:'fan',
+  blocks:[{x0:-0.22,x1:0.22,y0:-0.22,y1:0.22,z0:0.00,z1:0.05}],
+  build(){ /* 3D-malli piirretaan erikseen, jotta siivet voivat pyoria */ }},
+
 { id:'washer', label:'Pyykinpesukone', w:0.60, d:0.60, hh:0.85, zone:'psh',
   device:'washer',
   blocks:[{x0:-0.30,x1:0.30,y0:-0.30,y1:0.30,z0:0.00,z1:0.85}],
@@ -2579,7 +2594,8 @@ function furnValid(sim,it,baseMask){
   const i0=Math.max(0,Math.floor((it.x-R)/h)),i1=Math.min(NX-1,Math.ceil((it.x+R)/h));
   const j0=Math.max(0,Math.floor((it.y-R)/h)),j1=Math.min(NY-1,Math.ceil((it.y+R)/h));
   const k0=Math.max(0,Math.floor(zB/h)),k1=Math.min(sim.NZ-1,Math.ceil((zB+it.hh)/h)-1);
-  const okRoom=r=>r===R_MAIN||r===R_HALL||r===R_BATH||r===R_BALC;
+  const okRoom=it.zone==='oh'?(r=>r===R_MAIN)
+              :(r=>r===R_MAIN||r===R_HALL||r===R_BATH||r===R_BALC);
   let any=false;
   for(let k=k0;k<=k1;k++){
     const lz=(k+0.5)*h-zB;
@@ -2601,7 +2617,8 @@ function furnValid(sim,it,baseMask){
 /* pohjan nurkat huoneen sisalla (estaa leijumisen seinan lapi) */
 function furnFootValid(sim,it){
   const h=sim.h,zk=sim.L.inZ0;
-  const okRoom=r=>r===R_MAIN||r===R_HALL||r===R_BATH||r===R_BALC;
+  const okRoom=it.zone==='oh'?(r=>r===R_MAIN)
+              :(r=>r===R_MAIN||r===R_HALL||r===R_BATH||r===R_BALC);
   for(const [lx,ly] of [[-it.w/2,-it.d/2],[it.w/2,-it.d/2],[-it.w/2,it.d/2],[it.w/2,it.d/2],[0,0]]){
     const [wx,wy]=fWorld(it,lx*0.96,ly*0.96);
     const i=Math.floor(wx/h),j=Math.floor(wy/h);
@@ -2667,6 +2684,8 @@ function buildFurnMeshes(){
 function syncFurn(){
   const zF=SC.G.zF;
   syncParents();
+  const fn=furnById('fan');
+  if(fn&&fn.placed){ P.fanX=fn.x; P.fanY=fn.y; P.fanDir=((fn.rot*180/Math.PI)%360+360)%360; }
   for(const it of FURN){
     if(!it.g)continue;
     it.g.visible=it.placed&&P.showFurn;
@@ -2685,6 +2704,8 @@ function furnDefaults(){
   }
   const w=furnById('washer');
   if(w){ w.x=g.xInB-0.34; w.y=g.yBathB-0.34; w.rot=180*D; }
+  const fn=furnById('fan');
+  if(fn){ fn.x=g.xInA+1.9; fn.y=g.yA+2.0; fn.rot=0; P.fanX=fn.x; P.fanY=fn.y; P.fanDir=0; }
   syncParents();
 }
 </script>
@@ -3005,7 +3026,7 @@ function sparkline(id,arr,color){
 const $=id=>document.getElementById(id);
 const P={
   Tout:10,RHout:80,wind:5,windDir:0,solar:0,glaze:0,
-  door:0,win:0,vent:1,bathDoor:0,
+  door:0,win:0,vent:1,bathDoor:0,bathHinge:'R',bathSwing:'et',
   setT:21,setRH:40,radMax:800,thermo:true,humid:true,person:false,cook:false,
   setBathT:22,setBathRH:45,bathHeat:true,bathHumid:true,shower:false,showerG:900,wash:false,
   ductA:8,ductB:8,ductC:12,boost:false,n50:2,
@@ -3044,8 +3065,9 @@ function devWatts(){
 function totalWatts(){
   const d=devWatts(); let t=0;
   for(const it of FURN) if(it.device&&it.placed) t+=d[it.device]||0;
-  return t+d.fan;
+  return t;
 }
+const fanPlaced=()=>{const f=furnById('fan'); return !f||f.placed;};
 function updateDevHeat(){
   const d=devWatts();
   if(!sim.devHeat)return;
@@ -3063,14 +3085,14 @@ function buildQ(){
      wind:P.wind,windDir:P.windDir,pWind:0.5*RHO0*P.wind*P.wind*Cp,
      ductA:P.ductA*bo,ductB:P.ductB*bo,ductC:P.ductC*bo,
      vort:P.vort?0.4:0,iters:P.res>0.17?18:(P.res>0.15?15:12),
-     fanVel:FANV[P.fan],fanX:P.fanX,fanY:P.fanY,
+     fanVel:fanPlaced()?FANV[P.fan]:0,fanX:P.fanX,fanY:P.fanY,
      fanAng:(P.fanDir+(P.fanOsc?Math.sin(oscT*0.8)*40:0))*Math.PI/180,
      fanZ:P.fanH,Cp:Cp};
   return Q;
 }
 function applyOpenings(){
   sim.setOpenings({door:P.door,win:P.win,vent:P.vent,glaze:P.glaze,
-                   bathDoor:P.bathDoor,n50:P.n50});
+                   bathDoor:Math.sin(Math.min(P.bathDoor,90)*Math.PI/180),n50:P.n50});
   rebuildObstacles();
 }
 
@@ -3120,7 +3142,7 @@ function findSpot(it){
   const g=SC.G,h=sim.h,bm=makeBaseMask(it);
   const ox=it.x,oy=it.y;
   if(furnValid(sim,it,bm)&&furnFootValid(sim,it))return true;
-  const x0=it.zone==='psh'?g.xPartB:g.xBalA, x1=g.xInB;
+  const x0=it.zone==='oh'?g.xInA:g.xBalA, x1=it.zone==='oh'?g.xPartA:g.xInB;
   const y0=g.yA, y1=g.yB;
   for(let y=y0+0.25;y<y1;y+=0.15)for(let x=x0+0.25;x<x1;x+=0.15){
     it.x=x; it.y=y;
@@ -3264,7 +3286,7 @@ function updateDevUI(){
   $('wTvpc').textContent=d.tvpc.toFixed(0)+' W';
   $('wTv').textContent=d.tv.toFixed(0)+' W';
   $('wFridge').textContent=d.fridge.toFixed(0)+' W';
-  $('wFan').textContent=d.fan.toFixed(0)+' W';
+  $('wFan').textContent=(fanPlaced()?d.fan:0).toFixed(0)+' W';
   $('notePc').innerHTML=PC_TXT[P.pcLoad];
   $('noteTvpc').innerHTML=TVPC_TXT[P.tvpcLoad];
   $('hDev').textContent=totalWatts().toFixed(0)+' W';
@@ -3292,7 +3314,9 @@ function bindUI(){
     O();$('hOpen').textContent=P.door<=0?'kiinni':(P.door>=1?'auki':(P.door*100).toFixed(0)+' %');}});
   bindRange('cWin','win',v=>(v*35).toFixed(0)+'<em>°</em>',{scale:0.01,after:O});
   bindRange('cVent','vent',v=>(v*100).toFixed(0)+'<em>% auki</em>',{scale:0.01,after:O});
-  bindChk('cBathDoor','bathDoor',{on:1,off:0,after:O});
+  bindRange('cBathDoor','bathDoor',v=>v.toFixed(0)+'<em>&deg;</em>',{after:O});
+  bindSeg('segHinge',d=>{P.bathHinge=d.h;},()=>P.bathHinge);
+  bindSeg('segSwing',d=>{P.bathSwing=d.s;},()=>P.bathSwing);
   const dt=()=>{const b=P.boost?1.8:1;$('hVent').textContent=((P.ductA+P.ductB+P.ductC)*b).toFixed(0)+' l/s';};
   bindRange('cDuctA','ductA',v=>v.toFixed(0)+'<em>l/s</em>',{after:dt});
   bindRange('cDuctB','ductB',v=>v.toFixed(0)+'<em>l/s</em>',{after:dt});
@@ -3317,7 +3341,9 @@ function bindUI(){
   bindChk('cTv','tvOn',{after:updateDevUI});
   bindChk('cFridge','fridgeOn',{after:updateDevUI});
   bindRange('cFan','fan',v=>v?v+'<em>/5 · '+FANV[v].toFixed(1)+' m/s</em>':'0<em>pois</em>',{after:updateDevUI});
-  bindRange('cFanDir','fanDir',v=>v.toFixed(0)+'<em>°</em>');
+  bindRange('cFanDir','fanDir',v=>v.toFixed(0)+'<em>°</em>',{after:()=>{
+    const fn=furnById('fan'); if(fn&&Math.abs(fn.rot-P.fanDir*Math.PI/180)>1e-4){
+      fn.rot=P.fanDir*Math.PI/180; if(fn.g)fn.g.rotation.z=fn.rot;}}});
   bindRange('cFanH','fanH',v=>v.toFixed(2)+'<em>m</em>');
   bindChk('cFanOsc','fanOsc');
   bindRange('cParts','parts',v=>v.toFixed(0)+'<em>kpl</em>',{after:()=>setParticleCount(sim,P.parts)});
@@ -3419,7 +3445,7 @@ const PRESETS={
   talvi:{Tout:-12,RHout:88,wind:6,windDir:20,glaze:0,solar:0,door:0,win:0,vent:1,bathDoor:0,
     radMax:1600,setT:21,setRH:35,thermo:true,humid:true,ductA:8,ductB:8,ductC:12,boost:false,
     fan:0,shower:false,cook:false,pcLoad:0,tvpcLoad:1,field:'temp'},
-  tuuletus:{Tout:8,RHout:75,wind:5,windDir:0,glaze:0,solar:120,door:1,win:1,vent:1,bathDoor:1,
+  tuuletus:{Tout:8,RHout:75,wind:5,windDir:0,glaze:0,solar:120,door:1,win:1,vent:1,bathDoor:90,
     radMax:1200,setT:21,setRH:40,humid:false,ductA:8,ductB:8,ductC:12,fan:0,shower:false,field:'age'},
   suihku:{Tout:10,RHout:80,wind:4,windDir:40,glaze:0,solar:0,door:0,win:0,vent:1,bathDoor:1,
     setBathT:24,setBathRH:45,bathHumid:false,shower:true,showerG:1400,wash:false,
@@ -3575,11 +3601,13 @@ function bindCanvas(){
     }
     else if(mode==='fan'){
       const hit=hitPlane(rayFrom(e),SC.G.zF+0.5);
-      if(hit){const c=clampFan(hit.x,hit.y);P.fanX=c.x;P.fanY=c.y;}
+      if(hit){const c=clampFan(hit.x,hit.y);P.fanX=c.x;P.fanY=c.y;
+        const fn=furnById('fan'); if(fn){fn.x=c.x;fn.y=c.y;if(fn.g)fn.g.position.set(c.x,c.y,SC.G.zF);}}
     }
     else if(mode==='furn') moveFurnDrag(e);
   });
   const up=()=>{
+    if(mode==='fan'){rebuildObstacles();markDirty();}
     if(mode==='furn')endFurnDrag();
     if(mode==='orb'&&moved<4&&P.edit)selectItem(null);
     mode=null; cv.classList.remove('drag','pick','move'); $('tip').style.opacity=0;
@@ -3624,11 +3652,14 @@ function bindCanvas(){
       if(Math.abs(p[0])<=it.w/2&&Math.abs(p[1])<=it.d/2){hit=it;break;}
     }
     if(hit){selectItem(hit);pd={it:hit,gx:w.x-hit.x,gy:w.y-hit.y,vx:hit.x,vy:hit.y,mask:makeBaseMask(hit)};}
-    else{pd={fan:true};const c=clampFan(w.x,w.y);P.fanX=c.x;P.fanY=c.y;}
+    else{pd={fan:true};const c=clampFan(w.x,w.y);P.fanX=c.x;P.fanY=c.y;
+      const fn=furnById('fan'); if(fn){fn.x=c.x;fn.y=c.y;if(fn.g)fn.g.position.set(c.x,c.y,SC.G.zF);}}
   });
   pl.addEventListener('pointermove',e=>{
     if(!pd)return; const w=planToWorld(e);
-    if(pd.fan){const c=clampFan(w.x,w.y);P.fanX=c.x;P.fanY=c.y;return;}
+    if(pd.fan){const c=clampFan(w.x,w.y);P.fanX=c.x;P.fanY=c.y;
+      const fn=furnById('fan'); if(fn){fn.x=c.x;fn.y=c.y;if(fn.g)fn.g.position.set(c.x,c.y,SC.G.zF);}
+      return;}
     const it=pd.it;
     it.x=Math.round((w.x-pd.gx)/0.025)*0.025; it.y=Math.round((w.y-pd.gy)/0.025)*0.025;
     const ok=furnValid(sim,it,pd.mask)&&furnFootValid(sim,it);
@@ -3637,6 +3668,7 @@ function bindCanvas(){
     syncFurn();
   });
   const pup=()=>{
+    if(pd&&pd.fan){rebuildObstacles();markDirty();}
     if(pd&&pd.it){const it=pd.it;
       if(!(furnValid(sim,it,pd.mask)&&furnFootValid(sim,it))){it.x=pd.vx;it.y=pd.vy;}
       it.outline.material=MAT.sel; syncFurn(); rebuildObstacles(); markDirty();}
@@ -3688,11 +3720,18 @@ function updateModels(dtR){
   const g=SC.G;
   SC.doorPivot.rotation.z=-P.door*Math.PI*0.52;
   SC.topPivot.rotation.y=P.win*0.62;
-  SC.bathPivot.rotation.z=-P.bathDoor*Math.PI*0.5;
+  {
+    const g2=SC.G, L=P.bathHinge==='L', et=P.bathSwing==='et';
+    const th=P.bathDoor*Math.PI/180, sgn=(L?1:-1)*(et?1:-1);
+    SC.bathPivot.position.set(L?g2.bdX0+0.05:g2.bdX1-0.05,
+      et?g2.yBathWB+0.035:g2.yBathB-0.035, g2.zF);
+    SC.bathPivot.rotation.z=(L?0:Math.PI)+sgn*th;
+  }
   for(const p of SC.panes){
     p.g.position.y=p.y0+lerp(p.i*0.05,p.i*p.w,P.glaze);
     p.g.rotation.z=-(1-P.glaze)*1.15;
   }
+  SC.fan.visible=fanPlaced()&&P.showFurn;
   SC.fan.position.set(P.fanX,P.fanY,0);
   SC.fan.rotation.z=Q.fanAng||0;
   const zF=g.zF,fh=P.fanH;
