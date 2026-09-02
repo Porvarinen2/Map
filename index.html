@@ -802,7 +802,7 @@ const M = {                       // paamitat metreina
   outDepth:4.60, balDepth:2.00, roomLen:7.00, roomDep:3.375, roomH:2.50,
   wall:0.125, sky:2.20,
   partX:5.00,                     // OH/KT <-> oikea lohko (PSH+ET)
-  bathDep:1.875,                  // PSH:n syvyys y-suunnassa
+  bathDep:1.70,                   // PSH:n syvyys y-suunnassa (pohjapiirros)
   railH:1.05,                     // parvekkeen kaiteen korkeus
   doorW:0.875, doorH:2.05,        // parvekkeen ovi
   winW:1.75, winZ0:0.25, winZ1:2.15,   // kiintea ikkuna
@@ -835,7 +835,7 @@ function makeLayout(h){
   L.bathY1= L.inY0+c(M.bathDep)-1;                     // PSH ylaraja
   L.bathWY= L.bathY1+1;                                // seina PSH | ET
   L.etY0  = L.bathWY+1;
-  L.etWallY0 = L.inY1-c(0.36)+1;              // ET:n ja KT:n valinen seinapatka
+  L.etWallY0 = L.inY1-c(0.50)+1;              // ET:n ja KT:n valinen seinapatka
   // --- aukot julkisivussa (facX) ---
   L.winY0 = L.inY0+c(0.45);  L.winY1=L.winY0+c(M.winW)-1;
   L.winZ0 = L.inZ0+c(M.winZ0); L.winZ1=L.inZ0+c(M.winZ1)-1;
@@ -2117,16 +2117,22 @@ function buildRoom(sim){
   wP.userData.cut='+x'; SC.walls.push(wP);
   const wP2=bx(MAT.wallIn,g.xPartA,g.xPartB,g.yEtW,g.yB,g.zF,g.zC);   // ET:n aukon pieli
   wP2.userData.cut='+x'; SC.walls.push(wP2);
+  // aukon karmit: pystylistat molemmin puolin ja ylapalkki
+  bx(MAT.frame,g.xPartA-0.012,g.xPartB+0.012,g.yEtW,g.yEtW+0.022,g.zF,g.zC);
+  bx(MAT.frame,g.xPartA-0.012,g.xPartB+0.012,g.yBathWB-0.022,g.yBathWB,g.zF,g.zC);
+  bx(MAT.frame,g.xPartA-0.012,g.xPartB+0.012,g.yBathWB,g.yEtW,g.zC-0.05,g.zC);
   const wB1=bx(MAT.wallIn,g.xPartB,g.bdX0,g.yBathB,g.yBathWB,g.zF,g.zC);  // PSH/ET-seina
   const wB2=bx(MAT.wallIn,g.bdX0,g.bdX1,g.yBathB,g.yBathWB,g.bdZ1,g.zC);  // oven ylapuoli
   wB1.userData.cut='-y'; wB2.userData.cut='-y'; SC.walls.push(wB1,wB2);
   // kylpyhuoneen ovi: sarana itaseinassa, aukeaa eteiseen ulko-oven viereen
   SC.bathPivot=new THREE.Group();
-  SC.bathPivot.position.set(g.bdX0,g.yBathWB+0.025,g.zF); SC.root.add(SC.bathPivot);
-  const bw=g.bdX1-g.bdX0;
-  bx(MAT.white,0,bw,-0.021,0.021,0,g.bdZ1-g.zF,SC.bathPivot);
-  bx(MAT.steel,bw-0.10,bw-0.06,-0.055,0.055,0.98,1.06,SC.bathPivot);
-  bx(MAT.frame,-0.03,0,-0.06,0.06,0,g.bdZ1-g.zF,SC.bathPivot);
+  SC.bathPivot.position.set(g.bdX1-0.10,g.yBathWB+0.03,g.zF); SC.root.add(SC.bathPivot);
+  const bw=g.bdX1-g.bdX0-0.03;
+  bx(MAT.white,-bw,0,-0.021,0.021,0,g.bdZ1-g.zF,SC.bathPivot);          // ovilehti
+  bx(MAT.steel,-bw+0.06,-bw+0.10,-0.055,0.055,0.98,1.06,SC.bathPivot);  // painike
+  bx(MAT.frame,0,0.03,-0.06,0.06,0,g.bdZ1-g.zF,SC.bathPivot);           // saranapieli
+  bx(MAT.frame,g.bdX0-0.03,g.bdX0,g.yBathB,g.yBathWB,g.zF,g.bdZ1);      // karmi lansipuolella
+  bx(MAT.frame,g.bdX0,g.bdX1,g.yBathB,g.yBathWB,g.bdZ1-0.03,g.bdZ1);    // karmin ylapuu
 
   // --- parveke ---
   const bal=new THREE.Group(); SC.root.add(bal);
@@ -2249,10 +2255,12 @@ function buildFixed(sim,g){
   const n0=e0+0.60, n1=e0+1.25;                                      // komeron reunat
   K(e0,n0,g.yB-nD,g.yB,zF,zF+2.25);                                  // YB-kaapit
   K(n1,e1,g.yB-nD,g.yB,zF,zF+2.25);                                  // PY/SK-kaappi
-  K(n0,n1,g.yB-nD,g.yB-nD+0.03,zF,zF+2.25,MAT.white);                // komeron takaseina
+  K(n0,n1,g.yB-0.03,g.yB,zF,zF+2.25,MAT.white);                      // komeron takaseina
+  K(n0,n0+0.02,g.yB-nD,g.yB,zF,zF+2.25,MAT.white);                   // komeron sivut
+  K(n1-0.02,n1,g.yB-nD,g.yB,zF,zF+2.25,MAT.white);
   K(n0,n1,g.yB-nD,g.yB,zF+2.16,zF+2.25);                             // komeron ylapohja
   K(n0,n1,g.yB-nD,g.yB,zF,zF+0.06,MAT.white);                        // komeron pohja
-  K(n0,n1,g.yB-nD+0.03,g.yB,zF+1.94,zF+1.98,MAT.white);              // hattuhylly
+  K(n0+0.02,n1-0.02,g.yB-nD+0.04,g.yB-0.03,zF+1.94,zF+1.98,MAT.white); // hattuhylly
   const rail=new THREE.Mesh(new THREE.CylinderGeometry(0.014,0.014,n1-n0-0.02,12),MAT.steel);
   rail.rotation.z=Math.PI/2; rail.position.set((n0+n1)/2,g.yB-nD/2+0.02,zF+1.80); F.add(rail);
   for(const hx of [n0+0.16,n0+0.30,n0+0.46]){                        // takkihenkarit
@@ -2261,8 +2269,9 @@ function buildFixed(sim,g){
     K(hx-0.13,hx+0.13,g.yB-nD/2-0.06,g.yB-nD/2+0.10,zF+1.16,zF+1.60,MAT.textile2);
   }
   for(const cx of [e0+0.30,n1+0.26]) K(cx-0.10,cx+0.10,g.yB-nD-0.012,g.yB-nD-0.004,zF+1.30,zF+1.34,MAT.steel);
-  K(g.xInB-0.06,g.xInB-0.02,g.yBathWB+0.30,g.yBathWB+1.20,zF+0.05,zF+2.10,MAT.white);
-  K(g.xInB-0.11,g.xInB-0.02,g.yBathWB+0.34,g.yBathWB+0.40,zF+1.02,zF+1.10,MAT.steel);
+  K(g.xInB-0.05,g.xInB-0.01,g.yBathWB+0.22,g.yBathWB+1.02,zF+0.03,zF+2.08,MAT.white);
+  K(g.xInB-0.09,g.xInB-0.01,g.yBathWB+0.26,g.yBathWB+0.32,zF+1.02,zF+1.10,MAT.steel);
+  K(g.xInB-0.07,g.xInB-0.01,g.yBathWB+0.50,g.yBathWB+0.74,zF+0.92,zF+1.00,MAT.steel);
   // kylpyhuone
   const b0=g.xPartB,b1=g.xInB,ya=g.yA;
   K(b0+1.02,b0+1.40,ya+0.08,ya+0.78,zF,zF+0.42,MAT.white);          // wc-istuin
@@ -2520,7 +2529,7 @@ function buildFixedBlocks(g){
   const e0=g.xPartB,e1=g.xInB;
   add(e0,e0+0.60,g.yB-0.60,g.yB,zF,zF+2.25);                     // eteisen kaapit
   add(e0+1.25,e1,g.yB-0.60,g.yB,zF,zF+2.25);
-  add(e0+0.60,e0+1.25,g.yB-0.60,g.yB-0.54,zF,zF+2.25);           // naulakkokomeron takaseina
+  add(e0+0.60,e0+1.25,g.yB-0.06,g.yB,zF,zF+2.25);                // naulakkokomeron takaseina
   const b1=g.xInB,ya=g.yA,b0=g.xPartB;
   add(b0+1.02,b0+1.40,ya+0.08,ya+0.78,zF,zF+0.80);               // wc
   add(b1-0.40,b1-0.06,ya+0.86,ya+1.20,zF+0.72,zF+0.94);          // pesuallas
@@ -3690,7 +3699,7 @@ function updateModels(dtR){
   const g=SC.G;
   SC.doorPivot.rotation.z=-P.door*Math.PI*0.52;
   SC.topPivot.rotation.y=P.win*0.62;
-  SC.bathPivot.rotation.z=P.bathDoor*Math.PI*0.965;
+  SC.bathPivot.rotation.z=-P.bathDoor*Math.PI*0.5;
   for(const p of SC.panes){
     p.g.position.y=p.y0+lerp(p.i*0.05,p.i*p.w,P.glaze);
     p.g.rotation.z=-(1-P.glaze)*1.15;
