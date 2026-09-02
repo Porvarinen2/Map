@@ -47,11 +47,19 @@ valitaksesi, raahaa siirtääksesi, **R** / **Shift+R** pyörittää 15°, **Del
 siirtää varastoon, **Esc** poistaa valinnan. Kalusteita voi raahata myös
 pohjapiirroksesta, ja ne saa sijoittaa myös eteiseen ja parvekkeelle.
 
-Sijoitus tarkistetaan solu solulta: seinän tai toisen kalusteen päälle ei voi
-pudottaa, mutta työpöytä mahtuu parvisängyn alle koska törmäystarkistus on
-kolmiulotteinen. *Vapaa sijoittelu* ‑valinta sallii kalusteiden mennä toistensa
-läpi, ja yksittäisen kalusteen voi **lukita** paikalleen niin ettei se liiku
-vahingossa.
+***Vapaa sijoittelu*** on oletuksena päällä, eikä silloin ole yhtään rajoitusta:
+kalusteen saa työntää seinän sisään, toisen kalusteen läpi ja mihin huoneeseen
+tahansa — myös tuuletin liikkuu vapaasti. Ainoa jäljelle jäävä ehto on, että
+kaluste pysyy laskenta-alueen sisällä. Seinän sisään jäävä osa ei rasteroidu
+hilaan, joten se ei estä ilman kulkua eikä tuota lämpöä; ulkona oleva osa
+vaikuttaa normaalisti.
+
+Kun valinta otetaan pois, käytössä on tavallinen solu solulta ‑tarkistus: seinän
+tai toisen kalusteen päälle ei voi pudottaa, tuuletin mahtuu vain olohuoneeseen
+ja keittiöön, ja väärässä paikassa olevat kalusteet siirtyvät lähimpään
+kelvolliseen kohtaan. Työpöytä mahtuu silloinkin parvisängyn alle, koska
+törmäystarkistus on kolmiulotteinen. Yksittäisen kalusteen voi **lukita**
+paikalleen niin ettei se liiku vahingossa.
 
 **Asettelut tallentuvat** selaimeen: viimeisin järjestys palautuu automaattisesti
 kun avaat simulaation uudelleen, ja asettelun voi tallentaa nimellä ja ladata
