@@ -100,9 +100,11 @@ paine‑ero on fysikaalinen eikä iteraatiomäärästä riippuva.
 
 **Huonegeometria.** Mitat seuraavat pohjapiirrosta: PSH 1,76 m ja ET 1,44 m syvät,
 eteisen ja keittotilan välissä 0,96 m aukko karmilistoineen ja seinäpieli sen
-molemmin puolin. Kylpyhuoneen oven sarana, aukeamissuunta ja kulma (0–180°) ovat säädettävissä
-Aukot-välilehdeltä: oikea sarana asettaa oven 90°:ssa ulkoseinää vasten
-ulko-oven viereen, vasen sarana taittaa sen 180°:seen seinää vasten. Eteisen kaapisto on yhtenäinen ja sen keskellä on
+molemmin puolin. Kylpyhuoneen 0,80 m oviaukko on PSH/ET-seinän länsipäässä kiinni
+väliseinässä eli eteisestä katsottuna oikeassa reunassa; sarana on aukon itäpielessä
+eteisen puoleisella pinnalla, joten ovi kääntyy eteiseen vasemmalle ja taittuu
+180°:seen litteänä seinää vasten ulko-ovea kohti. Aukot-välilehdeltä säädetään vain
+aukeamiskulma 0–180°. Eteisen kaapisto on yhtenäinen ja sen keskellä on
 avoin naulakkokomero tankoineen, henkareineen ja hattuhyllyineen. Liesituuletin on
 integroitu yläkaappiin, joten keittiössä on yhtenäinen kaapistorivi ilman rakoja.
 

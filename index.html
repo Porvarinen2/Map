@@ -431,15 +431,10 @@ input.txt::placeholder{color:var(--faint)}
         <div class="sec-t">Sis&auml;ovet</div>
         <div class="f warm"><div class="f-top"><label for="cBathDoor">Kylpyhuoneen ovi</label><span class="f-val" id="vBathDoor">0<em>&deg;</em></span></div>
           <input type="range" id="cBathDoor" min="0" max="180" step="5" value="0"></div>
-        <div class="seg grow" id="segHinge">
-          <button data-h="L">Sarana vasen</button><button data-h="R" class="on">Sarana oikea</button>
-        </div>
-        <div class="seg grow" id="segSwing">
-          <button data-s="et" class="on">Aukeaa eteiseen</button><button data-s="psh">Kylpyhuoneeseen</button>
-        </div>
-        <div class="note">Sarana <b>oikea</b> = aukon it&auml;reuna ulko-oven puolella; ovi asettuu
-          90&deg;:ssa ulkoseinaa vasten. Sarana <b>vasen</b> = aukon l&auml;nsireuna, jolloin ovi taittuu
-          180&deg;:seen sein&auml;&auml; vasten eik&auml; tuki k&auml;yt&auml;v&auml;&auml;. Suljetunkin oven alla on 20 mm rako.</div>
+        <div class="note">Ovi on kylpyhuoneen sein&auml;n l&auml;nsip&auml;&auml;ss&auml; kiinni v&auml;lisein&auml;ss&auml;,
+          eli eteisest&auml; katsottuna oikeassa reunassa. Sarana on aukon it&auml;reunassa ja ovi k&auml;&auml;ntyy
+          eteiseen vasemmalle: 90&deg;:ssa se on suorassa kulmassa ja 180&deg;:ssa litte&auml;n&auml;
+          sein&auml;&auml; vasten ulko-ovea kohti. Suljetunkin oven alla on 20 mm rako.</div>
       </div>
     </section>
 
@@ -855,8 +850,9 @@ function makeLayout(h){
   L.doorZ0= L.inZ0;          L.doorZ1=L.inZ0+c(M.doorH)-1;
   L.topZ0 = L.inZ0+c(M.topW0); L.topZ1=L.inZ0+c(M.topW1)-1;
   L.ventY = L.doorY0-2;      L.ventZ0=L.inZ1-2; L.ventZ1=L.inZ1-1;
-  // --- kylpyhuoneen ovi: kiinni itaseinassa, aukeaa eteiseen ulko-oven viereen ---
-  L.bdX1 = L.inX1;         L.bdX0=L.bdX1-c(0.80)+1;
+  // --- kylpyhuoneen ovi: aukko valiseinan lansipaassa (kiinni partX-seinassa),
+  //     sarana aukon itareunassa, ovi kaantyy eteiseen ulko-ovea kohti 180 asteeseen ---
+  L.bdX0 = L.rbX0;         L.bdX1=L.bdX0+c(0.80)-1;
   L.bdZ0 = L.inZ0;         L.bdZ1=L.inZ0+c(2.05)-1;
   // --- poistokanavat: partX-seinan OH-puoli, 50 mm katosta ---
   L.ductX = L.partX-1;
@@ -2133,16 +2129,18 @@ function buildRoom(sim){
   bx(MAT.frame,g.xPartA-0.012,g.xPartB+0.012,g.yEtW,g.yEtW+0.022,g.zF,g.zC);
   bx(MAT.frame,g.xPartA-0.012,g.xPartB+0.012,g.yBathWB-0.022,g.yBathWB,g.zF,g.zC);
   bx(MAT.frame,g.xPartA-0.012,g.xPartB+0.012,g.yBathWB,g.yEtW,g.zC-0.05,g.zC);
-  const wB1=bx(MAT.wallIn,g.xPartB,g.bdX0,g.yBathB,g.yBathWB,g.zF,g.zC);  // PSH/ET-seina
+  const wB1=bx(MAT.wallIn,g.bdX1,g.xInB,g.yBathB,g.yBathWB,g.zF,g.zC);   // PSH/ET-seina
   const wB2=bx(MAT.wallIn,g.bdX0,g.bdX1,g.yBathB,g.yBathWB,g.bdZ1,g.zC);  // oven ylapuoli
   wB1.userData.cut='-y'; wB2.userData.cut='-y'; SC.walls.push(wB1,wB2);
-  // kylpyhuoneen ovi: sarana itaseinassa, aukeaa eteiseen ulko-oven viereen
+  // kylpyhuoneen ovi: sarana aukon itareunassa, aukeaa eteiseen 180 asteeseen asti
   SC.bathPivot=new THREE.Group(); SC.root.add(SC.bathPivot);
+  // saranaviiva on aukon itapielessa eteisen puoleisella pinnalla, jolloin lehti
+  // on kiinni aukossa ja aukeaa 180 asteeseen litteaksi seinaa vasten
   const bw=g.bdX1-g.bdX0-0.03; SC.bathW=bw;
-  bx(MAT.white,0,bw,-0.021,0.021,0,g.bdZ1-g.zF,SC.bathPivot);           // ovilehti
-  bx(MAT.steel,bw-0.10,bw-0.06,-0.055,0.055,0.98,1.06,SC.bathPivot);    // painike
-  bx(MAT.frame,-0.03,0,-0.06,0.06,0,g.bdZ1-g.zF,SC.bathPivot);          // saranapieli
-  bx(MAT.frame,g.bdX0-0.03,g.bdX0,g.yBathB,g.yBathWB,g.zF,g.bdZ1);      // karmi lansipuolella
+  bx(MAT.white,0,bw,0,0.042,0,g.bdZ1-g.zF,SC.bathPivot);                // ovilehti
+  bx(MAT.steel,bw-0.10,bw-0.06,-0.014,0.056,0.98,1.06,SC.bathPivot);    // painike
+  bx(MAT.frame,-0.025,0,0,0.042,0,g.bdZ1-g.zF,SC.bathPivot);            // saranapieli
+  bx(MAT.frame,g.bdX1,g.bdX1+0.03,g.yBathB,g.yBathWB,g.zF,g.bdZ1);      // karmi itapuolella
   bx(MAT.frame,g.bdX0,g.bdX1,g.yBathB,g.yBathWB,g.bdZ1-0.03,g.bdZ1);    // karmin ylapuu
 
   // --- parveke ---
@@ -3037,7 +3035,7 @@ function sparkline(id,arr,color){
 const $=id=>document.getElementById(id);
 const P={
   Tout:10,RHout:80,wind:5,windDir:0,solar:0,glaze:0,
-  door:0,win:0,vent:1,bathDoor:0,bathHinge:'R',bathSwing:'et',
+  door:0,win:0,vent:1,bathDoor:0,
   setT:21,setRH:40,radMax:800,thermo:true,humid:true,person:false,cook:false,
   setBathT:22,setBathRH:45,bathHeat:true,bathHumid:true,shower:false,showerG:900,wash:false,
   ductA:8,ductB:8,ductC:12,boost:false,n50:2,
@@ -3326,8 +3324,6 @@ function bindUI(){
   bindRange('cWin','win',v=>(v*35).toFixed(0)+'<em>°</em>',{scale:0.01,after:O});
   bindRange('cVent','vent',v=>(v*100).toFixed(0)+'<em>% auki</em>',{scale:0.01,after:O});
   bindRange('cBathDoor','bathDoor',v=>v.toFixed(0)+'<em>&deg;</em>',{after:O});
-  bindSeg('segHinge',d=>{P.bathHinge=d.h;},()=>P.bathHinge);
-  bindSeg('segSwing',d=>{P.bathSwing=d.s;},()=>P.bathSwing);
   const dt=()=>{const b=P.boost?1.8:1;$('hVent').textContent=((P.ductA+P.ductB+P.ductC)*b).toFixed(0)+' l/s';};
   bindRange('cDuctA','ductA',v=>v.toFixed(0)+'<em>l/s</em>',{after:dt});
   bindRange('cDuctB','ductB',v=>v.toFixed(0)+'<em>l/s</em>',{after:dt});
@@ -3458,7 +3454,7 @@ const PRESETS={
     fan:0,shower:false,cook:false,pcLoad:0,tvpcLoad:1,field:'temp'},
   tuuletus:{Tout:8,RHout:75,wind:5,windDir:0,glaze:0,solar:120,door:1,win:1,vent:1,bathDoor:90,
     radMax:1200,setT:21,setRH:40,humid:false,ductA:8,ductB:8,ductC:12,fan:0,shower:false,field:'age'},
-  suihku:{Tout:10,RHout:80,wind:4,windDir:40,glaze:0,solar:0,door:0,win:0,vent:1,bathDoor:1,
+  suihku:{Tout:10,RHout:80,wind:4,windDir:40,glaze:0,solar:0,door:0,win:0,vent:1,bathDoor:0,
     setBathT:24,setBathRH:45,bathHumid:false,shower:true,showerG:1400,wash:false,
     ductA:8,ductB:8,ductC:15,boost:true,fan:0,field:'rh'},
   lasitettu:{Tout:2,RHout:85,wind:8,windDir:0,glaze:1,solar:320,door:1,win:0,vent:1,
@@ -3732,11 +3728,10 @@ function updateModels(dtR){
   SC.doorPivot.rotation.z=-P.door*Math.PI*0.52;
   SC.topPivot.rotation.y=P.win*0.62;
   {
-    const g2=SC.G, L=P.bathHinge==='L', et=P.bathSwing==='et';
-    const th=P.bathDoor*Math.PI/180, sgn=(L?1:-1)*(et?1:-1);
-    SC.bathPivot.position.set(L?g2.bdX0+0.05:g2.bdX1-0.05,
-      et?g2.yBathWB+0.035:g2.yBathB-0.035, g2.zF);
-    SC.bathPivot.rotation.z=(L?0:Math.PI)+sgn*th;
+    const g2=SC.G;
+    // sarana aukon itareunassa, ovilehti kiinni lansisuuntaan; aukeaa eteiseen 0..180
+    SC.bathPivot.position.set(g2.bdX1, g2.yBathWB, g2.zF);
+    SC.bathPivot.rotation.z=Math.PI-P.bathDoor*Math.PI/180;
   }
   for(const p of SC.panes){
     p.g.position.y=p.y0+lerp(p.i*0.05,p.i*p.w,P.glaze);
