@@ -24,8 +24,10 @@ from dataclasses import dataclass, field
 # Vakiot
 # --------------------------------------------------------------------------
 
-PICK_MIN = -80.0          # tiirikan aariasennot
-PICK_MAX = 80.0
+# Tiirikan aariasennot. Mitattu pelin omista ruutukaappauksista
+# (live/references, live/test_vision.py): vasen -62, oikea +65 astetta.
+PICK_MIN = -63.0
+PICK_MAX = 63.0
 OPEN_TURN = 90.0          # lukkopesan kaanto joka avaa lukon
 OPEN_EPSILON = 0.5        # kuinka lahella 90:aa riittaa
 

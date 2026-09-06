@@ -1,45 +1,103 @@
 # SCUM Tiirikkapenkki
 
-Simulaatio SCUMin lukkominipelista ja autolockpickista. Sama 2,75 sekunnin
-ikkuna kuin pelissa, mutta piilotettu sweetspot on nakyvissa ja naet mita
-tiirikka oikeasti tekee sen aikana.
+Kolme osaa, jotka ajavat samaa lukkomallia ja samaa hakulogiikkaa:
 
-Kaksi tapaa ajaa:
+| Kansio | Mika | Ajetaan |
+|---|---|---|
+| `live/` | **ruudunlukija, joka avaa oikean lukon pelissa** | Windows + CMD |
+| `web/` | selainsimulaatio, jossa piilotettu sweetspot nakyy | mika tahansa selain |
+| `sim/` | eraajosimulaattori asetusten viritykseen | mika tahansa Python |
 
-- **Selain** &mdash; `web/scum_lockpick_sim.html`. Avaa tiedosto selaimessa.
-  Animoitu lukko, paljastettava sweetspot, koetinkuvaaja ja eraajopenkki.
-- **Python** &mdash; `sim/lockpick_sim.py`. Ei kuvaa, mutta ajaa satoja
-  sessioita sekunneissa ja vertailee asetuksia.
+Ideana on, etta pelissa ajettava logiikka on se, joka on ensin todistettu
+simulaatiolla toimivaksi. `live/test_live.py` ajaa oikean ohjaimen simuloitua
+lukkoa vasten, ja `live/test_vision.py` ajaa oikean tunnistuksen pelin omia
+ruutukaappauksia vasten.
 
-Molemmat ajavat samaa mallia ja samaa hakualgoritmia.
+---
 
-## Selainsimulaatio
+## 1. Live: lukon avaaminen pelissa
+
+```
+cd live
+python autolockpick_live.py
+```
+
+Windowsissa helpompi tapa on `Aja_Live.bat`. `Tarkista_Tunnistus.bat` ajaa
+saman `--probe`-tilassa ja `Aja_Testit.bat` ajaa kaikki testit.
+
+    F11   aloita / tauota
+    F9    lopeta
+    F8    tallenna debug
+
+Ohjelma piirtaa CMD-ikkunaan tilanteen: tiirikan kulman, lukkopesan kaannon,
+jaljella olevan ajan, hakuvaiheen ja tunnistuksen pikselimaarat.
+
+### Aloita aina tasta
+
+```
+python autolockpick_live.py --probe
+```
+
+`--probe` lukee ruutua **lahettamatta yhtaan hiiren tai nappaimen syotetta**.
+Avaa pelin lukkoruutu ja katso, etta rivi `tunnistus` nayttaa jarkevat luvut ja
+etta `tiirikka`-kulma seuraa hiirta. Vasta kun se toimii, aja ilman `--probe`.
+
+Jos tunnistus ei loyda lukkoa, saada `live_asetukset.json`-tiedoston
+`vision`-osiota: `lock_radius_fraction` (lukon sade jaettuna ruudun
+korkeudella) ja `center_offset_x` / `center_offset_y`.
+
+### Miten se toimii
+
+1. Kaappaa pelin ikkunan keskelta neliomaisen alueen (`mss`).
+2. **Lukon runko**: metallinvaaleat pikselit keskella -> keskipiste.
+3. **Lukkopesan kaanto**: avaimenreika on lahes musta (`lum < 22`); sen
+   paaakselin suunta on pesan kaanto. Maski vaaditaan pitkulaiseksi, muuten
+   ruutu hylataan.
+4. **Tiirikan kulma**: punainen lakka erottuu ruosteesta silla, etta siina
+   vihrea ja sininen ovat yhta alhaalla (`R-G > 18` ja `G-B < 10`). Pelkka
+   punaisuus poimisi ruosteisen lukon.
+5. **Aika**: kirkkaat pikselit lukon ulkopuolisella renkaalla.
+6. Ohjaus: `lockpick_control.py` paattaa mihin tiirikka ajetaan ja milloin F
+   painetaan. Hiiri liikkuu `SendInput`-pulsseina, nappaimet skannauskoodeina
+   (pelit lukevat DirectInputilla eivatka aina huomaa virtuaalikoodeja).
+
+Kaikki mitat ovat lukon sateen tai ruudun korkeuden monikertoja, joten sama
+koodi toimii eri resoluutioilla. `test_vision.py` varmistaa taman 720p:sta
+1440p:hen.
+
+### Aloitus ja uusinnat
+
+Ohjelma ei yrita lukea "Press Space to Start" -teksti&auml; &mdash; sumea
+aloitusruutu oli juuri se, mihin helperi 1.8 kompastui. Sen sijaan se painaa
+SPACEa ja **tarkistaa itse**, alkoiko aikakaari kutistua. Jos ei alkanut, se
+painaa uudelleen. Sama silmukka hoitaa seka ensimmaisen aloituksen etta
+epaonnistumisen jalkeiset uusinnat.
+
+### Mita mitataan ajon aikana
+
+| Suure | Miksi |
+|---|---|
+| Hiiriherkkyys (astetta/yksikko) | pelin herkkyys ei ole tiedossa etukateen; opitaan toteutuneesta liikkeesta ja tallennetaan |
+| Lukkopesan kaantonopeus | maaraa kuinka kauan F:aa pitaa pitaa; ilman tata F:n kattoaika on arvaus |
+| Tiirikan aariasennot | jos iso hiiripulssi ei liikuta tiirikkaa, siella on seina |
+
+---
+
+## 2. Selainsimulaatio
 
 Avaa `web/scum_lockpick_sim.html`. Mitaan ei tarvitse asentaa.
 
-Vasemmalla on lukkonakyma:
+- **messinkinen vyo** lukon ymparilla on palautealue
+- **vihrea kiila** on avaava ydin
+- oikealla penkki, jonka saatimet vastaavat `asetukset.json`-avaimia
+- alhaalla eraajo, joka vertaa hakutapoja
 
-- **punainen tiirikka** seuraa hiirta, **musta avaimenreika** kertoo pesan kaannon
-- **valkoinen kaari** on jaljella oleva aika
-- **messinkinen vyo** lukon ymparilla on palautealue: mita pidempi piikki,
-  sita enemman pesa antaa periksi siina kohdassa
-- **vihrea kiila** on avaava ydin. Sen loytaminen on koko tehtava.
+Ohjaus-valikosta voi vaihtaa kasiohjaukseen ja kokeilla itse hiirella ja
+F-nappaimella.
 
-Oikealla on penkki. Jokaisen saatimen alla lukee vastaava `asetukset.json`-avain,
-joten mita taalla loytyy, sen voi siirtaa suoraan helperiin.
+---
 
-Kolme valmista pinoa:
-
-| Pino | Mita se on |
-|---|---|
-| Helperi 1.8 | nykyisen `asetukset.json`-tiedoston arvot |
-| Pidempi F | sama, mutta `maximum_F_hold_ms` nostettuna |
-| Simulaation paras | naista kolmesta paras yhdistelma |
-
-Ohjaus-valikosta voi vaihtaa **kasiohjaukseen**: liikuta hiirta lukon paalla ja
-pida `F` pohjassa. Silloin naet itse, miten vaikea ydin on osua sokkona.
-
-## Python-simulaattori
+## 3. Eraajosimulaattori
 
 ```bash
 cd sim
@@ -47,84 +105,105 @@ python lockpick_sim.py --tier basic --skill 1 --sessions 400
 python lockpick_sim.py --compare-orders --tier medium
 python lockpick_sim.py --compare-tiers --skill 2
 python lockpick_sim.py --sweep-step 4 6 8 10 12 --tier enforced
-python lockpick_sim.py --sweep-latency 20 50 90 140
 python lockpick_sim.py --settings ../../asetukset.json --tier basic
 ```
 
-`--settings` lukee helperin oman asetustiedoston ne avaimet, jotka simulaatio
-tuntee, joten nykyiset arvot voi ajaa lapi sellaisenaan.
+---
 
-Testit:
+## Testit
 
 ```bash
-python test_sim.py
+cd sim  && python test_sim.py       # lukkomalli ja hakusaanto
+cd live && python test_live.py      # live-ohjain simuloitua lukkoa vasten
+cd live && python test_vision.py    # tunnistus pelin omia kuvia vasten
+cd live && python test_runner.py    # tilakone: aloitus, uusinta, avaus, tauko
 ```
 
-Windowsissa `Aja_Simulaatio.bat` kaynnistaa perusajon.
+`test_vision.py` vaatii Pillowin (`pip install pillow`). Live-ajo ei vaadi.
+
+---
 
 ## Mita simulaatio kertoi Helperi 1.8:sta
 
 Ajettuna `asetukset.json`-tiedoston arvoilla (Basic-lukko, thievery basic,
-400 sessiota, enintaan 6 yritysta) tulos oli **0,0 % avattu**. Syyt loytyivat
-kolme:
+400 sessiota, enintaan 6 yritysta) tulos oli **0,0 % avattu**. Kolme syyta:
 
 **1. `maximum_F_hold_ms: 320` on lyhyempi kuin taysi kaanto.**
 Tassa mallissa pesa kaantyy 260 astetta sekunnissa, joten 90 asteen kaanto
-kestaa 346 ms. Ohjain vapauttaa F:n 320 ms:n kohdalla eli 26 ms ennen maalia.
-Lukko ei voi aueta millaan muulla asetuksella niin kauan kuin tama katto on
-alle taydan kaannon keston. Kynnys on jyrkka:
+kestaa 346 ms. Ohjain vapautti F:n 26 ms ennen maalia, joka kerta. Kynnys on
+jyrkka: katto 300 ms -> 0,0 %, katto 350 ms -> 96,7 %.
 
-| `maximum_F_hold_ms` | avattu |
-|---|---|
-| 300 ms | 0,0 % |
-| 350 ms | 93,0 % |
+**2. Hiiri liikkui 33 astetta sekunnissa.**
+`scan_mouse_max_units_per_pulse: 28` kertaa `0.035` jaettuna `mouse_settle_ms:
+30`:lla. Siirtyminen keskelta vasempaan reunaan kesti 1,9 sekuntia eli yli
+puolet koko 3,25 sekunnin ikkunasta, ennen ensimmaista F-testia.
 
-**2. Hiiri liikkuu 33 astetta sekunnissa.**
-`scan_mouse_max_units_per_pulse: 28` kertaa `0.035` astetta per yksikko jaettuna
-`mouse_settle_ms: 30`:lla on 33 °/s. Siirtyminen keskelta vasempaan reunaan
-kestaa 2,4 sekuntia &mdash; suurin osa koko 3,25 sekunnin ikkunasta menee
-pelkkaan ajamiseen ennen ensimmaista F-testia.
-
-**3. Hakutapa "vasemmalta oikealle" maksaa taman matkan joka kierroksella.**
-Kun sama haku aloitetaan nykykohdasta, matka jaa pois:
+**3. Hakutapa "vasemmalta oikealle" maksoi taman matkan joka kierroksella.**
+Sama haku, katto korjattuna, muuten helperin arvoilla:
 
 | Hakutapa | avattu | 1. yrityksella |
 |---|---|---|
-| vasemmalta oikealle | 58,0 % | 0,0 % |
-| keskelta ulos | 75,0 % | 20,7 % |
-| nykykohdasta | 93,3 % | 32,3 % |
+| vasemmalta oikealle | 65,5 % | 3,0 % |
+| keskelta ulos | 86,5 % | 28,5 % |
+| nykykohdasta | 97,2 % | 48,5 % |
 
-(Basic-lukko, `maximum_F_hold_ms` korjattuna, muuten helperin arvot.)
+Viritetyilla arvoilla (`from-current`, 8&deg; vali, 120 yksikon pulssi,
+16 ms pulssivali) simulaatio avaa Basic-lukon 100 % sessioista ja 97 %
+ensimmaisella yrityksella.
 
-Korjausehdotus `asetukset.json`-tiedostoon:
+### Miten live-skripti korjaa nama
 
-```json
-"maximum_F_hold_ms": 700,
-"scan_mouse_max_units_per_pulse": 120,
-"mouse_settle_ms": 16,
-"scan_step_degrees": 8.0
-```
+Live-skripti kayttaa **vasemmalta oikealle** -hakua, kuten pyydettiin, mutta
+kaksi ensimmaista ongelmaa on poistettu rakenteellisesti:
 
-Nailla arvoilla simulaatio avaa Basic-lukon 100 % sessioista ja 82 %
-ensimmaisella yrityksella. **Nama ovat simulaation lukuja, eivat pelin.**
-Pelitesti tarvitaan edelleen &mdash; erityisesti pesan todellinen kaantonopeus
-pitaa mitata, koska juuri se maaraa kohdan 1 kynnysarvon.
+- **F vapautetaan kun kaanto pysahtyy**, ei kiintean ajastimen taytyttya.
+  Kasvavaa kaantoa ei katkaista koskaan. Hatakatko on olemassa, mutta ohjelma
+  nostaa sita itse, jos mitattu kaantonopeus ei mahdu sen alle.
+- **Hiirta ohjataan takaisinkytkennalla** mitatusta tiirikan kulmasta, ja
+  lennossa olevat pulssit lasketaan mukaan. Vaara herkkyysarvio hidastaa hakua
+  muttei riko sita: testissa kaksinkertainen virhe herkkyydessa ei pudottanut
+  onnistumista lainkaan.
+
+---
 
 ## Rakenne
 
 ```
-sim/lockpick_model.py   lukon fysiikka: palautekayra, kaanto, kuluminen, aika
-sim/solver.py           autolockpick: nakomalli, hakusaanto, tilakone
-sim/lockpick_sim.py     komentorivi, eraajot ja vertailut
-sim/test_sim.py         tarkistustestit
-web/scum_lockpick_sim.html   selainsimulaatio (yksi tiedosto)
-docs/MEKANIIKKA.md      mika on lahteista ja mika on taman mallin arviota
+live/autolockpick_live.py   ruudunkaappaus, tunnistus, SendInput, CMD-nakyma
+live/lockpick_control.py    hakusaanto ja tilakone (jaettu logiikka)
+live/test_live.py           ohjain simuloitua lukkoa vasten
+live/test_vision.py         tunnistus pelin omia kuvia vasten
+live/test_runner.py         tilakone valesyotteella
+live/references/            SCUMin ruutukaappaukset testeja varten
+
+sim/lockpick_model.py       lukon fysiikka: palautekayra, kaanto, kuluminen
+sim/solver.py               simulaation autolockpick
+sim/lockpick_sim.py         komentorivi, eraajot ja vertailut
+sim/test_sim.py             mallin tarkistustestit
+
+web/scum_lockpick_sim.html  selainsimulaatio (yksi tiedosto)
+docs/MEKANIIKKA.md          mika on lahteista ja mika on taman mallin arviota
 ```
 
+---
+
 ## Rajaukset
+
+**Live-skriptia ei ole voitu ajaa oikeassa pelissa taalla.** Windowsia eika
+SCUMia ei ollut kaytettavissa. Testattu on se, mita voi testata: hakulogiikka
+simuloitua lukkoa vasten, tunnistus pelin omia ruutukaappauksia vasten ja
+tilakone valesyotteella.
+Ruudunkaappaus, `SendInput` ja pelin reagointi syotteisiin on todennettava
+pelikoneella, ja `--probe` on sita varten.
 
 Simulaation prosentit kertovat asetusten keskinaisesta paremmuudesta taman
 mallin sisalla. Ne eivat ole pelin onnistumisprosentti. Palautealueen leveys,
 kayran muoto, pesan kaantonopeus ja kulumisnopeudet ovat kalibrointia, eivat
 pelin lahdekoodista luettuja arvoja. Erittely on tiedostossa
 [docs/MEKANIIKKA.md](docs/MEKANIIKKA.md).
+
+Tiirikan liikevara **+-63 astetta** sen sijaan on mitattu pelin omista
+ruutukaappauksista (`live/test_vision.py`: vasen -62, oikea +65).
+
+Automaattinen syote on pelin saantojen kannalta pelaajan oma vastuu; SCUMissa
+on EAC, ja palvelimilla voi olla omat saantonsa automaatiosta.

@@ -528,7 +528,8 @@ table.data tr.best td.name{color:var(--brass);}
    1. MALLI  (sama logiikka kuin sim/lockpick_model.py)
    ========================================================================== */
 
-const PICK_MIN = -80, PICK_MAX = 80;
+// Mitattu pelin ruutukaappauksista: tiirikka yltaa noin +-63 asteeseen.
+const PICK_MIN = -63, PICK_MAX = 63;
 const OPEN_TURN = 90, OPEN_EPS = 0.5;
 const TURN_RATE = 260, RETURN_RATE = 520;
 const BASE_SECONDS = 2.75;
@@ -905,7 +906,7 @@ function runBatch(cfg, s, sessions, seed){
    ========================================================================== */
 
 const SLIDERS = [
-  {key:"scanStep",  label:"Skannausvali", json:"scan_step_degrees",   min:2,   max:24,  step:0.5, unit:"°"},
+  {key:"scanStep",  label:"Skannausvali", json:"scan_step_degrees",   min:2,   max:20,  step:0.5, unit:"°"},
   {key:"scanUnits", label:"Hiiripulssi",  json:"scan_mouse_max_units_per_pulse", min:8, max:220, step:2, unit:" u"},
   {key:"settleMs",  label:"Pulssivali",   json:"mouse_settle_ms",     min:8,   max:60,  step:1,   unit:" ms"},
   {key:"maxHoldMs", label:"F:n kattoaika",json:"maximum_F_hold_ms",   min:120, max:900, step:10,  unit:" ms"},
@@ -1166,7 +1167,7 @@ function drawProbes(){
     pctx.fillText(v + "°", L - 10, y);
   }
   pctx.textAlign = "center"; pctx.textBaseline = "top";
-  for(const v of [-80, -40, 0, 40, 80]){
+  for(const v of [-60, -30, 0, 30, 60]){
     const x = Math.round(X(v)) + 0.5;
     pctx.beginPath(); pctx.moveTo(x, T); pctx.lineTo(x, T + ph); pctx.stroke();
     pctx.fillText(v + "°", x, T + ph + 10);
@@ -1345,7 +1346,7 @@ function updateDerived(){
   }
   if(needed > budget && s.maxHoldMs >= fullTurnMs()){
     alerts.push(`<div class="alert warn"><b>Yksi yritys ei kata koko janaa.</b> Ehdit
-      ${budget.toFixed(1)} testia, mutta 160&deg; jana vaatii ${needed.toFixed(0)}.
+      ${budget.toFixed(1)} testia, mutta 126&deg; jana vaatii ${needed.toFixed(0)}.
       Nosta hiiripulssia tai vaihda hakutapaa &mdash; <em>vasemmalta oikealle</em> tuhlaa
       ajan pelkkaan reunaan ajamiseen.</div>`);
   }

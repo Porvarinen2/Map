@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+scum-lockpick-sim/live/debug/
+scum-lockpick-sim/live/live_asetukset.json
