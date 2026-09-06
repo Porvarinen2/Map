@@ -41,12 +41,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 from lockpick_control import (  # noqa: E402
-    PICK_MAX,
-    PICK_MIN,
     Action,
     ControlConfig,
     Controller,
     Observation,
+    SearchMemory,
     full_turn_ms,
     wrap_angle,
 )
@@ -92,6 +91,10 @@ class VisionConfig:
     Oletukset vastaavat 1920x1080-ruutua, jossa lukko on ruudun keskella ja
     sen sade on noin 150 pikselia. Kaikki suhteutetaan ruudun korkeuteen,
     joten muut resoluutiot toimivat ilman muutoksia.
+
+    Tiirikkaa ei etsita lainkaan. Se on ohut, se voi olla eri tyokalu ja se
+    nakyy eri kulmissa, joten sen tunnistus oli epavarmin osa koko ketjua.
+    Ohjaus ei sita tarvitse: katso lockpick_control.py.
     """
 
     lock_radius_fraction: float = 0.139   # lukon sade / ruudun korkeus
@@ -104,22 +107,14 @@ class VisionConfig:
     dark_max: float = 22.0                # avaimenreian ylin kirkkaus
     bright_min: float = 185.0             # aikakaaren alin kirkkaus
 
-    # Tiirikan punainen lakka erottuu ruosteesta ja messingista silla, etta
-    # siina vihrea ja sininen ovat yhta alhaalla. Ruoste on oranssia, jolloin
-    # vihrea on selvasti sinista korkeammalla. Mitattu pelin omista kuvista.
-    red_excess_min: float = 18.0          # R - G
-    green_blue_max: float = 10.0          # G - B
     min_keyhole_elongation: float = 4.0   # alle taman maski on saastunut
 
     keyhole_outer: float = 0.66           # avaimenreian haku, x R
-    pick_inner: float = 0.68              # tiirikan haku, x R
-    pick_outer: float = 1.95
     timer_inner: float = 1.05             # aikakaaren haku, x R
     timer_outer: float = 1.75
 
     min_metal_pixels: int = 2500
     min_keyhole_pixels: int = 250
-    min_pick_pixels: int = 25
 
 
 @dataclass
@@ -380,10 +375,9 @@ class Detector:
         np = self.np
         cfg = self.cfg
 
-        blue = frame_bgr[:, :, 0].astype(np.float32)
-        green = frame_bgr[:, :, 1].astype(np.float32)
-        red = frame_bgr[:, :, 2].astype(np.float32)
-        lum = 0.114 * blue + 0.587 * green + 0.299 * red
+        lum = (0.114 * frame_bgr[:, :, 0].astype(np.float32)
+               + 0.587 * frame_bgr[:, :, 1].astype(np.float32)
+               + 0.299 * frame_bgr[:, :, 2].astype(np.float32))
 
         size = frame_bgr.shape[0]
         radius_map, (xx, yy) = self._grids(size)
@@ -426,24 +420,7 @@ class Detector:
         turn = max(-12.0, min(105.0, turn))
         self.last_turn = turn
 
-        # 3. Tiirikka: ainoa kylla punainen kohde lukon ymparilla.
-        pick_mask = (((red - green) > cfg.red_excess_min)
-                     & ((green - blue) < cfg.green_blue_max)
-                     & (local_r > R * cfg.pick_inner)
-                     & (local_r < R * cfg.pick_outer))
-        pick_count = int(pick_mask.sum())
-        self.debug["pick"] = pick_count
-        if pick_count < cfg.min_pick_pixels:
-            return Observation(stamp=stamp, ok=False)
-
-        px = float(xx[pick_mask].mean() - cx)
-        py = float(yy[pick_mask].mean() - cy)
-        pick = math.degrees(math.atan2(px, -py))
-        if not (PICK_MIN - 25.0 <= pick <= PICK_MAX + 25.0):
-            return Observation(stamp=stamp, ok=False)
-        pick = max(PICK_MIN, min(PICK_MAX, pick))
-
-        # 4. Aikakaari: kirkkaat pikselit lukon ulkopuolisella renkaalla.
+        # 3. Aikakaari: kirkkaat pikselit lukon ulkopuolisella renkaalla.
         ring = ((lum > cfg.bright_min)
                 & (local_r > R * cfg.timer_inner)
                 & (local_r < R * cfg.timer_outer))
@@ -456,7 +433,7 @@ class Detector:
         self.timer_history.append((stamp, timer))
         del self.timer_history[:-60]
 
-        return Observation(stamp=stamp, ok=True, pick=pick, turn=turn,
+        return Observation(stamp=stamp, ok=True, turn=turn,
                            timer=timer, running=self.timer_is_running())
 
     def timer_is_running(self) -> bool:
@@ -549,7 +526,9 @@ class LiveRunner:
         self.input = None if probe_only else WinInput()
         self.helper = self.input or WinInput()
         self.detector = Detector(np, vision)
-        self.controller = Controller(control)
+        # Muisti elaa yritysten yli: sama lukko, samat mittaukset.
+        self.memory = SearchMemory()
+        self.controller = Controller(control, self.memory)
         self.console = Console()
 
         self.active = False
@@ -587,14 +566,15 @@ class LiveRunner:
         payload = {
             "version": VERSION,
             "tila": self.state,
-            "havainto": {"ok": self.last_obs.ok, "pick": self.last_obs.pick,
-                         "turn": self.last_obs.turn, "timer": self.last_obs.timer,
-                         "running": self.last_obs.running},
+            "havainto": {"ok": self.last_obs.ok, "turn": self.last_obs.turn,
+                         "timer": self.last_obs.timer, "running": self.last_obs.running},
             "tunnistus": self.detector.debug,
             "vaihe": self.last_action.phase,
             "kaantonopeus": self.controller.measured_turn_rate,
-            "reunat": [self.controller.edge_low, self.controller.edge_high],
-            "testit": [{"kulma": p.pick, "kaanto": p.score, "laji": p.kind}
+            "paikka_u": self.controller.position,
+            "skannausvali_u": self.controller.scan_step,
+            "muisti": asdict(self.memory),
+            "testit": [{"paikka_u": p.position, "kaanto": p.score, "laji": p.kind}
                        for p in self.controller.probes],
             "control": asdict(self.control),
             "vision": asdict(self.vision_cfg),
@@ -652,6 +632,7 @@ class LiveRunner:
 
     def end_attempt(self, now: float, opened: bool) -> None:
         self.release()
+        self.controller.finish_attempt(opened)
         if opened:
             self.opened += 1
             self.note(f"LUKKO AUKI (yritys {self.attempts})")
@@ -760,7 +741,7 @@ class LiveRunner:
         probes = self.controller.probes
         planner = self.controller.planner
         target = self.controller.target
-        target_text = "-" if target is None else f"{target:+.1f}"
+        target_text = "-" if target is None else f"{target:.0f}"
         rate_text = (f"{rate:.0f} deg/s, taysi {turn_ms:.0f} ms"
                      if rate and turn_ms else "ei mitattu viela")
 
@@ -771,24 +752,25 @@ class LiveRunner:
             f" {self.status[:34]}",
             f"  ikkuna     {(self.window_title or '-')[:52]}",
             "",
-            f"  tiirikka   {obs.pick:+7.1f} deg    kaanto  {obs.turn:6.1f} deg",
+            f"  kaanto     {obs.turn:6.1f} deg      paikka  {self.controller.position:6.0f} u"
+            f"   askel {self.controller.scan_step:.0f} u",
             f"  aika       [{bar(obs.timer)}] {obs.timer * 100:5.1f} %"
             f"   {'kay' if obs.running else 'seis'}",
             "",
-            f"  tavoite    {target_text:>7}       vaihe   {self.last_action.phase}",
-            f"  ramppi     {'lukittu' if planner.ramp_locked else 'etsinnassa':<10}"
+            f"  tavoite    {target_text:>7} u     vaihe   {self.last_action.phase}",
+            f"  ramppi     {'LUKITTU' if planner.ramp_locked else 'etsinnassa':<10}"
             f"  paras   {planner.best_score:5.1f} deg"
-            f"  askel {planner.step:5.2f}",
-            f"  F-testit   {len(probes):<3}",
+            f"  lahiaskel {planner.step:5.0f} u",
+            f"  F-testit   {len(probes):<3}"
+            f"  jana kayty {self.memory.resume_units:.0f} u",
             "",
-            f"  herkkyys   {cfg.degrees_per_mouse_unit:.4f} deg/yksikko"
-            f"  {'(mitattu)' if self.controller.sensitivity.confident else '(oletus)'}",
+            "  tiirikkaa ei tunnisteta - lukko on ainoa mittari",
             f"  kaanto     {rate_text}   katto {cfg.maximum_hold_ms:.0f} ms",
             "",
             f"  yrityksia  {self.attempts}   auki {self.opened}   ilman {self.timeouts}",
-            f"  tunnistus  metal {self.detector.debug.get('metal', 0)}"
+            f"  tunnistus  metalli {self.detector.debug.get('metal', 0)}"
             f"  reika {self.detector.debug.get('keyhole', 0)}"
-            f"  tiirikka {self.detector.debug.get('pick', 0)}"
+            f"  (venyma {self.detector.debug.get('elong', 0):.0f})"
             f"  kaari {self.detector.debug.get('timer', 0)}"
             f"  R {self.detector.debug.get('R', 0):.0f}",
             f"  {'-' * 62}",

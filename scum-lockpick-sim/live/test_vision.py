@@ -61,13 +61,14 @@ def main() -> int:
         print(f"Kuvakansiota ei loydy: {REFERENCES}")
         return 2
 
-    # Odotetut arvot luettu kuvista silmalla: aariasennot vasen/oikea,
-    # aloitusruudun pystysuora avaimenreika ja kaantyneen pesan kuva.
+    # Mitattava suure on lukkopesan kaanto. Tiirikkaa ei tunnisteta lainkaan,
+    # joten sen asennolle ei ole odotusarvoja - vain vaatimus, ettei se saa
+    # vaikuttaa kaannon lukemaan.
     print("Oikeat pelikuvat 1920x1080")
     expectations = [
-        ("Lockpickstart.png", "aloitusruutu", lambda o: abs(o.pick) < 10 and abs(o.turn) < 10),
-        ("MaxSideLeft.png", "tiirikka vasemmassa aariasennossa", lambda o: o.pick < -50),
-        ("MaxSideRight.png", "tiirikka oikeassa aariasennossa", lambda o: o.pick > 50),
+        ("Lockpickstart.png", "aloitusruutu, pesa suorassa", lambda o: abs(o.turn) < 8),
+        ("MaxSideLeft.png", "pesa suorassa", lambda o: abs(o.turn) < 8),
+        ("MaxSideRight.png", "pesa suorassa", lambda o: abs(o.turn) < 8),
         ("Lockpicking.png", "pesa kaantyneena", lambda o: o.turn > 10),
     ]
     readings = {}
@@ -82,29 +83,32 @@ def main() -> int:
         check(f"{name}: tunnistus onnistuu", obs.ok,
               f"metal={detector.debug.get('metal')} reika={detector.debug.get('keyhole')}")
         check(f"{name}: {label}", obs.ok and rule(obs),
-              f"tiirikka {obs.pick:+.1f} deg, kaanto {obs.turn:+.1f} deg")
+              f"kaanto {obs.turn:+.1f} deg")
     print()
 
-    print("Aariasennot ovat symmetriset")
+    # Tama on koko uuden rakenteen ehto: MaxSideLeft ja MaxSideRight ovat
+    # samasta lukosta, tiirikka aarilaidoissa mutta pesa molemmissa suorassa.
+    # Jos tiirikan asento vuotaisi kaannon lukemaan, luvut eroaisivat.
+    print("Tiirikan asento ei saa vaikuttaa kaannon lukemaan")
     left = readings.get("MaxSideLeft.png")
     right = readings.get("MaxSideRight.png")
     if left and right:
-        span = right.pick - left.pick
-        check("tiirikan liikevara on 100-140 astetta", 100 < span < 140,
-              f"{left.pick:+.1f} .. {right.pick:+.1f} = {span:.1f} deg")
-        check("aariasennot ovat suunnilleen peilikuvat",
-              abs(abs(left.pick) - abs(right.pick)) < 12,
-              f"{abs(left.pick):.1f} vs {abs(right.pick):.1f}")
+        check("vasen ja oikea aariasento antavat saman kaannon",
+              abs(left.turn - right.turn) < 4.0,
+              f"{left.turn:+.1f} vs {right.turn:+.1f} deg")
+        check("molemmat lukevat pesan suoraksi",
+              abs(left.turn) < 8 and abs(right.turn) < 8,
+              f"{left.turn:+.1f} / {right.turn:+.1f} deg")
     print()
 
     print("Sama tulos muilla resoluutioilla")
-    base = readings.get("MaxSideRight.png")
+    base = readings.get("Lockpicking.png")
     for width, height in [(1280, 720), (2560, 1440), (1600, 900)]:
-        frame = load_bgr(np, os.path.join(REFERENCES, "MaxSideRight.png"), (width, height))
+        frame = load_bgr(np, os.path.join(REFERENCES, "Lockpicking.png"), (width, height))
         obs, _ = observe(np, Detector, VisionConfig, frame, width, height)
-        ok = obs.ok and base and abs(obs.pick - base.pick) < 8 and abs(obs.turn - base.turn) < 8
+        ok = obs.ok and base and abs(obs.turn - base.turn) < 5
         check(f"{width}x{height}", bool(ok),
-              f"tiirikka {obs.pick:+.1f} deg, kaanto {obs.turn:+.1f} deg" if obs.ok
+              f"kaanto {obs.turn:+.1f} deg (1080p: {base.turn:+.1f})" if obs.ok
               else "ei tunnistusta")
     print()
 

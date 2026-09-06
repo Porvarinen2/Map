@@ -83,8 +83,8 @@ def make_runner(probe_only=False):
     return runner
 
 
-def obs(t=0.0, ok=True, pick=0.0, turn=0.0, timer=1.0, running=False):
-    return Observation(stamp=t, ok=ok, pick=pick, turn=turn, timer=timer, running=running)
+def obs(t=0.0, ok=True, turn=0.0, timer=1.0, running=False):
+    return Observation(stamp=t, ok=ok, turn=turn, timer=timer, running=running)
 
 
 # --------------------------------------------------------------------------
@@ -113,7 +113,7 @@ def test_probe_sends_nothing() -> None:
         runner.step(t, obs(t, running=False))
         t += 0.2
     for _ in range(60):
-        runner.step(t, obs(t, running=True, pick=10.0))
+        runner.step(t, obs(t, running=True))
         t += 0.02
     fake = runner.helper          # probe-tilassa runner.input on None
     check("SPACEa ei lahetetty", not fake.taps)
@@ -132,11 +132,8 @@ def test_solves_and_reports_open() -> None:
     check("yritys alkoi", runner.state == runner.SOLVING, runner.state)
     check("yrityslaskuri kasvoi", runner.attempts == 1, str(runner.attempts))
 
-    pick = 0.0
-    for _ in range(400):
-        action_before = runner.input.mouse_units
-        runner.step(t, obs(t, pick=pick, turn=0.0, running=True))
-        pick += (runner.input.mouse_units - action_before) * 0.035
+    for _ in range(600):
+        runner.step(t, obs(t, turn=0.0, running=True))
         t += 0.01
     check("hiirta ohjattiin", runner.input.mouse_calls > 0,
           f"{runner.input.mouse_calls} pulssia")
@@ -145,7 +142,7 @@ def test_solves_and_reports_open() -> None:
 
     # Lukko aukeaa: pesa on kaantynyt paljon ja minipeli sulkeutuu.
     for _ in range(3):
-        runner.step(t, obs(t, pick=pick, turn=88.0, running=True))
+        runner.step(t, obs(t, turn=88.0, running=True))
         t += 0.01
     for _ in range(runner.run_cfg.lost_frames_for_end + 1):
         runner.step(t, obs(t, ok=False))
@@ -213,7 +210,7 @@ def test_draw_survives_every_state() -> None:
         runner.step(0.2, obs(0.2, running=True))
         for i in range(60):
             runner.step(0.3 + i * 0.01, obs(0.3 + i * 0.01, turn=3.0, running=True))
-        runner.draw(1.0, obs(1.0, pick=-40.0, turn=12.0, timer=0.4, running=True))
+        runner.draw(1.0, obs(1.0, turn=12.0, timer=0.4, running=True))
         ok, detail = True, f"{len(runner.console.frames)} ruutua"
     except Exception as error:            # nakyman kaatuminen keskeyttaisi ajon
         ok, detail = False, f"{type(error).__name__}: {error}"

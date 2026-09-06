@@ -1,8 +1,11 @@
-"""Ajaa live-ohjaimen simuloitua lukkoa vastaan: python test_live.py
+"""Ajaa live-ohjaimen simuloitua lukkoa vasten: python test_live.py
 
-Tama on koko paketin tarkein testi. Se todistaa, etta se sama
-lockpick_control.py, joka ajaa pelia, avaa simuloidun lukon. Windows-osia
-(ruutukaappaus, SendInput) ei voi testata taalla, mutta paatoslogiikka voi.
+Taman paketin tarkein testi. Se todistaa, etta se sama lockpick_control.py,
+joka ajaa pelia, avaa simuloidun lukon - ja etta se tekee sen NAKEMATTA
+TIIRIKKAA. Ohjain saa tietaa vain lukkopesan kaannon.
+
+Simulaatio muuntaa hiiriyksikot asteiksi omalla kertoimellaan, jota ohjain
+ei tieda. Juuri se on koko pointti: pelin hiiriherkkyys saa olla mika tahansa.
 """
 
 from __future__ import annotations
@@ -17,14 +20,12 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "sim"))
 
 from lockpick_control import (  # noqa: E402
-    PICK_MAX,
-    PICK_MIN,
     ControlConfig,
     Controller,
     Observation,
-    SensitivityEstimator,
+    SearchMemory,
 )
-from lockpick_model import LockAttempt, LockConfig  # noqa: E402
+from lockpick_model import PICK_MAX, PICK_MIN, LockAttempt, LockConfig  # noqa: E402
 
 DT = 0.002
 FAILURES: list[str] = []
@@ -37,10 +38,10 @@ def check(name: str, condition: bool, detail: str = "") -> None:
 
 
 class SimulatedScreen:
-    """Vastaa live-skriptin Detectoria, mutta lukee simulaatiota.
+    """Vastaa live-skriptin Detectoria: viive, ruutuvali ja lukutarkkuus.
 
-    Mallintaa samat kolme ruudunlukemisen rajoitetta: viive, ruutuvali ja
-    kulman lukutarkkuus.
+    Palauttaa VAIN lukkopesan kaannon. Tiirikan asentoa ei anneta, koska
+    ohjain ei sita nae pelissakaan.
     """
 
     def __init__(self, attempt, rng, latency_ms=45.0, frame_ms=8.0,
@@ -51,99 +52,91 @@ class SimulatedScreen:
         self.frame = frame_ms / 1000.0
         self.noise = noise_deg
         self.quantum = quantum_deg
-        self.buffer: list[tuple[float, float, float]] = []
+        self.buffer: list[tuple[float, float]] = []
         self.latest = Observation(ok=False)
         self.next_sample = 0.0
 
     def read(self, now: float) -> Observation:
-        self.buffer.append((now, self.attempt.pick, self.attempt.turn))
+        self.buffer.append((now, self.attempt.turn))
         if now < self.next_sample:
             return self.latest
         self.next_sample = now + self.frame
 
         cutoff = now - self.latency
-        chosen = None
-        keep = 0
-        for i, (stamp, pick, turn) in enumerate(self.buffer):
+        chosen, keep = None, 0
+        for i, (stamp, turn) in enumerate(self.buffer):
             if stamp <= cutoff:
-                chosen = (stamp, pick, turn)
-                keep = i
+                chosen, keep = (stamp, turn), i
             else:
                 break
         if chosen is None:
             return self.latest
         self.buffer = self.buffer[keep:]
 
-        stamp, pick, turn = chosen
+        stamp, turn = chosen
         noisy = turn + self.rng.gauss(0.0, self.noise)
         noisy = max(0.0, round(noisy / self.quantum) * self.quantum)
         self.latest = Observation(
-            stamp=stamp,
-            ok=True,
-            pick=pick + self.rng.gauss(0.0, self.noise * 0.4),
-            turn=noisy,
-            timer=self.attempt.time_left / self.attempt.time_limit,
-            running=True,
-        )
+            stamp=stamp, ok=True, turn=noisy,
+            timer=self.attempt.time_left / self.attempt.time_limit, running=True)
         return self.latest
 
 
-def run_attempt(lock_cfg, ctrl_cfg, rng, true_deg_per_unit, start_pick=0.0,
-                carried_wear=0.0, **screen_kwargs):
-    # Pelissa sweetspot on aina tiirikan ulottuvilla, joten se arvotaan
-    # skannausalueelta eika laajemmalta mallin janalta.
-    reach_lo = min(ctrl_cfg.scan_from, ctrl_cfg.scan_to)
-    reach_hi = max(ctrl_cfg.scan_from, ctrl_cfg.scan_to)
-    attempt = LockAttempt(lock_cfg, rng, sweet_spot=rng.uniform(reach_lo, reach_hi))
+def run_attempt(lock_cfg, ctrl_cfg, rng, deg_per_unit, memory,
+                start_pick=0.0, carried_wear=0.0, sweet_spot=None, **screen_kwargs):
+    """Yksi yritys. deg_per_unit on pelin herkkyys, jota ohjain ei tieda."""
+    attempt = LockAttempt(lock_cfg, rng, sweet_spot=sweet_spot)
     attempt.wear = carried_wear
     attempt.pick = start_pick
 
-    controller = Controller(ctrl_cfg)
+    controller = Controller(ctrl_cfg, memory)
     screen = SimulatedScreen(attempt, rng, **screen_kwargs)
 
     pick = start_pick
     now = 0.0
-
-    guard = int(attempt.time_limit / DT) + 60
+    guard = int(attempt.time_limit / DT) + 80
     for _ in range(guard):
         if attempt.finished:
             break
-        obs = screen.read(now)
-        action = controller.update(now, obs)
-
+        action = controller.update(now, screen.read(now))
         if action.mouse_units:
-            pick = max(PICK_MIN, min(PICK_MAX, pick + action.mouse_units * true_deg_per_unit))
-
+            # Seina: ylimaarainen liike reunaa vasten ei siirra mitaan.
+            pick = max(PICK_MIN, min(PICK_MAX, pick + action.mouse_units * deg_per_unit))
         attempt.step(DT, pick, action.f_down)
         now += DT
 
-    return attempt, controller
+    controller.finish_attempt(attempt.opened)
+    return attempt, controller, pick
 
 
-def run_session(lock_cfg, ctrl_cfg, rng, true_deg_per_unit, max_attempts=6, **kw):
+def run_session(lock_cfg, ctrl_cfg, rng, deg_per_unit, max_attempts=6,
+                stable_sweet_spot=False, **kw):
+    memory = SearchMemory()
     pick, wear = 0.0, 0.0
+    controller = None
+    spot = None
+    if stable_sweet_spot:
+        margin = lock_cfg.zone_half * 0.25
+        spot = rng.uniform(PICK_MIN + margin, PICK_MAX - margin)
     for n in range(1, max_attempts + 1):
-        attempt, controller = run_attempt(
-            lock_cfg, ctrl_cfg, rng, true_deg_per_unit,
-            start_pick=pick, carried_wear=wear, **kw
-        )
+        attempt, controller, pick = run_attempt(
+            lock_cfg, ctrl_cfg, rng, deg_per_unit, memory,
+            start_pick=pick, carried_wear=wear, sweet_spot=spot, **kw)
         if attempt.opened:
             return True, n, controller
-        if attempt.broken:
-            wear, pick = 0.0, 0.0
-        else:
-            wear, pick = attempt.wear, attempt.pick
+        wear = 0.0 if attempt.broken else attempt.wear
     return False, max_attempts, controller
 
 
-def batch(lock_cfg, ctrl_cfg, sessions=150, seed=4242, true_deg_per_unit=0.035, **kw):
+def batch(lock_cfg, sessions=120, seed=4242, deg_per_unit=0.035,
+          max_attempts=6, stable_sweet_spot=False, **cfg_kwargs):
     rng = random.Random(seed)
-    opened = first = 0
+    opened, first = 0, 0
     attempts = []
     for _ in range(sessions):
-        # Konfiguraatio on jaettu, joten kopioidaan se joka sessiolle.
-        cfg = ControlConfig(**vars(ctrl_cfg))
-        ok, n, _ = run_session(lock_cfg, cfg, rng, true_deg_per_unit, **kw)
+        cfg = ControlConfig(**cfg_kwargs)      # tuore konfiguraatio per sessio
+        ok, n, _ = run_session(lock_cfg, cfg, rng, deg_per_unit, max_attempts,
+                               stable_sweet_spot=stable_sweet_spot)
         if ok:
             opened += 1
             attempts.append(n)
@@ -159,152 +152,172 @@ def batch(lock_cfg, ctrl_cfg, sessions=150, seed=4242, true_deg_per_unit=0.035, 
 # --------------------------------------------------------------------------
 
 
-def test_opens_simulated_lock() -> None:
-    print("Live-ohjain avaa simuloidun lukon")
+def test_opens_without_seeing_the_pick() -> None:
+    print("Lukko aukeaa ilman tiirikan tunnistusta")
     for tier in ["rusted", "basic", "medium", "enforced"]:
-        stats = batch(LockConfig(tier=tier, skill=1), ControlConfig(), sessions=120)
-        check(f"{tier}: avautuu yli 80 % sessioista",
-              stats["success"] > 0.80,
-              f"{stats['success'] * 100:.1f} % / 1. yritys {stats['first'] * 100:.1f} %")
+        stats = batch(LockConfig(tier=tier, skill=1), sessions=120)
+        check(f"{tier}: avautuu yli 85 % sessioista", stats["success"] > 0.85,
+              f"{stats['success'] * 100:.1f} %, keskim. {stats['attempts']:.2f} yritysta")
 
 
-def test_left_to_right_order() -> None:
+def test_unknown_mouse_sensitivity() -> None:
+    """Ohjain ei tieda pelin herkkyytta. Sen ei kuulukaan tietaa."""
+    print("Hiiriherkkyys saa olla mika tahansa")
+    lock = LockConfig(tier="basic", skill=1)
+    for deg_per_unit in [0.015, 0.035, 0.060, 0.090]:
+        stats = batch(lock, sessions=100, deg_per_unit=deg_per_unit, max_attempts=8)
+        check(f"{deg_per_unit:.3f} deg/yksikko", stats["success"] > 0.80,
+              f"{stats['success'] * 100:.1f} %, keskim. {stats['attempts']:.2f} yritysta")
+
+
+def test_homing_finds_the_wall() -> None:
+    """Vasen reuna loydetaan tyontamalla, ei mittaamalla."""
+    print("Kotiinajo loytaa vasemman reunan mista tahansa")
+    rng = random.Random(5)
+    for start in [PICK_MIN, -20.0, 0.0, 30.0, PICK_MAX]:
+        cfg = ControlConfig()
+        attempt, controller, _ = run_attempt(
+            LockConfig(tier="rusted", skill=3), cfg, rng, 0.035, SearchMemory(),
+            start_pick=start, sweet_spot=PICK_MIN + 6.0)
+        first = controller.probes[0].position if controller.probes else None
+        check(f"aloitus {start:+.0f} deg -> ensimmainen testi vasemmalla",
+              attempt.opened or (first is not None and first < 200),
+              "aukesi" if attempt.opened else f"{first:.0f} u")
+
+
+def test_scan_runs_left_to_right() -> None:
     print("Skannaus kulkee vasemmalta oikealle")
     rng = random.Random(7)
     cfg = ControlConfig()
-    _, controller = run_attempt(LockConfig(tier="basic", skill=3), cfg, rng, 0.035)
-    scans = [p.pick for p in controller.probes if not p.ramp]
+    _, controller, _ = run_attempt(LockConfig(tier="enforced", skill=3), cfg, rng,
+                                   0.035, SearchMemory(), sweet_spot=55.0)
+    scans = [p.position for p in controller.probes if not p.ramp]
     check("ensimmainen testi on vasemmassa reunassa",
-          bool(scans) and abs(scans[0] - cfg.scan_from) < 2.0,
-          f"{scans[0]:+.1f} (tavoite {cfg.scan_from:+.1f})" if scans else "ei testeja")
-    check("skannauspisteet kasvavat monotonisesti",
-          all(b >= a - 1e-6 for a, b in zip(scans, scans[1:])),
-          f"{len(scans)} pistetta")
+          bool(scans) and scans[0] < 1.0, f"{scans[0]:.0f} u" if scans else "ei testeja")
+    check("testit etenevat vain oikealle",
+          all(b >= a - 1e-6 for a, b in zip(scans, scans[1:])), f"{len(scans)} testia")
+    check("askel on tasainen",
+          len(scans) < 3 or len(set(round(b - a) for a, b in zip(scans, scans[1:]))) == 1,
+          f"{[round(b - a) for a, b in zip(scans, scans[1:])][:6]}")
 
 
 def test_rising_turn_is_never_cut() -> None:
     """Helperi 1.8:n paavika: F vapautettiin kesken kasvavan kaannon."""
     print("Kasvavaa kaantoa ei katkaista")
     rng = random.Random(11)
-    cfg = ControlConfig()
-    # Sweetspot tiirikan ulottuvuuden reunalla: juuri siella hitaan haun
-    # pitaa viela ehtia kaantaa pesa loppuun asti.
-    attempt = LockAttempt(LockConfig(tier="basic", skill=1), rng,
-                          sweet_spot=cfg.scan_from + 2.0)
-    controller = Controller(cfg)
-    screen = SimulatedScreen(attempt, rng)
-
-    now, pick, held = 0.0, 0.0, 0.0
-    while not attempt.finished:
-        action = controller.update(now, screen.read(now))
-        if action.mouse_units:
-            pick = max(PICK_MIN, min(PICK_MAX, pick + action.mouse_units * 0.035))
-        if action.f_down:
-            held += DT
-        attempt.step(DT, pick, action.f_down)
-        now += DT
-
-    check("sweetspot vasemmassa reunassa aukeaa", attempt.opened,
-          f"turn={attempt.turn:.1f} deg, F pohjassa {held * 1000:.0f} ms")
+    attempt, controller, _ = run_attempt(
+        LockConfig(tier="basic", skill=2), ControlConfig(), rng, 0.035,
+        SearchMemory(), sweet_spot=PICK_MIN + 4.0)
+    check("reunan lahella oleva sweetspot aukeaa", attempt.opened,
+          f"kaanto {attempt.turn:.1f} deg")
     rate = controller.measured_turn_rate
     check("kaantonopeus mitattiin ajon aikana", rate is not None and rate > 50,
           f"{rate:.0f} deg/s" if rate else "ei mittausta")
 
 
-def test_survives_wrong_sensitivity() -> None:
-    """Takaisinkytkennan pointti: vaara herkkyysarvio ei saa rikkoa hakua."""
-    print("Vaara hiiriherkkyys ei riko hakua")
+def test_hold_cap_repairs_itself() -> None:
+    print("Liian lyhyt F-katto korjautuu itse")
     lock = LockConfig(tier="basic", skill=1)
-    for factor, floor in [(0.5, 0.60), (2.0, 0.60)]:
-        cfg = ControlConfig()
-        stats = batch(lock, cfg, sessions=100, true_deg_per_unit=0.035 * factor)
-        check(f"todellinen herkkyys {factor:g}x oletuksesta",
-              stats["success"] > floor,
-              f"{stats['success'] * 100:.1f} %")
+    tight = batch(lock, sessions=80, maximum_hold_ms=320)
+    frozen = batch(lock, sessions=80, maximum_hold_ms=320, auto_raise_hold_cap=False)
+    check("itsekorjaus paalla: avautuu", tight["success"] > 0.80,
+          f"{tight['success'] * 100:.1f} %")
+    check("itsekorjaus pois: ei avaudu", frozen["success"] < 0.05,
+          f"{frozen['success'] * 100:.1f} %")
 
 
-def test_sensitivity_estimator_converges() -> None:
-    print("Herkkyysarvio hakeutuu oikeaan")
-    rng = random.Random(23)
-    true_value = 0.082
-    cfg = ControlConfig()          # oletus 0.035, eli yli kaksi kertaa vaara
-    for _ in range(6):
-        run_attempt(LockConfig(tier="rusted", skill=2), cfg, rng, true_value)
-    error = abs(cfg.degrees_per_mouse_unit - true_value) / true_value
-    check("arvio on 25 % sisalla todellisesta", error < 0.25,
-          f"arvio {cfg.degrees_per_mouse_unit:.4f} vs todellinen {true_value:.4f}")
-
-    unit = SensitivityEstimator(initial=0.035)
-    for _ in range(8):
-        unit.feed(100.0, 100.0 * 0.06)
-    check("erillinen arvioija hylkaa vaarat naytteet ja loytaa arvon",
-          abs(unit.value - 0.06) < 0.005 and unit.confident, f"{unit.value:.4f}")
+def test_resume_helps_and_never_hurts() -> None:
+    """Jo kayty jana muistetaan. Se ei voi olla haitaksi kummassakaan tapauksessa."""
+    print("Jo kayty jana muistetaan")
+    lock = LockConfig(tier="medium", skill=0)     # lyhin aika, 2.75 s
+    resuming = batch(lock, sessions=140, max_attempts=6)
+    restarting = batch(lock, sessions=140, max_attempts=6, resume_search=False)
+    check("jatkaminen ei ole huonompi kuin alusta aloittaminen",
+          resuming["success"] >= restarting["success"] - 0.02,
+          f"{resuming['success'] * 100:.1f} % vs {restarting['success'] * 100:.1f} %")
+    check("jatkaminen tarvitsee korkeintaan saman verran yrityksia",
+          resuming["attempts"] <= restarting["attempts"] + 0.05,
+          f"{resuming['attempts']:.2f} vs {restarting['attempts']:.2f}")
 
 
-def test_short_hold_cap_still_opens() -> None:
-    """Simulaation loydos: liian lyhyt kiintea katto esti avaamisen kokonaan."""
-    print("Kattoaika ei enaa maaraa lopputulosta")
-    lock = LockConfig(tier="basic", skill=1)
-    generous = batch(lock, ControlConfig(maximum_hold_ms=1200), sessions=100)
-    tight = batch(lock, ControlConfig(maximum_hold_ms=320), sessions=100)
-    frozen = batch(lock, ControlConfig(maximum_hold_ms=320,
-                                       auto_raise_hold_cap=False), sessions=100)
-    check("1200 ms katto avaa", generous["success"] > 0.85,
-          f"{generous['success'] * 100:.1f} %")
-    check("liian lyhyt katto korjautuu itse mitatusta kaannosta",
-          tight["success"] > 0.80, f"{tight['success'] * 100:.1f} %")
-    check("ilman itsekorjausta sama katto estaa avaamisen",
-          frozen["success"] < 0.05, f"{frozen['success'] * 100:.1f} %")
+def test_ramp_memory_is_off_by_default() -> None:
+    """Rampin muistaminen auttaa vain jos sweetspot pysyy paikallaan.
+
+    Pelaajien mukaan se voi vaihtua yritysten valilla, joten oletus on pois.
+    """
+    print("Rampin muisti: hyoty riippuu siita vaihtuuko sweetspot")
+    check("oletuksena pois paalta", ControlConfig().remember_ramp is False)
+
+    lock = LockConfig(tier="medium", skill=0)
+    stable_on = batch(lock, sessions=140, max_attempts=6,
+                      stable_sweet_spot=True, remember_ramp=True)
+    stable_off = batch(lock, sessions=140, max_attempts=6,
+                       stable_sweet_spot=True, remember_ramp=False)
+    check("pysyvalla sweetspotilla muisti nopeuttaa",
+          stable_on["attempts"] <= stable_off["attempts"] + 0.02,
+          f"{stable_on['attempts']:.2f} vs {stable_off['attempts']:.2f} yritysta")
+
+    rolling_on = batch(lock, sessions=140, max_attempts=6, remember_ramp=True)
+    rolling_off = batch(lock, sessions=140, max_attempts=6, remember_ramp=False)
+    check("vaihtuvalla sweetspotilla muisti haittaa, siksi oletus on pois",
+          rolling_off["success"] >= rolling_on["success"],
+          f"pois {rolling_off['success'] * 100:.1f} % vs paalla "
+          f"{rolling_on['success'] * 100:.1f} %")
+
+
+def test_step_halves_after_empty_sweep() -> None:
+    """Jos koko jana kaydaan lapi loytamatta mitaan, askel oli liian harva."""
+    print("Askel tihenee jos jana kaytiin turhaan")
+    cfg = ControlConfig(scan_step_units=800.0)
+    memory = SearchMemory()
+    rng = random.Random(13)
+    steps = [memory.scan_step_units or cfg.scan_step_units]
+    for _ in range(4):
+        run_attempt(LockConfig(tier="enforced", skill=0), cfg, rng, 0.09, memory,
+                    sweet_spot=0.0)
+        steps.append(memory.scan_step_units or cfg.scan_step_units)
+    check("skannausvali pieneni", steps[-1] < steps[0],
+          " -> ".join(f"{s:.0f}" for s in steps))
+    check("vali ei mene minimin alle", steps[-1] >= cfg.minimum_scan_step_units,
+          f"{steps[-1]:.0f} u")
 
 
 def test_no_input_without_detection() -> None:
-    print("Ilman tunnistusta ei laheteta syotteita")
+    print("Ilman lukkoa ei laheteta syotteita")
     controller = Controller(ControlConfig())
     action = controller.update(0.0, Observation(ok=False))
     check("hiiri ei liiku", action.mouse_units == 0.0)
     check("F ei mene pohjaan", action.f_down is False)
 
 
-def test_no_false_walls() -> None:
-    """Vaarin opittu aariasento jumittaisi haun yhteen kohtaan."""
-    print("Reunoja ei opita vaarin")
-    rng = random.Random(7)
-    cfg = ControlConfig()
-    _, controller = run_attempt(LockConfig(tier="basic", skill=3), cfg, rng, 0.035)
-    check("hakualue ei kutistunut",
-          controller.edge_high - controller.edge_low >= 100.0,
-          f"{controller.edge_low:+.1f} .. {controller.edge_high:+.1f}")
-    scans = [p.pick for p in controller.probes if not p.ramp]
-    unique = len(set(round(x, 1) for x in scans))
-    check("skannaus ei jaa toistamaan samaa pistetta",
-          unique >= max(1, len(scans) - 1), f"{unique} eri pistetta / {len(scans)} testia")
-
-
-def test_probe_range() -> None:
-    print("Testipisteet pysyvat janalla")
-    rng = random.Random(31)
-    cfg = ControlConfig()
-    probes = []
-    for _ in range(6):        # kerataan useasta yrityksesta, koska hyva
-        _, controller = run_attempt(  # osuma voi avata lukon ennen ensimmaista kirjausta
-            LockConfig(tier="medium", skill=2), cfg, rng, 0.035)
-        probes += controller.probes
-    check("testeja kertyi", len(probes) > 10, f"{len(probes)} testia")
-    check("kaikki testit valilla -80..80",
-          all(PICK_MIN - 0.01 <= p.pick <= PICK_MAX + 0.01 for p in probes))
+def test_only_turn_is_used() -> None:
+    """Varmistaa ettei havainnossa ole tiirikkaa eika ohjain sita kaipaa."""
+    print("Havainto sisaltaa vain lukon tiedot")
+    fields = set(Observation.__dataclass_fields__)
+    check("Observationissa ei ole pick-kentta", "pick" not in fields,
+          ", ".join(sorted(fields)))
+    rng = random.Random(17)
+    attempt, controller, _ = run_attempt(
+        LockConfig(tier="basic", skill=2), ControlConfig(), rng, 0.035,
+        SearchMemory(), sweet_spot=10.0)
+    check("ohjain teki paatoksia pelkalla kaannolla",
+          attempt.opened or len(controller.probes) > 0,
+          f"{len(controller.probes)} testia")
 
 
 def main() -> int:
     for test in [
-        test_opens_simulated_lock,
-        test_left_to_right_order,
+        test_opens_without_seeing_the_pick,
+        test_unknown_mouse_sensitivity,
+        test_homing_finds_the_wall,
+        test_scan_runs_left_to_right,
         test_rising_turn_is_never_cut,
-        test_survives_wrong_sensitivity,
-        test_sensitivity_estimator_converges,
-        test_short_hold_cap_still_opens,
+        test_hold_cap_repairs_itself,
+        test_resume_helps_and_never_hurts,
+        test_ramp_memory_is_off_by_default,
+        test_step_halves_after_empty_sweep,
         test_no_input_without_detection,
-        test_no_false_walls,
-        test_probe_range,
+        test_only_turn_is_used,
     ]:
         test()
         print()

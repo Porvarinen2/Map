@@ -1,33 +1,38 @@
-"""Autolockpickin paatoslogiikka: hakusaanto ja reaaliaikainen tilakone.
+"""Autolockpickin paatoslogiikka. Lukko on ainoa mittari.
+
+Tiirikkaa EI tunnisteta lainkaan. Se on ohut, se voi olla eri tyokalu
+(hiuspinni, hakaneula, improvised lockpick) ja se nakyy eri kulmissa, joten
+sen tunnistus oli koko ketjun epavarmin kohta. Sita ei tarvita:
+
+    hiirta liikutetaan HIIRIYKSIKKOINA, ei asteina
+    ainoa havainto on LUKKOPESAN KAANTO
+    kaanto = 0        -> vaara kohta, siirry eteenpain
+    kaanto = vahan    -> ramppi loytyi, hae sen pohja
+    kaanto = melkein  -> F pohjaan ja lukko aukeaa
+
+Koska liike on hiiriyksikkoina, ohjelman ei tarvitse tietaa pelin
+hiiriherkkyytta eika tiirikan asentoa. Vasen aariasento loydetaan
+tyontamalla hiirta reilusti yli koko janan: seinaa vasten ylimaarainen
+liike ei tee mitaan, joten lahtokohta on aina sama.
+
+    ALOITUS (vasen reuna)
+      |
+      +--F--+--F--+--F--+--F--+--F--+--F--+   vasemmalta oikealle
+                                    |
+                                    +-- lukko antoi periksi = RAMPPI
+                                        pienempi askel, hae pohja
+                                        TARGET -> F pohjaan
 
 Tama moduuli ei koske ruutuun eika hiireen. Se saa havainnot sisaan ja
-palauttaa toiminnot ulos, joten tasmalleen sama koodi ajetaan kahdessa
-paikassa:
+palauttaa toiminnot ulos, joten sama koodi ajetaan kahdessa paikassa:
 
     autolockpick_live.py   havainnot ruudulta, toiminnot SendInputille
     test_live.py           havainnot simulaatiosta, toiminnot simulaatioon
-
-Nain pelissa ajettava logiikka on se, joka on testattu simulaatiolla.
-
-Kaksi asiaa on tehty toisin kuin helperi 1.8:ssa, koska simulaatio osoitti
-ne ratkaiseviksi:
-
-1. F vapautetaan kun pesan kaanto PYSAHTYY, ei kiintean ajastimen taytyttya.
-   Kasvavaa kaantoa ei katkaista koskaan. Helperin 320 ms:n katto oli
-   lyhyempi kuin taysi kaanto, jolloin lukko ei voinut aueta lainkaan.
-
-2. Hiirta ohjataan takaisinkytkennalla mitatusta tiirikan kulmasta, ei
-   avoimena integrointina oletetulla herkkyydella. Vaara herkkyysarvio
-   hidastaa hakua muttei enaa riko sita.
 """
 
 from __future__ import annotations
 
-import math
-from dataclasses import dataclass, field
-
-PICK_MIN = -80.0
-PICK_MAX = 80.0
+from dataclasses import dataclass
 
 
 # --------------------------------------------------------------------------
@@ -37,58 +42,63 @@ PICK_MAX = 80.0
 
 @dataclass
 class ControlConfig:
-    """Hakuun ja ajoitukseen vaikuttavat arvot."""
+    """Kaikki matkat hiiriyksikkoina, kaikki kaannot asteina."""
 
-    # haku
-    scan_step_degrees: float = 8.0
-    # Pelin omista kuvista mitattuna tiirikka yltaa noin +-63 asteeseen.
-    # Reunat opitaan silti ajossa, koska mitta voi vaihdella naytolla.
-    scan_from: float = -62.0             # vasemmalta oikealle
-    scan_to: float = 62.0
-    edge_stall_units: float = 60.0       # nain iso pulssi ilman liiketta = reuna
-    edge_stall_degrees: float = 0.4
-    edge_stall_hits: int = 3             # nain monta perakkain ennen kuin uskotaan
-    edge_only_beyond_degrees: float = 40.0   # seinia etsitaan vain aarialueilta
-    edge_margin_degrees: float = 1.5
-    edge_minimum_span_degrees: float = 60.0  # opittu jana ei saa kutistua taman alle
-    climb_step_degrees: float = 2.5
-    minimum_climb_step_degrees: float = 0.10
-    movement_found_degrees: float = 3.0
-    near_open_degrees: float = 80.0
+    # Kotiinajo: tama tyonnetaan vasemmalle jokaisen yrityksen alussa.
+    # Arvon on ylitettava koko jana reilusti; seinaa vasten ylitys on ilmainen.
+    # 9000 yksikkoa kattaa koko janan viela silloin, kun pelin herkkyys on
+    # niin matala etta yksi yksikko on vain 0.014 astetta.
+    home_units: float = 9000.0
+    home_pulse_units: float = 1200.0
 
-    # hiiri
-    degrees_per_mouse_unit: float = 0.035
-    learn_sensitivity: bool = True
-    scan_mouse_max_units_per_pulse: float = 120.0
-    ramp_mouse_max_units_per_pulse: float = 40.0
-    mouse_pulse_interval_ms: float = 16.0
-    arrive_tolerance_degrees: float = 0.6
+    # Skannaus vasemmalta oikealle.
+    scan_step_units: float = 300.0
+    minimum_scan_step_units: float = 40.0
+    maximum_scan_step_units: float = 900.0
 
-    # F-ajoitus
-    minimum_hold_ms: float = 70.0        # ennen tata mittaukseen ei luoteta
-    stall_release_ms: float = 45.0       # nain kauan pysahtynytta kohtaa vasten
-    maximum_hold_ms: float = 1200.0      # hatakatko; ei saa alittaa taytta kaantoa
-    auto_raise_hold_cap: bool = True     # nostetaan itse, jos mitattu kaanto ei mahdu
+    # Rampin lahihaku.
+    fine_step_units: float = 110.0
+    minimum_step_units: float = 10.0
+
+    # Hiiripulssit.
+    max_units_per_pulse: float = 220.0
+    pulse_interval_ms: float = 16.0
+
+    # F-ajoitus. Kasvavaa kaantoa ei katkaista koskaan.
+    minimum_hold_ms: float = 70.0
+    stall_release_ms: float = 45.0
+    maximum_hold_ms: float = 1200.0
+    auto_raise_hold_cap: bool = True
+    finish_stall_ms: float = 260.0
     release_settle_ms: float = 40.0
     release_turn_threshold: float = 3.0
-    progress_epsilon_degrees: float = 0.9   # pienin muutos joka lasketaan liikkeeksi
 
-    # uusinta
-    restart_key_interval_ms: float = 420.0
+    # Kaannon tulkinta.
+    progress_epsilon_degrees: float = 0.9    # pienin muutos joka on liiketta
+    movement_found_degrees: float = 4.0      # tata pienempi on pelkka tarahdys
+    near_open_degrees: float = 80.0          # tasta eteenpain F jaa pohjaan
+
+    # Muisti yritysten valilla.
+    #
+    # resume_search on turvallinen kummin pain tahansa: jos sweetspot pysyy
+    # paikallaan, jo kayty jana ei kannata kayda uudestaan, ja jos se arvotaan
+    # uudelleen, uusi alue on yhta hyva kuin mika tahansa muu.
+    #
+    # remember_ramp on veto sen puolesta, etta sweetspot EI vaihdu yritysten
+    # valilla. Pelaajien kuvausten mukaan se voi vaihtua, ja simulaatiossa se
+    # vaihtuu, joten oletus on pois paalta. Jos huomaat pelissa etta kohta
+    # pysyy samana, laita tama paalle: silloin uusinta menee suoraan asiaan.
+    resume_search: bool = True               # jatka siita mihin jaatiin
+    remember_ramp: bool = False              # palaa suoraan loydettyyn ramppiin
+    learn_step_from_ramp: bool = True        # saada skannausvali rampin leveydesta
 
 
 @dataclass
 class Observation:
-    """Yksi havainto pelin tilasta.
+    """Havainto pelin tilasta. Tiirikasta ei ole tietoa eika sita tarvita."""
 
-    stamp on hetki, jolloin ruutu kaapattiin. Sita tarvitaan, koska havainto
-    saapuu ohjaimelle vasta kymmenien millisekuntien paasta: ilman sita
-    ohjain korjaisi samaa virhetta monta kertaa ja tiirikka varahtelisi.
-    """
-
-    stamp: float = -1.0              # ruudunkaappauksen hetki
-    ok: bool = False                 # tunnistettiinko lukkoruutu
-    pick: float = 0.0                # tiirikan kulma asteina
+    stamp: float = -1.0
+    ok: bool = False                 # nakyyko lukko
     turn: float = 0.0                # lukkopesan kaanto asteina
     timer: float = 1.0               # jaljella oleva aika osuutena
     running: bool = False            # kayko ajastin
@@ -98,17 +108,32 @@ class Observation:
 class Action:
     mouse_units: float = 0.0
     f_down: bool = False
-    press_start: bool = False
     phase: str = "idle"
     note: str = ""
 
 
 @dataclass
 class Probe:
-    pick: float
-    score: float
+    position: float          # hiiriyksikkoa vasemmasta reunasta
+    score: float             # suurin kaanto tassa kohdassa
     ramp: bool
     kind: str
+
+
+@dataclass
+class SearchMemory:
+    """Sailyy yritysten yli, koska lukko ei vaihdu yritysten valissa."""
+
+    resume_units: float = 0.0        # mihin asti jana on jo kayty
+    ramp_units: float | None = None  # paras loydetty kohta
+    ramp_score: float = 0.0
+    scan_step_units: float | None = None
+    swept_units: float = 0.0         # kuinka pitkalle on yhteensa edetty
+    wraps: int = 0
+
+    def forget_position(self) -> None:
+        self.resume_units = 0.0
+        self.swept_units = 0.0
 
 
 # --------------------------------------------------------------------------
@@ -117,79 +142,97 @@ class Probe:
 
 
 class Planner:
-    """Vasemmalta oikealle skannaus, sitten paikallinen kiipeily.
+    """Yksisuuntainen skannaus vasemmalta oikealle, sitten rampin lahihaku.
 
-    Global scan on tiukasti yksisuuntainen. Kun ensimmainen jatkuva kaanto
-    loytyy, kierros lukitaan rampin lahialueelle: parempi vaste jatkaa samaan
-    suuntaan, huonompi vaihtaa suunnan ja puolittaa askelen.
+    Kaikki paikat ovat hiiriyksikkoja vasemmasta aariasennosta. Asteita ei
+    kayteta missaan, koska tiirikan asentoa ei tunneta.
     """
 
-    def __init__(self, cfg: ControlConfig):
+    def __init__(self, cfg: ControlConfig, memory: SearchMemory):
         self.cfg = cfg
-        self.samples: list[tuple[float, float]] = []
+        self.memory = memory
+
+        self.scan_step = memory.scan_step_units or cfg.scan_step_units
+        self.step = cfg.fine_step_units
         self.ramp_locked = False
-        self.best_x: float | None = None
+        self.best_units: float | None = None
         self.best_score = 0.0
         self.local_direction = 1
-        self.step = cfg.climb_step_degrees
+        self.samples: list[tuple[float, float]] = []
+        self.responding: list[float] = []      # kohdat joissa lukko antoi periksi
 
-        self.scan_direction = 1 if cfg.scan_to >= cfg.scan_from else -1
-        self._points = self._build_points()
-        self._index = 0
+        self._next_scan: float | None = None
 
-    def _build_points(self) -> list[float]:
-        step = abs(self.cfg.scan_step_degrees) * self.scan_direction
-        points, x = [], self.cfg.scan_from
-        while (self.scan_direction > 0 and x <= self.cfg.scan_to + 1e-9) or \
-              (self.scan_direction < 0 and x >= self.cfg.scan_to - 1e-9):
-            points.append(max(PICK_MIN, min(PICK_MAX, x)))
-            x += step
-        return points
+    def first_target(self) -> float:
+        """Mista tama yritys aloittaa."""
+        if self.cfg.remember_ramp and self.memory.ramp_units is not None:
+            # Ramppi on jo loydetty: mennaan hieman sen vasemmalle puolelle
+            # ja jatketaan lahihakua sielta.
+            return max(0.0, self.memory.ramp_units - self.cfg.fine_step_units)
+        if self.cfg.resume_search:
+            return max(0.0, self.memory.resume_units)
+        return 0.0
 
-    @property
-    def scan_exhausted(self) -> bool:
-        return not self.ramp_locked and self._index >= len(self._points)
-
-    def record(self, x: float, score: float) -> str:
+    def record(self, position: float, score: float) -> str:
         score = max(0.0, score)
-        self.samples.append((x, score))
+        self.samples.append((position, score))
+        if score >= self.cfg.movement_found_degrees:
+            self.responding.append(position)
 
         if not self.ramp_locked:
             if score >= self.cfg.movement_found_degrees:
                 self.ramp_locked = True
-                self.best_x = x
+                self.best_units = position
                 self.best_score = score
-                self.local_direction = self.scan_direction
-                self.step = self.cfg.climb_step_degrees
+                self.local_direction = 1          # jatketaan samaan suuntaan
+                self.step = self.cfg.fine_step_units
+                self.memory.ramp_units = position
+                self.memory.ramp_score = score
                 return "ramppi"
+            self.memory.resume_units = position
             return "tyhja"
 
         if score > self.best_score + 0.15:
-            self.best_x = x
+            self.best_units = position
             self.best_score = score
-            if score >= 84.0:
-                self.step = min(self.step, 0.35)
-            elif score >= 72.0:
-                self.step = min(self.step, 0.75)
-            elif score >= 55.0:
-                self.step = min(self.step, 1.40)
+            self.memory.ramp_units = position
+            self.memory.ramp_score = score
+            if score >= 60.0:
+                self.step = min(self.step, self.cfg.fine_step_units * 0.25)
+            elif score >= 35.0:
+                self.step = min(self.step, self.cfg.fine_step_units * 0.5)
             return "parempi"
 
+        # Huonompi tai sama: mentiin pohjan yli. Suunta vaihtuu, askel puolittuu.
         self.local_direction *= -1
-        self.step = max(self.cfg.minimum_climb_step_degrees, self.step * 0.5)
+        self.step = max(self.cfg.minimum_step_units, self.step * 0.5)
         return "kaanto"
 
-    def next_target(self) -> float | None:
-        if not self.ramp_locked:
-            if self._index >= len(self._points):
-                return None
-            x = self._points[self._index]
-            self._index += 1
-            return x
+    def next_target(self, current: float) -> float:
+        if self.ramp_locked and self.best_units is not None:
+            return max(0.0, self.best_units + self.local_direction * self.step)
+        if self._next_scan is None:
+            self._next_scan = self.first_target()
+        else:
+            self._next_scan = current + self.scan_step
+        return self._next_scan
 
-        if self.best_x is None:
-            return None
-        return max(PICK_MIN, min(PICK_MAX, self.best_x + self.local_direction * self.step))
+    def learn_step(self) -> None:
+        """Paattelee sopivan skannausvalin siita, kuinka levea ramppi oli.
+
+        Rampin leveys hiiriyksikkoina on ainoa mittatikku, joka saadaan ilman
+        tiirikan tunnistusta. Skannausvalin on jaatava sita kapeammaksi, ettei
+        alue voi jaada kahden testin valiin.
+        """
+        if not self.cfg.learn_step_from_ramp or len(self.responding) < 2:
+            return
+        width = max(self.responding) - min(self.responding)
+        if width <= 0:
+            return
+        self.memory.scan_step_units = min(
+            self.cfg.maximum_scan_step_units,
+            max(self.cfg.minimum_scan_step_units, width * 1.5),
+        )
 
 
 # --------------------------------------------------------------------------
@@ -198,128 +241,58 @@ class Planner:
 
 
 class Controller:
-    """Ajaa yhta lockpick-yritysta reaaliajassa.
+    """Ajaa yhta yritysta. Havainnoista tarvitaan vain lukkopesan kaanto.
 
     Vaiheet:
-        travel   F ylhaalla, hiiri kohti seuraavaa testipistetta
-        hold     F pohjassa, mitataan kuinka pitkalle pesa kaantyy
+        home     hiiri vasempaan aariasentoon (avoin ohjaus, ei mittausta)
+        travel   hiiri seuraavaan testikohtaan
+        hold     F pohjassa, katsotaan kaantyyko pesa
         release  F ylhaalla, odotetaan etta pesa palaa nollaan
-        finish   lahes taysi kaanto: F jaa pohjaan kunnes lukko aukeaa
-        done     skannaus lapi, odotetaan ajan loppumista
+        finish   pesa kaantyy kohti loppua: F jaa pohjaan
     """
 
-    TRAVEL, HOLD, RELEASE, FINISH, DONE = "travel", "hold", "release", "finish", "done"
+    HOME, TRAVEL, HOLD, RELEASE, FINISH, DONE = (
+        "home", "travel", "hold", "release", "finish", "done")
 
-    def __init__(self, cfg: ControlConfig):
+    def __init__(self, cfg: ControlConfig, memory: SearchMemory | None = None):
         self.cfg = cfg
+        self.memory = memory if memory is not None else SearchMemory()
         self.reset()
 
     def reset(self) -> None:
-        # Aariasennot ja herkkyys ovat lukon ominaisuuksia, eivat yrityksen,
-        # joten ne sailyvat yritysten yli.
-        previous_edges = (getattr(self, "edge_low", PICK_MIN),
-                          getattr(self, "edge_high", PICK_MAX))
-        self.planner = Planner(self.cfg)
-        self.phase = self.TRAVEL
-        self.target: float | None = None
+        self.planner = Planner(self.cfg, self.memory)
+        self.phase = self.HOME
+        self.position = 0.0          # hiiriyksikkoa vasemmasta reunasta
+        self.target = 0.0
         self.probes: list[Probe] = []
 
+        self._homed_units = 0.0
+        self._next_pulse = 0.0
         self._phase_started = 0.0
         self._last_progress = 0.0
-        self._next_pulse = 0.0
         self._peak = 0.0
+        self._hold_baseline = 0.0
         self._release_ready: float | None = None
-        self._turn_rate_samples: list[float] = []
-        self._hold_started_turn = 0.0
-
-        # Lennossa olevat hiiripulssit: (annettu hetki, yksikot). Havainto on
-        # aina vanha, joten naiden vaikutus lisataan siihen ennen ohjausta.
-        self._pulse_log: list[tuple[float, float]] = []
-        self._inflight_units = 0.0
-        self._last_stamp = -1.0
-        self._last_stamp_pick: float | None = None
-
-        # Tiirikan todelliset aariasennot opitaan: jos iso pulssi ei liikuta
-        # tiirikkaa, siella on seina eika sita vasten kannata ajaa uudestaan.
-        self.edge_low, self.edge_high = previous_edges
-        self._wall_hits = {1: 0, -1: 0}
-        self.sensitivity = SensitivityEstimator(self.cfg.degrees_per_mouse_unit)
+        self._turn_rates: list[float] = []
 
     # -- apurit ------------------------------------------------------------
 
-    def _ingest(self, obs: Observation) -> float:
-        """Paivittaa lennossa olevat pulssit ja palauttaa ennustetun kulman.
+    @property
+    def measured_turn_rate(self) -> float | None:
+        if not self._turn_rates:
+            return None
+        ordered = sorted(self._turn_rates)
+        return ordered[len(ordered) // 2]
 
-        Ilman tata ohjain nakisi saman virheen useassa perakkaisessa
-        pulssissa ja ylittaisi tavoitteen reilusti: naytonlukuviive on
-        moninkertainen pulssivaliin nahden.
-        """
-        if obs.stamp > self._last_stamp:
-            consumed = sum(u for t, u in self._pulse_log if t <= obs.stamp)
-            if consumed and self._last_stamp_pick is not None:
-                moved = obs.pick - self._last_stamp_pick
-                if self.cfg.learn_sensitivity:
-                    self.sensitivity.feed(consumed, moved)
-                    self.cfg.degrees_per_mouse_unit = self.sensitivity.value
-                self._check_wall(consumed, moved, obs.pick)
-            self._pulse_log = [(t, u) for t, u in self._pulse_log if t > obs.stamp]
-            self._inflight_units = sum(u for _, u in self._pulse_log)
-            self._last_stamp = obs.stamp
-            self._last_stamp_pick = obs.pick
-
-        return obs.pick + self._inflight_units * self.cfg.degrees_per_mouse_unit
-
-    def _check_wall(self, consumed: float, moved: float, pick: float) -> None:
-        """Oppii tiirikan aariasennot, mutta varovasti.
-
-        Vaarin tunnistettu seina on pahempi kuin tunnistamatta jaanyt: se
-        kutistaisi hakualueen yhteen pisteeseen. Siksi seina hyvaksytaan vain
-        aarialueella, vain hiiren liikkuessa, vain useasta perakkaisesta
-        havainnosta, eika jana saa koskaan kutistua liikaa.
-        """
-        if self.phase != self.TRAVEL:
-            return
-        direction = 1 if consumed > 0 else -1
-        if abs(consumed) < self.cfg.edge_stall_units:
-            return
-        if abs(moved) >= self.cfg.edge_stall_degrees:
-            self._wall_hits[direction] = 0
-            return
-        if abs(pick) < self.cfg.edge_only_beyond_degrees:
-            self._wall_hits[direction] = 0
-            return
-
-        self._wall_hits[direction] += 1
-        if self._wall_hits[direction] < self.cfg.edge_stall_hits:
-            return
-
-        if direction > 0:
-            candidate = min(self.edge_high, pick)
-            if candidate - self.edge_low >= self.cfg.edge_minimum_span_degrees:
-                self.edge_high = candidate
-        else:
-            candidate = max(self.edge_low, pick)
-            if self.edge_high - candidate >= self.cfg.edge_minimum_span_degrees:
-                self.edge_low = candidate
-
-    def _clamp_to_edges(self, target: float) -> float:
-        margin = self.cfg.edge_margin_degrees
-        low = self.edge_low + margin if self.edge_low > PICK_MIN else PICK_MIN
-        high = self.edge_high - margin if self.edge_high < PICK_MAX else PICK_MAX
-        if low > high:
-            low = high = (low + high) / 2.0
-        return max(low, min(high, target))
-
-    def _emit_pulse(self, now: float, units: float) -> None:
-        self._pulse_log.append((now, units))
-        self._inflight_units += units
+    @property
+    def scan_step(self) -> float:
+        return self.planner.scan_step
 
     def _note_turn_rate(self, rate: float) -> None:
-        if not (20.0 <= rate <= 2000.0):
+        if not (20.0 <= rate <= 3000.0):
             return
-        self._turn_rate_samples.append(rate)
-        if len(self._turn_rate_samples) > 40:
-            self._turn_rate_samples.pop(0)
+        self._turn_rates.append(rate)
+        del self._turn_rates[:-40]
 
         if not self.cfg.auto_raise_hold_cap:
             return
@@ -328,107 +301,108 @@ class Controller:
             # Hatakatko ei saa koskaan katkaista kesken taytta kaantoa.
             self.cfg.maximum_hold_ms = round(needed * 1.6)
 
-    def _pulse_limit_units(self) -> float:
-        return (self.cfg.ramp_mouse_max_units_per_pulse if self.planner.ramp_locked
-                else self.cfg.scan_mouse_max_units_per_pulse)
-
-    def _take_target(self, now: float) -> bool:
-        nxt = self.planner.next_target()
-        if nxt is None:
-            self.phase = self.DONE
-            return False
-        self.target = self._clamp_to_edges(nxt)
-        self.phase = self.TRAVEL
-        self._phase_started = now
-        self._next_pulse = now
-        return True
+    def _pulse(self, now: float, units: float, phase: str, note: str) -> Action:
+        self._next_pulse = now + self.cfg.pulse_interval_ms / 1000.0
+        return Action(mouse_units=units, phase=phase, note=note)
 
     def _commit(self, now: float, kind_hint: str = "") -> str:
-        score = max(0.0, self._peak - self._hold_started_turn)
-        kind = self.planner.record(self.target if self.target is not None else 0.0, score)
-        self.probes.append(Probe(
-            pick=self.target if self.target is not None else 0.0,
-            score=score,
-            ramp=self.planner.ramp_locked,
-            kind=kind_hint or kind,
-        ))
-        return kind
+        score = max(0.0, self._peak - self._hold_baseline)
+        kind = self.planner.record(self.position, score)
+        self.probes.append(Probe(position=self.position, score=score,
+                                 ramp=self.planner.ramp_locked,
+                                 kind=kind_hint or kind))
+        return kind_hint or kind
 
-    @property
-    def measured_turn_rate(self) -> float | None:
-        """Mitattu pesan kaantonopeus asteina sekunnissa, jos sita on nahty."""
-        if not self._turn_rate_samples:
-            return None
-        ordered = sorted(self._turn_rate_samples)
-        return ordered[len(ordered) // 2]
+    def _to_release(self, now: float) -> None:
+        self.phase = self.RELEASE
+        self._phase_started = now
+        self._release_ready = None
 
     # -- paasilmukka -------------------------------------------------------
 
     def update(self, now: float, obs: Observation) -> Action:
         if not obs.ok:
-            # Tunnistus katkesi. F ylos, mutta mittaukset sailyvat.
-            return Action(phase=self.phase, note="ei tunnistusta")
+            # Lukkoa ei nay: F ylos, mutta mittaukset ja paikka sailyvat.
+            return Action(phase=self.phase, note="ei lukkoa nakyvissa")
 
-        predicted_pick = self._ingest(obs)
-
-        if self.target is None:
-            if not self._take_target(now):
-                return Action(phase=self.DONE, note="skannaus lapi")
-
+        if self.phase == self.HOME:
+            return self._home(now)
         if self.phase == self.TRAVEL:
-            return self._travel(now, obs, predicted_pick)
+            return self._travel(now, obs)
         if self.phase == self.HOLD:
             return self._hold(now, obs)
         if self.phase == self.RELEASE:
             return self._release(now, obs)
         if self.phase == self.FINISH:
             return self._finish(now, obs)
-        return Action(phase=self.DONE, note="odottaa ajan loppua")
+        return Action(phase=self.DONE, note="jana kayty")
 
-    def _travel(self, now: float, obs: Observation, predicted_pick: float) -> Action:
-        error = (self.target or 0.0) - predicted_pick
+    def _home(self, now: float) -> Action:
+        """Tyontaa hiirta vasemmalle yli koko janan.
 
-        if abs(error) <= self.cfg.arrive_tolerance_degrees:
+        Tama on ainoa kohta, jossa asemasta saadaan varmuus ilman tiirikan
+        nakemista: seinaa vasten ylimaarainen liike ei siirra mitaan.
+        """
+        if self._homed_units >= self.cfg.home_units:
+            self.position = 0.0
+            self.target = self.planner.next_target(0.0)
+            self.phase = self.TRAVEL
+            self._phase_started = now
+            self._next_pulse = now
+            return Action(phase=self.TRAVEL, note="vasen reuna loydetty")
+
+        if now < self._next_pulse:
+            return Action(phase=self.HOME, note="kotiinajo")
+
+        step = min(self.cfg.home_pulse_units, self.cfg.home_units - self._homed_units)
+        self._homed_units += step
+        done = self._homed_units / self.cfg.home_units * 100.0
+        return self._pulse(now, -step, self.HOME, f"vasempaan reunaan {done:.0f} %")
+
+    def _travel(self, now: float, obs: Observation) -> Action:
+        error = self.target - self.position
+
+        if abs(error) < 1.0:
             self.phase = self.HOLD
             self._phase_started = now
             self._last_progress = now
             self._peak = obs.turn
-            self._hold_started_turn = obs.turn
-            return Action(f_down=True, phase=self.HOLD, note=f"testi {self.target:+.1f}")
+            self._hold_baseline = obs.turn
+            return Action(f_down=True, phase=self.HOLD,
+                          note=f"testi {self.position:.0f} u")
 
         if now < self._next_pulse:
             return Action(phase=self.TRAVEL, note="pulssien valissa")
 
-        self._next_pulse = now + self.cfg.mouse_pulse_interval_ms / 1000.0
-        limit = self._pulse_limit_units()
-        units = error / max(1e-6, self.cfg.degrees_per_mouse_unit)
-        units = max(-limit, min(limit, units))
-        self._emit_pulse(now, units)
-        return Action(mouse_units=units, phase=self.TRAVEL,
-                      note=f"kohti {self.target:+.1f} ({error:+.1f})")
+        limit = self.cfg.max_units_per_pulse
+        units = max(-limit, min(limit, error))
+        self.position += units
+        return self._pulse(now, units, self.TRAVEL, f"kohti {self.target:.0f} u")
 
     def _hold(self, now: float, obs: Observation) -> Action:
-        elapsed_ms = (now - self._phase_started) * 1000.0
-
         if obs.turn > self._peak + self.cfg.progress_epsilon_degrees:
             if self._last_progress > self._phase_started:
-                delta_turn = obs.turn - self._peak
-                delta_t = now - self._last_progress
-                if delta_t > 0.004:
-                    self._note_turn_rate(delta_turn / delta_t)
+                delta = now - self._last_progress
+                if delta > 0.004:
+                    self._note_turn_rate((obs.turn - self._peak) / delta)
             self._peak = obs.turn
             self._last_progress = now
         elif obs.turn > self._peak:
             self._peak = obs.turn
 
-        # Lahes taysi kaanto: pidetaan pohjassa loppuun asti.
-        if self._peak >= self.cfg.near_open_degrees:
+        turned = self._peak - self._hold_baseline
+        elapsed_ms = (now - self._phase_started) * 1000.0
+        stalled_ms = (now - self._last_progress) * 1000.0
+
+        # Pesa kaantyy kohti loppua: F jaa pohjaan.
+        if turned >= self.cfg.near_open_degrees:
             self.phase = self.FINISH
             self._phase_started = now
             self._last_progress = now
             return Action(f_down=True, phase=self.FINISH, note="viimeistely")
 
-        stalled_ms = (now - self._last_progress) * 1000.0
+        # Kasvavaa kaantoa ei katkaista. Pysahtynyt kohta vapautetaan heti:
+        # sita vasten painaminen vain kuluttaa tiirikkaa.
         release = (elapsed_ms >= self.cfg.minimum_hold_ms
                    and stalled_ms >= self.cfg.stall_release_ms)
         if not release and elapsed_ms >= self.cfg.maximum_hold_ms:
@@ -436,23 +410,21 @@ class Controller:
 
         if release:
             kind = self._commit(now)
-            self.phase = self.RELEASE
-            self._phase_started = now
-            self._release_ready = None
-            return Action(phase=self.RELEASE,
-                          note=f"{self._peak - self._hold_started_turn:.1f} deg / {kind}")
+            self._to_release(now)
+            return Action(phase=self.RELEASE, note=f"{turned:.1f} deg / {kind}")
 
-        return Action(f_down=True, phase=self.HOLD, note=f"{obs.turn:.1f} deg")
+        return Action(f_down=True, phase=self.HOLD, note=f"{turned:.1f} deg")
 
     def _release(self, now: float, obs: Observation) -> Action:
         if obs.turn <= self.cfg.release_turn_threshold and self._release_ready is None:
             self._release_ready = now + self.cfg.release_settle_ms / 1000.0
 
         if self._release_ready is not None and now >= self._release_ready:
-            self.target = None
-            if not self._take_target(now):
-                return Action(phase=self.DONE, note="skannaus lapi")
-            return Action(phase=self.TRAVEL, note="seuraava piste")
+            self.target = self.planner.next_target(self.position)
+            self.memory.swept_units = max(self.memory.swept_units, self.target)
+            self.phase = self.TRAVEL
+            self._next_pulse = now
+            return Action(phase=self.TRAVEL, note=f"seuraava {self.target:.0f} u")
 
         return Action(phase=self.RELEASE, note="pesa palautuu")
 
@@ -461,53 +433,56 @@ class Controller:
             self._peak = obs.turn
             self._last_progress = now
 
-        # Jos kaanto pysahtyy, kohta ei ollut ydin. Jatkuva painaminen
-        # kuluttaisi vain tiirikkaa, joten palataan hakuun.
-        if (now - self._last_progress) * 1000.0 >= self.cfg.stall_release_ms * 4:
+        # Jos kaanto pysahtyy, kohta ei ollut pohja. Painaminen lopetetaan.
+        if (now - self._last_progress) * 1000.0 >= self.cfg.finish_stall_ms:
             self._commit(now, "lahes")
-            self.phase = self.RELEASE
-            self._phase_started = now
-            self._release_ready = None
-            return Action(phase=self.RELEASE, note="ei ollut ydin")
+            self._to_release(now)
+            return Action(phase=self.RELEASE, note="ei ollut pohja")
 
-        return Action(f_down=True, phase=self.FINISH, note=f"{obs.turn:.1f} deg")
+        return Action(f_down=True, phase=self.FINISH,
+                      note=f"{obs.turn - self._hold_baseline:.1f} deg")
+
+    # -- yrityksen paatos --------------------------------------------------
+
+    def finish_attempt(self, opened: bool) -> None:
+        """Paivittaa muistin seuraavaa yritysta varten."""
+        self.planner.learn_step()
+
+        if opened:
+            self.memory.forget_position()
+            self.memory.ramp_units = None
+            self.memory.ramp_score = 0.0
+            return
+
+        if self.planner.ramp_locked:
+            # Ramppi loytyi mutta aika loppui: sinne palataan suoraan.
+            return
+
+        self.memory.swept_units = max(self.memory.swept_units, self.position)
+        if self.memory.swept_units >= self.cfg.home_units:
+            # Koko jana on kayty ilman osumaa: askel oli liian harva.
+            self.memory.wraps += 1
+            self.memory.forget_position()
+            step = self.memory.scan_step_units or self.cfg.scan_step_units
+            self.memory.scan_step_units = max(
+                self.cfg.minimum_scan_step_units, step * 0.5)
+        else:
+            self.memory.resume_units = self.position
 
 
 # --------------------------------------------------------------------------
-# Hiiriherkkyyden mittaus
+# Apufunktiot
 # --------------------------------------------------------------------------
 
 
-class SensitivityEstimator:
-    """Paivittaa asteet/hiiriyksikko -arvion toteutuneesta liikkeesta.
+def full_turn_ms(turn_rate: float | None, degrees: float = 90.0) -> float | None:
+    if not turn_rate or turn_rate <= 1.0:
+        return None
+    return degrees / turn_rate * 1000.0
 
-    Ilman tata koko haku riippuu siita, etta kayttajan pelin hiiriherkkyys
-    sattuu vastaamaan asetustiedoston oletusta.
-    """
 
-    def __init__(self, initial: float, minimum: float = 0.004, maximum: float = 0.5):
-        self.value = initial
-        self.minimum = minimum
-        self.maximum = maximum
-        self.samples: list[float] = []
-
-    def feed(self, units: float, degrees_moved: float) -> None:
-        if abs(units) < 8.0 or abs(degrees_moved) < 0.4:
-            return
-        if units * degrees_moved <= 0:      # vastakkainen suunta, hylataan
-            return
-        ratio = abs(degrees_moved) / abs(units)
-        if not (self.minimum <= ratio <= self.maximum):
-            return
-        self.samples.append(ratio)
-        if len(self.samples) > 40:
-            self.samples.pop(0)
-        ordered = sorted(self.samples)
-        self.value = ordered[len(ordered) // 2]
-
-    @property
-    def confident(self) -> bool:
-        return len(self.samples) >= 5
+def clamp(value: float, low: float, high: float) -> float:
+    return max(low, min(high, value))
 
 
 def wrap_angle(angle: float, near: float) -> float:
@@ -517,17 +492,3 @@ def wrap_angle(angle: float, near: float) -> float:
     while near - angle > 90.0:
         angle += 180.0
     return angle
-
-
-def clamp(value: float, low: float, high: float) -> float:
-    return max(low, min(high, value))
-
-
-def full_turn_ms(turn_rate: float | None) -> float | None:
-    if not turn_rate or turn_rate <= 1.0:
-        return None
-    return 90.0 / turn_rate * 1000.0
-
-
-def degrees(radians: float) -> float:
-    return radians * 180.0 / math.pi

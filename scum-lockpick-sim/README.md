@@ -46,24 +46,54 @@ Jos tunnistus ei loyda lukkoa, saada `live_asetukset.json`-tiedoston
 `vision`-osiota: `lock_radius_fraction` (lukon sade jaettuna ruudun
 korkeudella) ja `center_offset_x` / `center_offset_y`.
 
+### Tiirikkaa ei tunnisteta lainkaan
+
+Tama on koko ohjelman tarkein rakenteellinen valinta. Tiirikka on ohut, se voi
+olla eri tyokalu (hiuspinni, hakaneula, improvised lockpick) ja se nakyy eri
+kulmissa. Sen tunnistus oli ketjun epavarmin kohta, ja **sita ei tarvita**:
+
+```
+LUKKO ON AINOA MITTARI
+
+  kaanto = 0        -> vaara kohta, siirry eteenpain
+  kaanto = vahan    -> ramppi loytyi, hae sen pohja
+  kaanto = melkein  -> F pohjaan, lukko aukeaa
+```
+
+Hiirta ohjataan **hiiriyksikkoina**, ei asteina. Siksi ohjelman ei tarvitse
+tietaa pelin hiiriherkkyytta eika tiirikan asentoa. Vasen aariasento
+loydetaan tyontamalla hiirta reilusti yli koko janan: seinaa vasten
+ylimaarainen liike ei tee mitaan, joten jokainen yritys alkaa samasta
+kohdasta ilman etta sita tarvitsee mitata.
+
+```
+ALOITUS (vasen reuna)
+  |
+  +--F--+--F--+--F--+--F--+--F--+--F--+   vasemmalta oikealle
+                                |
+                                +-- lukko antoi periksi = RAMPPI
+                                    pienempi askel, hae pohja
+                                    TARGET -> F pohjaan
+```
+
 ### Miten se toimii
 
 1. Kaappaa pelin ikkunan keskelta neliomaisen alueen (`mss`).
 2. **Lukon runko**: metallinvaaleat pikselit keskella -> keskipiste.
 3. **Lukkopesan kaanto**: avaimenreika on lahes musta (`lum < 22`); sen
    paaakselin suunta on pesan kaanto. Maski vaaditaan pitkulaiseksi, muuten
-   ruutu hylataan.
-4. **Tiirikan kulma**: punainen lakka erottuu ruosteesta silla, etta siina
-   vihrea ja sininen ovat yhta alhaalla (`R-G > 18` ja `G-B < 10`). Pelkka
-   punaisuus poimisi ruosteisen lukon.
-5. **Aika**: kirkkaat pikselit lukon ulkopuolisella renkaalla.
-6. Ohjaus: `lockpick_control.py` paattaa mihin tiirikka ajetaan ja milloin F
-   painetaan. Hiiri liikkuu `SendInput`-pulsseina, nappaimet skannauskoodeina
-   (pelit lukevat DirectInputilla eivatka aina huomaa virtuaalikoodeja).
+   ruutu hylataan. Tama on ainoa mittaus, jonka varassa haku on.
+4. **Aika**: kirkkaat pikselit lukon ulkopuolisella renkaalla.
+5. Ohjaus: `lockpick_control.py` paattaa montako hiiriyksikkoa liikutaan ja
+   milloin F painetaan. Hiiri liikkuu `SendInput`-pulsseina, nappaimet
+   skannauskoodeina (pelit lukevat DirectInputilla eivatka aina huomaa
+   virtuaalikoodeja).
 
 Kaikki mitat ovat lukon sateen tai ruudun korkeuden monikertoja, joten sama
 koodi toimii eri resoluutioilla. `test_vision.py` varmistaa taman 720p:sta
-1440p:hen.
+1440p:hen ja tarkistaa lisaksi, ettei tiirikan asento vuoda kaannon lukemaan:
+pelin omissa kuvissa tiirikka on aarilaidoissa, ja pesan kaanto luetaan
+molemmissa samaksi (+1,9 vs +1,4 astetta).
 
 ### Aloitus ja uusinnat
 
@@ -73,13 +103,19 @@ SPACEa ja **tarkistaa itse**, alkoiko aikakaari kutistua. Jos ei alkanut, se
 painaa uudelleen. Sama silmukka hoitaa seka ensimmaisen aloituksen etta
 epaonnistumisen jalkeiset uusinnat.
 
-### Mita mitataan ajon aikana
+### Mita ohjelma oppii ajon aikana
 
 | Suure | Miksi |
 |---|---|
-| Hiiriherkkyys (astetta/yksikko) | pelin herkkyys ei ole tiedossa etukateen; opitaan toteutuneesta liikkeesta ja tallennetaan |
-| Lukkopesan kaantonopeus | maaraa kuinka kauan F:aa pitaa pitaa; ilman tata F:n kattoaika on arvaus |
-| Tiirikan aariasennot | jos iso hiiripulssi ei liikuta tiirikkaa, siella on seina |
+| Lukkopesan kaantonopeus | maaraa kuinka kauan F:aa pitaa pitaa; ilman tata F:n kattoaika on arvaus. Jos katko on liian lyhyt, ohjelma nostaa sita itse. |
+| Skannausvali (hiiriyksikkoa) | jos koko jana kaydaan lapi loytamatta mitaan, vali oli liian harva ja se puolittuu. Kun ramppi loytyy, sen leveys kertoo sopivan valin. |
+| Jo kayty jana | seuraava yritys jatkaa siita mihin edellinen jai, eika kayda samaa aluetta uudestaan. |
+
+Asetuksissa on lisaksi `remember_ramp`, joka palaisi uusinnassa suoraan
+edellisella kerralla loydettyyn ramppiin. **Oletuksena se on pois paalta**,
+koska pelaajien mukaan sweetspot voi vaihtua yritysten valilla. Jos huomaat
+etta kohta pysyy pelissasi samana, laita se paalle - simulaatiossa se
+vahentaa tarvittavia yrityksia, mutta vaihtuvalla kohdalla se haittaa.
 
 ---
 
@@ -153,16 +189,23 @@ ensimmaisella yrityksella.
 
 ### Miten live-skripti korjaa nama
 
-Live-skripti kayttaa **vasemmalta oikealle** -hakua, kuten pyydettiin, mutta
-kaksi ensimmaista ongelmaa on poistettu rakenteellisesti:
+Live-skripti kayttaa **vasemmalta oikealle** -hakua, kuten pyydettiin, ja
+molemmat ongelmat on poistettu rakenteellisesti:
 
 - **F vapautetaan kun kaanto pysahtyy**, ei kiintean ajastimen taytyttya.
   Kasvavaa kaantoa ei katkaista koskaan. Hatakatko on olemassa, mutta ohjelma
   nostaa sita itse, jos mitattu kaantonopeus ei mahdu sen alle.
-- **Hiirta ohjataan takaisinkytkennalla** mitatusta tiirikan kulmasta, ja
-  lennossa olevat pulssit lasketaan mukaan. Vaara herkkyysarvio hidastaa hakua
-  muttei riko sita: testissa kaksinkertainen virhe herkkyydessa ei pudottanut
-  onnistumista lainkaan.
+- **Hiirta ohjataan hiiriyksikkoina eika asteina.** Pelin hiiriherkkyytta ei
+  tarvitse tietaa lainkaan. Testissa herkkyys vaihdeltiin 0,015:sta
+  0,090 asteeseen yksikkoa kohti - kuusinkertainen ero - ilman etta ohjaimen
+  asetuksiin koskettiin:
+
+| Pelin herkkyys | avautui | yrityksia |
+|---|---|---|
+| 0,015 deg/yksikko | 92,0 % | 2,08 |
+| 0,035 deg/yksikko | 100,0 % | 1,00 |
+| 0,060 deg/yksikko | 100,0 % | 1,16 |
+| 0,090 deg/yksikko | 100,0 % | 1,77 |
 
 ---
 
@@ -189,6 +232,10 @@ docs/MEKANIIKKA.md          mika on lahteista ja mika on taman mallin arviota
 
 ## Rajaukset
 
+Ainoa asia, joka tunnistuksen on saatava oikein, on **lukkopesan kaanto**.
+Jos `--probe` nayttaa sen liikkuvan kun painat F:aa itse, ohjelmalla on kaikki
+mita se tarvitsee.
+
 **Live-skriptia ei ole voitu ajaa oikeassa pelissa taalla.** Windowsia eika
 SCUMia ei ollut kaytettavissa. Testattu on se, mita voi testata: hakulogiikka
 simuloitua lukkoa vasten, tunnistus pelin omia ruutukaappauksia vasten ja
@@ -202,8 +249,9 @@ kayran muoto, pesan kaantonopeus ja kulumisnopeudet ovat kalibrointia, eivat
 pelin lahdekoodista luettuja arvoja. Erittely on tiedostossa
 [docs/MEKANIIKKA.md](docs/MEKANIIKKA.md).
 
-Tiirikan liikevara **+-63 astetta** sen sijaan on mitattu pelin omista
-ruutukaappauksista (`live/test_vision.py`: vasen -62, oikea +65).
+Tiirikan liikevara **+-63 astetta** on mitattu pelin omista ruutukaappauksista.
+Sita kaytetaan enaa vain simulaatiossa; live-skripti ei tarvitse sita, koska
+se ei mittaa asteita lainkaan.
 
 Automaattinen syote on pelin saantojen kannalta pelaajan oma vastuu; SCUMissa
 on EAC, ja palvelimilla voi olla omat saantonsa automaatiosta.
