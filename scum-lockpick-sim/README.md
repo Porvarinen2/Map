@@ -9,9 +9,10 @@ Kolme osaa, jotka ajavat samaa lukkomallia ja samaa hakulogiikkaa:
 | `sim/` | eraajosimulaattori asetusten viritykseen | mika tahansa Python |
 
 Ideana on, etta pelissa ajettava logiikka on se, joka on ensin todistettu
-simulaatiolla toimivaksi. `live/test_live.py` ajaa oikean ohjaimen simuloitua
-lukkoa vasten, ja `live/test_vision.py` ajaa oikean tunnistuksen pelin omia
-ruutukaappauksia vasten.
+toimivaksi. `live/test_gameplay.py` ajaa tunnistuksen ja ohjaimen **oikean
+pelivideon 47 kehysta** vasten, `live/test_live.py` ajaa ohjaimen simuloitua
+lukkoa vasten ja `live/test_vision.py` tunnistuksen pelin ruutukaappauksia
+vasten.
 
 ---
 
@@ -97,11 +98,22 @@ molemmissa samaksi (+1,9 vs +1,4 astetta).
 
 ### Aloitus ja uusinnat
 
-Ohjelma ei yrita lukea "Press Space to Start" -teksti&auml; &mdash; sumea
-aloitusruutu oli juuri se, mihin helperi 1.8 kompastui. Sen sijaan se painaa
-SPACEa ja **tarkistaa itse**, alkoiko aikakaari kutistua. Jos ei alkanut, se
-painaa uudelleen. Sama silmukka hoitaa seka ensimmaisen aloituksen etta
-epaonnistumisen jalkeiset uusinnat.
+Ohjelma ei yrita lukea "Press Space to Start" -teksti&auml;. Sen sijaan se
+katsoo, **onko valkoista aikakaarta olemassa**. Pelivideosta mitattuna:
+
+| Tilanne | Kaaren pikseleita |
+|---|---|
+| Yritys kaynnissa (45 kehysta) | 4640-6401 |
+| Sumea aloitusruutu | 0 |
+| SUCCESS-ruutu | 1 |
+
+Ero on niin suuri, ettei siina ole tulkinnanvaraa. Kun kaarta ei ole, ohjelma
+painaa SPACEa; kun se ilmestyy, yritys on kaynnissa.
+
+Sama silmukka hoitaa seka ensimmaisen aloituksen etta epaonnistumisen
+jalkeiset uusinnat. Onnistuminen erottuu aikakatkaisusta siita, etta
+onnistuessa koko minipeli sulkeutuu, kun taas aikakatkaisussa lukko jaa
+nakyviin ja aloituskehote palaa.
 
 ### Mita ohjelma oppii ajon aikana
 
@@ -109,13 +121,14 @@ epaonnistumisen jalkeiset uusinnat.
 |---|---|
 | Lukkopesan kaantonopeus | maaraa kuinka kauan F:aa pitaa pitaa; ilman tata F:n kattoaika on arvaus. Jos katko on liian lyhyt, ohjelma nostaa sita itse. |
 | Skannausvali (hiiriyksikkoa) | jos koko jana kaydaan lapi loytamatta mitaan, vali oli liian harva ja se puolittuu. Kun ramppi loytyy, sen leveys kertoo sopivan valin. |
-| Jo kayty jana | seuraava yritys jatkaa siita mihin edellinen jai, eika kayda samaa aluetta uudestaan. |
 
-Asetuksissa on lisaksi `remember_ramp`, joka palaisi uusinnassa suoraan
-edellisella kerralla loydettyyn ramppiin. **Oletuksena se on pois paalta**,
-koska pelaajien mukaan sweetspot voi vaihtua yritysten valilla. Jos huomaat
-etta kohta pysyy pelissasi samana, laita se paalle - simulaatiossa se
-vahentaa tarvittavia yrityksia, mutta vaihtuvalla kohdalla se haittaa.
+Asetuksissa on kaksi muistikytkinta, `resume_search` ja `remember_ramp`, jotka
+jatkaisivat uusinnassa siita mihin edellinen yritys jai. **Molemmat ovat
+oletuksena pois paalta**, koska pelaajien mukaan sweetspot voi vaihtua
+yritysten valilla - ja silloin muistista on haittaa (simulaatiossa 94 % vs
+100 %). Oletuskaytos on siis se, mita piirsit: jokainen yritys alkaa
+vasemmasta reunasta. Jos huomaat pelissasi etta kohta pysyy samana, laita
+nama paalle.
 
 ---
 
@@ -153,6 +166,7 @@ cd sim  && python test_sim.py       # lukkomalli ja hakusaanto
 cd live && python test_live.py      # live-ohjain simuloitua lukkoa vasten
 cd live && python test_vision.py    # tunnistus pelin omia kuvia vasten
 cd live && python test_runner.py    # tilakone: aloitus, uusinta, avaus, tauko
+cd live && python test_gameplay.py  # oikean pelivideon 47 kehysta
 ```
 
 `test_vision.py` vaatii Pillowin (`pip install pillow`). Live-ajo ei vaadi.
@@ -217,7 +231,9 @@ live/lockpick_control.py    hakusaanto ja tilakone (jaettu logiikka)
 live/test_live.py           ohjain simuloitua lukkoa vasten
 live/test_vision.py         tunnistus pelin omia kuvia vasten
 live/test_runner.py         tilakone valesyotteella
+live/test_gameplay.py       oikean pelivideon toisto
 live/references/            SCUMin ruutukaappaukset testeja varten
+live/gameplay/              47 kehysta oikeasta lockpick-yrityksesta
 
 sim/lockpick_model.py       lukon fysiikka: palautekayra, kaanto, kuluminen
 sim/solver.py               simulaation autolockpick
@@ -230,7 +246,46 @@ docs/MEKANIIKKA.md          mika on lahteista ja mika on taman mallin arviota
 
 ---
 
+## Mita pelivideo opetti
+
+Kayttajan nauhoitus (47 kehysta, 5 kuvaa sekunnissa) muutti kolme asiaa.
+
+**1. Tiirikka kaantyy lukkopesan mukana.**
+Kehyksessa 29 avaimenreika on pystyssa ja tiirikka osoittaa ylos; kehyksessa
+45 avaimenreika on vaakatasossa ja tiirikka osoittaa oikealle. Tiirikan kulma
+ruudulla on siis hiiren asennon JA pesan kaannon summa. Sita ei voi kayttaa
+hiiren asentona juuri silloin kun lukko kaantyy - eli juuri silloin kun sita
+tarvittaisiin. Tama vahvistaa, etta tiirikan tunnistuksesta luopuminen oli
+oikea ratkaisu eika pelkka yksinkertaistus.
+
+**2. Pesa ei palaa nollaan testien valilla.**
+Mitattu sarja oli 19, 22, 6, 33, 38, 26, 41, 50, 49, 32, 62, 75, 75, 63, 91.
+Se nousee ja notkahtaa, koska pelaaja naputtaa F:aa. Pisteytys ei siksi voi
+mitata *muutosta* lahtotasosta - se lukee nyt arvon, johon pesa **asettuu**
+F pohjassa. Se on suoraan se, kuinka pitkalle pesa antaa tassa kohdassa
+periksi, riippumatta siita mihin edellinen testi jatti sen.
+
+**3. Aikakaari ei kutistu nakyvasti.**
+Yhdeksassa sekunnissa kaari pieneni vain neljanneksen. Aiempi versio paatteli
+yrityksen olevan kaynnissa siita, etta kaari kutistuu - **se ei olisi koskaan
+lauennut**, joten ohjelma olisi jaanyt painamaan SPACEa loputtomiin. Nyt
+kaynnissaolo luetaan kaaren olemassaolosta.
+
+Videossa nakyi lisaksi, etta yhden yrityksen laskuri lahti **kymmenesta** ja
+lukko aukesi yhdeksassa sekunnissa. Patch noteissa mainittu 2,75 sekuntia ei
+siis pade ainakaan kaikkiin tilanteisiin - kyseessa voi olla harjoituslauta,
+jonka aikaa voi saataa. Simulaattorille voi antaa mitatun ajan:
+`python lockpick_sim.py --seconds 10`. Erolla on merkitysta: samoilla
+asetuksilla Basic-lukko aukeaa ensimmaisella yrityksella 69 %:ssa
+2,75 sekunnin ikkunassa ja 97 %:ssa kymmenen sekunnin ikkunassa.
+
+---
+
 ## Rajaukset
+
+Tunnistus on ajettu kayttajan omaa pelivideota vasten: kaikki 45 yrityksen
+kehysta tunnistuvat, levossa oleva pesa luetaan alle 2,6 asteeksi ja
+avautuminen 91,3 asteeksi.
 
 Ainoa asia, joka tunnistuksen on saatava oikein, on **lukkopesan kaanto**.
 Jos `--probe` nayttaa sen liikkuvan kun painat F:aa itse, ohjelmalla on kaikki

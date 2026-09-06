@@ -222,44 +222,37 @@ def test_hold_cap_repairs_itself() -> None:
     frozen = batch(lock, sessions=80, maximum_hold_ms=320, auto_raise_hold_cap=False)
     check("itsekorjaus paalla: avautuu", tight["success"] > 0.80,
           f"{tight['success'] * 100:.1f} %")
-    check("itsekorjaus pois: ei avaudu", frozen["success"] < 0.05,
-          f"{frozen['success'] * 100:.1f} %")
+    # Liian lyhyt katto ei enaa yksin esta avaamista, koska perakkaiset
+    # painallukset kerryttavat kaantoa - juuri sita pelaajat kutsuvat
+    # featheringiksi. Se kuitenkin hidastaa, joten itsekorjaus kannattaa.
+    check("itsekorjaus pois: hitaampi", frozen["attempts"] >= tight["attempts"],
+          f"{frozen['attempts']:.2f} vs {tight['attempts']:.2f} yritysta")
 
 
-def test_resume_helps_and_never_hurts() -> None:
-    """Jo kayty jana muistetaan. Se ei voi olla haitaksi kummassakaan tapauksessa."""
-    print("Jo kayty jana muistetaan")
-    lock = LockConfig(tier="medium", skill=0)     # lyhin aika, 2.75 s
-    resuming = batch(lock, sessions=140, max_attempts=6)
-    restarting = batch(lock, sessions=140, max_attempts=6, resume_search=False)
-    check("jatkaminen ei ole huonompi kuin alusta aloittaminen",
-          resuming["success"] >= restarting["success"] - 0.02,
-          f"{resuming['success'] * 100:.1f} % vs {restarting['success'] * 100:.1f} %")
-    check("jatkaminen tarvitsee korkeintaan saman verran yrityksia",
-          resuming["attempts"] <= restarting["attempts"] + 0.05,
-          f"{resuming['attempts']:.2f} vs {restarting['attempts']:.2f}")
+def test_memory_is_off_by_default() -> None:
+    """Muisti auttaa vain jos sweetspot pysyy paikallaan yritysten yli.
 
-
-def test_ramp_memory_is_off_by_default() -> None:
-    """Rampin muistaminen auttaa vain jos sweetspot pysyy paikallaan.
-
-    Pelaajien mukaan se voi vaihtua yritysten valilla, joten oletus on pois.
+    Pelaajien mukaan se voi vaihtua, joten oletuksena jokainen yritys alkaa
+    vasemmasta reunasta puhtaalta polydalta.
     """
-    print("Rampin muisti: hyoty riippuu siita vaihtuuko sweetspot")
-    check("oletuksena pois paalta", ControlConfig().remember_ramp is False)
+    print("Muisti on oletuksena pois")
+    cfg = ControlConfig()
+    check("jatkaminen pois paalta", cfg.resume_search is False)
+    check("rampin muisti pois paalta", cfg.remember_ramp is False)
+    check("askelen oppiminen jaa paalle", cfg.learn_step_from_ramp is True)
 
-    lock = LockConfig(tier="medium", skill=0)
-    stable_on = batch(lock, sessions=140, max_attempts=6,
-                      stable_sweet_spot=True, remember_ramp=True)
-    stable_off = batch(lock, sessions=140, max_attempts=6,
-                       stable_sweet_spot=True, remember_ramp=False)
+    lock = LockConfig(tier="medium", skill=0)     # lyhin aika, 2.75 s
+    stable_on = batch(lock, sessions=140, max_attempts=6, stable_sweet_spot=True,
+                      resume_search=True, remember_ramp=True)
+    stable_off = batch(lock, sessions=140, max_attempts=6, stable_sweet_spot=True)
     check("pysyvalla sweetspotilla muisti nopeuttaa",
           stable_on["attempts"] <= stable_off["attempts"] + 0.02,
           f"{stable_on['attempts']:.2f} vs {stable_off['attempts']:.2f} yritysta")
 
-    rolling_on = batch(lock, sessions=140, max_attempts=6, remember_ramp=True)
-    rolling_off = batch(lock, sessions=140, max_attempts=6, remember_ramp=False)
-    check("vaihtuvalla sweetspotilla muisti haittaa, siksi oletus on pois",
+    rolling_on = batch(lock, sessions=140, max_attempts=6,
+                       resume_search=True, remember_ramp=True)
+    rolling_off = batch(lock, sessions=140, max_attempts=6)
+    check("vaihtuvalla sweetspotilla muisti ei auta, siksi oletus on pois",
           rolling_off["success"] >= rolling_on["success"],
           f"pois {rolling_off['success'] * 100:.1f} % vs paalla "
           f"{rolling_on['success'] * 100:.1f} %")
@@ -313,8 +306,7 @@ def main() -> int:
         test_scan_runs_left_to_right,
         test_rising_turn_is_never_cut,
         test_hold_cap_repairs_itself,
-        test_resume_helps_and_never_hurts,
-        test_ramp_memory_is_off_by_default,
+        test_memory_is_off_by_default,
         test_step_halves_after_empty_sweep,
         test_no_input_without_detection,
         test_only_turn_is_used,

@@ -16,5 +16,11 @@ echo.
 echo === tunnistus pelin omia kuvia vasten ===
 %PY% -u live\test_vision.py
 echo.
+echo === tilakone valesyotteella ===
+%PY% -u live\test_runner.py
+echo.
+echo === oikean pelivideon toisto ===
+%PY% -u live\test_gameplay.py
+echo.
 pause
 endlocal

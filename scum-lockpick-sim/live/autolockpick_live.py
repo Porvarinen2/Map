@@ -106,6 +106,10 @@ class VisionConfig:
     metal_max: float = 205.0
     dark_max: float = 22.0                # avaimenreian ylin kirkkaus
     bright_min: float = 185.0             # aikakaaren alin kirkkaus
+    # Kaynnissa olevassa yrityksessa aikakaari on terava ja kirkas. Sumeassa
+    # aloitusruudussa ja SUCCESS-ruudussa sita ei ole lainkaan. Mitattu pelin
+    # videosta: kaynnissa 4640-6401 pikselia, aloitusruutu 0, SUCCESS 1.
+    running_arc_pixels: int = 1500
 
     min_keyhole_elongation: float = 4.0   # alle taman maski on saastunut
 
@@ -120,10 +124,9 @@ class VisionConfig:
 @dataclass
 class RunConfig:
     capture_fps: float = 90.0
-    open_turn_degrees: float = 55.0       # tata suurempi kaanto ennen katoamista = auki
+    open_turn_degrees: float = 45.0       # nain paljon pesan on pitanyt kaantya
     lost_frames_for_end: int = 6
     restart_key_interval_ms: float = 420.0
-    timer_running_drop: float = 0.04      # nain paljon kaaren on kutistuttava
     max_attempts: int = 0                 # 0 = rajaton
 
 
@@ -330,6 +333,9 @@ class WinInput:
 
 def timer_running(history, drop: float, window: float = 0.45,
                   minimum_samples: int = 4) -> bool:
+    """Kutistuuko aikakaari. Ei enaa kaytossa tunnistuksessa, koska kaari
+    kutistuu liian hitaasti: pelin videossa se pieneni 9 sekunnissa vain
+    neljanneksen. Jatetty tanne, koska se on hyodyllinen debug-mittari."""
     if len(history) < minimum_samples + 2:
         return False
     latest = history[-1][0]
@@ -352,7 +358,6 @@ class Detector:
         self.last_turn = 0.0
         self.timer_peak = 1.0
         self.timer_history: list[tuple[float, float]] = []
-        self.running_drop = 0.04
         self.debug = {}
 
     def _grids(self, size: int):
@@ -433,16 +438,13 @@ class Detector:
         self.timer_history.append((stamp, timer))
         del self.timer_history[:-60]
 
+        # Kaynnissaolo luetaan kaaren OLEMASSAOLOSTA, ei sen kutistumisesta.
+        # Kaari kutistuu niin hitaasti, ettei trendia ehdi nahda; sen sijaan
+        # sumeassa aloitusruudussa kaarta ei ole ollenkaan.
+        running = ring_count >= cfg.running_arc_pixels
+
         return Observation(stamp=stamp, ok=True, turn=turn,
-                           timer=timer, running=self.timer_is_running())
-
-    def timer_is_running(self) -> bool:
-        """Ajastin kay, jos valkoinen kaari on kutistunut viime hetkina.
-
-        Tama korvaa "Press Space to Start" -tekstin lukemisen: sumea
-        aloitusruutu on vaikea tunnistaa, mutta kutistuva kaari ei ole.
-        """
-        return timer_running(self.timer_history, self.running_drop)
+                           timer=timer, running=running)
 
     def _principal_angle(self, xs, ys) -> float:
         """Pisteparven paaakselin suunta asteina pystysuorasta myotapaivaan."""
@@ -646,7 +648,6 @@ class LiveRunner:
 
     def loop(self) -> None:
         period = 1.0 / max(30.0, self.run_cfg.capture_fps)
-        self.detector.running_drop = self.run_cfg.timer_running_drop
 
         with self.mss.mss() as capture:
             while not self.quit:
@@ -692,6 +693,8 @@ class LiveRunner:
             self.lost_frames += 1
             self.release()
             if self.state == self.SOLVING and self.lost_frames >= self.run_cfg.lost_frames_for_end:
+                # Minipeli sulkeutui kokonaan. Onnistuessa peli sulkee ruudun;
+                # aikakatkaisussa lukko jaa nakyviin ja aloituskehote palaa.
                 self.end_attempt(now, self.max_turn_seen >= self.run_cfg.open_turn_degrees)
             elif self.state != self.SOLVING:
                 self.state = self.WAITING
@@ -713,9 +716,10 @@ class LiveRunner:
                 self.note("SPACE")
             return
 
-        # SOLVING
+        # SOLVING: lukko nakyy mutta aikakaari on kadonnut -> aika loppui.
+        # Onnistuminen ei nayta talta, koska silloin koko minipeli sulkeutuu.
         if not obs.running and now - self.attempt_started > 0.6:
-            self.end_attempt(now, self.max_turn_seen >= self.run_cfg.open_turn_degrees)
+            self.end_attempt(now, False)
             return
 
         action = self.controller.update(now, obs)

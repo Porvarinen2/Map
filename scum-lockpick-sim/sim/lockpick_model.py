@@ -34,6 +34,11 @@ OPEN_EPSILON = 0.5        # kuinka lahella 90:aa riittaa
 TURN_RATE = 260.0         # pesan kaantonopeus F pohjassa, astetta/s
 RETURN_RATE = 520.0       # pesan palautumisnopeus F ylhaalla, astetta/s
 
+# Patch noteissa mainittu perusaika. HUOM: kayttajan pelivideossa yhden
+# yrityksen laskuri lahti kymmenesta ja avautuminen tapahtui yhdeksassa
+# sekunnissa, joten oikea ikkuna voi olla tata paljon pidempi (esimerkiksi
+# harjoituslauta, jonka aikaa voi saataa). Kayta attempt_seconds_override,
+# jos haluat ajaa simulaation omalla mitatulla ajallasi.
 BASE_SECONDS = 2.75       # pelin perusaika yhdelle yritykselle
 SKILL_BONUS_SECONDS = [0.0, 0.5, 1.0, 1.5]     # thievery 0..3
 SKILL_WIDTH_MULT = [1.0, 1.15, 1.32, 1.5]      # sweetspotin leveyskerroin
@@ -90,6 +95,7 @@ class LockConfig:
     tool: str = "lockpick"
     reroll_sweet_spot: bool = True    # arvotaanko sweetspot uudelleen joka yritykselle
     jiggle_wear_mult: float = 0.5     # lisakuluma kun hiiri liikkuu F pohjassa
+    attempt_seconds_override: float | None = None   # mitattu aika pelista
 
     def tier_data(self) -> LockTier:
         return LOCK_TIERS[self.tier]
@@ -107,6 +113,8 @@ class LockConfig:
 
     @property
     def attempt_seconds(self) -> float:
+        if self.attempt_seconds_override:
+            return float(self.attempt_seconds_override)
         return BASE_SECONDS + SKILL_BONUS_SECONDS[self.skill]
 
     @property

@@ -70,26 +70,36 @@ class ControlConfig:
     maximum_hold_ms: float = 1200.0
     auto_raise_hold_cap: bool = True
     finish_stall_ms: float = 260.0
-    release_settle_ms: float = 40.0
-    release_turn_threshold: float = 3.0
+    # F ylos hiiren liikkeen ajaksi. Pesan ei tarvitse palata nollaan, koska
+    # pisteytys lukee asettuneen arvon eika muutosta.
+    release_settle_ms: float = 45.0
 
     # Kaannon tulkinta.
-    progress_epsilon_degrees: float = 0.9    # pienin muutos joka on liiketta
-    movement_found_degrees: float = 4.0      # tata pienempi on pelkka tarahdys
+    #
+    # Pisteet luetaan siita arvosta, johon pesa ASETTUU F pohjassa, ei siita
+    # kuinka paljon se muuttui. Pelin videossa pesa ei palannut nollaan
+    # testien valilla (50 -> 32 -> 62), joten muutos olisi antanut vaarat
+    # pisteet. Asettunut arvo on suoraan se, kuinka pitkalle pesa antaa
+    # tassa kohdassa periksi.
+    progress_epsilon_degrees: float = 1.2    # tata pienempi muutos on kohinaa
+    # Pelin videossa levossa oleva pesa heilui 0.4-2.6 asteen valilla, ja
+    # ensimmainen oikea vaste oli 19 astetta. 5 astetta erottaa nama selvasti.
+    movement_found_degrees: float = 5.0      # tata pienempi on pelkka tarahdys
     near_open_degrees: float = 80.0          # tasta eteenpain F jaa pohjaan
 
     # Muisti yritysten valilla.
     #
-    # resume_search on turvallinen kummin pain tahansa: jos sweetspot pysyy
-    # paikallaan, jo kayty jana ei kannata kayda uudestaan, ja jos se arvotaan
-    # uudelleen, uusi alue on yhta hyva kuin mika tahansa muu.
-    #
-    # remember_ramp on veto sen puolesta, etta sweetspot EI vaihdu yritysten
+    # Molemmat ovat veto sen puolesta, etta sweetspot EI vaihdu yritysten
     # valilla. Pelaajien kuvausten mukaan se voi vaihtua, ja simulaatiossa se
-    # vaihtuu, joten oletus on pois paalta. Jos huomaat pelissa etta kohta
-    # pysyy samana, laita tama paalle: silloin uusinta menee suoraan asiaan.
-    resume_search: bool = True               # jatka siita mihin jaatiin
+    # vaihtuu, joten oletuksena molemmat ovat pois: jokainen yritys alkaa
+    # puhtaalta polydalta vasemmasta reunasta. Jos huomaat pelissasi etta
+    # kohta pysyy samana yritysten yli, laita nama paalle - silloin uusinta
+    # menee suoraan asiaan eika kay samaa aluetta uudestaan.
+    resume_search: bool = False              # jatka siita mihin jaatiin
     remember_ramp: bool = False              # palaa suoraan loydettyyn ramppiin
+
+    # Tama ei riipu sweetspotin paikasta vaan sen leveydesta, joten se on
+    # hyodyllinen kummassakin tapauksessa.
     learn_step_from_ramp: bool = True        # saada skannausvali rampin leveydesta
 
 
@@ -162,6 +172,7 @@ class Planner:
         self.responding: list[float] = []      # kohdat joissa lukko antoi periksi
 
         self._next_scan: float | None = None
+        self.wrapped = False
 
     def first_target(self) -> float:
         """Mista tama yritys aloittaa."""
@@ -215,6 +226,11 @@ class Planner:
             self._next_scan = self.first_target()
         else:
             self._next_scan = current + self.scan_step
+            if self._next_scan > self.cfg.home_units:
+                # Oikea seina on ohitettu: sen takana testit osuisivat
+                # samaan kohtaan yha uudelleen. Kierretaan alkuun.
+                self._next_scan = 0.0
+                self.wrapped = True
         return self._next_scan
 
     def learn_step(self) -> None:
@@ -271,7 +287,8 @@ class Controller:
         self._phase_started = 0.0
         self._last_progress = 0.0
         self._peak = 0.0
-        self._hold_baseline = 0.0
+        self._settled = 0.0
+        self._last_value = 0.0
         self._release_ready: float | None = None
         self._turn_rates: list[float] = []
 
@@ -306,7 +323,7 @@ class Controller:
         return Action(mouse_units=units, phase=phase, note=note)
 
     def _commit(self, now: float, kind_hint: str = "") -> str:
-        score = max(0.0, self._peak - self._hold_baseline)
+        score = max(0.0, self._settled)
         kind = self.planner.record(self.position, score)
         self.probes.append(Probe(position=self.position, score=score,
                                  ramp=self.planner.ramp_locked,
@@ -367,7 +384,8 @@ class Controller:
             self._phase_started = now
             self._last_progress = now
             self._peak = obs.turn
-            self._hold_baseline = obs.turn
+            self._settled = obs.turn
+            self._last_value = obs.turn
             return Action(f_down=True, phase=self.HOLD,
                           note=f"testi {self.position:.0f} u")
 
@@ -380,29 +398,32 @@ class Controller:
         return self._pulse(now, units, self.TRAVEL, f"kohti {self.target:.0f} u")
 
     def _hold(self, now: float, obs: Observation) -> Action:
-        if obs.turn > self._peak + self.cfg.progress_epsilon_degrees:
-            if self._last_progress > self._phase_started:
+        # Liikkeeksi lasketaan muutos kumpaankin suuntaan: pesa voi myos
+        # valua alaspain, jos edellisesta testista jai kaantoa jaljelle.
+        moved = abs(obs.turn - self._last_value) > self.cfg.progress_epsilon_degrees
+        if moved:
+            if obs.turn > self._last_value and self._last_progress > self._phase_started:
                 delta = now - self._last_progress
                 if delta > 0.004:
-                    self._note_turn_rate((obs.turn - self._peak) / delta)
-            self._peak = obs.turn
+                    self._note_turn_rate((obs.turn - self._last_value) / delta)
+            self._last_value = obs.turn
             self._last_progress = now
-        elif obs.turn > self._peak:
-            self._peak = obs.turn
+        self._peak = max(self._peak, obs.turn)
+        self._settled = obs.turn
 
-        turned = self._peak - self._hold_baseline
         elapsed_ms = (now - self._phase_started) * 1000.0
         stalled_ms = (now - self._last_progress) * 1000.0
 
-        # Pesa kaantyy kohti loppua: F jaa pohjaan.
-        if turned >= self.cfg.near_open_degrees:
+        # Lahes taysi kaanto on ABSOLUUTTINEN asia: lukko aukeaa 90 asteessa
+        # riippumatta siita, mista tama testi lahti liikkeelle.
+        if obs.turn >= self.cfg.near_open_degrees:
             self.phase = self.FINISH
             self._phase_started = now
             self._last_progress = now
             return Action(f_down=True, phase=self.FINISH, note="viimeistely")
 
-        # Kasvavaa kaantoa ei katkaista. Pysahtynyt kohta vapautetaan heti:
-        # sita vasten painaminen vain kuluttaa tiirikkaa.
+        # Liikkuvaa pesaa ei katkaista. Kun se on asettunut, luetaan arvo ja
+        # vapautetaan: jumissa olevaa kohtaa vasten painaminen vain kuluttaa.
         release = (elapsed_ms >= self.cfg.minimum_hold_ms
                    and stalled_ms >= self.cfg.stall_release_ms)
         if not release and elapsed_ms >= self.cfg.maximum_hold_ms:
@@ -411,15 +432,18 @@ class Controller:
         if release:
             kind = self._commit(now)
             self._to_release(now)
-            return Action(phase=self.RELEASE, note=f"{turned:.1f} deg / {kind}")
+            return Action(phase=self.RELEASE, note=f"{self._settled:.1f} deg / {kind}")
 
-        return Action(f_down=True, phase=self.HOLD, note=f"{turned:.1f} deg")
+        return Action(f_down=True, phase=self.HOLD, note=f"{obs.turn:.1f} deg")
 
     def _release(self, now: float, obs: Observation) -> Action:
-        if obs.turn <= self.cfg.release_turn_threshold and self._release_ready is None:
-            self._release_ready = now + self.cfg.release_settle_ms / 1000.0
+        # Ei odoteta pesan palaavan nollaan. Se ei valttamatta palaa, ja
+        # asettuneen arvon lukeminen ei sita vaadi. F on ylhaalla vain sen
+        # ajan, ettei hiiri liiku painallus paalla.
+        if self._release_ready is None:
+            self._release_ready = self._phase_started + self.cfg.release_settle_ms / 1000.0
 
-        if self._release_ready is not None and now >= self._release_ready:
+        if now >= self._release_ready:
             self.target = self.planner.next_target(self.position)
             self.memory.swept_units = max(self.memory.swept_units, self.target)
             self.phase = self.TRAVEL
@@ -431,6 +455,7 @@ class Controller:
     def _finish(self, now: float, obs: Observation) -> Action:
         if obs.turn > self._peak + self.cfg.progress_epsilon_degrees:
             self._peak = obs.turn
+            self._settled = obs.turn
             self._last_progress = now
 
         # Jos kaanto pysahtyy, kohta ei ollut pohja. Painaminen lopetetaan.
@@ -439,8 +464,7 @@ class Controller:
             self._to_release(now)
             return Action(phase=self.RELEASE, note="ei ollut pohja")
 
-        return Action(f_down=True, phase=self.FINISH,
-                      note=f"{obs.turn - self._hold_baseline:.1f} deg")
+        return Action(f_down=True, phase=self.FINISH, note=f"{obs.turn:.1f} deg")
 
     # -- yrityksen paatos --------------------------------------------------
 
@@ -459,7 +483,7 @@ class Controller:
             return
 
         self.memory.swept_units = max(self.memory.swept_units, self.position)
-        if self.memory.swept_units >= self.cfg.home_units:
+        if self.planner.wrapped or self.memory.swept_units >= self.cfg.home_units:
             # Koko jana on kayty ilman osumaa: askel oli liian harva.
             self.memory.wraps += 1
             self.memory.forget_position()

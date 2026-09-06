@@ -246,6 +246,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-attempts", type=int, default=6)
     p.add_argument("--spare-picks", type=int, default=3)
     p.add_argument("--seed", type=int, default=20260906)
+    p.add_argument("--seconds", type=float,
+                   help="korvaa yrityksen aika mitatulla arvolla (esim. 10)")
     p.add_argument("--fixed-sweet-spot", action="store_true",
                    help="sweetspot pysyy samana yritysten valilla")
 
@@ -279,6 +281,7 @@ def main(argv=None) -> int:
         skill=args.skill,
         tool=args.tool,
         reroll_sweet_spot=not args.fixed_sweet_spot,
+        attempt_seconds_override=args.seconds,
     )
     solver_cfg = SolverConfig(
         scan_order=args.scan_order,
