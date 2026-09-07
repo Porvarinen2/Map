@@ -1,0 +1,136 @@
+SCUM-LUKONAVAAJA
+================
+
+Tama on tehty alusta uusiksi. Ei koneoppimista, ei Q-taulukoita, ei
+esitreenattuja malleja. Yksi ajatus, joka on mitattu sinun omasta
+pelidatastasi (275 tiedostoa, 50 ihmisyritysta, 210 konetta):
+
+
+    KAANTO ON RAIKKA.
+
+    Etaisyys aukosta ei ennusta kaannon TASOA vaan sen MUUTOSTA:
+
+        painallus alle 0.05 paassa aukosta  ->  +0.38 kaantoa
+        painallus yli  0.50 paassa aukosta  ->  +0.04 kaantoa
+
+    Siksi lukkoa ei tarvitse ratkaista kerralla. Riittaa loytaa mika
+    tahansa kohta joka vie sita eteenpain, ja painaa siina niin kauan kuin
+    se liikkuu.
+
+
+Sina kuvasit taman algoritmin ensimmaisessa viestissasi -
+"tap, tap, tap, taap, taaaap, taaaap, Auki" - ja jokainen versio siita
+lahtien on jattanyt sen huomiotta.
+
+
+MITEN SE TOIMII
+---------------
+
+Yksi ainoa perusliike: paina F ja pida niin kauan kuin ote TUOTTAA.
+
+  - Jos pesa ei ala liikkua 70 ms:ssa, ote irtoaa heti. Se on se kevyt
+    koputus, ja se on suurin osa painalluksista.
+  - Jos se liikkuu, vauhtia mitataan 120 ms:n paloissa ja ote irtoaa heti
+    kun vauhti putoaa alle 0.8 kaantoyksikon sekunnissa.
+  - Kun pesa on jo yli puolivalissa, otetta ei irroteta hidastumisesta:
+    siina kohtaa ollaan menossa maaliin.
+
+F ei ole KOSKAAN pohjassa lukkoa vastaan joka ei pyori. Painalluksen
+kestoa ei ole kirjoitettu mihinkaan - "tap" ja "taaaaap" ovat seuraus
+siita etta otetta pidetaan tasan niin kauan kuin se tuottaa.
+
+Sen paalla on kaksi vaihetta:
+
+  HAKU    koputa 0.12 valein lukon lapi kunnes jokin kohta vastaa
+  SAATO   kiipea huipulle: parempaan suuntaan samalla askeleella, huonon
+          jalkeen takaisin parhaaseen, suunta vaihtoon ja askel puoliksi
+
+Siina kaikki. Noin 60 rivia logiikkaa.
+
+
+ONKO SE HYVA
+------------
+
+Simulaattori ajaa OIKEAA ohjainluokkaa - Silma ja Kasi on korvattu
+valelluilla, mutta paatoksenteko on sama koodi joka menee peliin.
+
+En pysty 23 mittauspisteesta paattamaan kumpi fysiikka peli on, joten
+molemmat ajetaan:
+
+  raikka  kaanto kertyy ja JAA sinne
+  taso    kaanto hakeutuu kattoon ja PALAA nollaan kun ote irtoaa
+
+              avaus 0.60   avaus 0.80   avaus 0.95
+  raikka          100%         100%         100%
+  taso            100%       83-100%        0-11%
+
+Se viimeinen sarake on konfiguraatio jossa aukko on 0.6% lukon
+leveydesta. Sita ei avaa ihminenkaan. Kaikki muut - eli kaikki mihin
+sina itse pystyt - menevat 83-100%.
+
+Vertailun vuoksi: sinun omassa datassasi vanha systeemi avasi
+0 lukkoa 210 yrityksesta.
+
+
+MITEN AJETAAN
+-------------
+
+  Asenna.bat      kerran (numpy, mss, pillow - ei cv2:ta)
+  Testaa.bat      nakotesti referenssikuvista, ei tarvitse pelia
+  Aja.bat         avaa lukkoja
+  Simulaatio.bat  ajaa ohjaimen simuloitua lukkoa vasten
+
+  F12 = seis, F10 = tauko
+
+Aja Testaa.bat ENSIN. Sen pitaa nayttaa:
+
+  levossa_*.jpg    kulma noin 1 astetta, kaanto alle 0.02
+  kaantynyt_*.jpg  kulma 37-89, kaanto yli 0.4
+  success_*.jpg    auki
+  yksi lukema      noin 3 ms
+
+Jos lepokulma ei ole noin 1 aste vaan jotain aivan muuta, avaimenreian
+mitat eivat osu sinun UI-skaalaasi - sano, niin korjataan ne. Silloin
+tiedetaan se heti eika 200 yrityksen jalkeen.
+
+
+MITTAUSAJO
+----------
+
+  Mittaa.bat
+
+Tama ei yrita avata lukkoja tehokkaasti. Se kayttaa jokaisen yrityksen
+tasavaliseen naytteenottoon (10 kiinteaa kohtaa) ja lokittaa kaiken.
+Onnistuneessa yrityksessa viimeinen paikka ON aukko, joten koko yritys
+saa etaisyysleiman jalkikateen.
+
+Noin 20 yritysta per lukkotyyppi, ja sen jalkeen:
+
+  Sovita.bat
+
+sovittaa vastemallin oikeasta datasta ja kertoo kuinka hyva se on.
+Nykyinen sovitus sinun 9 voitostasi selittaa 18% varianssista, mika ei
+riita mihinkaan - siksi ohjain ei kayta sita ollenkaan. Raikka ei sita
+tarvitse. Malli on siella vain jotta sen laatu on nakyvissa ja jotta
+paikan laskeminen voidaan ottaa kayttoon sitten kun se on ansainnut sen
+(n>=150 ja selitysaste>=0.55).
+
+
+SAADOT
+------
+
+Kaikki on saadot.json:ssa, ja jokainen luku on yhdessa paikassa.
+Tarkeimmat:
+
+  haku_askel      0.12   koputusvali haussa. Pienempi = tarkempi, hitaampi
+  edistys_min     0.05   nain paljon kaantoa = "lukko liikkui"
+  aloitus_ms      70     jos lukko ei ala liikkua tassa, ote irtoaa
+  vauhti_min      0.8    kaantoa/s jotta otetta kannattaa pitaa
+  pito_max_ms     900    pisin sallittu ote
+  budjetti_s      3.4    kauanko yhta yritysta jatketaan
+  jana_yksikkoa   6000   hiiriyksikkoa lukon laidasta laitaan
+
+Jos tiirikat kuluvat liikaa: laske aloitus_ms (60) tai nosta vauhti_min
+(1.0). Molemmat lyhentavat hukkaan menevaa otetta.
+
+Jos se ei loyda aukkoa: laske haku_askel (0.09) tai nosta budjetti_s.
