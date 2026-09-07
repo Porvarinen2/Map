@@ -21,12 +21,18 @@ import numpy as np
 APP_NAME = "Lockpick Learner"
 # Bumped whenever the meaning of a state key changes, so old learned values
 # that no longer mean the same thing are dropped instead of poisoning the
-# new policy. v1 = absolute pick position, v2 = distance from the ramp.
-STATE_SCHEMA = 2
+# new policy. v1 = absolute pick position, v2 = distance from the ramp,
+# v3 = ramp threshold raised above the measured noise floor and the action
+# list widened so the search phase can actually cross the lock.
+STATE_SCHEMA = 3
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = ROOT / "data"
 DEMO_DIR = DATA_DIR / "demos"
 MODEL_PATH = DATA_DIR / "model.json"
+# Shipped starting policy: trained on 50 recorded real human attempts plus
+# simulated self-play. Copied into data/ on first run so a fresh install does
+# not have to spend its first few hundred attempts rediscovering the basics.
+BUNDLED_MODEL_PATH = ROOT / "esitreenattu_malli.json"
 CONFIG_PATH = ROOT / "config.json"
 EVENT_LOG = DATA_DIR / "events.csv"
 SUCCESS_DEMO_DIR = DEMO_DIR / "successful"
@@ -38,6 +44,7 @@ SELFPLAY_FAILED_DIR = SELFPLAY_DIR / "failed"
 REFS_DIR = ROOT / "refs"
 SUCCESS_DIR = DATA_DIR / "successes"
 SUCCESS_INDEX = DATA_DIR / "successes.csv"
+SUCCESS_TEMPLATE_PATH = REFS_DIR / "success_text_template.png"
 AUDIT_DIR = DATA_DIR / "audit"
 AUDIT_SNAPSHOT_DIR = AUDIT_DIR / "snapshots"
 AUDIT_VERIFY_DIR = AUDIT_DIR / "verify"
@@ -88,7 +95,14 @@ class Config:
     response_window_ms: int = 145
     finish_hold_ms: int = 190
     success_progress: float = 0.82
-    wobble_threshold: float = 0.025
+    # Measured from 264 real human probes: a lock that is NOT moving still
+    # reads 0.022-0.089 (the rotation detector works in 1-degree steps, so
+    # 0.022 is two degrees of measurement noise). The old 0.025 sat inside
+    # that noise, so 83% of attempts declared "ramp found" on the very first
+    # probe and never swept the lock again - median coverage 4%, 0 successes
+    # in 210 autonomous attempts. Real movement starts above 0.10.
+    wobble_threshold: float = 0.10
+    wobble_confirm_probes: int = 2   # how many probes must agree before micro-stepping
     attempt_budget_seconds: float = 3.1
     auto_press_space: bool = True
     restart_wait_seconds: float = 0.55
@@ -112,6 +126,7 @@ class Config:
     success_arc_bright: int = 185        # what counts as "arc"
     success_band_half_h: float = 0.051   # band size, x screen height
     success_band_half_w: float = 0.204
+    success_use_template: bool = True    # also match the bundled SUCCESS word
     success_confirm_wait_ms: int = 420
     demo_success_multiplier: float = 5.0
     demo_failed_helpful_multiplier: float = 0.70
@@ -139,7 +154,16 @@ class Config:
     q_alpha: float = 0.30
     q_gamma: float = 0.72
     imitation_weight: float = 0.85
-    action_steps: List[float] = field(default_factory=lambda: [-0.12, -0.07, -0.04, -0.022, -0.010, 0.0, 0.010, 0.022, 0.04, 0.07, 0.12])
+    # The search phase has to cross the whole lock inside one attempt, so the
+    # step list needs moves big enough to do it. Real human successes moved
+    # 0.049 -> 0.195 -> 0.956 in three probes; the old list topped out at 0.12.
+    action_steps: List[float] = field(default_factory=lambda: [-0.30, -0.20, -0.12, -0.07, -0.04, -0.022, -0.010, 0.0, 0.010, 0.022, 0.04, 0.07, 0.12, 0.20, 0.30])
+    # One attempt is about six probes, so the search may not spend any of them
+    # creeping. Cover the lock on a coarse grid first, then halve the step in
+    # on the best cell. Measured over 4000 simulated attempts per cell count:
+    # 4 cells was best for a six-probe budget, 5-6 for eight.
+    search_cells: int = 4
+    ramp_microstep: float = 0.04     # smallest refine step worth making
     # v0.6: the state's position is measured FROM THE RAMP, over this window.
     # The target is redrawn every attempt, so an absolute position teaches
     # nothing; the ramp -> opening distance is a property of the lock type.
@@ -599,7 +623,10 @@ class ScreenVision:
         self._last_good_pick = None
         self._last_pick_score = 0.0
         self._arc_mask = None          # built once, on the first frame
-        self.last_success_parts = (0, 0)  # (band_px, arc_px) for VISION DEBUG
+        self.last_success_parts = (0, 0, 0.0)  # (band_px, arc_px, template) for VISION DEBUG
+        self.success_template = cv2.imread(str(SUCCESS_TEMPLATE_PATH), cv2.IMREAD_GRAYSCALE) if SUCCESS_TEMPLATE_PATH.exists() else None
+        if self.success_template is not None:
+            _, self.success_template = cv2.threshold(self.success_template, 127, 255, cv2.THRESH_BINARY)
         self.refine_center()
 
     def region(self) -> Dict[str, int]:
@@ -772,8 +799,47 @@ class ScreenVision:
         band_conf = float(np.clip(band_px / max(1.0, float(self.cfg.success_band_pixels)), 0.0, 1.0))
         arc_conf = float(np.clip((float(self.cfg.success_arc_max) - arc_px) / max(1.0, float(self.cfg.success_arc_max)), 0.0, 1.0))
         score = min(band_conf, arc_conf)
-        self.last_success_parts = (band_px, arc_px)
-        return score, bool(score >= self.cfg.success_threshold)
+
+        # Second, independent reading: the bundled SUCCESS word, template
+        # matched. Real logs show it separating cleanly on a live machine
+        # (9/9 human successes 0.643-0.998, 41/41 failures <= 0.076), so it
+        # runs alongside the band/arc test and either one is enough.
+        templ_score = self.detect_success_template(frame) if self.cfg.success_use_template else 0.0
+        self.last_success_parts = (band_px, arc_px, templ_score)
+        best = max(score, templ_score)
+        return best, bool(best >= self.cfg.success_threshold)
+
+    def detect_success_template(self, frame: np.ndarray) -> float:
+        """Match the bundled SUCCESS word near the lock centre."""
+        if self.success_template is None or self.success_template.size == 0:
+            return 0.0
+        try:
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            bright = (gray >= int(self.cfg.success_arc_bright)).astype(np.uint8) * 255
+            c = int(self.half)
+            base_scale = max(0.45, min(2.5, self.height / 1079.0))
+            best = 0.0
+            for mul in (0.88, 0.94, 1.00, 1.06, 1.12):
+                sc = base_scale * mul
+                tw = max(60, int(round(self.success_template.shape[1] * sc)))
+                th = max(18, int(round(self.success_template.shape[0] * sc)))
+                templ = cv2.resize(self.success_template, (tw, th), interpolation=cv2.INTER_NEAREST)
+                mx = max(12, int(tw * 0.10))
+                my = max(8, int(th * 0.22))
+                yoff = int(round(self.height * 0.004))
+                x0 = max(0, c - tw // 2 - mx)
+                x1 = min(bright.shape[1], c + (tw - tw // 2) + mx)
+                y0 = max(0, c + yoff - th // 2 - my)
+                y1 = min(bright.shape[0], c + yoff + (th - th // 2) + my)
+                roi = bright[y0:y1, x0:x1]
+                if roi.shape[0] <= th or roi.shape[1] <= tw:
+                    continue
+                result = cv2.matchTemplate(roi, templ, cv2.TM_CCOEFF_NORMED)
+                if result.size:
+                    best = max(best, float(cv2.minMaxLoc(result)[1]))
+            return best
+        except Exception:
+            return 0.0
 
     def state(self, keep_frame: bool = False) -> VisionState:
         frame = self.grab()
@@ -819,7 +885,16 @@ class QModel:
 
     def load(self) -> None:
         if not MODEL_PATH.exists():
-            return
+            if BUNDLED_MODEL_PATH.exists():
+                try:
+                    MODEL_PATH.write_text(BUNDLED_MODEL_PATH.read_text(encoding="utf-8"), encoding="utf-8")
+                    print("[NOTE] No model yet - starting from the bundled pre-trained policy")
+                    print("       (50 recorded human attempts + simulated self-play).")
+                except Exception as e:
+                    print(f"[WARN] Could not use the bundled model: {e}")
+                    return
+            else:
+                return
         try:
             raw = json.loads(MODEL_PATH.read_text(encoding="utf-8"))
             schema = int(raw.get("state_schema", 1))
@@ -1640,7 +1715,18 @@ def replay_episode_rows(cfg: Config, model: QModel, rows: List[Dict[str, str]], 
         for r in reversed(rows):
             try:
                 key = str(r["state"])
+                # The action list can change between versions, so an index from
+                # an old file may now mean a different move. The stored delta
+                # always means the same thing, so trust that and re-derive.
                 action = int(float(r["action"]))
+                try:
+                    delta = float(r.get("delta", "nan"))
+                    if not math.isnan(delta):
+                        action = nearest_action(cfg, delta)
+                except Exception:
+                    pass
+                if not (0 <= action < len(cfg.action_steps)):
+                    continue
                 reward = float(r["reward"])
                 next_key = str(r.get("next_state", key))
                 terminal = int(float(r.get("terminal", 0) or 0)) == 1
@@ -1792,11 +1878,18 @@ def move_to(vision: ScreenVision, model: QModel, target: float, cfg: Config) -> 
     return last_pos
 
 
-def probe_response(vision: ScreenVision, cfg: Config) -> Tuple[float, float, float]:
+def probe_response(vision: ScreenVision, cfg: Config, hold_ms: Optional[int] = None) -> Tuple[float, float, float]:
+    """Press F once at the current position and read what the lock did.
+
+    hold_ms lets the caller press longer. While searching, the press is a light
+    tap: it only has to reveal whether the lock answers here. Once refining, the
+    press is the full finishing hold, because that is what actually opens the
+    lock - and it is still ONE press per probe, not two.
+    """
     before = vision.state()
     base = before.progress
     success_peak = before.success_score
-    send_key(cfg.f_key_vk, cfg.probe_hold_ms)
+    send_key(cfg.f_key_vk, int(hold_ms if hold_ms is not None else cfg.probe_hold_ms))
     end = time.monotonic() + cfg.response_window_ms / 1000.0
     peak = base
     ui = before.ui_confidence
@@ -1884,9 +1977,15 @@ def agent(cfg: Config, model: QModel, learning: bool = True, deterministic: bool
         prev_response = 0.0
         best = 0.0
         found_ramp = False
+        ramp_hits = 0              # probes that agreed the lock moved
         ramp_pos = None            # where the lock first answered
         offset_used = False        # learned ramp -> opening jump spent?
         last_probe_time = start    # for the per-probe time cost
+        grid = [(i + 0.5) / cfg.search_cells for i in range(cfg.search_cells)]
+        grid_i = 0                 # next coarse cell to visit
+        refining = False
+        best_pos = pos             # best position seen this attempt
+        refine_step = 1.0 / (2 * cfg.search_cells)
         last_key = None
         last_action = None
         total_reward = 0.0
@@ -1947,10 +2046,13 @@ def agent(cfg: Config, model: QModel, learning: bool = True, deterministic: bool
         last_probe_time = time.monotonic()
         total_reward += rwd
         best = max(best, response)
+        best_pos = pos
         prev_response = response
-        found_ramp = best >= cfg.wobble_threshold
-        if found_ramp and ramp_pos is None:
-            ramp_pos = pos
+        if response >= cfg.wobble_threshold:
+            ramp_hits += 1
+            if ramp_pos is None:
+                ramp_pos = pos
+        found_ramp = ramp_hits >= cfg.wobble_confirm_probes
         if success_score >= cfg.success_threshold:
             credit_success(success_score, "first probe")
 
@@ -1976,9 +2078,6 @@ def agent(cfg: Config, model: QModel, learning: bool = True, deterministic: bool
                 trend = -1
             else:
                 trend = 0
-            found_ramp = found_ramp or response >= cfg.wobble_threshold or best >= cfg.wobble_threshold
-            if found_ramp and ramp_pos is None:
-                ramp_pos = pos
             key = model.state_key(pos, response, best, trend, found_ramp, ramp_pos)
             decision = model.decision_details(key, deterministic=(deterministic or not learning))
             recommended_action = int(decision["action"])
@@ -1986,48 +2085,58 @@ def agent(cfg: Config, model: QModel, learning: bool = True, deterministic: bool
             delta = cfg.action_steps[action]
             decision_reason = str(decision["reason"])
 
-            if not found_ramp:
-                if delta <= 0.0:
-                    positive = [i for i, d in enumerate(cfg.action_steps) if d >= 0.04]
-                    combo = np.asarray(decision["scores"], dtype=np.float64)
-                    action = max(positive, key=lambda i: float(combo[i])) if positive else nearest_action(cfg, 0.07)
-                    delta = cfg.action_steps[action]
-                    decision_reason += "+search_right_override"
+            # The model's own preference decides which side to try first while
+            # refining; the structure below decides how far. The old version let
+            # the model pick freely and then clamped everything to +/-0.04, which
+            # covered 4% of the lock per attempt and never found anything.
+            learned = model.learned_offset()
+            if learned is not None and not offset_used and found_ramp and ramp_pos is not None:
+                # Past successes say the lock opens about this far past the ramp.
+                target = float(np.clip(ramp_pos + learned, 0.0, 1.0))
+                offset_used = True
+                refining = True
+                decision_reason += "+learned_offset_jump"
+            elif not refining and grid_i < len(grid):
+                # Coarse pass: cover the whole lock evenly, no creeping.
+                target = grid[grid_i]
+                grid_i += 1
+                decision_reason += f"+coarse{grid_i}/{len(grid)}"
             else:
-                learned = model.learned_offset()
-                if learned is not None and not offset_used and ramp_pos is not None:
-                    # Past successes say the lock opens about this far past the
-                    # ramp. Go there once instead of creeping there probe by probe.
-                    delta = float(np.clip((ramp_pos + learned) - pos, -0.20, 0.20))
-                    action = nearest_action(cfg, delta)
-                    delta = cfg.action_steps[action]
-                    offset_used = True
-                    decision_reason += "+learned_offset_jump"
-                else:
-                    clipped = float(np.clip(delta, -0.04, 0.04))
-                    action = nearest_action(cfg, clipped)
-                    delta = cfg.action_steps[action]
-                    if action != recommended_action:
-                        decision_reason += "+ramp_microstep_override"
-
-            target = float(np.clip(pos + delta, 0.0, 1.0))
+                # Refine: step out from the best cell, on the side the model
+                # prefers, halving the step whenever a side stops paying.
+                refining = True
+                suunta = -1.0 if delta < 0 else 1.0
+                target = float(np.clip(best_pos + suunta * refine_step, 0.0, 1.0))
+                if abs(target - pos) < 1e-4:
+                    target = float(np.clip(best_pos - suunta * refine_step, 0.0, 1.0))
+                decision_reason += "+refine"
+            delta = target - pos
+            action = nearest_action(cfg, delta)
             moved = move_to(vision, model, target, cfg)
             if moved is None:
                 break
             pos = moved
             prev_before_probe = response
-            response, ui_conf, success_score = probe_response(vision, cfg)
+            response, ui_conf, success_score = probe_response(
+                vision, cfg, cfg.finish_hold_ms if refining else cfg.probe_hold_ms)
             probe_no += 1
             now = time.monotonic()
             elapsed = now - start
             step_reward = rewarder.step(response, prev_before_probe, best, now - last_probe_time)
             last_probe_time = now
             total_reward += step_reward
-            best = max(best, response)
+            if response > best:
+                best = response
+                best_pos = pos
+            elif refining:
+                # That side did not pay, so look closer next time.
+                refine_step = max(cfg.ramp_microstep, refine_step * 0.5)
 
-            next_found = found_ramp or best >= cfg.wobble_threshold
-            if next_found and ramp_pos is None:
-                ramp_pos = pos
+            if response >= cfg.wobble_threshold:
+                ramp_hits += 1
+                if ramp_pos is None:
+                    ramp_pos = pos
+            next_found = ramp_hits >= cfg.wobble_confirm_probes
             next_trend = 1 if response > prev_before_probe + 0.018 else (-1 if response + 0.018 < prev_before_probe else 0)
             next_key = model.state_key(pos, response, best, next_trend, next_found, ramp_pos)
             if learning:
@@ -2072,7 +2181,7 @@ def agent(cfg: Config, model: QModel, learning: bool = True, deterministic: bool
                 break
 
             prev_response = prev_before_probe
-            found_ramp = found_ramp or best >= cfg.wobble_threshold
+            found_ramp = next_found
 
             if ui_conf < 0.045 and elapsed > 0.45 and best < cfg.success_progress:
                 late = wait_success_text(vision, cfg, ms=180)
@@ -2260,8 +2369,8 @@ def vision_debug(cfg: Config, model: QModel) -> None:
             break
         st = vision.state(keep_frame=True)
         preview(vision, st, "Lockpick Learner - Vision Debug")
-        band_px, arc_px = vision.last_success_parts
-        print(f"raw={st.pick_raw!s:>8} pos={st.pick_pos!s:>8} pickScore={st.pick_score:6.2f} lock={st.lock_angle:5.1f} progress={st.progress:.3f} ui={st.ui_confidence:.2f} | band={band_px:5d}/{cfg.success_band_pixels} arc={arc_px:5d}/{cfg.success_arc_max} success={st.success_score:.3f}{' YES' if st.success_detected else ''}   ", end="\r")
+        band_px, arc_px, templ = vision.last_success_parts
+        print(f"pos={st.pick_pos!s:>8} lock={st.lock_angle:5.1f} progress={st.progress:.3f} ui={st.ui_confidence:.2f} | band={band_px:5d}/{cfg.success_band_pixels} arc={arc_px:5d}/{cfg.success_arc_max} templ={templ:.2f} success={st.success_score:.3f}{' YES' if st.success_detected else ''}   ", end="\r")
         time.sleep(0.025)
     cv2.destroyAllWindows()
     restore_console(console_hwnd)

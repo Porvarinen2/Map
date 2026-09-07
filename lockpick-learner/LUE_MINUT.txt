@@ -1,68 +1,91 @@
-LOCKPICK LEARNER v0.6 - LYHYESTI
-=================================
+LOCKPICK LEARNER v0.7 - MITA SUN DATA KERTOI
+============================================
 
-Tama on ChatGPT:n v0.5 sellaisenaan, mutta kolme asiaa jotka estivat sita
-oppimasta on korjattu ja mitattu oikeista pelikuvista. Yksikaan luku alla ei
-ole simulaatiosta.
+Kaivoin sun 275 tiedostoa lapi. Kaikki alla on niista mitattua.
 
 
-MIKA OLI RIKKI
---------------
+LYHYT VASTAUS KYSYMYKSIIN
+-------------------------
 
-1) SUCCESS-RUUTUA EI TUNNISTETTU KOSKAAN
-   v0.5 etsi SUCCESS-tekstia templaatilla ja hyvaksyi vasta pisteella 0.62.
-   Ajoin sen putken 47:aan oikeaan pelikuvaan:
+"Toimiiks toi 100% sillai et se kehittyy ajan mukana?"
+  Ei. Sun omassa datassa: 210 autonomista yritysta, 0 onnistumista, eika
+  mitaan trendia. Syy ei ollut oppimisessa vaan siina etta se ei fyysisesti
+  kayny kuin 4%:ssa lukosta. Nyt se on korjattu.
 
-       kaynnissa (45 kpl)   0.000 - 0.086
-       SUCCESS   f046       0.199   <- ei laukea
-       SUCCESS   f047       0.197   <- ei laukea
+"Voisko simuloida kauan tol menis oppii?"
+  Simuloin, 3000 yritysta. Vastaus: melkein kaikki tulee ensimmaisen 250
+  yrityksen aikana (~20 min pelia), ja sen jalkeen kayra on tasainen. Se ei
+  siis parane loputtomiin - katto tulee hakutavasta, ei treeniajasta.
 
-   Eli oikea SUCCESS-ruutu jai kolmasosaan sen omasta kynnyksesta. Kaytannossa
-   yksikaan yritys ei koskaan mennyt kirjoihin onnistuneena - ei sinun eika
-   koneen - joten onnistumisista ei opittu mitaan.
-
-   Nyt tunnistus tehdaan kahdella asialla, jotka erottuvat oikeissa kuvissa:
-
-       kirkas tekstipalkki keskella   kaynnissa  938-1216 px   SUCCESS 5126-5366 px
-       lukon ymparilla oleva kaari    kaynnissa 4640-6373 px   SUCCESS       1 px
-
-   Kynnykset (2500 ja 800) ovat keskella tyhjaa valia. Osuu 8/8 oikein
-   referenssikuviin kansiossa kuvat\.
-
-2) OPITTU EI SIIRTYNYT LUKOSTA TOISEEN
-   v0.5 talletti tilan absoluuttisena kohtana lukossa. Kohta arvotaan joka
-   yrityksella uusiksi, joten "kohta 0.62 oli hyva" ei kerro seuraavasta
-   lukosta mitaan. Se mika SIIRTYY on etaisyys rampilta aukeamiskohtaan,
-   koska se on lukkotyypin ominaisuus.
-
-   Sama yritys kahdesti, ramppi eri kohdassa:
-
-       v0.5:  ramppi 0.22 -> laatikot [3,3,4,4]     ramppi 0.71 -> [11,11,11,12]
-       v0.6:  molemmat    -> ['0:0:0:0:0', '1:2:0:0:1', '1:3:1:1:1']
-
-   v0.5:lla nama kaksi eivat jakaneet yhtaan yhteista tilaa. Nyt ne ovat sama
-   kokemus - siksi muutamastakin onnistumisesta voi oppia jotain.
-
-3) AIKASAKKO RANKAISI MYOHAISIA NAPAYTYKSIA AIEMMISTA
-   v0.5 veloitti joka napaytykselta koko yrityksen kuluneen ajan, joten sama
-   teko nayttti huonommalta pelkastaan siksi etta se tapahtui myohemmin. Nyt
-   jokainen napaytys maksaa vain oman kestonsa.
+"Voisiks treenaa sen mun puolest ja droppaa datan?"
+  Tein. Paketissa on esitreenattu_malli.json joka kopioituu data-kansioon
+  ensimmaisella kaynnistyksella. Siina on 28 tilaa sun 50:sta oikeasta
+  yrityksesta + 195 tilaa 12000 simuloidusta yrityksesta.
 
 
-MITA UUTTA
-----------
+MIKSI SE EI AVANNUT YHTAKAAN LUKKOA
+-----------------------------------
 
-Jokainen varmistettu onnistuminen - seka sinun ettaa koneen - tallentaa nyt
-kaiken:
+Yksi luku. Kaannontunnistin toimii 1 asteen tarkkuudella, joten paikallaan
+oleva lukko nayttaa silti 0.022-0.089. wobble_threshold oli 0.025 eli KESKELLA
+sita kohinaa. Siksi:
 
-    data\successes\success_PVM_KLO.csv   koko yritys napaytys napaytykselta
-    data\successes.csv                   yksi rivi per onnistuminen
+  "ramppi loytyi" jo ensimmaisessa tilassa       175/210  =  83%
+  kuinka suuri osa lukosta kayty per yritys                 4%
+  yrityksia jotka kavivat yli puolet lukosta             0/210
+  valitut siirrot: 450x -0.040, 266x +0.040, 6x mitaan isompaa
 
-Riville tulee missa ramppi oli, kuinka kaukana siita lukko aukesi, kauanko
-meni ja montako napaytysta. Kolmen onnistumisen jalkeen mediaanietaisyys
-otetaan kayttoon: kun ramppi loytyy, kone hyppaa suoraan siihen kohtaan johon
-lukot ovat ennen auenneet sen sijaan etta madeltaisi sinne 0.022 kerrallaan.
-STATS nayttaa opitun etaisyyden ja monestako onnistumisesta se on.
+Se luuli loytaneensa rampin heti, meni 0.04:n mikroaskeliin ja jumittui.
+Target oli siina 96%:ssa jota se ei koskaan kaynyt lapi.
+
+Kynnys on nyt 0.10 ja ramppi vaatii kaksi samaa mielta olevaa probea.
+
+
+HAKU RATKAISEE, EI OPPIMINEN
+----------------------------
+
+Yksi yritys on noin 6 probea. Kolme hakutapaa, sama oppimiskoodi, 3000
+simuloitua yritysta kussakin:
+
+  target-puolileveys      0.015   0.025   0.040   0.060   0.100
+  vanha (mikroaskel)      13.6%   18.6%   20.3%   20.7%   20.7%
+  karkea ruudukko+puolitus 20.9%  34.3%   55.2%   70.6%   80.4%
+  gradienttiarvio         27.7%   38.8%   56.6%   63.0%   64.4%
+
+Uusi haku:
+  1. probea 4 tasavalista kohtaa - koko lukko lapi, ei matelua
+  2. parhaasta kohdasta askel sivuun, ja askel puolitetaan aina kun suunta
+     lakkaa tuottamasta (kumman puolen kokeilee ensin - sen malli oppii)
+  3. tarkennusprobet painavat F:n pitkaan, koska se se lukon avaa
+     - edelleen YKSI painallus per probe, ei kahta
+
+Sun omat voitot nayttavat juuri talta, eivat mikroaskelilta:
+0.049 -> 0.195 -> 0.956 -> 0.942 neljalla probella.
+
+
+MITA KANNATTAA OPPIA
+--------------------
+
+Etaisyys rampilta aukeamiskohtaan. Skannaus kulkee aina vasemmalta oikealle,
+joten ensimmainen vastaava ruutu on systemaattisesti targetin VASEMMALLA -
+ja se korjaus on opittavissa. Sun 9 voittoasi antavat mediaaniksi +0.363,
+simuloitu peli paatyi itsenaisesti +0.393:een.
+
+  hyppy paalla                        55.0%   71.4%   82.9%
+  hyppy pois                          37.4%   55.2%   74.0%
+  hyppy pois, 3 ruutua                37.9%   57.4%   69.2%
+
+Eli kyse ei ole vain "lopeta haku aiemmin".
+
+
+KORJAUS EDELLISEEN
+------------------
+
+Sanoin v0.6:ssa etta GPT:n SUCCESS-templaatti ei laukea koskaan. Se oli
+vaarin. Sun omat lokit todistavat sen: templaatti antoi 0.643-0.998 kaikille
+9 voitolle ja korkeintaan 0.076 kaikille 41 haviolle. Minun numpy-versioni
+cv2:n matchTemplatesta ei ollut uskollinen alkuperaiselle. Templaatti on nyt
+takaisin, minun band/arc-testin rinnalla - kumpi tahansa riittaa.
 
 
 MITEN AJETAAN

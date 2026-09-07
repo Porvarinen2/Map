@@ -54,7 +54,7 @@ def nakija(cfg: LL.Config, korkeus: int, half: int) -> LL.ScreenVision:
     v.height = korkeus
     v.half = half
     v._arc_mask = None
-    v.last_success_parts = (0, 0)
+    v.last_success_parts = (0, 0, 0.0)
     return v
 
 
@@ -69,7 +69,7 @@ def testi_success(cfg: LL.Config) -> None:
         frame, korkeus, half = lataa_rajaus(p, cfg)
         v = nakija(cfg, korkeus, half)
         score, ok = v.detect_success(frame)
-        band, arc = v.last_success_parts
+        band, arc, _t = v.last_success_parts
         odotus = p.name.startswith("success")
         oikein += int(ok == odotus)
         merkki = "OK  " if ok == odotus else "FAIL"
@@ -212,6 +212,7 @@ def _malli(cfg: LL.Config) -> LL.QModel:
 def main() -> int:
     print("=== LOCKPICK LEARNER TESTS ===")
     cfg = LL.Config()
+    cfg.success_use_template = False   # cv2 is stubbed out here
     testi_success(cfg)
     testi_tila_avain(cfg)
     testi_palkkio(cfg)

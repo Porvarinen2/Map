@@ -1,0 +1,120 @@
+LOCKPICK LEARNER v0.7 - MEASURED AGAINST 275 REAL RECORDED FILES
+================================================================
+
+Everything here comes from the user's own recorded data: 50 human attempts
+(264 probes, 9 wins) and 210 autonomous attempts (815 probes, 0 wins).
+
+
+0. A CORRECTION TO v0.6
+-----------------------
+v0.6 claimed the v0.4/v0.5 SUCCESS template matcher never fires, based on a
+numpy reimplementation of cv2's TM_CCOEFF_NORMED that scored 0.199/0.197 on
+two real SUCCESS frames. The real logs disprove that: on the actual machine
+the template scored 0.643-0.998 on all 9 human wins and never above 0.076 on
+any of the 41 losses. The reimplementation was not faithful; the original
+detector works. It is back, running alongside the band/arc test - either one
+firing is a success, so both a template mismatch and a resolution change are
+survivable.
+
+
+1. WHY IT NEVER OPENED A LOCK: IT ONLY EVER SAW 4% OF THE LOCK
+--------------------------------------------------------------
+Measured over all 210 autonomous attempts:
+
+  "ramp found" already in the first state       175/210  =  83%
+  median share of the lock covered per attempt              4%
+  attempts that covered more than half the lock          0/210
+  moves chosen: 450x -0.040, 266x +0.040, 6x anything bigger
+
+The cause is one number. The rotation detector works in 1-degree steps, so a
+lock that is NOT moving still reads 0.022-0.089. wobble_threshold was 0.025 -
+inside that noise. So the first probe of nearly every attempt declared a ramp,
+the +/-0.04 micro-step clamp took over, and the pick never went anywhere. The
+sweet spot was in the 96% it never visited.
+
+  wobble_threshold  0.025 -> 0.10   (above the measured noise floor)
+  a ramp now needs 2 agreeing probes, not 1
+
+
+2. SEARCH BEATS LEARNING, BY 3-4x
+---------------------------------
+An attempt is about 6 probes (2.67 s / ~5 probes measured). Three search
+strategies, 3000 simulated attempts each, same learning code:
+
+  target half-width      0.015   0.025   0.040   0.060   0.100
+  sweep + micro-step     13.6%   18.6%   20.3%   20.7%   20.7%
+  coarse grid + halving  20.9%   34.3%   55.2%   70.6%   80.4%
+  gradient estimate      27.7%   38.8%   56.6%   63.0%   64.4%
+
+The coarse grid was tuned the same way: 4 cells is best for a 6-probe budget,
+5-6 for 8 probes. So the search is now:
+
+  1. probe 4 evenly spaced cells - cover the whole lock, no creeping
+  2. from the best cell, step out and halve the step whenever a side stops
+     paying (the model picks which side to try first - that part is learned)
+  3. refine probes use the full finishing hold, because that is what actually
+     opens the lock - still ONE press per probe, not two
+
+Real human wins look exactly like this, not like micro-steps: 0.049 -> 0.195
+-> 0.956 -> 0.942 in four probes.
+
+
+3. DOES IT IMPROVE OVER TIME? PARTLY, AND IT PLATEAUS FAST
+-----------------------------------------------------------
+3000 attempts, success rate per 250-attempt window:
+
+  target 0.025:  50.2 54.0 53.2 53.6 55.2 56.5 54.3 56.3 55.4 55.0 55.8 58.3
+  target 0.040:  68.8 72.8 73.4 68.9 64.5 69.5 71.4 71.3 68.0 73.2 70.2 71.0
+  target 0.060:  84.2 86.6 84.6 81.9 85.0 85.4 86.6 85.8 87.0 82.6 86.4 83.8
+
+Almost all of the performance is there inside the first 250 attempts, and
+after that the curve is flat. The ceiling is set by the search structure, not
+by training time. Anyone expecting it to keep climbing for thousands of
+attempts will be disappointed - that is not what the numbers show.
+
+Before this version, on the same simulator: 22.2% and 19.2%. Now: 52.5% and
+80.9%. That gain is structure, not training.
+
+
+4. WHAT IS ACTUALLY WORTH LEARNING
+----------------------------------
+The distance from the ramp to the opening point. The search always sweeps
+left to right, so the first cell that answers is systematically LEFT of the
+target - and the median correction is learnable. Measured:
+
+  jump enabled                        55.0%   71.4%   82.9%
+  jump disabled                       37.4%   55.2%   74.0%
+  jump disabled, 3 coarse cells       37.9%   57.4%   69.2%
+  jump disabled, 2 coarse cells       36.9%   52.6%   68.7%
+
+So it is not merely "stop searching sooner" - the offset carries real
+information. The user's own 9 wins give +0.363 as the median; simulated play
+independently produced +0.393.
+
+
+5. SHIPPED PRE-TRAINED POLICY
+-----------------------------
+esitreenattu_malli.json is copied into data\ on first run:
+
+  demo_prior   28 states from the 50 real human attempts
+               (+141 positive and -31 negative examples)
+  Q            195 states from 12000 simulated self-play attempts across five
+               target widths, so it is not tuned to one lock type
+  offsets      the 3 usable ramp -> opening distances from the real wins
+
+Delete data\model.json to go back to it, or just delete the bundled file to
+start from nothing.
+
+
+6. HONEST LIMITS
+----------------
+- The simulator's lock model is fitted to the recorded response falloff, but
+  how close you must be for the lock to actually OPEN cannot be recovered from
+  the recordings (the stored response is only the peak of the first 145 ms of
+  a press). That is why every result above is reported across a sweep of
+  target widths instead of one number.
+- The Q part of the shipped model comes from that simulator. The demo_prior
+  part comes from real play. If they ever disagree, the real data wins:
+  run 2) TRAIN again after recording more of your own attempts.
+- A faster probe cycle is the biggest untested lever: 6 probes -> 8 probes was
+  worth about 10 percentage points in the tuning runs.

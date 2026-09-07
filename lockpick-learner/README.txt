@@ -1,9 +1,13 @@
-LOCKPICK LEARNER v0.6 - LEARNING THAT CARRIES OVER
-==================================================
+LOCKPICK LEARNER v0.7 - MEASURED AGAINST REAL RECORDED PLAY
+===========================================================
 
-v0.5 made learning observable. v0.6 fixes the three things that stopped it
-from working at all, each one measured against real 1080p gameplay frames
-rather than assumed. See UPDATE_NOTES_v0.6.txt for the numbers.
+v0.5 made learning observable. v0.6 fixed what the reference frames showed.
+v0.7 is measured against 275 recorded files from actual play - 50 human
+attempts and 210 autonomous ones - and fixes the reason none of the
+autonomous attempts ever opened a lock: it only ever visited 4% of the lock.
+It also corrects a wrong claim v0.6 made about the SUCCESS detector.
+See UPDATE_NOTES_v0.7.txt for every number; UPDATE_NOTES_v0.6.txt still
+applies for the state/reward/success changes.
 
 IMPORTANT UPDATE RULE
 ---------------------
