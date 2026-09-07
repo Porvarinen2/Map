@@ -1,4 +1,4 @@
-AUTOLOCKPICK LIVE 1.2 - PLAYER RECORDING / DEBUG
+AUTOLOCKPICK - PLAYER RECORDING / DEBUG / RAPORTTI
 
 PLAYER RECORDING
 ================
@@ -47,3 +47,39 @@ F7  PLAYER RECORDING on/off
 F8  FULL DEBUG ZIP
 F11 automaatio on/tauko
 F9  lopeta
+
+
+RAPORTTI - TEE TAMA AINA KUN JOKIN EI TOIMI
+===========================================
+Tee_Raportti.bat tekee viimeisimmasta paketista tai nauhoituksesta yhden
+HTML-tiedoston ja avaa sen selaimeen. Mitaan ei tarvitse asentaa.
+
+Raportti piirtaa jokaisesta yrityksesta samalle aikajanalle:
+
+    - lukkopesan kaannon asteina
+    - milloin F oli pohjassa (messinkinen varjostus)
+    - hiiren paikan
+    - 90 asteen maaliviivan
+    - mihin yritys paattyi ja mika oli suurin kaanto
+
+Siita nakee yhdella silmayksella sen, mita pelkat numerot eivat kerro:
+mihin aika meni ja missa kohtaa loppupeli epaonnistui.
+
+VERTAILU: SINA VS. BOTTI
+------------------------
+Tama on hyodyllisin tapa kayttaa sita.
+
+1. Paina F7 ja avaa muutama lukko itse. Paina F7 uudestaan.
+2. Anna botin ajaa muutama yritys ja paina F8.
+3. Aja:
+
+       cd live
+       python debug_report.py <botin_kansio> <pelaajan_kansio>
+
+   tai vedä molemmat kansiot Tee_Raportti.bat-tiedoston paalle.
+
+Raportissa nayttosi ja botin yritykset ovat allekkain samalla asteikolla,
+joten nakee suoraan missa kohtaa botti tekee toisin kuin sina. Jos jokin
+nayttaa vaaralta, laheta se HTML-tiedosto - siina on kaikki tarvittava.
+
+Ilman argumentteja Tee_Raportti.bat ottaa uusimman paketin automaattisesti.

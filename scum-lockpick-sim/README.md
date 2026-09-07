@@ -21,6 +21,12 @@ pelivideon 47 kehysta** vasten, `live/test_live.py` ajaa ohjaimen simuloitua
 lukkoa vasten ja `live/test_vision.py` tunnistuksen pelin ruutukaappauksia
 vasten.
 
+> **Huom:** `web/`-selainsimulaatio havainnollistaa lukon mekaniikkaa ja on
+> yha ajantasainen siina, mutta sen oma ratkaisija on vanhempaa mallia eika
+> ole sama kuin `live/lockpick_control.py`. Pelissa ajettava logiikka on
+> `live/`-kansiossa, ja se todennetaan `live/`-testeilla. Selainsimulaatiota
+> kannattaa katsoa siksi, mita lukko tekee - ei siksi, miten botti sen ratkaisee.
+
 ---
 
 ## 1. Live: lukon avaaminen pelissa
@@ -364,6 +370,16 @@ on EAC, ja palvelimilla voi olla omat saantonsa automaatiosta.
 
 ---
 
+# Versiohistoria
+
+> Alla olevat LIVE 1.2 - 1.6 -osiot kuvaavat **aiempia** versioita. Osa niiden
+> ratkaisuista on sittemmin kumottu: erityisesti LIVE 1.6:n lyhyt F-tappays ja
+> F ylhaalla tapahtuva seuranta on korvattu silla, etta F on pohjassa koko
+> ajan. Ne on jatetty nakyviin, jotta nakee mita kokeiltiin ja miksi siita
+> luovuttiin. Voimassa oleva kuvaus on LIVE 2.0 -osiossa yllä.
+
+---
+
 ## LIVE 1.2 — PLAYER RECORDING + FULL DEBUG
 
 Automaattisen ratkaisun päätöslogiikkaa ei muutettu. Lisätty vain
@@ -472,3 +488,71 @@ pienennettiin 35 -> 4 mouse-unitiin, jotta sweetspot voidaan oikeasti etsiä
 kahden rampinreunan välistä.
 
 Katso `LIVE_1_6_MITA_MUUTTUI.txt`.
+
+
+---
+
+## LIVE 2.0 — SWEEP + DRIVE
+
+Hakuvaihe toimi jo kohtuullisesti; **loppupeli** — se osuus jossa vasteikkuna
+on loydetty ja lukko pitaisi saada auki — oli puutteellinen. Se on kirjoitettu
+uudelleen. `LIVE_2_0_MITA_MUUTTUI.txt` kertoo saman pidemmin.
+
+### Kaksi vaihetta, F pohjassa molemmissa
+
+**SWEEP** — hiiri matelee vasemmalta oikealle 110 yksikon askelin, F pohjassa
+koko ajan. Pesa alkaa kaantya heti kun ikkunaan osutaan, joten haku ja kaannon
+aloitus tapahtuvat samalla kertaa. Askel on selvasti mitattua ~120 yksikon
+ikkunaa lyhyempi, joten ikkuna ei voi jaada kahden askeleen valiin.
+
+**DRIVE** — F pysyy pohjassa. Odota kunnes kaanto pysahtyy, lue pysahtynyt
+kulma, astu sen verran kuin kulma kertoo, odota uudelleen.
+
+Pysahtymista on pakko odottaa: kesken nousun kulmalukema aliarvioi
+laheisyyden, jolloin askel hyppaa sweetspotin yli. Mitattu vertailu:
+pysahtymista odottava strategia 45,6 %, tasaisin valein astuva 28,6 %.
+
+### Mika loppupelissa oli rikki
+
+| Vika | Korjaus | Mitattu vaikutus |
+|---|---|---|
+| Askeleen jalkeen luettiin viela vanhaa kuvaa ja se tulkittiin pysahtymiseksi — kaksi askelta yhden hinnalla | Havainnon kaappausaikaleima tarkistetaan; odotetaan ensimmainen askeleen JALKEEN kaapattu ruutu | 76 % vs 60 % |
+| Kohina aliarvioitiin kertoimella 2,2, joten kaikki kynnykset olivat liian tiukkoja | Alaneljanneksen ja hajonnan valinen kerroin 2,22 mukaan | kohina 0,6/1,0/1,5 luetaan nyt 0,44/0,89/1,33, ennen kaikki 0,25 |
+| Asettumisikkuna laski saman ruudun monta kertaa, joten mediaani ei vaimentanut kohinaa | Ikkunaan vain uudet ruudut | kuudella yrityksella 98,8 % -> 99,4 % |
+| Hienoaskel oli kiintea, joten askelta kapeampi ydin jai ikuisesti askelten valiin | Askel puolittuu ylityksesta: 5,0 -> 2,5 -> 1,25 u | kapea ydin 58 % -> 80 % |
+| Maalikulmassa jaatiin odottamaan loputtomiin | 220 ms ilman avautumista -> uusi ote ja nykays | nauhoituksessa juuri tama avasi lukon; simulaatiossa 0 (katso alla) |
+| Viimeiset sekunnin murto-osat kuluivat odottamiseen | Loppukiri: pienia askelia niin tiheaan kuin ehtii | +2,7 prosenttiyksikkoa |
+| `resume_search` ei siirtanyt hiirta minnekaan, joten pitkan janan oikea paa oli saavuttamaton | Oikea SEEK-vaihe, oletuksena paalla | pitkalla janalla 80 % vs 77 % |
+
+### Mita ohjain mittaa itsestaan
+
+Ohjain ei oleta koneen nopeutta vaan mittaa sen: havainnon vanhuuden
+aikaleimasta, ruutuvalin kaappausten valeista, kulmalukeman kohinan
+erotusten alaneljanneksesta ja yrityksen keston edellisesta yrityksesta.
+Naista johdetaan asettumisikkuna, kuollut aika ja kaikki kynnykset. Ilman
+tata ohjain toimisi vain silla koneella, jolla se viritettiin.
+
+### Rehellisyyden nimissa
+
+**Maalikulman jumivahdille simulaatio ei nayta hyotya.** Simulaattori ei osaa
+toistaa sita, etta pesa jumittaisi 89 asteeseen aukeamatta. Se nayttaa vain,
+ettei korjaus maksa mitaan (76,7 % kummallakin). Ainoa todiste on oma
+nauhoituksesi, jossa 89 astetta -> F irti -> +5 yksikon nykays -> 91,8
+astetta -> lukko auki. Se on suora todiste, mutta yhdesta tapauksesta.
+
+**Yksi asia on syyta tarkistaa pelissa.** Ohjain pitaa F:n pohjassa myos koko
+pyyhkaisyn ajan, siis useita sekunteja yhteen menoon. Omassa nauhoituksessasi
+sina naputit F:aa, joten pitkaa yhtajaksoista pitoa ei ole nahty pelissa. Jos
+peli kayttaytyy sen kanssa oudosti, `live_asetukset.json`-tiedoston
+`control`-osioon voi laittaa `"sweep_hold_f": false`. Huomaa kuitenkin, etta
+silloin haku menettaa ainoan mittarinsa: mitattuna 100 % -> 5 %. Tiirikan
+kuluminen ei ainakaan mallissa ole ongelma, koska lukko aukeaa yleensa
+ensimmaisella yrityksella: rikkoutuneita tiirikoita 0,00 lukkoa kohti seka
+Basic- etta Enforced-lukolla.
+
+**Prosentit ovat mallin sisaisia.** Ne kertovat asetusten ja strategioiden
+keskinaisesta paremmuudesta, eivat pelin onnistumisprosenttia. Malli on
+sovitettu omaan nauhoitukseesi (`live/traces/`), ja `live/test_strategy.py`
+ajaa saman ohjaimen 16:ta mallin muunnelmaa vasten — eri viiveilla,
+kohinatasoilla, ytimen leveyksilla ja aikarajoilla — juuri siksi, ettei tulos
+olisi pelkkaa yhteen malliin sovittamista.

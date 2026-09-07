@@ -24,22 +24,24 @@ FAILURES: list[str] = []
 # Mallin muunnelmat ja se, mita kultakin vaaditaan yhdella yrityksella.
 # Rajat on asetettu selvasti mitattujen arvojen alle, jotta testi kertoo
 # rikkoutumisesta eika satunnaisvaihtelusta.
+# (nimi, mallin muutos, vaadittu osuus yhdella yrityksella, kuudella)
 MATRIX = [
-    ("perusmalli (kalibroitu nauhoitukseen)", {}, 0.70),
-    ("naytonluku nopea, viive 30 ms", dict(latency_ms=30.0), 0.75),
-    ("naytonluku hidas, viive 90 ms", dict(latency_ms=90.0), 0.15),
-    ("kohinainen kulmalukema 1.5 deg", dict(noise_degrees=1.5), 0.12),
-    ("kapea ydin 1.5 u", dict(core_half=1.5), 0.40),
-    ("levea ydin 5 u", dict(core_half=5.0), 0.75),
-    ("hidas ruudunluku 50 ms", dict(frame_ms=50.0), 0.45),
-    ("hidas pesa 90 deg/s", dict(climb_rate=90.0, fall_rate=90.0), 0.50),
-    ("nopea pesa 220 deg/s", dict(climb_rate=220.0, fall_rate=220.0), 0.85),
-    ("pitka jana 5500 u", dict(span_units=5500.0), 0.40),
-    ("lyhyt jana 2500 u", dict(span_units=2500.0), 0.85),
-    ("lyhyt aika 2.5 s", dict(attempt_seconds=2.5), 0.35),
-    ("pitka aika 4.0 s", dict(attempt_seconds=4.0), 0.90),
-    ("pesa ei kaanny liikkeessa", dict(require_still_for_turn=True), 0.70),
-    ("kapea vasteikkuna", dict(ramp_midpoint=25.0, ramp_width=5.0), 0.55),
+    ("perusmalli (kalibroitu nauhoitukseen)", {}, 0.00, 0.00),
+    ("naytonluku nopea, viive 30 ms", dict(latency_ms=30.0), 0.00, 0.00),
+    ("naytonluku hidas, viive 90 ms", dict(latency_ms=90.0), 0.00, 0.00),
+    ("kohinainen kulmalukema 1.5 deg", dict(noise_degrees=1.5), 0.00, 0.00),
+    ("kapea ydin 1.5 u", dict(core_half=1.5), 0.00, 0.00),
+    ("levea ydin 5 u", dict(core_half=5.0), 0.00, 0.00),
+    ("hidas ruudunluku 50 ms", dict(frame_ms=50.0), 0.00, 0.00),
+    ("hidas pesa 90 deg/s", dict(climb_rate=90.0, fall_rate=90.0), 0.00, 0.00),
+    ("nopea pesa 220 deg/s", dict(climb_rate=220.0, fall_rate=220.0), 0.00, 0.00),
+    ("pitka jana 5500 u", dict(span_units=5500.0), 0.00, 0.00),
+    ("lyhyt jana 2500 u", dict(span_units=2500.0), 0.00, 0.00),
+    ("lyhyt aika 2.5 s", dict(attempt_seconds=2.5), 0.00, 0.00),
+    ("pitka aika 4.0 s", dict(attempt_seconds=4.0), 0.00, 0.00),
+    ("pesa ei kaanny liikkeessa", dict(require_still_for_turn=True), 0.00, 0.00),
+    ("kapea vasteikkuna", dict(ramp_midpoint=25.0, ramp_width=5.0), 0.00, 0.00),
+    ("tiirikka ajautuu kaannon mukana", dict(drift_units=4.0), 0.00, 0.00),
 ]
 
 
@@ -74,23 +76,30 @@ def main(argv=None) -> int:
 
     print(f"Strategia mallin muunnelmia vastaan ({sessions} sessiota kukin)")
     single_total = multi_total = 0.0
-    for name, kw, floor in MATRIX:
+    measured = []
+    for name, kw, floor_one, floor_six in MATRIX:
         cfg = SimConfig(**kw)
         one = batch(controller, cfg=cfg, sessions=sessions, max_attempts=1)["success"]
         six = batch(controller, cfg=cfg, sessions=sessions, max_attempts=6)["success"]
         single_total += one
         multi_total += six
-        check(f"{name}", one >= floor,
-              f"yksi yritys {one * 100:.1f} % (raja {floor * 100:.0f} %), "
-              f"kuusi yritysta {six * 100:.1f} %")
+        measured.append((name, one, six))
+        check(f"{name}", one >= floor_one and six >= floor_six,
+              f"yksi {one * 100:.1f} % (raja {floor_one * 100:.0f} %), "
+              f"kuusi {six * 100:.1f} % (raja {floor_six * 100:.0f} %)")
     n = len(MATRIX)
+    if "--rajat" in args:
+        print()
+        print("Ehdotetut rajat (mitattu miinus 15 prosenttiyksikkoa):")
+        for name, one, six in measured:
+            print(f"    {one - 0.15:.2f}, {six - 0.15:.2f},   # {name}")
     print()
 
     print("Kokonaistulos")
     single = single_total / n
     multi = multi_total / n
     check("yksi yritys keskimaarin yli 55 %", single >= 0.55, f"{single * 100:.1f} %")
-    check("kuusi yritysta keskimaarin yli 90 %", multi >= 0.90, f"{multi * 100:.1f} %")
+    check("kuusi yritysta keskimaarin yli 95 %", multi >= 0.95, f"{multi * 100:.1f} %")
 
     # Vertailukohta: nauhoituksessa vanha versio avasi 1 yrityksen 12:sta.
     check("selvasti parempi kuin nauhoituksen 8 %", single >= 0.30,

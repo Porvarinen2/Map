@@ -93,7 +93,7 @@ class ControlConfig:
     # ikkuna ei voi jaada kahden askeleen valiin.
     sweep_step_units: float = 110.0
     sweep_dwell_ms: float = 45.0             # paikallaan askeleen jalkeen
-    sweep_trigger_degrees: float = 2.0       # tama lepokulman ylitse = ikkuna
+    sweep_trigger_degrees: float = 3.0       # tama lepokulman ylitse = ikkuna
     sweep_hold_f: bool = True                # F pohjassa myos pyyhkaisyn aikana
     # Havainto on vanha: nousu alkoi runsaan askeleen verran taaempaa.
     # Peruutus on ASKELEINA, joten se skaalautuu itsestaan pyyhkaisyn
@@ -110,7 +110,7 @@ class ControlConfig:
     # Kaukana (kaanto 20) otetaan 20 yksikon askel, lahella (kaanto 85)
     # kahden yksikon askel. Nain lahestyminen on nopeaa muttei ohita
     # kolmen yksikon levyista ydinta.
-    drive_creep_gain: float = 0.35           # yksikkoa per puuttuva aste
+    drive_creep_gain: float = 0.28           # yksikkoa per puuttuva aste
     drive_creep_min_units: float = 9.0
     drive_creep_max_units: float = 60.0
     # Asettumisaika ja suuntapaatoksen kynnys skaalataan MITATTUIHIN
@@ -122,12 +122,16 @@ class ControlConfig:
     # hyppaa sweetspotin yli. Mitattu vertailu: pysahtymista odottava
     # strategia 45.6 %, tasaisin valein astuva 28.6 % (live/test_strategy.py).
     drive_settle_ms: float = 65.0            # vahimmaisaika ilman muutosta
-    drive_settle_frames: float = 3.0         # ... ja vahintaan nain monta ruutua
-    drive_settle_samples: int = 5            # ikkunassa oltava nain monta lukemaa
-    drive_trend_degrees: float = 0.8         # puolikkaiden ero: alle taman asettunut
+    drive_settle_frames: float = 2.0         # ... ja vahintaan nain monta ruutua
+    # Ikkunassa oltava nain monta ERI RUUTUA. Aikavaatimus (yo.) maaraa
+    # kaytannossa naytemaaran; tama on vain alaraja, jotta puolikkaiden
+    # mediaanit voidaan ylipaataan laskea. Yli kolme kaantaa asetelman:
+    # neljalla ruudulla 65 %, viidella 22 % (16 mallimuunnelmaa).
+    drive_settle_samples: int = 3
+    drive_trend_degrees: float = 0.4         # puolikkaiden ero: alle taman asettunut
     drive_trend_noise_factor: float = 0.8    # ... tai nain monta kertaa kohina
-    drive_worse_degrees: float = 1.0         # suuntapaatoksen kynnys
-    drive_noise_factor: float = 2.5          # ... tai nain monta kertaa kohina
+    drive_worse_degrees: float = 0.7         # suuntapaatoksen kynnys
+    drive_noise_factor: float = 1.6          # ... tai nain monta kertaa kohina
     drive_final_window_degrees: float = 8.0  # tata lahempana maalia hienoaskel
     drive_final_step_units: float = 3.5
     # Kun hienoaskel ylittaa ytimen (kaanto huononee), ydin on viimeisen
@@ -159,15 +163,15 @@ class ControlConfig:
     # Loppukiri: kun aika on lopussa ja pesa on jo lahella maalia,
     # asettumisen odottaminen maksaa enemman kuin se hyodyttaa. Silloin
     # otetaan pienia askelia nykyiseen suuntaan niin tiheaan kuin ehtii.
-    sprint_after_fraction: float = 0.78      # osuus yrityksen kestosta
-    sprint_above_degrees: float = 45.0       # vain jos ollaan jo lahella
+    sprint_after_fraction: float = 0.86      # osuus yrityksen kestosta
+    sprint_above_degrees: float = 30.0       # vain jos ollaan jo lahella
     sprint_interval_ms: float = 45.0
     expected_attempt_seconds: float = 3.0    # ennen ensimmaista mittausta
 
     # Jos nykaykset eivat auta, F paastetaan hetkeksi irti ja otetaan uusi
     # ote. Nauhoituksessa juuri tama vei 89 asteesta 91.8 asteeseen.
-    rebite_after_stalls: int = 7
-    rebite_release_ms: float = 55.0
+    rebite_after_stalls: int = 9
+    rebite_release_ms: float = 80.0
     # Kun vaste hukkuu, ikkunaa haetaan ensin nain monta askelta
     # molemmin puolin ennen kuin palataan koko janan pyyhkaisyyn.
     rescan_steps: int = 2
@@ -335,6 +339,11 @@ class Controller:
         # vaihteluvalista eika yksittaisista ruutueroista, jotta kohina ei
         # tulkitse liiketta pysahtymiseksi eika painvastoin.
         self._window: list[tuple[float, float]] = []
+        # Ikkunaan otetaan vain UUDET ruudut. Ohjain paivittyy monta kertaa
+        # yhden ruudun aikana, joten ilman tata sama lukema tulisi ikkunaan
+        # seitsemasti ja mediaani laskettaisiin kopioista - jolloin
+        # keskiarvoistus ei vaimenna kohinaa lainkaan.
+        self._window_stamp = -1.0
         # Paikallinen uusintahaku, kun vaste hukkuu ikkunan lahella.
         self._rescan_left = 0
         self._rescan_anchor = 0.0
@@ -455,6 +464,7 @@ class Controller:
         """Merkitsee hetken, jonka jalkeen kaapatut havainnot ovat tuoreita."""
         self._stepped_at = now
         self._window = []
+        self._window_stamp = -1.0
 
     def _record(self, position: float, score: float, kind: str) -> None:
         self.probes.append(Probe(position=position, score=score,
@@ -751,23 +761,27 @@ class Controller:
             return Action(f_down=self.cfg.sweep_hold_f, phase=self.SWEEP,
                           note="vaste hukkui -> takaisin pyyhkaisyyn")
 
-        # Kaanto elaa viela: odotetaan. Talla ohjain "uskaltaa" pitaa F:n
-        # pohjassa sen sijaan etta hosuisi seuraavaan kohtaan.
-        # Asettuminen: verrataan ikkunan alkupuoliskon mediaania
-        # loppupuoliskon mediaaniin. Mediaani kestaa kohinaa, ja puolikkaiden
-        # ero mittaa nimenomaan TRENDIA - siis kaantyyko pesa viela.
-        # Yksittaisten ruutuerojen vertailu petti kohinaisella lukemalla.
         # Kuollut aika: heti askeleen jalkeen ruudulla nakyy viela
         # edellinen tilanne. Jos ne lukemat paastetaan asettumisikkunaan,
         # ohjain toteaa vanhan tasanteen asettumiseksi ja astuu heti
         # uudelleen. Silloin kaksi askelta menee yhden hinnalla ja
-        # sweetspot ohitetaan. Odotetaan mitattu viive ensin.
+        # sweetspot ohitetaan.
         if self._stale(now, obs):
             return Action(f_down=True, phase=self.DRIVE,
                           note=f"vanha kuva {obs.turn:.1f} deg")
 
+        # Kaanto elaa viela: odotetaan. Talla ohjain "uskaltaa" pitaa F:n
+        # pohjassa sen sijaan etta hosuisi seuraavaan kohtaan.
+        #
+        # Asettuminen paatellaan vertaamalla ikkunan alkupuoliskon
+        # mediaania loppupuoliskon mediaaniin. Mediaani kestaa kohinaa, ja
+        # puolikkaiden ero mittaa nimenomaan TRENDIA - siis kaantyyko pesa
+        # viela. Yksittaisten ruutuerojen vertailu petti kohinaisella
+        # lukemalla.
         limit = self._settle_limit_ms() / 1000.0
-        self._window.append((now, obs.turn))
+        if obs.stamp <= 0.0 or obs.stamp > self._window_stamp:
+            self._window_stamp = obs.stamp
+            self._window.append((now, obs.turn))
         self._window = [(t, a) for t, a in self._window if now - t <= limit]
         n = len(self._window)
         span_ok = n and (now - self._window[0][0]) >= limit * 0.85
