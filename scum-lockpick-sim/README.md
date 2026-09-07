@@ -1,5 +1,12 @@
 # SCUM Tiirikkapenkki
 
+> **LIVE 2.1 - TIIRIKAN SAASTO:** haku ei enaa vaanna F:aa yhtajaksoisesti.
+> Tiirikkaa kuluttaa vain se, etta F on pohjassa kohtaa vasten joka EI anna
+> periksi - siksi vaanto katkaistaan haun aikana ja pidetaan pohjassa vasta
+> kun vasteikkuna on loytynyt. Haun painallukset ovat nyt mediaaniltaan
+> 236 ms (aiemmin 2328 ms). Tasoa saatelaan `pick_care`-asetuksella.
+> Katso [Kuinka lujaa tiirikkaa vaannetaan](#kuinka-lujaa-tiirikkaa-vaannetaan).
+
 > **LIVE 2.0 - SWEEP + DRIVE:** ohjain on kirjoitettu uudelleen kayttajan
 > omasta debug-nauhoituksesta mitatun datan pohjalta. F pysyy pohjassa koko
 > ajan: pyyhkaisyn aikana, vasteen loytyessa ja loppuun asti. Loppupeli
@@ -87,22 +94,28 @@ ylimaarainen liike ei tee mitaan, joten jokainen yritys alkaa samasta
 kohdasta ilman etta sita tarvitsee mitata.
 
 ```
-ALOITUS (vasen reuna)          F POHJASSA KOKO AJAN
+ALOITUS (vasen reuna)     HAKU: napautus - lepo - napautus
   |
-  +---+---+---+---+---+---+---+---+---+---+   matelee oikealle
-                                  |
-                                  +-- pesa alkoi kaantya = VASTEIKKUNA
-                                      peruuta havainnon viiveen verran
-                                      |
-                                      +-- odota kunnes kaanto PYSAHTYY
-                                          pysahtynyt kulma kertoo etaisyyden
-                                          astu sen verran -> odota -> astu
-                                          ... kunnes lukko aukeaa
+  +--F--+ . +--F--+ . +--F--+ . +--F--+   matelee oikealle
+                                    |
+                                    +-- pesa alkoi kaantya = VASTEIKKUNA
+                                        peruuta havainnon viiveen verran
+                                        |
+                                        +== F POHJAAN JA PIDETAAN ==
+                                            odota kunnes kaanto PYSAHTYY
+                                            pysahtynyt kulma kertoo etaisyyden
+                                            astu sen verran -> odota -> astu
+                                            ... kunnes lukko aukeaa
 ```
 
-F ei irtoa missaan valissa. Se on koko uudelleenkirjoituksen ydin: pesa
-kaantyy vain kun F on pohjassa, joten F:n irrottaminen haun ajaksi
-sokeuttaa ohjaimen juuri silloin kun se tarvitsisi mittarinsa.
+Pesa kaantyy vain kun F on pohjassa, joten ikkunan voi havaita VAIN F
+pohjassa. Siksi haku ei voi vain paastaa F:aa irti - se napauttaa.
+Hiiri seisoo paikallaan lepojakson ajan: jos se liikkuisi F ylhaalla,
+vasteikkuna voisi mennä ohi kenenkaan huomaamatta.
+
+Ajovaiheessa F pysyy pohjassa. Se ei kuluta tiirikkaa, koska siella lukko
+antaa periksi koko ajan - ja juuri se erottaa periksiantavan lukon
+jumista.
 
 ### Miten se toimii
 
@@ -575,6 +588,36 @@ yrityksella.
 | `resume_search` ei siirtanyt hiirta minnekaan, joten kytkin ei tehnyt mitaan | Oikea SEEK-vaihe. Kun kytkin vihdoin toimi, se voitiin mitata - eika siita ole hyotya, joten oletus pysyy poissa | jatkaen 98,8 %, aina alusta 100,0 % |
 | Pyyhkaisyaskel oli kiintea, vaikka sweetspotin ikkuna ja koko jana skaalautuvat molemmat hiiriherkkyyden mukana | Askel mukautuu: taysi kierros ilman loytoa lyhentaa sita, kesken jaanyt kierros pidentaa | pienella herkkyydella 92 % vs 77 % |
 | Yrityksen kesto opittiin myos onnistuneista yrityksista, jotka paattyvat kesken aikarajan - joten se aliarvioitiin ja loppukiri alkoi liian aikaisin | Kesto opitaan vain aikansa loppuun ajaneista | - |
+
+### Kuinka lujaa tiirikkaa vaannetaan
+
+Tiirikkaa kuluttaa se, etta F on pohjassa kohtaa vasten joka ei anna
+periksi. Ohjain katkaisee siksi vaannon aina kun pesa ei ole liikkunut
+hetkeen - ja jatkaa heti perään. Kolme tasoa, `live_asetukset.json`:in
+`control`-osiossa avaimella `pick_care`:
+
+| `pick_care` | Avattu | Yrityksia | Haun F-osuus | Painallus | Kulutus |
+|---|---|---|---|---|---|
+| `nopea` | 100,0 % | 1,43 | 63,4 % | 376 ms | 1,91 s |
+| **`tasapaino`** (oletus) | **100,0 %** | **1,59** | **55,5 %** | **304 ms** | 2,02 s |
+| `saastava` | 99,3 % | 1,80 | 49,6 % | 196 ms | 2,23 s |
+| ei katkaisua (`relax_when_stalled: false`) | 100,0 % | 1,20 | 87,7 % | 2328 ms | 1,80 s |
+
+Vertailuksi: omassa pelaamisessasi F oli pohjassa 44,6 % ajasta ja
+painallusten mediaani oli 217 ms, pisin 732 ms. Oletustasolla botin haun
+painallukset ovat mediaaniltaan 236 ms ja pisin 412 ms - siis kevyempia
+kuin omasi.
+
+**Huomaa vaihtokauppa.** Sarakkeet "haun F-osuus" ja "kulutus" kertovat eri
+asiaa, ja ne menevat eri suuntiin:
+
+- Jos peli kuluttaa tiirikkaa sen mukaan **kuinka kauan yhtajaksoisesti
+  vaannat**, kevyempi taso on parempi.
+- Jos se kuluttaa **kokonaisajan** mukaan, `nopea` on parempi, koska se
+  avaa lukon harvemmilla yrityksilla.
+
+En pysty ratkaisemaan tata taalta - se vaatii pelia. Aloita oletuksesta ja
+vaihda tasoa sen mukaan, kumpi pitaa tiirikat ehjempina.
 
 ### Mita ohjain mittaa itsestaan
 

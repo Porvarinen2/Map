@@ -196,9 +196,14 @@ def test_search_runs_left_to_right() -> None:
     sweet_units = (55.0 - PICK_MIN) / 0.035
     windows = [p.position for p in controller.probes if p.kind == "ikkuna"]
     check("vasteikkuna loytyi", bool(windows), f"{len(controller.probes)} merkintaa")
-    check("ikkuna loydettiin sweetspotin vasemmalta puolelta",
-          bool(windows) and windows[0] <= sweet_units,
-          f"{windows[0]:.0f} u vs sweetspot {sweet_units:.0f} u" if windows else "")
+    # Havainto on vanha, joten ikkuna kirjataan aina hieman sen kohdan
+    # jalkeen, jossa vaste alkoi. Juuri sita varten loydon yhteydessa
+    # peruutetaan. Ylitys ei saa kuitenkaan olla askelta suurempi.
+    overshoot = (windows[0] - sweet_units) if windows else 0.0
+    check("ikkuna loydettiin sweetspotin kohdalta, vasemmalta tullen",
+          bool(windows) and overshoot <= ControlConfig().sweep_step_units,
+          f"{windows[0]:.0f} u vs sweetspot {sweet_units:.0f} u "
+          f"(ylitys {overshoot:+.0f} u)" if windows else "")
     check("pyyhkaisyn merkinnat etenevat oikealle",
           all(b >= a - 1e-6 for a, b in zip(windows, windows[1:])),
           f"{len(windows)} ikkunaa")
@@ -218,26 +223,37 @@ def test_rising_turn_is_never_cut() -> None:
           f"{rate:.0f} deg/s" if rate else "ei mittausta")
 
 
-def test_holding_f_is_what_makes_it_work() -> None:
-    """Vanhan version paavika oli, etta F irtosi kesken kaannon.
+def test_grip_levels_trade_speed_for_the_pick() -> None:
+    """Kuinka lujaa tiirikkaa vaannetaan haun aikana.
 
-    Uudessa rakenteessa F on pohjassa jo pyyhkaisyn aikana. Se ei ole
-    makuasia vaan koko haun perusta: pesa kaantyy vain kun F on pohjassa,
-    joten ilman sita ikkunaa ei voi havaita lainkaan.
+    Tiirikkaa kuluttaa se, etta F on pohjassa kohtaa vasten joka ei anna
+    periksi. Kayttaja: "lockpickit menee rikki jo rampis". Siksi haussa
+    vaanto katkaistaan saannollisesti, ja tasoja on kolme.
+
+    Tasot ovat aitoja vaihtokauppoja: kevyempi ote loytaa ikkunan
+    harvemmin yhdella yrityksella, mutta rasittaa tiirikkaa vahemman.
     """
-    print("F pohjassa pyyhkaisyn aikana on koko haun perusta")
+    print("Otteen tasot vaihtavat nopeutta tiirikan kestoon")
     lock = LockConfig(tier="basic", skill=1)
-    held = batch(lock, sessions=60)
-    tapped = batch(lock, sessions=60, sweep_hold_f=False)
-    check("F pohjassa: lukko aukeaa", held["success"] > 0.80,
-          f"{held['success'] * 100:.1f} %")
-    # F ylhaalla haku ei loyda ikkunaa lainkaan: se paatyy painamaan F:aa
-    # vain silloin kun kohina sattuu ylittamaan kynnyksen, eli umpimahkaan.
-    # Talla mallilla vasteikkuna on leveimmillaan noin 500 yksikkoa, joten
-    # umpimahkainenkin painelu osuu joskus - mutta selvasti harvemmin.
-    check("F ylhaalla pyyhkaisyssa: haku muuttuu umpimahkaiseksi",
-          tapped["success"] < held["success"] - 0.10,
-          f"{tapped['success'] * 100:.1f} % vs {held['success'] * 100:.1f} %")
+
+    levels = {}
+    for care in ("nopea", "tasapaino", "saastava"):
+        levels[care] = batch(lock, sessions=60, pick_care=care)
+        check(f"{care}: lukko aukeaa", levels[care]["success"] > 0.90,
+              f"{levels[care]['success'] * 100:.1f} %, "
+              f"{levels[care]['attempts']:.2f} yritysta")
+
+    check("kevyempi ote on hitaampi, ei rikkinainen",
+          levels["saastava"]["attempts"] >= levels["nopea"]["attempts"] - 0.15,
+          f"saastava {levels['saastava']['attempts']:.2f} vs "
+          f"nopea {levels['nopea']['attempts']:.2f} yritysta")
+
+    # Yhtajaksoinen pito on yha valittavissa, mutta se ei ole oletus.
+    check("vaannon katkaisu on oletuksena paalla",
+          ControlConfig().relax_when_stalled is True)
+    hold = batch(lock, sessions=60, relax_when_stalled=False)
+    check("yhtajaksoinen pito toimii yha", hold["success"] > 0.90,
+          f"{hold['success'] * 100:.1f} %")
 
 
 def test_search_memory_defaults() -> None:
@@ -396,7 +412,7 @@ def main() -> int:
         test_homing_finds_the_wall,
         test_search_runs_left_to_right,
         test_rising_turn_is_never_cut,
-        test_holding_f_is_what_makes_it_work,
+        test_grip_levels_trade_speed_for_the_pick,
         test_search_memory_defaults,
         test_sweep_step_must_fit_the_window,
         test_residual_turn_does_not_fake_a_window,

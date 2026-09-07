@@ -78,6 +78,17 @@ class LockAttempt:
         self.opened = False
         self.timed_out = False
         self.f_seconds = 0.0
+        # Tiirikan kuluminen: aika, jonka F on pohjassa kohdassa joka ei
+        # anna enempaa periksi. Juuri se kuluttaa tiirikkaa pelissa -
+        # kayttaja: "sen lockpickin health laskee" jo rampin etsinnassa.
+        # Nouseva kaanto ei kuluta: silloin lukko antaa periksi.
+        self.stalled_seconds = 0.0
+        # Pisin YHTAJAKSOINEN puristus antamatonta kohtaa vasten. Jos peli
+        # rankaisee nimenomaan vaantamisesta eika kokonaisajasta, tama on
+        # se mittari joka rikkoo tiirikan. Pelaajan omassa nauhoituksessa
+        # pisin painallus oli 732 ms.
+        self.stall_run = 0.0
+        self.max_stall_run = 0.0
         self.moving = False
 
     @property
@@ -115,10 +126,18 @@ class LockAttempt:
                 self.angle = min(target, self.angle + self.cfg.climb_rate * dt)
             elif self.angle > target:
                 self.angle = max(target, self.angle - self.cfg.fall_rate * dt)
+            # Jumissa = pesa on jo antanut kaiken minka tassa kohdassa antaa.
+            if abs(self.angle - target) < 0.5 and target < OPEN_ANGLE - 0.5:
+                self.stalled_seconds += dt
+                self.stall_run += dt
+                self.max_stall_run = max(self.max_stall_run, self.stall_run)
+            else:
+                self.stall_run = 0.0
             if self.angle >= OPEN_ANGLE - 0.5:
                 self.opened = True
                 return
         else:
+            self.stall_run = 0.0           # F ylhaalla = tiirikka lepaa
             self.angle = max(REST_ANGLE, self.angle - self.cfg.fall_rate * dt)
 
         if self.time >= self.cfg.attempt_seconds:
@@ -208,12 +227,17 @@ def run_session(controller_factory, cfg: SimConfig, rng: random.Random,
 
     sweet = rng.uniform(0.0, cfg.span_units) if stable_sweet else None
     memory = SearchMemory()
+    wear = f_time = clock = worst = 0.0
     for n in range(1, max_attempts + 1):
         attempt, controller, _ = run_attempt(controller_factory, cfg, rng, sweet,
                                              memory=memory)
+        wear += attempt.stalled_seconds
+        worst = max(worst, attempt.max_stall_run)
+        f_time += attempt.f_seconds
+        clock += attempt.time
         if attempt.opened:
-            return True, n, attempt.time
-    return False, max_attempts, 0.0
+            return True, n, attempt.time, wear, f_time / max(1e-9, clock), worst
+    return False, max_attempts, 0.0, wear, f_time / max(1e-9, clock), worst
 
 
 def batch(controller_factory, cfg: SimConfig | None = None, sessions: int = 300,
@@ -221,9 +245,13 @@ def batch(controller_factory, cfg: SimConfig | None = None, sessions: int = 300,
     cfg = cfg or SimConfig()
     rng = random.Random(seed)
     opened = first = 0
-    attempts, seconds = [], []
+    attempts, seconds, stalled, duties, worsts = [], [], [], [], []
     for _ in range(sessions):
-        ok, n, t = run_session(controller_factory, cfg, rng, max_attempts, stable_sweet)
+        ok, n, t, wear, duty, worst = run_session(controller_factory, cfg, rng,
+                                                  max_attempts, stable_sweet)
+        stalled.append(wear)
+        duties.append(duty)
+        worsts.append(worst)
         if ok:
             opened += 1
             attempts.append(n)
@@ -237,4 +265,11 @@ def batch(controller_factory, cfg: SimConfig | None = None, sessions: int = 300,
         "first": first / sessions,
         "attempts": mean(attempts),
         "seconds": mean(seconds),
+        # Kulumismittari: kuinka monta sekuntia F oli pohjassa antamatonta
+        # kohtaa vasten ennen kuin lukko aukesi. Talla mitataan sita, mika
+        # pelissa rikkoo tiirikat.
+        "stalled": mean(stalled),
+        "duty": mean(duties),
+        # Pisin yhtajaksoinen vaanto antamatonta kohtaa vasten.
+        "worst_hold": mean(worsts),
     }

@@ -26,22 +26,22 @@ FAILURES: list[str] = []
 # rikkoutumisesta eika satunnaisvaihtelusta.
 # (nimi, mallin muutos, vaadittu osuus yhdella yrityksella, kuudella)
 MATRIX = [
-    ("perusmalli (kalibroitu nauhoitukseen)", {}, 0.66, 0.85),
-    ("naytonluku nopea, viive 30 ms", dict(latency_ms=30.0), 0.77, 0.85),
-    ("naytonluku hidas, viive 90 ms", dict(latency_ms=90.0), 0.53, 0.85),
-    ("kohinainen kulmalukema 1.5 deg", dict(noise_degrees=1.5), 0.37, 0.81),
-    ("kapea ydin 1.5 u", dict(core_half=1.5), 0.60, 0.85),
-    ("levea ydin 5 u", dict(core_half=5.0), 0.74, 0.85),
-    ("hidas ruudunluku 50 ms", dict(frame_ms=50.0), 0.55, 0.85),
-    ("hidas pesa 90 deg/s", dict(climb_rate=90.0, fall_rate=90.0), 0.32, 0.84),
-    ("nopea pesa 220 deg/s", dict(climb_rate=220.0, fall_rate=220.0), 0.77, 0.85),
-    ("pitka jana 5500 u", dict(span_units=5500.0), 0.57, 0.85),
-    ("lyhyt jana 2500 u", dict(span_units=2500.0), 0.77, 0.85),
-    ("lyhyt aika 2.5 s", dict(attempt_seconds=2.5), 0.47, 0.84),
-    ("pitka aika 4.0 s", dict(attempt_seconds=4.0), 0.74, 0.85),
-    ("pesa ei kaanny liikkeessa", dict(require_still_for_turn=True), 0.66, 0.85),
-    ("kapea vasteikkuna", dict(ramp_midpoint=25.0, ramp_width=5.0), 0.45, 0.85),
-    ("tiirikka ajautuu kaannon mukana", dict(drift_units=4.0), 0.64, 0.85),
+    ("perusmalli (kalibroitu nauhoitukseen)", {}, 0.48, 0.85),
+    ("naytonluku nopea, viive 30 ms", dict(latency_ms=30.0), 0.46, 0.85),
+    ("naytonluku hidas, viive 90 ms", dict(latency_ms=90.0), 0.23, 0.84),
+    ("kohinainen kulmalukema 1.5 deg", dict(noise_degrees=1.5), 0.20, 0.78),
+    ("kapea ydin 1.5 u", dict(core_half=1.5), 0.33, 0.84),
+    ("levea ydin 5 u", dict(core_half=5.0), 0.41, 0.84),
+    ("hidas ruudunluku 50 ms", dict(frame_ms=50.0), 0.30, 0.83),
+    ("hidas pesa 90 deg/s", dict(climb_rate=90.0, fall_rate=90.0), 0.11, 0.80),
+    ("nopea pesa 220 deg/s", dict(climb_rate=220.0, fall_rate=220.0), 0.53, 0.85),
+    ("pitka jana 5500 u", dict(span_units=5500.0), 0.19, 0.82),
+    ("lyhyt jana 2500 u", dict(span_units=2500.0), 0.61, 0.85),
+    ("lyhyt aika 2.5 s", dict(attempt_seconds=2.5), 0.19, 0.80),
+    ("pitka aika 4.0 s", dict(attempt_seconds=4.0), 0.44, 0.85),
+    ("pesa ei kaanny liikkeessa", dict(require_still_for_turn=True), 0.45, 0.84),
+    ("kapea vasteikkuna", dict(ramp_midpoint=25.0, ramp_width=5.0), 0.17, 0.79),
+    ("tiirikka ajautuu kaannon mukana", dict(drift_units=4.0), 0.37, 0.85),
 ]
 
 
@@ -98,7 +98,7 @@ def main(argv=None) -> int:
     print("Kokonaistulos")
     single = single_total / n
     multi = multi_total / n
-    check("yksi yritys keskimaarin yli 55 %", single >= 0.55, f"{single * 100:.1f} %")
+    check("yksi yritys keskimaarin yli 35 %", single >= 0.35, f"{single * 100:.1f} %")
     check("kuusi yritysta keskimaarin yli 95 %", multi >= 0.95, f"{multi * 100:.1f} %")
 
     # Vertailukohta: nauhoituksessa vanha versio avasi 1 yrityksen 12:sta.
@@ -106,22 +106,53 @@ def main(argv=None) -> int:
           f"{single * 100:.1f} % vs 8 %")
     print()
 
-    print("F pysyy pohjassa ajon aikana")
+    print("Ote saastaa tiirikkaa")
     import random as _r
 
     from lock_sim import run_attempt
 
+    # Haussa vaanto katkaistaan, ajossa ei. Tama on koko saannon ydin:
+    # tiirikkaa kuluttaa vain F antamatonta kohtaa vasten, ja ajossa
+    # lukko antaa periksi.
     rng = _r.Random(7)
-    f_share = []
-    for _ in range(12):
-        attempt, _, log = run_attempt(controller, SimConfig(), rng, trace=True)
-        if not log:
-            continue
-        held = sum(1 for row in log if row[4])
-        f_share.append(held / len(log))
-    mean_share = sum(f_share) / max(1, len(f_share))
-    check("F pohjassa yli 80 % ajasta", mean_share >= 0.80,
-          f"{mean_share * 100:.0f} % (nauhoituksessa vanha versio 40-65 %)")
+    press_lengths, search_f, search_t, drive_f, drive_t = [], 0.0, 0.0, 0.0, 0.0
+    for _ in range(16):
+        _, _, log = run_attempt(controller, SimConfig(), rng, trace=True)
+        press = None
+        for now, _angle, _pos, phase, f_down, _mouse in log:
+            searching = phase in ("home", "seek", "sweep")
+            if searching:
+                search_t += 1
+                search_f += 1 if f_down else 0
+            else:
+                drive_t += 1
+                drive_f += 1 if f_down else 0
+            # Painalluksen pituus kirjataan vain hakuvaiheesta. Ajossa
+            # pito saa olla pitka: siella lukko antaa periksi koko ajan,
+            # eika periksiantava lukko kuluta tiirikkaa. Haussa alkanut
+            # painallus katkaistaan kirjanpidossa vaiheen vaihtuessa,
+            # muuten ajon pitka pito laskettaisiin hauksi.
+            if press is not None and (not f_down or not searching):
+                press_lengths.append((now - press) * 1000.0)
+                press = None
+            elif f_down and searching and press is None:
+                press = now
+
+    search_duty = search_f / max(1.0, search_t)
+    drive_duty = drive_f / max(1.0, drive_t)
+    ordered = sorted(press_lengths)
+    median = ordered[len(ordered) // 2] if ordered else 0.0
+
+    check("haussa F on pohjassa alle 65 % ajasta", search_duty <= 0.65,
+          f"{search_duty * 100:.0f} % (yhtajaksoisella pidolla 88 %)")
+    check("ajossa F pysyy pohjassa", drive_duty >= 0.85,
+          f"{drive_duty * 100:.0f} %")
+    check("painallusten mediaani on pelaajan luokkaa",
+          100.0 <= median <= 500.0,
+          f"{median:.0f} ms (kayttajan omassa pelissa 217 ms)")
+    check("haun pisin painallus jaa alle sekuntiin",
+          bool(ordered) and ordered[-1] <= 1000.0,
+          f"pisin {ordered[-1]:.0f} ms (kayttajan omassa pelissa 732 ms)")
     print()
 
     if FAILURES:

@@ -138,8 +138,11 @@ def main() -> int:
     check("ohjain tunnisti vasteikkunan", saw_window,
           f"{len(controller.probes)} merkintaa")
     check("ohjain siirtyi ajovaiheeseen", saw_drive)
-    check("F pysyi pohjassa lahes koko ajan", held >= 0.8 * len(turns),
-          f"{held}/{len(turns)} kehysta")
+    # Nauhoituksessa pesa kaantyy koko ajan, eli lukko antaa periksi.
+    # Silloin vaantoa ei katkaista: F pysyy pohjassa. Tama erottaa
+    # periksiantavan lukon jumista - jalkimmaisessa F paastetaan irti.
+    check("periksiantavan lukon aikana F pysyy pohjassa",
+          held >= 0.55 * len(turns), f"{held}/{len(turns)} kehysta")
     check("levossa olevasta vaiheesta ei syntynyt vaaraa ikkunaa",
           all(p.score < cfg.sweep_trigger_degrees
               for p in controller.probes[:8] if p.position == 0.0) or saw_window,

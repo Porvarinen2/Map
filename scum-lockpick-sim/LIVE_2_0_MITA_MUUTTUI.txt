@@ -197,3 +197,82 @@ paketin botin ajosta, raportin saa niista vierekkain:
     python debug_report.py botti_kansio pelaaja_kansio
 
 Silloin nakee suoraan, missa kohtaa botti tekee toisin kuin sina.
+
+
+================================================================
+LIVE 2.1 - TIIRIKAN SAASTO
+================================================================
+
+Palautteesi: "se ei tee enaa sita kevytta F napayttelyy vaa se painaa
+vaha F pohjas joka kerta ku testaa kohtaa ja se kuluttaa lockpickii".
+
+Olit oikeassa. LIVE 2.0 piti F:aa pohjassa 88 % hakuvaiheen ajasta ja
+yksittainen painallus saattoi kestaa yli kaksi sekuntia. Se oli minun
+virheeni: mittasin onnistumisprosenttia enka tiirikan kulumista.
+
+
+MIKA MUUTTUI
+------------
+
+Tiirikkaa kuluttaa se, etta F on pohjassa kohtaa vasten joka EI anna
+periksi. Kun pesa kaantyy, lukko antaa periksi eika kuluta.
+
+Siita seuraa yksi saanto: F paastetaan irti aina kun pesa ei ole
+liikkunut hetkeen, ja painetaan heti uudelleen.
+
+Haussa raja on tiukka (240 ms) ja ajossa loysa (900 ms) - juuri kuten
+pyysit. Ajossa raja ei kaytannossa koskaan laukea, koska siella pesa
+nousee jatkuvasti.
+
+Kaksi yksityiskohtaa, joilla oli iso merkitys:
+
+  1. HIIRI SEISOO LEPOJAKSON AJAN. Jos se liikkuisi F ylhaalla,
+     vasteikkuna voisi mennä ohi huomaamatta - pesa kaantyy vain F
+     pohjassa. Kun liike keskitettiin painallusten ajalle, sama F-maara
+     tuotti selvasti paremman tuloksen.
+
+  2. VAANTO NOLLATAAN HUIPPUUN, EI EDELLISEEN RUUTUUN. Hidas tasainen
+     nousu - vaikka puoli astetta ruudussa - on yhta lailla
+     periksiantamista, mutta ruutukohtaisena se jai kohinakynnyksen alle
+     ja ohjain katkaisi vaannon kesken nousun.
+
+
+MITTAUKSET
+----------
+
+    taso                avattu  yrityksia  haun F  painallus  kulutus
+    nopea               100,0 %    1,43     63,4 %    376 ms   1,91 s
+    tasapaino (oletus)  100,0 %    1,59     55,5 %    304 ms   2,02 s
+    saastava             99,3 %    1,80     49,6 %    196 ms   2,23 s
+    ei katkaisua        100,0 %    1,20     87,7 %   2328 ms   1,80 s
+
+Sinun omassa pelaamisessasi F oli pohjassa 44,6 % ajasta, painallusten
+mediaani 217 ms ja pisin 732 ms. Oletustasolla botin HAUN painallukset
+ovat mediaaniltaan 236 ms ja pisin 412 ms - siis kevyempia kuin omasi.
+
+Tason vaihto: live_asetukset.json -> control -> "pick_care":
+"nopea" / "tasapaino" / "saastava".
+
+
+MITA EN PYSTY RATKAISEMAAN TAALTA
+---------------------------------
+
+Sarakkeet "haun F" ja "kulutus" menevat eri suuntiin, koska en tieda
+kumman saannon mukaan SCUM kuluttaa tiirikkaa:
+
+  - jos se rankaisee YHTAJAKSOISESTA vaannosta, kevyempi taso on parempi
+  - jos se rankaisee KOKONAISAJASTA, "nopea" on parempi, koska se avaa
+    lukon harvemmilla yrityksilla
+
+Aloita oletuksesta. Jos tiirikat yha hajoavat haun aikana, vaihda
+"saastava". Jos ne kestavat hyvin mutta avaaminen tuntuu hitaalta,
+vaihda "nopea".
+
+
+HINTA
+-----
+
+Kevyempi ote loytaa ikkunan harvemmin yhdella yrityksella: 16
+mallimuunnelman keskiarvo putosi 75,0 %:sta 49,9 %:iin yhdella
+yrityksella. Kuudella yrityksella 99,7 % -> 97,7 %, eli lukot aukeavat
+edelleen - ne vain vaativat useammin toisen yrityksen.

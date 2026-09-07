@@ -2,10 +2,10 @@
 
 Tama testi lukitsee ne kolme asiaa, joissa aiempi versio kaatui pelissa:
 
-  1. Pyyhkaisyn aikana F EI irtoa. Vanha versio naputti F:aa lyhyilla
-     tokeilla ja paasti irti juuri kun pesa alkoi kaantya. Kayttajan
-     sanoin: "se jaa vammailee siihe sweetspotin kohalle ettei se
-     oikee uskalla painaa F pohjas".
+  1. Haussa F naputetaan, ajossa pidetaan. Tiirikkaa kuluttaa se, etta
+     F on pohjassa kohtaa vasten joka ei anna periksi, joten haussa
+     vaanto katkaistaan saannollisesti. Kun pesa kaantyy, lukko antaa
+     periksi - silloin F pysyy pohjassa eika sita katkaista.
   2. Askel on selvasti vasteikkunaa lyhyempi, joten ikkuna ei voi jaada
      kahden askeleen valiin. Vanha 300 yksikon askel hyppasi mitatun
      noin 120 yksikon ikkunan yli.
@@ -56,23 +56,36 @@ def main() -> int:
     cfg = ControlConfig()
 
     # ------------------------------------------------------------------
-    print("Pyyhkaisy pitaa F:n pohjassa ja matelee oikealle")
+    print("Haku naputtaa F:aa eika vaanna yhtajaksoisesti")
     c = sweeping()
     t = 0.0
-    released = 0
+    presses, press_start, held, moved_up = [], None, 0, 0
     moves = []
-    for _ in range(400):
+    for _ in range(600):
         action = c.update(t, obs(t, 0.4))
-        if not action.f_down:
-            released += 1
+        if action.f_down:
+            held += 1
+            if press_start is None:
+                press_start = t
+        else:
+            if press_start is not None:
+                presses.append((t - press_start) * 1000.0)
+                press_start = None
+            if action.mouse_units:
+                moved_up += 1
         if action.mouse_units:
             moves.append(action.mouse_units)
         t += 0.005
         if c.phase != c.SWEEP:
             break
 
-    check("F ei irtoa kertaakaan pyyhkaisyn aikana", released == 0,
-          f"{released} irrotusta 400 ruudusta")
+    duty = held / 600.0
+    check("F ei ole pohjassa koko ajan", 0.30 <= duty <= 0.75,
+          f"{duty * 100:.0f} % ruuduista")
+    check("painallukset ovat lyhyita", bool(presses) and max(presses) <= 400.0,
+          f"pisin {max(presses):.0f} ms, {len(presses)} painallusta")
+    check("hiiri ei liiku F ylhaalla", moved_up == 0,
+          f"{moved_up} askelta F ylhaalla - ikkuna voisi jaada huomaamatta")
     check("liike kulkee vain oikealle", all(m > 0 for m in moves),
           f"{len(moves)} askelta")
     check("askel on vasteikkunaa lyhyempi", cfg.sweep_step_units <= 120.0,
@@ -114,10 +127,13 @@ def main() -> int:
     turn = 12.0
     for _ in range(120):
         t += 0.005
-        turn = min(80.0, turn + 0.7)          # pesa kaantyy koko ajan
+        turn = min(80.0, turn + 0.35)         # hidas mutta tasainen nousu
         action = c.update(t, obs(t, turn))
         if not action.f_down:
             released += 1
+    # Hidas nousu on yhta lailla periksiantamista kuin nopeakin: vaantoa
+    # ei saa katkaista sen aikana. Ruutukohtainen muutos jaa tassa
+    # kohinakynnyksen alle, joten vertailu on tehtava huippuun.
     check("F ei irtoa kertaakaan nousun aikana", released == 0,
           f"{released} irrotusta 120 ruudusta")
     print()
@@ -137,7 +153,7 @@ def main() -> int:
     c._settled_value = 86.0
     steps = []
     turn = 86.0
-    for round_index in range(60):
+    for round_index in range(200):
         t += 0.005
         action = c.update(t, obs(t, turn))
         if action.mouse_units:
@@ -164,13 +180,14 @@ def main() -> int:
     action = c.update(t + 0.005, obs(t + 0.005, 0.3))
     check("ei palata heti koko janan pyyhkaisyyn", c.phase == c.DRIVE,
           f"{c.phase}: {action.note}")
-    check("uusinta tehdaan F pohjassa", action.f_down, action.note)
 
     # Kun paikalliset uusinnat on kaytetty, palataan pyyhkaisyyn.
-    for _ in range(cfg.rescan_steps + 2):
-        t += 0.05
+    for _ in range((cfg.rescan_steps + 2) * 40):
+        t += 0.005
         c._settles = 1
         c.update(t, obs(t, 0.3))
+        if c.phase == c.SWEEP:
+            break
     check("lopulta palataan pyyhkaisyyn", c.phase == c.SWEEP, c.phase)
     print()
 
