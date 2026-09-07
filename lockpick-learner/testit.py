@@ -54,6 +54,10 @@ def nakija(cfg: LL.Config, korkeus: int, half: int) -> LL.ScreenVision:
     v.height = korkeus
     v.half = half
     v._arc_mask = None
+    v._keyway_mask = None
+    v._kx = v._ky = None
+    v._last_angle = 0.0
+    v._last_progress = 0.0
     v.last_success_parts = (0, 0, 0.0)
     return v
 
@@ -78,8 +82,41 @@ def testi_success(cfg: LL.Config) -> None:
     vaita(oikein == len(kuvat), f"all {len(kuvat)} frames classified correctly ({oikein}/{len(kuvat)})")
 
 
+def testi_kaanto(cfg: LL.Config) -> None:
+    print("\n2) Rotation is read from the keyway, and a still lock reads still")
+    import time
+    lukemat = {}
+    kuvat = sorted(KUVAT.glob("*.jpg"))
+    for p in kuvat:
+        frame, korkeus, half = lataa_rajaus(p, cfg)
+        v = nakija(cfg, korkeus, half)
+        kulma, progress, _d = v.detect_lock_rotation(frame)
+        lukemat[p.name] = (kulma, progress)
+        print(f"        {p.name:18s} {kulma:6.1f} deg  progress={progress:.3f}")
+    # Steady-state cost: in the running program the masks are built once, so
+    # time it the same way instead of paying for the first-frame setup.
+    frame, korkeus, half = lataa_rajaus(kuvat[0], cfg)
+    v = nakija(cfg, korkeus, half)
+    v.detect_lock_rotation(frame)
+    t0 = time.perf_counter()
+    for _ in range(30):
+        v.detect_lock_rotation(frame)
+    kesto = (time.perf_counter() - t0) / 30.0 * len(kuvat)
+    levossa = [pr for n, (_a, pr) in lukemat.items() if n.startswith("levossa")]
+    kaantyneet = [pr for n, (_a, pr) in lukemat.items() if n.startswith("kaantynyt")]
+    vaita(max(levossa) < 0.05,
+          f"a still lock reads below 0.05 (worst {max(levossa):.3f}) - the old detector said 0.089")
+    vaita(min(kaantyneet) > 0.30,
+          f"a turned lock reads above 0.30 (worst {min(kaantyneet):.3f})")
+    vaita(min(kaantyneet) > max(levossa) * 5,
+          "still and turned are separated by more than 5x")
+    ms = 1000.0 * kesto / len(kuvat)
+    print(f"        {ms:.1f} ms per read (the old line search took 24 ms)")
+    vaita(ms < 12.0, f"a read costs under 12 ms ({ms:.1f})")
+
+
 def testi_tila_avain(cfg: LL.Config) -> None:
-    print("\n2) State key is measured from the ramp, not from the lock's left edge")
+    print("\n3) State key is measured from the ramp, not from the lock's left edge")
     m = LL.QModel.__new__(LL.QModel)
     m.cfg = cfg
     # The same situation - 0.03 past the ramp - at three very different
@@ -99,7 +136,7 @@ def testi_tila_avain(cfg: LL.Config) -> None:
 
 
 def testi_palkkio(cfg: LL.Config) -> None:
-    print("\n3) Time penalty charges each probe for its own time only")
+    print("\n4) Time penalty charges each probe for its own time only")
     r = LL.RewardEngine(cfg)
     # Two identical probes, one early and one late in the attempt, each taking
     # 0.2 s. They must be rewarded the same.
@@ -112,7 +149,7 @@ def testi_palkkio(cfg: LL.Config) -> None:
 
 
 def testi_etaisyys(cfg: LL.Config) -> None:
-    print("\n4) Learned ramp -> opening distance")
+    print("\n5) Learned ramp -> opening distance")
     m = LL.QModel.__new__(LL.QModel)
     m.cfg = cfg
     m.success_offsets = []
@@ -128,7 +165,7 @@ def testi_etaisyys(cfg: LL.Config) -> None:
 
 
 def testi_tallennus(cfg: LL.Config) -> None:
-    print("\n5) Everything from a successful attempt is saved")
+    print("\n6) Everything from a successful attempt is saved")
     tmp = Path(tempfile.mkdtemp())
     vanha_dir, vanha_idx = LL.SUCCESS_DIR, LL.SUCCESS_INDEX
     LL.SUCCESS_DIR, LL.SUCCESS_INDEX = tmp / "successes", tmp / "successes.csv"
@@ -150,7 +187,7 @@ def testi_tallennus(cfg: LL.Config) -> None:
 
 
 def testi_hyppy(cfg: LL.Config) -> None:
-    print("\n6) Once a lock has been opened a few times, the ramp is not re-crawled")
+    print("\n7) Once a lock has been opened a few times, the ramp is not re-crawled")
     m = LL.QModel.__new__(LL.QModel)
     m.cfg = cfg
     m.success_offsets = [0.11, 0.12, 0.13]
@@ -165,7 +202,7 @@ def testi_hyppy(cfg: LL.Config) -> None:
 
 
 def testi_demo_opetus(cfg: LL.Config) -> None:
-    print("\n7) Two human attempts with the same shape teach the same states")
+    print("\n8) Two human attempts with the same shape teach the same states")
     tmp = Path(tempfile.mkdtemp())
     vanha = LL.DEMO_DIR
     LL.DEMO_DIR = tmp
@@ -214,6 +251,7 @@ def main() -> int:
     cfg = LL.Config()
     cfg.success_use_template = False   # cv2 is stubbed out here
     testi_success(cfg)
+    testi_kaanto(cfg)
     testi_tila_avain(cfg)
     testi_palkkio(cfg)
     testi_etaisyys(cfg)

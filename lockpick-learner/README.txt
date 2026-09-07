@@ -1,13 +1,15 @@
-LOCKPICK LEARNER v0.7 - MEASURED AGAINST REAL RECORDED PLAY
-===========================================================
+LOCKPICK LEARNER v0.8 - THE PICK COULD NOT MOVE
+=================================================
 
-v0.5 made learning observable. v0.6 fixed what the reference frames showed.
-v0.7 is measured against 275 recorded files from actual play - 50 human
-attempts and 210 autonomous ones - and fixes the reason none of the
-autonomous attempts ever opened a lock: it only ever visited 4% of the lock.
-It also corrects a wrong claim v0.6 made about the SUCCESS detector.
-See UPDATE_NOTES_v0.7.txt for every number; UPDATE_NOTES_v0.6.txt still
-applies for the state/reward/success changes.
+Every version up to here, mine included, tuned the algorithm. The algorithm
+was never the binding constraint: move_to() clipped every mouse step to +/-140
+counts and allowed 8 of them, so with the recorded 6000 counts across the lock
+the pick could never move more than 0.187 of the lock in one go, whatever was
+asked for - and that cost 440 ms of a 3100 ms attempt. The rotation detector
+was separately the source of its own noise floor.
+
+Read UPDATE_NOTES_v0.8.txt first. v0.7's notes cover the search and the 4%
+coverage bug, v0.6's cover the state key, reward and SUCCESS detection.
 
 IMPORTANT UPDATE RULE
 ---------------------

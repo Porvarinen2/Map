@@ -93,15 +93,26 @@ class Config:
     fps: int = 30
     probe_hold_ms: int = 28
     response_window_ms: int = 145
+    # The old move_to clipped every mouse step to +-140 counts and allowed 8
+    # of them. With a measured 6000 counts across the lock that capped ANY
+    # move at 0.187 of the lock, whatever was asked for, and cost ~440 ms.
+    # A move is now sent as a few back-to-back chunks with no screen reads in
+    # between, then verified once or twice.
+    move_chunk_counts: int = 900     # biggest single SendInput step
+    move_tolerance: float = 0.008    # close enough to stop correcting
+    move_settle_ms: int = 22         # let the game apply the move
+    move_max_corrections: int = 2    # verify reads after the first move
+    response_settle_ms: int = 45     # stop the window early once it is steady
+    response_min_ms: int = 55        # but never look for less than this
     finish_hold_ms: int = 190
     success_progress: float = 0.82
-    # Measured from 264 real human probes: a lock that is NOT moving still
-    # reads 0.022-0.089 (the rotation detector works in 1-degree steps, so
-    # 0.022 is two degrees of measurement noise). The old 0.025 sat inside
-    # that noise, so 83% of attempts declared "ramp found" on the very first
-    # probe and never swept the lock again - median coverage 4%, 0 successes
-    # in 210 autonomous attempts. Real movement starts above 0.10.
-    wobble_threshold: float = 0.10
+    # The old line-search rotation detector put a still lock at 0.089, so the
+    # old 0.025 threshold sat inside its own noise: 83% of attempts declared a
+    # ramp on the first probe and then micro-stepped, covering a median 4% of
+    # the lock and opening 0 of 210. The keyway detector reads a still lock at
+    # 0.009-0.017 on the same frames, so the floor is 5x lower and a real but
+    # distant ramp can be trusted from much further out.
+    wobble_threshold: float = 0.05
     wobble_confirm_probes: int = 2   # how many probes must agree before micro-stepping
     attempt_budget_seconds: float = 3.1
     auto_press_space: bool = True
@@ -127,6 +138,15 @@ class Config:
     success_band_half_h: float = 0.051   # band size, x screen height
     success_band_half_w: float = 0.204
     success_use_template: bool = True    # also match the bundled SUCCESS word
+    # Rotation is read from the black keyway inside the cylinder. Verified
+    # against the game's own screenshots: at rest 1.05 deg, mid-attempt 22.1,
+    # open 89.5-94.1, and the pick at either extreme reads 1.51 vs 1.45 - so
+    # the pick does not leak into the measurement.
+    keyway_radius: float = 0.0519       # x screen height
+    keyway_center_y: float = -0.0028    # x screen height
+    keyway_dark_max: int = 22           # what counts as the black slot
+    keyway_min_pixels: int = 200
+    keyway_min_elongation: float = 1.8
     success_confirm_wait_ms: int = 420
     demo_success_multiplier: float = 5.0
     demo_failed_helpful_multiplier: float = 0.70
@@ -623,6 +643,10 @@ class ScreenVision:
         self._last_good_pick = None
         self._last_pick_score = 0.0
         self._arc_mask = None          # built once, on the first frame
+        self._keyway_mask = None
+        self._kx = self._ky = None
+        self._last_angle = 0.0
+        self._last_progress = 0.0
         self.last_success_parts = (0, 0, 0.0)  # (band_px, arc_px, template) for VISION DEBUG
         self.success_template = cv2.imread(str(SUCCESS_TEMPLATE_PATH), cv2.IMREAD_GRAYSCALE) if SUCCESS_TEMPLATE_PATH.exists() else None
         if self.success_template is not None:
@@ -742,29 +766,62 @@ class ScreenVision:
         return raw, float(best_score), pos
 
     def detect_lock_rotation(self, frame: np.ndarray) -> Tuple[float, float, float]:
-        """Find the long black keyway/slot orientation. Progress 0=vertical, 1=horizontal."""
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        gray = cv2.GaussianBlur(gray, (3, 3), 0)
-        c = float(self.half)
-        r = float(self.radius)
-        angles = np.arange(0.0, 180.0, 1.0)
-        vals = []
-        ts = np.linspace(-0.45 * r, 0.45 * r, 81)
-        gf = gray.astype(np.float32)
-        for deg in angles:
-            th = math.radians(float(deg))
-            bands = []
-            for off in (-3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0):
-                pix = self._sample_line(gf, c, c, th, ts, off)
-                if len(pix):
-                    bands.append(pix)
-            vals.append(float(np.mean(np.concatenate(bands))) if bands else 255.0)
-        idx = int(np.argmin(vals))
-        angle = float(angles[idx])
-        diff = abs(angle - 90.0)
-        diff = min(diff, 180.0 - diff)
-        progress = float(np.clip(diff / 90.0, 0.0, 1.0))
-        darkness = float(np.clip((90.0 - vals[idx]) / 90.0, 0.0, 1.0))
+        """How far the cylinder has turned, 0 = at rest, 1 = fully round.
+
+        Measured from the black keyway alone: take every dark pixel inside the
+        cylinder and compute the principal direction of that blob (second
+        moments). No line search, no per-angle loop.
+
+        The old version scored 180 candidate lines with a python loop - 24 ms
+        per read - and its answer was quantised to whole degrees, which put a
+        still lock at 0.089 instead of 0.011. That fake noise floor is what
+        made a ramp look found on the first probe of 83% of attempts.
+        """
+        gray = frame[:, :, 0] * 0.114 + frame[:, :, 1] * 0.587 + frame[:, :, 2] * 0.299
+        h, w = gray.shape[:2]
+        if self._keyway_mask is None or self._keyway_mask.shape != gray.shape:
+            yy, xx = np.mgrid[0:h, 0:w]
+            self._kx = (xx - w // 2).astype(np.float32)
+            self._ky = (yy - h // 2 - self.cfg.keyway_center_y * self.height).astype(np.float32)
+            self._keyway_mask = (self._kx ** 2 + self._ky ** 2) < (self.cfg.keyway_radius * self.height) ** 2
+
+        dark = (gray < self.cfg.keyway_dark_max) & self._keyway_mask
+        n = int(dark.sum())
+        if n < self.cfg.keyway_min_pixels:
+            return self._last_angle, self._last_progress, 0.0
+
+        x = self._kx[dark].astype(np.float64)
+        y = self._ky[dark].astype(np.float64)
+        x -= x.mean()
+        y -= y.mean()
+        xx_ = float((x * x).mean())
+        yy_ = float((y * y).mean())
+        xy_ = float((x * y).mean())
+        juuri = math.sqrt(max(0.0, (xx_ - yy_) ** 2 + 4.0 * xy_ * xy_))
+        iso = (xx_ + yy_ + juuri) / 2.0
+        pieni = (xx_ + yy_ - juuri) / 2.0
+        pitkulaisuus = math.sqrt(iso / pieni) if pieni > 1e-9 else 999.0
+        if pitkulaisuus < self.cfg.keyway_min_elongation:
+            # Too round to have a direction - keep the last good reading.
+            return self._last_angle, self._last_progress, 0.0
+
+        angle = math.degrees(0.5 * math.atan2(2.0 * xy_, xx_ - yy_)) + 90.0
+        # A principal direction repeats every 180 degrees, so pick the branch
+        # nearest the last reading, then force it into the range the cylinder
+        # can physically occupy (0 at rest to about 90 when open).
+        while angle - self._last_angle > 90.0:
+            angle -= 180.0
+        while self._last_angle - angle > 90.0:
+            angle += 180.0
+        while angle < -25.0:
+            angle += 180.0
+        while angle > 125.0:
+            angle -= 180.0
+
+        progress = float(np.clip(angle / 90.0, 0.0, 1.0))
+        self._last_angle = angle
+        self._last_progress = progress
+        darkness = float(np.clip(n / max(1.0, float(self.cfg.keyway_min_pixels) * 4.0), 0.0, 1.0))
         return angle, progress, darkness
 
     def detect_success(self, frame: np.ndarray) -> Tuple[float, bool]:
@@ -804,7 +861,12 @@ class ScreenVision:
         # matched. Real logs show it separating cleanly on a live machine
         # (9/9 human successes 0.643-0.998, 41/41 failures <= 0.076), so it
         # runs alongside the band/arc test and either one is enough.
-        templ_score = self.detect_success_template(frame) if self.cfg.success_use_template else 0.0
+        # The template match costs far more than the two measurements above,
+        # and during normal play the band sits near 1000 while a SUCCESS screen
+        # is above 5000. So only pay for it once something bright shows up.
+        templ_score = 0.0
+        if self.cfg.success_use_template and band_px >= self.cfg.success_band_pixels * 0.35:
+            templ_score = self.detect_success_template(frame)
         self.last_success_parts = (band_px, arc_px, templ_score)
         best = max(score, templ_score)
         return best, bool(best >= self.cfg.success_threshold)
@@ -1853,29 +1915,52 @@ def auto_calibrate(cfg: Config, model: QModel, vision: ScreenVision) -> bool:
 
 
 def move_to(vision: ScreenVision, model: QModel, target: float, cfg: Config) -> Optional[float]:
+    """Put the pick at target.
+
+    One proportional move sent as a few back-to-back chunks, then at most a
+    couple of verify-and-correct rounds. The previous version read the screen
+    between every 140-count nudge, which made a big move impossible and a
+    small one slow.
+    """
     target = float(np.clip(target, 0.0, 1.0))
-    gain = float(model.calibration.get("mouse_counts_per_norm", 900.0))
-    last_pos = None
-    for _ in range(8):
+    gain = float(model.calibration.get("mouse_counts_per_norm", 6000.0))
+    chunk = max(60, int(cfg.move_chunk_counts))
+
+    st = vision.state(keep_frame=cfg.debug_preview)
+    if cfg.debug_preview:
+        preview(vision, st, "Lockpick Learner - Agent")
+    pos = st.pick_pos
+    if pos is None:
+        time.sleep(0.02)
+        st = vision.state()
+        pos = st.pick_pos
+        if pos is None:
+            return None
+
+    for round_no in range(int(cfg.move_max_corrections) + 1):
+        err = target - pos
+        if abs(err) <= cfg.move_tolerance:
+            return pos
         if emergency_or_pause(cfg):
             return None
+        # Slight undershoot on the first move so a calibration that reads a
+        # little high cannot slam the pick into the far wall.
+        counts = int(round(err * gain * (0.94 if round_no == 0 else 1.0)))
+        jaljella = abs(counts)
+        merkki = 1 if counts > 0 else -1
+        while jaljella > 0:
+            askel = min(chunk, jaljella)
+            move_mouse_relative(merkki * askel, 0)
+            jaljella -= askel
+            if jaljella > 0:
+                time.sleep(0.004)
+        time.sleep(cfg.move_settle_ms / 1000.0)
         st = vision.state(keep_frame=cfg.debug_preview)
         if cfg.debug_preview:
             preview(vision, st, "Lockpick Learner - Agent")
-        pos = st.pick_pos
-        if pos is None:
-            time.sleep(0.02)
-            continue
-        last_pos = pos
-        err = target - pos
-        if abs(err) <= 0.006:
-            return pos
-        dx = int(np.clip(err * gain * 0.72, -140, 140))
-        if dx == 0:
-            dx = 1 if err > 0 else -1
-        move_mouse_relative(dx, 0)
-        time.sleep(0.026)
-    return last_pos
+        if st.pick_pos is not None:
+            pos = st.pick_pos
+    return pos
 
 
 def probe_response(vision: ScreenVision, cfg: Config, hold_ms: Optional[int] = None) -> Tuple[float, float, float]:
@@ -1890,17 +1975,25 @@ def probe_response(vision: ScreenVision, cfg: Config, hold_ms: Optional[int] = N
     base = before.progress
     success_peak = before.success_score
     send_key(cfg.f_key_vk, int(hold_ms if hold_ms is not None else cfg.probe_hold_ms))
-    end = time.monotonic() + cfg.response_window_ms / 1000.0
+    alku = time.monotonic()
+    end = alku + cfg.response_window_ms / 1000.0
     peak = base
     ui = before.ui_confidence
+    viimeksi_nousi = alku
     while time.monotonic() < end:
         st = vision.state(keep_frame=cfg.debug_preview)
+        if st.progress > peak + 0.004:
+            viimeksi_nousi = time.monotonic()
         peak = max(peak, st.progress)
         ui = st.ui_confidence
         success_peak = max(success_peak, st.success_score)
         if cfg.debug_preview:
             preview(vision, st, "Lockpick Learner - Agent")
-        time.sleep(0.004)
+        nyt = time.monotonic()
+        # Once the reading has stopped climbing there is nothing more to see,
+        # so give the time back to the attempt instead of waiting it out.
+        if (nyt - alku) * 1000.0 >= cfg.response_min_ms and (nyt - viimeksi_nousi) * 1000.0 >= cfg.response_settle_ms:
+            break
     # Normalize out tiny baseline orientation error.
     response = float(np.clip(peak - min(base, 0.055), 0.0, 1.0))
     return response, ui, float(success_peak)

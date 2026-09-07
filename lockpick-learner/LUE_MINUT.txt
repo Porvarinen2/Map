@@ -1,91 +1,84 @@
-LOCKPICK LEARNER v0.7 - MITA SUN DATA KERTOI
-============================================
+LOCKPICK LEARNER v0.8 - TIIRIKKA EI PAASSYT LIIKKUMAAN
+======================================================
 
-Kaivoin sun 275 tiedostoa lapi. Kaikki alla on niista mitattua.
-
-
-LYHYT VASTAUS KYSYMYKSIIN
--------------------------
-
-"Toimiiks toi 100% sillai et se kehittyy ajan mukana?"
-  Ei. Sun omassa datassa: 210 autonomista yritysta, 0 onnistumista, eika
-  mitaan trendia. Syy ei ollut oppimisessa vaan siina etta se ei fyysisesti
-  kayny kuin 4%:ssa lukosta. Nyt se on korjattu.
-
-"Voisko simuloida kauan tol menis oppii?"
-  Simuloin, 3000 yritysta. Vastaus: melkein kaikki tulee ensimmaisen 250
-  yrityksen aikana (~20 min pelia), ja sen jalkeen kayra on tasainen. Se ei
-  siis parane loputtomiin - katto tulee hakutavasta, ei treeniajasta.
-
-"Voisiks treenaa sen mun puolest ja droppaa datan?"
-  Tein. Paketissa on esitreenattu_malli.json joka kopioituu data-kansioon
-  ensimmaisella kaynnistyksella. Siina on 28 tilaa sun 50:sta oikeasta
-  yrityksesta + 195 tilaa 12000 simuloidusta yrityksesta.
+Olit oikeassa. Kaikki aiemmat versiot, minun mukaan lukien, viilasivat
+algoritmia. Algoritmi ei ollut se pullonkaula.
 
 
-MIKSI SE EI AVANNUT YHTAKAAN LUKKOA
------------------------------------
+1. TIIRIKKA EI VOINUT FYYSISESTI LIIKKUA LUKON YLI
+--------------------------------------------------
 
-Yksi luku. Kaannontunnistin toimii 1 asteen tarkkuudella, joten paikallaan
-oleva lukko nayttaa silti 0.022-0.089. wobble_threshold oli 0.025 eli KESKELLA
-sita kohinaa. Siksi:
+move_to() leikkasi jokaisen hiirensiirron +-140 counttiin ja salli 8
+kierrosta. Sinun kalibrointisi on 6000 countia lukon yli. Eli:
 
-  "ramppi loytyi" jo ensimmaisessa tilassa       175/210  =  83%
-  kuinka suuri osa lukosta kayty per yritys                 4%
-  yrityksia jotka kavivat yli puolet lukosta             0/210
-  valitut siirrot: 450x -0.040, 266x +0.040, 6x mitaan isompaa
+  pyydettiin   tarvitaan       mita oikeasti tapahtui
+     0.04         173 counts   0.035  (2 kierrosta, ~110 ms)
+     0.12         518 counts   0.118  (6 kierrosta, ~330 ms)
+     0.25        1080 counts   0.187  (8 kierrosta, ~440 ms)  <- katkesi
+     0.50        2160 counts   0.187  (8 kierrosta, ~440 ms)  <- katkesi
 
-Se luuli loytaneensa rampin heti, meni 0.04:n mikroaskeliin ja jumittui.
-Target oli siina 96%:ssa jota se ei koskaan kaynyt lapi.
+Tiirikka ei voinut koskaan liikkua enempaa kuin 0.187 lukosta, pyydettiin
+mita tahansa, ja iso siirto soi 440 ms 3100 ms:n budjetista.
 
-Kynnys on nyt 0.10 ja ramppi vaatii kaksi samaa mielta olevaa probea.
+Viime versiossa pyysin karkeaa ruudukkoa 0.25:n hyppayksilla. Se sai 0.187.
+Siksi mikaan mita tein hakuun ei nakynyt missaan.
 
+Ja se selittaa sun datan siirtohistogrammin taydellisesti: 450x -0.040,
+266x +0.040, 6x mitaan isompaa. Vain pienet siirrot ehtivat valmiiksi.
 
-HAKU RATKAISEE, EI OPPIMINEN
-----------------------------
-
-Yksi yritys on noin 6 probea. Kolme hakutapaa, sama oppimiskoodi, 3000
-simuloitua yritysta kussakin:
-
-  target-puolileveys      0.015   0.025   0.040   0.060   0.100
-  vanha (mikroaskel)      13.6%   18.6%   20.3%   20.7%   20.7%
-  karkea ruudukko+puolitus 20.9%  34.3%   55.2%   70.6%   80.4%
-  gradienttiarvio         27.7%   38.8%   56.6%   63.0%   64.4%
-
-Uusi haku:
-  1. probea 4 tasavalista kohtaa - koko lukko lapi, ei matelua
-  2. parhaasta kohdasta askel sivuun, ja askel puolitetaan aina kun suunta
-     lakkaa tuottamasta (kumman puolen kokeilee ensin - sen malli oppii)
-  3. tarkennusprobet painavat F:n pitkaan, koska se se lukon avaa
-     - edelleen YKSI painallus per probe, ei kahta
-
-Sun omat voitot nayttavat juuri talta, eivat mikroaskelilta:
-0.049 -> 0.195 -> 0.956 -> 0.942 neljalla probella.
+Nyt siirto lahetetaan muutamana perakkaisena 900 countin palana ilman
+ruudunlukuja valissa, ja varmistetaan kerran tai kaksi. 0.25:n siirto
+maksaa ~60 ms eika 440 ms - ja se oikeasti menee perille.
 
 
-MITA KANNATTAA OPPIA
---------------------
+2. KAANNONTUNNISTIN OLI ITSE SE KOHINA
+--------------------------------------
 
-Etaisyys rampilta aukeamiskohtaan. Skannaus kulkee aina vasemmalta oikealle,
-joten ensimmainen vastaava ruutu on systemaattisesti targetin VASEMMALLA -
-ja se korjaus on opittavissa. Sun 9 voittoasi antavat mediaaniksi +0.363,
-simuloitu peli paatyi itsenaisesti +0.393:een.
+Vanha tunnistin kokeili 180 viivaa lukon lapi python-silmukassa ja otti
+tummimman. Vastaus on pyoristetty kokonaisiin asteisiin, ja oikeissa kuvissa
+se antoi paikallaan olevalle lukolle 0.089. Se kohina ei tullut pelista vaan
+tunnistimesta.
 
-  hyppy paalla                        55.0%   71.4%   82.9%
-  hyppy pois                          37.4%   55.2%   74.0%
-  hyppy pois, 3 ruutua                37.9%   57.4%   69.2%
+Tilalle avaimenreian mittaus: otetaan pesan sisalta tummat pikselit ja
+lasketaan niiden paasuunta. Samoista kuvista:
 
-Eli kyse ei ole vain "lopeta haku aiemmin".
+                             vanha       avaimenreika
+  lukko levossa (4 kuvaa)     0.089      0.009 - 0.017
+  lukko kaantynyt (3 kuvaa)   vaihtelee  0.416 - 0.991
+  yksi lukema                 24.0 ms    3.4 ms
+
+Kohinataso on 5x matalampi ja lukema 7x halvempi.
 
 
-KORJAUS EDELLISEEN
-------------------
+3. MITA NAMA KAKSI YHDESSA TEKEVAT
+----------------------------------
 
-Sanoin v0.6:ssa etta GPT:n SUCCESS-templaatti ei laukea koskaan. Se oli
-vaarin. Sun omat lokit todistavat sen: templaatti antoi 0.643-0.998 kaikille
-9 voitolle ja korkeintaan 0.076 kaikille 41 haviolle. Minun numpy-versioni
-cv2:n matchTemplatesta ei ollut uskollinen alkuperaiselle. Templaatti on nyt
-takaisin, minun band/arc-testin rinnalla - kumpi tahansa riittaa.
+Probe-sykli - siirry, paina, lue - putoaa ~550-670 ms:sta ~170 ms:iin.
+Yksi yritys on siis noin 18 probea eika 4.5. Sama hakukoodi, sama oppiminen:
+
+  target-puolileveys        0.015   0.025   0.040   0.060   0.100
+  v0.5/v0.6                     -   18.6%       -   22.0%       -
+  v0.7 (6 probea)           36.9%   52.5%   69.2%   80.9%   92.6%
+  v0.8 (18 probea)          52.9%   74.7%   79.3%   90.5%   96.6%
+
+Oikea mitattu lahtotilanne: 0 onnistumista 210 yrityksesta.
+
+
+REHELLINEN RAJAUS
+-----------------
+
+Kohdat 1 ja 2 ovat suoraan mitattuja, ei simuloituja: siirron leikkaus on
+laskutoimitus sinun kalibroinnillasi, ja tunnistimen luvut ovat oikeista
+kuvista. Ne pitavat.
+
+Prosentit ovat simulaattorin tulosta. Lukkomalli on sovitettu sinun datasi
+vasteen vaimenemiseen, mutta sita KUINKA lahella pitaa olla jotta lukko
+aukeaa ei voi paatella nauhoituksista - siksi jokainen rivi on pyyhkaisy
+target-leveyden yli eika yksi luku.
+
+Oppiminen tasaantuu edelleen aikaisin. Melkein kaikki ylla oleva tulee
+rakenteesta: siirrot menevat perille, lukemat ovat rehellisia, ja probeja
+ehtii tarpeeksi.
 
 
 MITEN AJETAAN

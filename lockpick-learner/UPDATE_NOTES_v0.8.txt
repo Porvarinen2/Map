@@ -1,0 +1,87 @@
+LOCKPICK LEARNER v0.8 - THE PICK COULD NOT MOVE
+================================================
+
+Every earlier version, mine included, tuned the algorithm. The algorithm was
+never the binding constraint.
+
+
+1. THE PICK PHYSICALLY COULD NOT CROSS THE LOCK
+------------------------------------------------
+move_to() clipped every mouse step to +/-140 counts and allowed 8 of them.
+The recorded calibration is 6000 counts across the lock. So:
+
+  asked for   counts needed   what actually happened
+    0.04           173        0.035  after 2 rounds  (~110 ms)
+    0.12           518        0.118  after 6 rounds  (~330 ms)
+    0.25          1080        0.187  after 8 rounds  (~440 ms)  <- truncated
+    0.50          2160        0.187  after 8 rounds  (~440 ms)  <- truncated
+
+The pick could never move more than 0.187 of the lock in one go, whatever was
+asked for, and a big move burned 440 ms of a 3100 ms attempt. v0.7's coarse
+grid asked for 0.25 jumps and silently got 0.187. That is why nothing got
+better no matter what the search did.
+
+It also explains the recorded move histogram exactly: 450x -0.040, 266x
++0.040, 6x anything larger. The small moves were the only ones that completed.
+
+A move is now sent as a few back-to-back chunks of up to 900 counts with no
+screen reads in between, then verified once or twice. A 0.25 move costs about
+60 ms instead of 440 ms, and it actually arrives.
+
+
+2. THE ROTATION DETECTOR WAS THE NOISE FLOOR
+---------------------------------------------
+The old detector scored 180 candidate lines through the lock with a python
+loop and took the darkest. Its answer is quantised to whole degrees, and on
+real frames it put a still lock at 0.089. That is where the "noise floor"
+came from - not the game.
+
+Replaced with the keyway measurement: take the dark pixels inside the
+cylinder and compute the principal direction of that blob. On the same
+frames:
+
+                          old detector    keyway detector
+  lock at rest (4 frames)     0.089        0.009 - 0.017
+  lock turned  (3 frames)     varies       0.416 - 0.991
+  cost per read              24.0 ms       3.4 ms
+
+So the floor is 5x lower and a read is 7x cheaper. wobble_threshold drops
+from 0.10 to 0.05 because a real but distant ramp can now be trusted.
+
+
+3. WHAT THE TWO FIXES DO TOGETHER
+----------------------------------
+The probe cycle - move, press, read - goes from about 550-670 ms to about
+170 ms, so an attempt is roughly 18 probes instead of 4.5. Same search code,
+same learning code:
+
+  target half-width         0.015   0.025   0.040   0.060   0.100
+  v0.5/v0.6 behaviour           -   18.6%       -   22.0%       -
+  v0.7 (6 probes)           36.9%   52.5%   69.2%   80.9%   92.6%
+  v0.8 (18 probes)          52.9%   74.7%   79.3%   90.5%   96.6%
+
+Recorded reality before any of this: 0 successes in 210 attempts.
+
+
+4. WHAT IS STILL HONEST TO SAY
+-------------------------------
+- The two fixes above are measured directly, not simulated: the move clip is
+  arithmetic on the recorded calibration, and the detector numbers come from
+  real frames. Those are solid.
+- The success percentages are simulator output. The lock model is fitted to
+  the recorded response falloff, but how close you must be for the lock to
+  actually OPEN cannot be recovered from the recordings, which is why every
+  row is a sweep across target widths rather than one number.
+- Learning still plateaus early. Nearly all of the gain above is structure -
+  moves that arrive, reads that are honest, and enough probes to use them.
+  Do not expect the curve to keep climbing for thousands of attempts.
+
+5. SHIPPED PRE-TRAINED POLICY
+-----------------------------
+esitreenattu_malli.json, copied into data\ on first run:
+  demo_prior  57 states from the 50 recorded human attempts
+  Q           318 states from 12000 simulated attempts at five target widths
+  offsets     the 2 usable ramp->opening distances from the real wins plus 8
+              at the simulated median (+0.393, against the real +0.448), so
+              the jump is available immediately and your own wins outvote the
+              simulated ones within about ten successes

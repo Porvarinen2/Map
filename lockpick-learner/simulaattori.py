@@ -88,7 +88,7 @@ def yritys(cfg, model, rewarder, lukko: Lukko, oppii: bool, rng: random.Random
     offset_used = False
     last_key = last_action = None
     total_reward = 0.0
-    probe_aika = 0.55                     # measured: 2.67 s / ~5 probes
+    probe_aika = getattr(cfg, "_probe_aika", 0.55)
     kulunut = 0.0
     rivit: List[dict] = []
 
@@ -226,12 +226,15 @@ def main() -> int:
     ap.add_argument("--yritykset", type=int, default=2000)
     ap.add_argument("--siemenia", type=int, default=5)
     ap.add_argument("--tallenna", action="store_true")
+    ap.add_argument("--probeaika", type=float, default=0.55,
+                    help="sekuntia per probe (mitattu vanha 0.55-0.67, korjattu ~0.17)")
     a = ap.parse_args()
 
     cfg = LL.Config()
+    cfg._probe_aika = a.probeaika
     print("=== LUKKOSIMULAATTORI - sovitettu 264 oikeaan probeen ===")
     print(f"wobble_threshold={cfg.wobble_threshold}  search_cells={cfg.search_cells}  "
-          f"budjetti={cfg.attempt_budget_seconds}s  ~5.6 probea/yritys\n")
+          f"budjetti={cfg.attempt_budget_seconds}s  {cfg.attempt_budget_seconds/a.probeaika:.0f} probea/yritys\n")
     print("Target-puolileveys on ainoa asia jota nauhoituksista ei voi paatella,")
     print("joten se pyyhkaistaan lapi. Onnistumis-% 100 yrityksen ikkunoissa:\n")
     print(f"{'target':>8} {'1-100':>8} {'2. sata':>8} {'3. sata':>8} {'viim.100':>9} "
