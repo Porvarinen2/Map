@@ -1,0 +1,130 @@
+================================================================
+  SCUM AUTOLOCKPICK
+================================================================
+
+    tap, tap, tap, tap, taap, taaaap, taaaap, AUKI
+
+Hiirta liikutetaan vasemmalta oikealle. Joka kohdassa napautetaan F ja
+katsotaan, kaantyiko lukkopesa.
+
+    ei liiketta        -> vaara kohta, askel oikealle
+    osittainen kaanto  -> RAMPPI, ollaan oikealla alueella
+    enemman kaantoa    -> lahempana
+    lukko aukeaa       -> TARGET
+
+Rampissa F pidetaan pohjassa niin kauan kuin pesa kaantyy. Kun se
+pysahtyy, nykaistaan hieman ja painetaan uudelleen. Painallusten
+pituutta ei ole kasketty mihinkaan - se seuraa siita, kuinka kauan
+pesa jaksaa kaantya.
+
+
+================================================================
+  KAYTTO
+================================================================
+
+Tarvitset Pythonin ja kaksi kirjastoa:
+
+    pip install numpy mss
+
+Testit tarvitsevat lisaksi Pillow'n:  pip install pillow
+
+    Testaa.bat    Lukee ruutua LAHETTAMATTA yhtaan syotetta.
+                  ALOITA TASTA. Avaa pelin lukkoruutu ja katso, etta
+                  rivi "kaanto" liikkuu kun painat F itse. Se on ainoa
+                  asia, joka tunnistuksen on saatava oikein.
+
+    Aja.bat       Avaa lukkoja.
+                  F11 = kaynnista / tauko,  F9 = lopeta.
+
+    Testit.bat    Ajaa testit pelin omia kuvakaappauksia vasten.
+
+
+================================================================
+  SAADOT
+================================================================
+
+Kaikki luvut ovat tiedoston lockpick.py alussa, lohkossa "Saadot".
+Voit muuttaa ne suoraan sielta.
+
+Jos haluat muuttaa niita koskematta koodiin, tee asetustiedosto:
+
+    python lockpick.py --tallenna
+
+Se kirjoittaa asetukset.json. Avaa se Muistiolla ja muuta haluamasi
+luvut. Tiedoston arvot voittavat koodin oletukset.
+
+
+----------------------------------------------------------------
+  JOS JOKIN EI TOIMI - katso tasta
+----------------------------------------------------------------
+
+"Lukko ei nay" vaikka lukkoruutu on auki
+    Peli ei ehka ole etualalla, tai se on ikkunoituna oudosti.
+    Kokeile Testaa.bat ja katso rivi "pikselit".
+    Jos avaimenreika on 0, saada:  tumma_max isommaksi (esim. 35)
+
+"Hiiri liikkuu liian isoin loikin"
+    askel_yksikkoa     pienemmaksi (esim. 60)
+
+"Skannaus ei ehdi janan paahan"
+    askel_yksikkoa     isommaksi (esim. 120)
+    tauko_ms           pienemmaksi (esim. 100)
+    Ala nosta askelta yli 150: oikea kohta voi jaada askelten valiin.
+
+"Ei huomaa ramppia vaikka lukko selvasti liikkuu"
+    ramppi_astetta     pienemmaksi (esim. 2.0)
+    tap_ms             isommaksi (esim. 130) - peli tarvitsee aikaa
+    tauko_ms           isommaksi (esim. 170) - kuva on hieman vanhaa
+
+"Luulee ramppia loytyneen vaikka lukko vain tarahtaa"
+    ramppi_astetta     isommaksi (esim. 5.0)
+
+"Rampissa paastaa F:n irti liian aikaisin"
+    pysahtyi_ms        isommaksi (esim. 200)
+    paino_min_ms       isommaksi (esim. 200)
+
+"Rampissa jaa jumiin pitamaan F:aa turhaan"
+    pysahtyi_ms        pienemmaksi (esim. 100)
+    paino_max_ms       pienemmaksi (esim. 900)
+
+"Ohittaa oikean kohdan nykaisyissa"
+    nykays_yksikkoa    pienemmaksi (esim. 8)
+    nykays_hieno       pienemmaksi (esim. 2)
+
+"Nykaisyt niin pienia ettei mitaan tapahdu"
+    nykays_yksikkoa    isommaksi (esim. 20)
+
+"Kaantyy 90 asteeseen muttei aukea"
+    auki_astetta       pienemmaksi (esim. 85)
+
+"Tiirikka kuluu liikaa"
+    tap_ms             pienemmaksi (esim. 60)
+    tauko_ms           isommaksi (esim. 180)
+    Molemmat hidastavat skannausta.
+
+
+================================================================
+  MITA TIEDOSTOT OVAT
+================================================================
+
+    lockpick.py    Koko ohjelma: ruudunluku, syotteet, ohjaus.
+    testit.py      Testit pelin omia kuvia vasten.
+    kuvat/         Pelin kuvakaappaukset, joita testit kayttavat.
+    asetukset.json Syntyy komennolla --tallenna. Ei pakollinen.
+
+
+================================================================
+  MITA EI OLE TESTATTU
+================================================================
+
+Ruudunluku on ajettu pelin omia kuvakaappauksia vasten ja lukee ne
+oikein: lepaava lukko noin 0 astetta, kesken oleva yritys 22 astetta,
+auennut lukko noin 90 astetta. Tiirikan asento ei vuoda lukemaan:
+aarilaidoissa otetut kuvat lukeutuvat 1,51 ja 1,45 asteeksi.
+
+Itse ohjelmaa EI ole voitu ajaa pelissa taalla - Windowsia eika SCUMia
+ollut kaytettavissa. Ruudunkaappaus, syotteiden meno perille ja pelin
+reagointi on todennettava pelikoneella. Testaa.bat on sita varten:
+se lukee ruutua lahettamatta mitaan.
+
+Automaattinen syote on pelin saantojen kannalta pelaajan oma vastuu.
