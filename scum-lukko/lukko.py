@@ -17,6 +17,7 @@ import ctypes
 import json
 import math
 import os
+import threading
 import time
 from dataclasses import dataclass, asdict
 from pathlib import Path
@@ -268,6 +269,37 @@ class Kasi:
 
 
 # --------------------------------------------------------------------------
+#  SEIS - F12 pysayttaa heti, kesken napautyksen tai kesken unen
+# --------------------------------------------------------------------------
+
+class Seis:
+    """Oma saie joka kysyy F12:ta 8 ms valein.
+
+    Paasilmukka ehtii tarkistaa napin vain napautysten valissa, ja yksi
+    napautys lukuikkunoineen kestaa jopa 300 ms. Tama irrottaa F:n ja
+    lopettaa prosessin siina hetkessa kun nappia painetaan.
+    """
+
+    def __init__(self, s: Saadot, kasi: "Kasi"):
+        self.s, self.kasi = s, kasi
+        self.paalla = False
+        self.saie = threading.Thread(target=self._vahdi, daemon=True)
+        self.saie.start()
+
+    def _vahdi(self):
+        while True:
+            if self.kasi.pohjassa(self.s.seis_nappain):
+                self.paalla = True
+                try:
+                    self.kasi._nappi(self.s.f_nappain, False)   # ote irti
+                except Exception:
+                    pass
+                print("\nF12 - seis")
+                os._exit(0)
+            time.sleep(0.008)
+
+
+# --------------------------------------------------------------------------
 #  AVAAJA
 # --------------------------------------------------------------------------
 
@@ -479,6 +511,7 @@ def aja(s: Saadot, naytolla: bool):
         print("Ajaminen vaatii Windowsin. Kokeile --testaa.")
         return
     silma, kasi = Silma(s), Kasi(s)
+    Seis(s, kasi)
     print(f"naytto {silma.avaa()}   F12 = seis, F10 = tauko\n")
     naytto = None
     if naytolla:
