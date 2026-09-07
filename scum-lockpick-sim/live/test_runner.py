@@ -211,7 +211,17 @@ def test_draw_survives_every_state() -> None:
         for i in range(60):
             runner.step(0.3 + i * 0.01, obs(0.3 + i * 0.01, turn=3.0, running=True))
         runner.draw(1.0, obs(1.0, turn=12.0, timer=0.4, running=True))
-        ok, detail = True, f"{len(runner.console.frames)} ruutua"
+        # Jokainen ohjaimen vaihe erikseen: nakyman kaatuminen keskeyttaisi
+        # koko ajon, ja uusi vaihe on helppo unohtaa nakymasta.
+        phases = [runner.controller.HOME, runner.controller.SEEK,
+                  runner.controller.SWEEP, runner.controller.DRIVE,
+                  runner.controller.REBITE, runner.controller.DONE]
+        for phase in phases:
+            runner.controller.phase = phase
+            runner.last_action.phase = phase
+            runner.draw(1.5, obs(1.5, turn=45.0, timer=0.3, running=True))
+        ok, detail = True, (f"{len(runner.console.frames)} ruutua, "
+                            f"{len(phases)} vaihetta")
     except Exception as error:            # nakyman kaatuminen keskeyttaisi ajon
         ok, detail = False, f"{type(error).__name__}: {error}"
     check("piirto ei kaadu", ok, detail)

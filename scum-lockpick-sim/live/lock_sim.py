@@ -170,10 +170,18 @@ class SimulatedScreen:
 
 
 def run_attempt(controller_factory, cfg: SimConfig, rng: random.Random,
-                sweet: float | None = None, dt: float = 0.004, trace: bool = False):
-    """Ajaa yhden yrityksen. Palauttaa (attempt, controller, trace)."""
+                sweet: float | None = None, dt: float = 0.004, trace: bool = False,
+                memory=None):
+    """Ajaa yhden yrityksen. Palauttaa (attempt, controller, trace).
+
+    memory jaetaan yritysten kesken samoin kuin oikeassa ajossa: ohjain
+    muistaa mihin asti jana on pyyhkaisty ja mitka olosuhteet se mittasi.
+    Ilman jakamista muisti ei nakyisi mittauksissa lainkaan.
+    """
     attempt = LockAttempt(cfg, rng, sweet)
     controller = controller_factory()
+    if memory is not None:
+        controller.memory = memory
     screen = SimulatedScreen(attempt, rng, cfg)
 
     now = 0.0
@@ -196,9 +204,13 @@ def run_attempt(controller_factory, cfg: SimConfig, rng: random.Random,
 
 def run_session(controller_factory, cfg: SimConfig, rng: random.Random,
                 max_attempts: int = 6, stable_sweet: bool = False):
+    from lockpick_control import SearchMemory
+
     sweet = rng.uniform(0.0, cfg.span_units) if stable_sweet else None
+    memory = SearchMemory()
     for n in range(1, max_attempts + 1):
-        attempt, controller, _ = run_attempt(controller_factory, cfg, rng, sweet)
+        attempt, controller, _ = run_attempt(controller_factory, cfg, rng, sweet,
+                                             memory=memory)
         if attempt.opened:
             return True, n, attempt.time
     return False, max_attempts, 0.0

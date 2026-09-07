@@ -26,22 +26,22 @@ FAILURES: list[str] = []
 # rikkoutumisesta eika satunnaisvaihtelusta.
 # (nimi, mallin muutos, vaadittu osuus yhdella yrityksella, kuudella)
 MATRIX = [
-    ("perusmalli (kalibroitu nauhoitukseen)", {}, 0.00, 0.00),
-    ("naytonluku nopea, viive 30 ms", dict(latency_ms=30.0), 0.00, 0.00),
-    ("naytonluku hidas, viive 90 ms", dict(latency_ms=90.0), 0.00, 0.00),
-    ("kohinainen kulmalukema 1.5 deg", dict(noise_degrees=1.5), 0.00, 0.00),
-    ("kapea ydin 1.5 u", dict(core_half=1.5), 0.00, 0.00),
-    ("levea ydin 5 u", dict(core_half=5.0), 0.00, 0.00),
-    ("hidas ruudunluku 50 ms", dict(frame_ms=50.0), 0.00, 0.00),
-    ("hidas pesa 90 deg/s", dict(climb_rate=90.0, fall_rate=90.0), 0.00, 0.00),
-    ("nopea pesa 220 deg/s", dict(climb_rate=220.0, fall_rate=220.0), 0.00, 0.00),
-    ("pitka jana 5500 u", dict(span_units=5500.0), 0.00, 0.00),
-    ("lyhyt jana 2500 u", dict(span_units=2500.0), 0.00, 0.00),
-    ("lyhyt aika 2.5 s", dict(attempt_seconds=2.5), 0.00, 0.00),
-    ("pitka aika 4.0 s", dict(attempt_seconds=4.0), 0.00, 0.00),
-    ("pesa ei kaanny liikkeessa", dict(require_still_for_turn=True), 0.00, 0.00),
-    ("kapea vasteikkuna", dict(ramp_midpoint=25.0, ramp_width=5.0), 0.00, 0.00),
-    ("tiirikka ajautuu kaannon mukana", dict(drift_units=4.0), 0.00, 0.00),
+    ("perusmalli (kalibroitu nauhoitukseen)", {}, 0.66, 0.85),
+    ("naytonluku nopea, viive 30 ms", dict(latency_ms=30.0), 0.77, 0.85),
+    ("naytonluku hidas, viive 90 ms", dict(latency_ms=90.0), 0.53, 0.85),
+    ("kohinainen kulmalukema 1.5 deg", dict(noise_degrees=1.5), 0.37, 0.81),
+    ("kapea ydin 1.5 u", dict(core_half=1.5), 0.60, 0.85),
+    ("levea ydin 5 u", dict(core_half=5.0), 0.74, 0.85),
+    ("hidas ruudunluku 50 ms", dict(frame_ms=50.0), 0.55, 0.85),
+    ("hidas pesa 90 deg/s", dict(climb_rate=90.0, fall_rate=90.0), 0.32, 0.84),
+    ("nopea pesa 220 deg/s", dict(climb_rate=220.0, fall_rate=220.0), 0.77, 0.85),
+    ("pitka jana 5500 u", dict(span_units=5500.0), 0.57, 0.85),
+    ("lyhyt jana 2500 u", dict(span_units=2500.0), 0.77, 0.85),
+    ("lyhyt aika 2.5 s", dict(attempt_seconds=2.5), 0.47, 0.84),
+    ("pitka aika 4.0 s", dict(attempt_seconds=4.0), 0.74, 0.85),
+    ("pesa ei kaanny liikkeessa", dict(require_still_for_turn=True), 0.66, 0.85),
+    ("kapea vasteikkuna", dict(ramp_midpoint=25.0, ramp_width=5.0), 0.45, 0.85),
+    ("tiirikka ajautuu kaannon mukana", dict(drift_units=4.0), 0.64, 0.85),
 ]
 
 

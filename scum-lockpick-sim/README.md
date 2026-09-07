@@ -167,12 +167,27 @@ Sweetspotin **paikkaa ei muisteta**: se vaihtuu yritysten valilla, ja niin se
 vaihtui myos omassa nauhoituksessasi (kerran 957, kerran 3052 yksikon
 kohdalla). `remember_zone` on siksi oletuksena pois.
 
-Sen sijaan muistetaan **mihin asti jana on jo pyyhkaisty** (`resume_search`,
-oletuksena paalla) seka mitatut olosuhteet (viive ja yrityksen kesto). Jos
-jana on pidempi kuin yhdessa yrityksessa ehtii kayda, aina alusta
-aloittaminen jattaisi janan oikean paan ikuisesti kayvattamatta: mitattuna
-pitkalla janalla jatkaminen 80 % vs aina alusta 77 %, ja lyhyella janalla se
-ei maksa mitaan.
+Sen sijaan muistetaan **mitatut olosuhteet**: havainnon viive ja yrityksen
+kesto. Ne kertovat koneesta ja pelista, eivat sweetspotista, joten seuraava
+yritys alkaa jo oikeilla kynnyksilla.
+
+Kytkin `resume_search` (jatka siita mihin edellinen yritys jai) oli
+**rikki**: se oli olemassa, mutta ei siirtanyt hiirta minnekaan, joten se ei
+tehnyt yhtaan mitaan. Nyt siirtyma tehdaan oikeasti. Kun sen sai vihdoin
+mitattua, kavi ilmi ettei siita ole hyotya, joten se on edelleen oletuksena
+pois. Syy: koska sweetspot arvotaan uudelleen, mika tahansa yhta pitka patka
+on yhta hyva paikka etsia - mutta jatkaminen ajaa haun ennemmin tai myohemmin
+oikean reunan taakse, missa hiiri ei enaa liiku ja koko yritys menee hukkaan.
+
+| Jana | Jatkaen | Aina alusta |
+|---|---|---|
+| 2500 u | 98,8 % | **100,0 %** |
+| 3600 u | 98,8 % | **100,0 %** |
+| 5500 u | 98,4 % | **100,0 %** |
+| 9000 u | 96,0 % | **98,0 %** |
+| 14000 u | 84,4 % | 83,6 % |
+
+Vasta 14000 yksikon janalla ne ovat tasoissa, ja sekin ero on kohinaa.
 
 ---
 
@@ -512,6 +527,41 @@ Pysahtymista on pakko odottaa: kesken nousun kulmalukema aliarvioi
 laheisyyden, jolloin askel hyppaa sweetspotin yli. Mitattu vertailu:
 pysahtymista odottava strategia 45,6 %, tasaisin valein astuva 28,6 %.
 
+### Tulos
+
+`live/test_strategy.py` ajaa saman ohjaimen 16:ta mallin muunnelmaa vasten,
+200 sessiota kutakin. Malli on kalibroitu omaan nauhoitukseesi; muunnelmissa
+vaihdellaan viivetta, kohinaa, ytimen leveytta, ruudunlukunopeutta, pesan
+kaantonopeutta, janan pituutta ja aikarajaa.
+
+| Malli | Yksi yritys | Kuusi yritysta |
+|---|---|---|
+| **perusmalli (kalibroitu nauhoitukseesi)** | **81,0 %** | **100,0 %** |
+| naytonluku nopea, viive 30 ms | 91,5 % | 100,0 % |
+| naytonluku hidas, viive 90 ms | 67,5 % | 100,0 % |
+| kohinainen kulmalukema 1,5 deg | 52,0 % | 96,0 % |
+| kapea ydin 1,5 u | 75,5 % | 100,0 % |
+| levea ydin 5 u | 89,0 % | 100,0 % |
+| hidas ruudunluku 50 ms | 70,0 % | 100,0 % |
+| hidas pesa 90 deg/s | 46,5 % | 99,5 % |
+| nopea pesa 220 deg/s | 92,0 % | 100,0 % |
+| pitka jana 5500 u | 72,5 % | 100,0 % |
+| lyhyt jana 2500 u | 91,5 % | 100,0 % |
+| lyhyt aika 2,5 s | 62,5 % | 99,5 % |
+| pitka aika 4,0 s | 89,5 % | 100,0 % |
+| pesa ei kaanny liikkeessa | 80,5 % | 100,0 % |
+| kapea vasteikkuna | 60,0 % | 100,0 % |
+| tiirikka ajautuu kaannon mukana | 79,0 % | 100,0 % |
+| **keskiarvo** | **75,0 %** | **99,7 %** |
+
+Vertailukohta: omassa debug-nauhoituksessasi vanha versio avasi 12 yrityksesta
+yhden, eli 8 %. F oli siina pohjassa 40-65 % ajasta; nyt 95 %.
+
+Toisella, riippumattomalla mallilla (`sim/lockpick_model.py`, oma
+palautekayransa ja kulumismallinsa) kaikki nelja lukkotyyppia - Rusted,
+Basic, Medium ja Enforced - aukeavat 100 % sessioista keskimaarin yhdella
+yrityksella.
+
 ### Mika loppupelissa oli rikki
 
 | Vika | Korjaus | Mitattu vaikutus |
@@ -522,7 +572,9 @@ pysahtymista odottava strategia 45,6 %, tasaisin valein astuva 28,6 %.
 | Hienoaskel oli kiintea, joten askelta kapeampi ydin jai ikuisesti askelten valiin | Askel puolittuu ylityksesta: 5,0 -> 2,5 -> 1,25 u | kapea ydin 58 % -> 80 % |
 | Maalikulmassa jaatiin odottamaan loputtomiin | 220 ms ilman avautumista -> uusi ote ja nykays | nauhoituksessa juuri tama avasi lukon; simulaatiossa 0 (katso alla) |
 | Viimeiset sekunnin murto-osat kuluivat odottamiseen | Loppukiri: pienia askelia niin tiheaan kuin ehtii | +2,7 prosenttiyksikkoa |
-| `resume_search` ei siirtanyt hiirta minnekaan, joten pitkan janan oikea paa oli saavuttamaton | Oikea SEEK-vaihe, oletuksena paalla | pitkalla janalla 80 % vs 77 % |
+| `resume_search` ei siirtanyt hiirta minnekaan, joten kytkin ei tehnyt mitaan | Oikea SEEK-vaihe. Kun kytkin vihdoin toimi, se voitiin mitata - eika siita ole hyotya, joten oletus pysyy poissa | jatkaen 98,8 %, aina alusta 100,0 % |
+| Pyyhkaisyaskel oli kiintea, vaikka sweetspotin ikkuna ja koko jana skaalautuvat molemmat hiiriherkkyyden mukana | Askel mukautuu: taysi kierros ilman loytoa lyhentaa sita, kesken jaanyt kierros pidentaa | pienella herkkyydella 92 % vs 77 % |
+| Yrityksen kesto opittiin myos onnistuneista yrityksista, jotka paattyvat kesken aikarajan - joten se aliarvioitiin ja loppukiri alkoi liian aikaisin | Kesto opitaan vain aikansa loppuun ajaneista | - |
 
 ### Mita ohjain mittaa itsestaan
 

@@ -247,32 +247,31 @@ def test_search_memory_defaults() -> None:
     se vaihtui myos kayttajan omassa nauhoituksessa (kerran 957, kerran
     3052 yksikon kohdalla).
 
-    Sen sijaan muistetaan, mihin asti jana on jo pyyhkaisty. Jos jana on
-    pidempi kuin yhdessa yrityksessa ehtii kayda, aina alusta aloittaminen
-    jattaisi janan oikean paan ikuisesti kayvattamatta. Kumpikin oletus on
-    mitattu, ei arvattu.
+    Pyyhkaisyn jatkaminen edellisen yrityksen paattymiskohdasta oli
+    RIKKI: kytkin oli olemassa, mutta se ei siirtanyt hiirta minnekaan.
+    Nyt siirtyma tehdaan oikeasti, mutta kun sen sai vihdoin mitattua,
+    kavi ilmi ettei siita ole hyotya - joten oletus on yha pois.
+
+    Muistiin jaa vain se, mika kertoo KONEESTA eika lukosta: havainnon
+    viive ja yrityksen kesto.
     """
     print("Muistin oletukset")
     cfg = ControlConfig()
-    check("pyyhkaisy jatkuu edellisesta kohdasta", cfg.resume_search is True)
-    check("vasteikkunan paikkaa ei muisteta", cfg.remember_zone is False)
+    check("sweetspotin paikkaa ei muisteta", cfg.remember_zone is False)
+    check("pyyhkaisya ei jatketa edellisesta kohdasta",
+          cfg.resume_search is False)
 
     lock = LockConfig(tier="basic", skill=1)
 
-    # Pitka jana: 126 deg / 0.012 deg per yksikko = 10500 yksikkoa, eli
-    # selvasti enemman kuin yhdessa yrityksessa ehtii pyyhkaista.
-    long_on = batch(lock, sessions=60, deg_per_unit=0.012, max_attempts=8)
-    long_off = batch(lock, sessions=60, deg_per_unit=0.012, max_attempts=8,
-                     resume_search=False)
-    check("pitkalla janalla jatkaminen auttaa",
-          long_on["success"] >= long_off["success"],
-          f"jatkaen {long_on['success'] * 100:.1f} % vs "
-          f"aina alusta {long_off['success'] * 100:.1f} %")
-
-    # Lyhyella janalla jatkaminen ei saa maksaa mitaan.
-    short_on = batch(lock, sessions=60, deg_per_unit=0.09, max_attempts=6)
-    check("lyhyella janalla jatkaminen ei maksa mitaan",
-          short_on["success"] > 0.90, f"{short_on['success'] * 100:.1f} %")
+    # SEEK-vaihe toimii, vaikka se ei ole oletuksena kaytossa: kytkimen
+    # paalle laittaminen ei saa rikkoa mitaan. Tasmallinen vertailu
+    # tehdaan lock_sim-mallilla (live/test_strategy.py), jossa on varaa
+    # ajaa tarpeeksi sessioita eron erottamiseen kohinasta.
+    for deg_per_unit in (0.012, 0.035):
+        on = batch(lock, sessions=60, deg_per_unit=deg_per_unit,
+                   max_attempts=6, resume_search=True)
+        check(f"jana {126 / deg_per_unit:.0f} u: SEEK-vaihe toimii",
+              on["success"] > 0.50, f"{on['success'] * 100:.1f} %")
 
     # Ikkunan paikan muistaminen ei auta, koska sweetspot vaihtuu.
     zone_on = batch(lock, sessions=100, max_attempts=6, remember_zone=True)
@@ -281,6 +280,13 @@ def test_search_memory_defaults() -> None:
           zone_off["success"] >= zone_on["success"] - 0.02,
           f"pois {zone_off['success'] * 100:.1f} % vs "
           f"paalla {zone_on['success'] * 100:.1f} %")
+
+    # Mitatut olosuhteet sen sijaan sailyvat.
+    memory = SearchMemory()
+    rng = random.Random(23)
+    run_attempt(lock, ControlConfig(), rng, 0.035, memory, sweet_spot=20.0)
+    check("havainnon viive jai muistiin", memory.lag_ms is not None,
+          f"{memory.lag_ms:.0f} ms" if memory.lag_ms else "ei mittausta")
 
 
 def test_sweep_step_must_fit_the_window() -> None:

@@ -100,15 +100,82 @@ hiirta minnekaan, joten se ei tehnyt mitaan. Jos jana on pidempi kuin
 yhdessa yrityksessa ehtii kayda, jokainen yritys pyyhkaisi siis samaa
 vasenta paatya ja oikea pää jai ikuisesti kayvattamatta.
 
-Nyt siirtyma tehdaan oikeasti (uusi SEEK-vaihe, sama vauhti kuin
-kotiinajossa) ja se on oletuksena paalla. Sweetspotin PAIKKAA ei edelleenkaan
-muisteta, koska se vaihtuu - omassa nauhoituksessasikin se oli kerran
-957 ja kerran 3052 yksikon kohdalla.
+Nyt siirtyma tehdaan oikeasti: uusi SEEK-vaihe, sama vauhti kuin
+kotiinajossa.
 
-Samalla pyyhkaisyn kaantopiste sidottiin siihen, kuinka pitkalle YHDESSA
-yrityksessa ehtii (noin 5000 yksikkoa). Pidemmalle suunnitteleminen on
-turhaa, koska sweetspot arvotaan joka yrityksella uudelleen.
-Mitattu: 5000 antoi 89,6 %, 9000 antoi 84,4 %.
+Ja koska kytkin vihdoin toimii, se voitiin myos MITATA - ja tulos oli etta
+siita ei ole hyotya. Se on siis edelleen oletuksena pois:
+
+    jana        jatkaen    aina alusta
+    2500 u       98.8 %      100.0 %
+    3600 u       98.8 %      100.0 %
+    5500 u       98.4 %      100.0 %
+    9000 u       96.0 %       98.0 %
+   14000 u       84.4 %       83.6 %
+
+Syy on se, etta sweetspot arvotaan joka yrityksella uudelleen: silloin mika
+tahansa yhta pitka patka on yhta hyva paikka etsia, mutta jatkaminen ajaa
+haun ennemmin tai myohemmin oikean reunan taakse, missa hiiri ei enaa liiku
+ja koko yritys menee hukkaan.
+
+Tama on hyva esimerkki siita miksi mittaaminen kannattaa: ensimmainen
+mittaus (60 sessiota) nayttti jatkamisen olevan parempi, ja se oli pelkkaa
+kohinaa. Vasta kun simulaattori korjattiin jakamaan muisti yritysten kesken
+niin kuin oikea ajokin tekee, ero nakyi oikein pain.
+
+Sweetspotin PAIKKAA ei edelleenkaan muisteta, koska se vaihtuu - omassa
+nauhoituksessasikin se oli kerran 957 ja kerran 3052 yksikon kohdalla.
+Sen sijaan MITATUT OLOSUHTEET (havainnon viive, yrityksen kesto) siirtyvat
+yritysten yli, koska ne kertovat koneesta eivatka lukosta.
+
+
+TULOS
+-----
+
+16 mallin muunnelmaa, 200 sessiota kutakin, keskiarvo:
+
+    yksi yritys       75,0 %
+    kuusi yritysta    99,7 %
+
+Nauhoitukseesi kalibroidulla perusmallilla 81,0 % ja 100,0 %.
+
+Vertailukohta: samassa debug-nauhoituksessa vanha versio avasi 12
+yrityksesta yhden eli 8 %, ja piti F:aa pohjassa 40-65 % ajasta.
+Nyt 95 %.
+
+Toinen, riippumaton malli (sim/lockpick_model.py, oma palautekayransa ja
+kulumismallinsa): kaikki nelja lukkotyyppia - Rusted, Basic, Medium ja
+Enforced - aukeavat 100 % sessioista keskimaarin yhdella yrityksella.
+Rikkoutuneita tiirikoita 0,00 lukkoa kohti.
+
+
+KAKSI MUUTA LOYTOA
+------------------
+
+PYYHKAISYASKEL EI SKAALAUTUNUT
+
+Sweetspotin ikkuna ja koko jana ovat molemmat hiiriyksikoissa sita
+suurempia, mita pienempi pelaajan hiiriherkkyys on. Askel oli kuitenkin
+kiintea, joten pienella herkkyydella yksi yritys ehti kayda vain pienen
+osan janasta.
+
+Nyt askel mukautuu, ja paattely nojaa siihen ehtiko kierros loppuun:
+tayteen kierrokseen ilman loytoa -> ikkuna jai askelten valiin, lyhenna;
+kesken jaanyt kierros -> janaa ei ehditty kayda, pidenna.
+
+    herkkyys              mukautuva   kiintea
+    0,012 deg/yksikko       76,0 %     70,0 %
+    0,015 deg/yksikko       92,0 %     77,0 %
+    0,035 deg/yksikko      100,0 %    100,0 %
+    0,090 deg/yksikko      100,0 %    100,0 %
+
+YRITYKSEN KESTO OPITTIIN VAARIN
+
+Loppukirin ajoitus tarvitsee tiedon siita kauanko yritys kestaa. Se
+opittiin kaikista yrityksista - myos onnistuneista, jotka paattyvat
+siihen etta lukko aukeaa eli kesken aikarajan. Kesto aliarvioitiin, ja
+loppukiri alkoi joka kerta liian aikaisin. Nyt kesto opitaan vain
+aikansa loppuun ajaneista yrityksista.
 
 
 DEBUG-PAKETTI

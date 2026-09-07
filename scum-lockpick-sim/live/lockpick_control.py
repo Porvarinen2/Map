@@ -79,19 +79,46 @@ class ControlConfig:
     home_pulse_units: float = 1500.0
     home_pulse_interval_ms: float = 12.0
     # Kuinka pitkalle oikealle pyyhkaisya jatketaan ennen kuin palataan
-    # alkuun. Tama ei ole arvaus janan pituudesta vaan siita, kuinka
-    # pitkalle YHDESSA yrityksessa ehtii: noin 1700 yksikkoa sekunnissa
-    # kertaa kolme sekuntia. Pidemmalle suunnitteleminen on turhaa, koska
-    # sweetspot arvotaan joka yrityksella uudelleen - mitatussa
-    # nauhoituksessa se oli kerran 957 ja kerran 3052 yksikon kohdalla.
-    # Mitattu: 5000 antoi 89.6 %, 9000 antoi 84.4 % (live/test_live.py,
-    # hiiriherkkyydet 0.010 - 0.090 deg/yksikko).
+    # alkuun. Arvo on mitoitettu siihen, kuinka pitkalle YHDESSA
+    # yrityksessa ehtii: noin 1700 yksikkoa sekunnissa kertaa kolme
+    # sekuntia. Kaytannossa yksi yritys loppuu aikaan ennen tata, joten
+    # arvolla ei oletusasetuksilla ole vaikutusta: 3500 - 10000 antoivat
+    # kaikki saman 95.4 %. Sillä on merkitysta vain jos resume_search
+    # kytketaan paalle, jolloin se maaraa milloin haku palaa alkuun.
     span_guess_units: float = 5000.0
 
     # ---- SWEEP: F pohjassa, hiiri matelee oikealle ----
     # Askel on selvasti alle mitatun vasteikkunan (>= 100 u), joten
     # ikkuna ei voi jaada kahden askeleen valiin.
     sweep_step_units: float = 110.0
+    # Askel MUKAUTUU, jos yritys menee kokonaan hukkaan. Paattely nojaa
+    # siihen, ehtiko pyyhkaisy kierroksen loppuun:
+    #
+    #   kierros tuli tayteen eika mitaan loytynyt
+    #       -> koko jana kayty ja ikkuna jai askelten valiin -> LYHENNA
+    #   aika loppui kesken kierroksen
+    #       -> janaa ei ehditty kayda -> PIDENNA, jotta ehditaan kauemmas
+    #
+    # Tata tarvitaan, koska sweetspotin ikkuna ja koko jana skaalautuvat
+    # molemmat pelaajan hiiriherkkyyden mukana: pienella herkkyydella
+    # kumpikin on hiiriyksikoissa moninkertainen. Silmukka korjaa itsensa,
+    # koska liian pitka askel johtaa tayteen kierrokseen ilman loytoa ja
+    # sita kautta lyhentamiseen.
+    #
+    # Mitattu (live/test_live.py, kahdeksan yritysta, 100 sessiota):
+    #
+    #     herkkyys           mukautuva   kiintea
+    #     0.012 deg/yksikko    76.0 %     70.0 %
+    #     0.015 deg/yksikko    92.0 %     77.0 %
+    #     0.035 deg/yksikko   100.0 %    100.0 %
+    #     0.090 deg/yksikko   100.0 %    100.0 %
+    #
+    # Tavallisilla herkkyyksilla se ei tee mitaan, koska askel kelpaa jo.
+    adapt_sweep_step: bool = True
+    sweep_step_grow: float = 1.4
+    sweep_step_shrink: float = 0.7
+    sweep_step_min_units: float = 60.0
+    sweep_step_max_units: float = 420.0
     sweep_dwell_ms: float = 45.0             # paikallaan askeleen jalkeen
     sweep_trigger_degrees: float = 3.0       # tama lepokulman ylitse = ikkuna
     sweep_hold_f: bool = True                # F pohjassa myos pyyhkaisyn aikana
@@ -122,7 +149,7 @@ class ControlConfig:
     # hyppaa sweetspotin yli. Mitattu vertailu: pysahtymista odottava
     # strategia 45.6 %, tasaisin valein astuva 28.6 % (live/test_strategy.py).
     drive_settle_ms: float = 65.0            # vahimmaisaika ilman muutosta
-    drive_settle_frames: float = 2.0         # ... ja vahintaan nain monta ruutua
+    drive_settle_frames: float = 3.0         # ... ja vahintaan nain monta ruutua
     # Ikkunassa oltava nain monta ERI RUUTUA. Aikavaatimus (yo.) maaraa
     # kaytannossa naytemaaran; tama on vain alaraja, jotta puolikkaiden
     # mediaanit voidaan ylipaataan laskea. Yli kolme kaantaa asetelman:
@@ -131,7 +158,7 @@ class ControlConfig:
     drive_trend_degrees: float = 0.4         # puolikkaiden ero: alle taman asettunut
     drive_trend_noise_factor: float = 0.8    # ... tai nain monta kertaa kohina
     drive_worse_degrees: float = 0.7         # suuntapaatoksen kynnys
-    drive_noise_factor: float = 1.6          # ... tai nain monta kertaa kohina
+    drive_noise_factor: float = 1.0          # ... tai nain monta kertaa kohina
     drive_final_window_degrees: float = 8.0  # tata lahempana maalia hienoaskel
     drive_final_step_units: float = 3.5
     # Kun hienoaskel ylittaa ytimen (kaanto huononee), ydin on viimeisen
@@ -166,7 +193,27 @@ class ControlConfig:
     sprint_after_fraction: float = 0.86      # osuus yrityksen kestosta
     sprint_above_degrees: float = 30.0       # vain jos ollaan jo lahella
     sprint_interval_ms: float = 45.0
-    expected_attempt_seconds: float = 3.0    # ennen ensimmaista mittausta
+    # Kaytetaan vain ENNEN ensimmaista mittausta; sen jalkeen kesto
+    # opitaan aikansa loppuun ajaneista yrityksista. Arvo on pelin
+    # dokumentoitu perusaika, siis lyhin mahdollinen - ainoa luku tassa
+    # jolla on ulkopuolinen perustelu.
+    #
+    # Oikea mittari tahan ei ole yhden yrityksen onnistumisprosentti vaan
+    # se, kuinka monta yritysta lukon avaamiseen keskimaarin menee -
+    # pelissa yrityksia kuitenkin tulee perakkain. Mitattuna 16
+    # mallimuunnelmaa, kuusi yritysta, 150 sessiota per solu:
+    #
+    #     siemen                     avattu   yrityksia
+    #     2,50 s                     99,9 %     1,430
+    #     2,75 s                     99,6 %     1,344   <- valittu
+    #     3,00 s                     99,7 %     1,349
+    #     3,50 s                     99,8 %     1,363
+    #     ei kiria ennen mittausta   99,8 %     1,459
+    #
+    # Ero 2,75:n ja 3,00:n valilla on kohinaa; 2,75 valittiin siksi, etta
+    # sille on ulkopuolinen perustelu. Selvin havainto on, etta
+    # loppukirin jattaminen kokonaan pois on huonoin vaihtoehto.
+    expected_attempt_seconds: float = 2.75
 
     # Jos nykaykset eivat auta, F paastetaan hetkeksi irti ja otetaan uusi
     # ote. Nauhoituksessa juuri tama vei 89 asteesta 91.8 asteeseen.
@@ -184,12 +231,26 @@ class ControlConfig:
     rest_samples: int = 6                    # lepokulman naytteet yrityksen alussa
 
     # ---- muisti yritysten valilla ----
-    # Jos jana on pidempi kuin yhdessa yrityksessa ehtii pyyhkaista, joka
-    # yrityksen aloittaminen vasemmasta reunasta jattaa oikean puoliskon
-    # ikuisesti kayvattamatta. Siksi seuraava yritys jatkaa siita mihin
-    # edellinen jai. Tama EI oleta sweetspotin pysyvan paikallaan: jos se
-    # vaihtuu, mika tahansa yhta pitka patka on yhta hyva paikka etsia.
-    resume_search: bool = True
+    # Pyyhkaisyn jatkaminen siita mihin edellinen yritys jai OLI RIKKI:
+    # kytkin oli olemassa, mutta se ei siirtanyt hiirta minnekaan, joten se
+    # ei tehnyt yhtaan mitaan. Nyt siirtyma tehdaan oikeasti (SEEK-vaihe).
+    #
+    # Kun se vihdoin toimi, se voitiin myos mitata - ja se on oletuksena
+    # POIS, koska se ei auta. Sweetspot arvotaan joka yrityksella uudelleen,
+    # joten mika tahansa yhta pitka patka on yhta hyva paikka etsia; sen
+    # sijaan jatkaminen ajaa haun ennemmin tai myohemmin oikean reunan
+    # taakse, missa hiiri ei enaa liiku ja koko yritys menee hukkaan.
+    # Mitattu (kuusi yritysta, 250 sessiota per solu):
+    #
+    #     jana      jatkaen   aina alusta
+    #     2500 u     98.8 %      100.0 %
+    #     3600 u     98.8 %      100.0 %
+    #     5500 u     98.4 %      100.0 %
+    #     9000 u     96.0 %       98.0 %
+    #    14000 u     84.4 %       83.6 %
+    #
+    # Vasta 14000 yksikon janalla se on yhta hyva, ja sekin ero on kohinaa.
+    resume_search: bool = False
     # Siirtyma aloituskohtaan tehdaan samalla vauhdilla kuin kotiinajo.
     # Pyyhkaisyn 110 yksikon pulsseilla se veisi turhaan aikaa, ja koska
     # kotiinajo jo todistaa etta tallainen pulssi menee pelille perille,
@@ -241,6 +302,7 @@ class SearchMemory:
     # vaikka paikkamuisti on pois paalta.
     lag_ms: float | None = None
     attempt_seconds: float | None = None
+    sweep_step_units: float | None = None
 
     def forget_position(self) -> None:
         self.resume_units = 0.0
@@ -350,6 +412,8 @@ class Controller:
         self._rescan_index = 0
 
         # SWEEP
+        self._wrapped = False
+        self._found_window = False
         self._dwell_until = 0.0
         self._sweep_started = 0.0
         self._seek_target = 0.0
@@ -364,8 +428,15 @@ class Controller:
         return ordered[len(ordered) // 2]
 
     @property
-    def scan_step(self) -> float:
+    def sweep_step(self) -> float:
+        """Kaytossa oleva pyyhkaisyaskel: opittu jos sellainen on."""
+        if self.cfg.adapt_sweep_step and self.memory.sweep_step_units:
+            return self.memory.sweep_step_units
         return self.cfg.sweep_step_units
+
+    @property
+    def scan_step(self) -> float:                # nakyma kayttaa tata nimea
+        return self.sweep_step
 
     @property
     def response(self) -> float:
@@ -557,7 +628,7 @@ class Controller:
             self._peak = obs.turn
             self._last_value = obs.turn
             self._last_rise = now
-            if self._seek_target > self.cfg.sweep_step_units:
+            if self._seek_target > self.sweep_step:
                 self.phase = self.SEEK
                 return Action(phase=self.SEEK,
                               note=f"siirtyy {self._seek_target:.0f} u kohtaan")
@@ -599,7 +670,7 @@ class Controller:
 
     def _first_target(self) -> float:
         if self.cfg.remember_zone and self.memory.zone_units is not None:
-            return max(0.0, self.memory.zone_units - 2 * self.cfg.sweep_step_units)
+            return max(0.0, self.memory.zone_units - 2 * self.sweep_step)
         if self.cfg.resume_search:
             return max(0.0, self.memory.resume_units)
         return 0.0
@@ -619,8 +690,9 @@ class Controller:
         if lift >= self.cfg.sweep_trigger_degrees:
             # Havainto on vanha: nousu alkoi jo aiemmin. Perutaan sen
             # verran kuin hiiri ehti edeta ennen kuin nousu nakyi.
-            back = self.cfg.sweep_lag_steps * self.cfg.sweep_step_units
+            back = self.cfg.sweep_lag_steps * self.sweep_step
             self._record(self.position, lift, "ikkuna")
+            self._found_window = True
             self.planner.ramp_locked = True
             self._enter_drive(now, obs)
             self._rescan_anchor = self.position - back
@@ -636,6 +708,7 @@ class Controller:
         # Jana loppui: kierretaan alkuun.
         if self.position >= self.cfg.span_guess_units:
             self.memory.wraps += 1
+            self._wrapped = True
             self.position = 0.0
             self.memory.resume_units = 0.0
             self._record(self.position, 0.0, "kierros")
@@ -648,7 +721,7 @@ class Controller:
         if now < self._next_pulse:
             return Action(f_down=f_down, phase=self.SWEEP, note="pulssien valissa")
 
-        step = min(self.cfg.sweep_step_units, self.cfg.max_units_per_pulse)
+        step = min(self.sweep_step, self.cfg.max_units_per_pulse)
         self._dwell_until = now + self.cfg.sweep_dwell_ms / 1000.0
         self.memory.resume_units = self.position
         return self._pulse(now, step, self.SWEEP,
@@ -743,7 +816,7 @@ class Controller:
             if self._rescan_left > 0:
                 self._rescan_left -= 1
                 self._rescan_index += 1
-                offset = ((self._rescan_index + 1) // 2) * self.cfg.sweep_step_units
+                offset = ((self._rescan_index + 1) // 2) * self.sweep_step
                 if self._rescan_index % 2 == 0:
                     offset = -offset
                 target_pos = self._rescan_anchor + offset
@@ -904,7 +977,20 @@ class Controller:
         # yritys alkaa siis jo oikeilla kynnyksilla.
         if len(self._lag_samples) >= 4:
             self.memory.lag_ms = self.lag_ms
-        if self._elapsed > 0.5:
+
+        # Askelen mukautus: vain jos koko yritys meni hukkaan ilman
+        # yhtaan vastetta. Jos ikkuna loytyi, askel on hyva.
+        if self.cfg.adapt_sweep_step and not opened and not self._found_window:
+            factor = (self.cfg.sweep_step_shrink if self._wrapped
+                      else self.cfg.sweep_step_grow)
+            self.memory.sweep_step_units = clamp(
+                self.sweep_step * factor,
+                self.cfg.sweep_step_min_units, self.cfg.sweep_step_max_units)
+        # Yrityksen KESTO opitaan vain aikansa loppuun ajaneista
+        # yrityksista. Onnistunut yritys paattyy siihen etta lukko aukeaa,
+        # eli kesken aikarajan, joten se aliarvioisi ajan - ja loppukiri
+        # alkaisi joka kerta liian aikaisin.
+        if not opened and self._elapsed > 0.5:
             previous = self.memory.attempt_seconds
             self.memory.attempt_seconds = (self._elapsed if previous is None
                                            else 0.5 * (previous + self._elapsed))
