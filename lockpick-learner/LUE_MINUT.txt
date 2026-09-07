@@ -1,0 +1,114 @@
+LOCKPICK LEARNER v0.6 - LYHYESTI
+=================================
+
+Tama on ChatGPT:n v0.5 sellaisenaan, mutta kolme asiaa jotka estivat sita
+oppimasta on korjattu ja mitattu oikeista pelikuvista. Yksikaan luku alla ei
+ole simulaatiosta.
+
+
+MIKA OLI RIKKI
+--------------
+
+1) SUCCESS-RUUTUA EI TUNNISTETTU KOSKAAN
+   v0.5 etsi SUCCESS-tekstia templaatilla ja hyvaksyi vasta pisteella 0.62.
+   Ajoin sen putken 47:aan oikeaan pelikuvaan:
+
+       kaynnissa (45 kpl)   0.000 - 0.086
+       SUCCESS   f046       0.199   <- ei laukea
+       SUCCESS   f047       0.197   <- ei laukea
+
+   Eli oikea SUCCESS-ruutu jai kolmasosaan sen omasta kynnyksesta. Kaytannossa
+   yksikaan yritys ei koskaan mennyt kirjoihin onnistuneena - ei sinun eika
+   koneen - joten onnistumisista ei opittu mitaan.
+
+   Nyt tunnistus tehdaan kahdella asialla, jotka erottuvat oikeissa kuvissa:
+
+       kirkas tekstipalkki keskella   kaynnissa  938-1216 px   SUCCESS 5126-5366 px
+       lukon ymparilla oleva kaari    kaynnissa 4640-6373 px   SUCCESS       1 px
+
+   Kynnykset (2500 ja 800) ovat keskella tyhjaa valia. Osuu 8/8 oikein
+   referenssikuviin kansiossa kuvat\.
+
+2) OPITTU EI SIIRTYNYT LUKOSTA TOISEEN
+   v0.5 talletti tilan absoluuttisena kohtana lukossa. Kohta arvotaan joka
+   yrityksella uusiksi, joten "kohta 0.62 oli hyva" ei kerro seuraavasta
+   lukosta mitaan. Se mika SIIRTYY on etaisyys rampilta aukeamiskohtaan,
+   koska se on lukkotyypin ominaisuus.
+
+   Sama yritys kahdesti, ramppi eri kohdassa:
+
+       v0.5:  ramppi 0.22 -> laatikot [3,3,4,4]     ramppi 0.71 -> [11,11,11,12]
+       v0.6:  molemmat    -> ['0:0:0:0:0', '1:2:0:0:1', '1:3:1:1:1']
+
+   v0.5:lla nama kaksi eivat jakaneet yhtaan yhteista tilaa. Nyt ne ovat sama
+   kokemus - siksi muutamastakin onnistumisesta voi oppia jotain.
+
+3) AIKASAKKO RANKAISI MYOHAISIA NAPAYTYKSIA AIEMMISTA
+   v0.5 veloitti joka napaytykselta koko yrityksen kuluneen ajan, joten sama
+   teko nayttti huonommalta pelkastaan siksi etta se tapahtui myohemmin. Nyt
+   jokainen napaytys maksaa vain oman kestonsa.
+
+
+MITA UUTTA
+----------
+
+Jokainen varmistettu onnistuminen - seka sinun ettaa koneen - tallentaa nyt
+kaiken:
+
+    data\successes\success_PVM_KLO.csv   koko yritys napaytys napaytykselta
+    data\successes.csv                   yksi rivi per onnistuminen
+
+Riville tulee missa ramppi oli, kuinka kaukana siita lukko aukesi, kauanko
+meni ja montako napaytysta. Kolmen onnistumisen jalkeen mediaanietaisyys
+otetaan kayttoon: kun ramppi loytyy, kone hyppaa suoraan siihen kohtaan johon
+lukot ovat ennen auenneet sen sijaan etta madeltaisi sinne 0.022 kerrallaan.
+STATS nayttaa opitun etaisyyden ja monestako onnistumisesta se on.
+
+
+MITEN AJETAAN
+-------------
+
+1. Kopioi tiedostot vanhan asennuksen paalle. ALA poista data-kansiota.
+2. START.bat -> se kertoo pudottaneensa vanhat opitut arvot (vanhat avaimet
+   tarkoittivat eri asiaa, joten ne olisivat vain sotkeneet uuden).
+3. Aja kerran 2) TRAIN ja 5) SELF TRAIN. Ne rakentavat mallin uusiksi niista
+   demoista ja peleista jotka sinulla jo on. Vie sekunteja.
+4. 1) OBSERVE ja pelaa itse muutama lukko - nyt onnistumiset menevat oikeasti
+   kirjoihin.
+5. 2) TRAIN uudestaan, sitten 4) AGENT.
+
+
+MITA SAADETAAN JOS EI TOIMI
+---------------------------
+
+Aja 8) VISION DEBUG lukko auki. Se tulostaa kaksi raakalukua koko ajan:
+
+    band=  1122/2500  arc= 5717/800  success=0.000
+
+band = kirkas teksti, arc = ajastinkaari. SUCCESS-ruudulla band hyppaa yli
+5000:n ja arc putoaa lahes nollaan. Jos oma resoluutio tai UI-skaala siirtaa
+lukuja, muuta config.json:sta:
+
+    success_band_pixels   pitaa olla sen valissa mita naet kaynnissa ja
+    success_arc_max       mita naet SUCCESS-ruudulla
+
+Muut hyodylliset:
+
+    state_window_after_ramp   kuinka pitkalle rampista tila mitataan (0.30)
+    offset_min_samples        montako onnistumista ennen kuin hyppy otetaan
+                              kayttoon (3)
+    wobble_threshold          milloin lukon liike lasketaan rampiksi (0.025)
+    attempt_budget_seconds    kauanko yhta yritysta jatketaan (3.1)
+
+Muuta yhta kerrallaan.
+
+
+TESTIT
+------
+
+    Testit.bat        (tai: python testit.py)
+
+Toimii ilman Windowsia, ilman pelia ja ilman cv2/mss:aa. Tarkistaa SUCCESS-
+tunnistuksen oikeista kuvista, etta tila mitataan rampista, etta aikasakko on
+napaytyskohtainen, opitun etaisyyden, tallennuksen, ja etta kaksi samanmuotoista
+ihmisen yritysta opettavat samat tilat.

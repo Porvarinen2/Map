@@ -1,0 +1,109 @@
+LOCKPICK LEARNER v0.6 - WHAT WAS WRONG AND WHAT WAS MEASURED
+============================================================
+
+Everything below was checked against real 1920x1080 gameplay frames from the
+game itself (kuvat\), not against a simulation and not against a description.
+Run "python testit.py" to reproduce every number.
+
+
+1. SUCCESS WAS NEVER DETECTED
+-----------------------------
+v0.4/v0.5 detected the SUCCESS screen by binarising the frame at 185 and
+template-matching refs\success_text_template.png at five scales with
+TM_CCOEFF_NORMED, accepting a match at 0.62.
+
+That pipeline was run against 47 real frames:
+
+  frames            best score      >= 0.62?   what it was
+  f001-f045         0.000 - 0.086   no         attempt running
+  f046              0.199           NO          SUCCESS
+  f047              0.197           NO          SUCCESS
+
+The separation points the right way, but a real SUCCESS screen scores about a
+third of the threshold. In practice the detector never fired. Consequences:
+- no attempt was ever credited as a success
+- terminal success rewards were never applied
+- successful episodes were archived as failures
+- OBSERVE never labelled a human win as a win
+- STATS always showed 0 successes
+
+Replaced with two independent measurements, both taken from the same frames:
+
+  measurement                    running        SUCCESS
+  bright text band, centre       938 - 1216     5126 - 5366   px
+  countdown arc around the lock  4640 - 6373    1             px
+
+Thresholds sit in the empty space between: band >= 2500 and arc <= 800.
+Result: 8/8 correct on the reference frames, confidence 0.000 for every running
+frame and 0.999 for both SUCCESS frames. No template, no OCR, no cv2 matching,
+and both raw numbers are printed live in 8) VISION DEBUG so they can be
+re-tuned for another resolution in seconds.
+
+
+2. THE LEARNED STATE COULD NOT TRANSFER BETWEEN LOCKS
+-----------------------------------------------------
+v0.5 state key (line 845):  pb = int(np.clip(pos * 15.999, 0, 15))
+
+The sweet spot is redrawn on every attempt, so "position 0.62 was good" is
+worth nothing on the next lock. What DOES carry over is the distance from the
+ramp to the opening point, because that is a property of the lock type.
+
+Demonstration, two identical attempts - ramp, then +0.02, +0.02, then open -
+one with its ramp at 0.22 and one at 0.71:
+
+  v0.5 position bins:  0.22 -> [3, 3, 4, 4]      0.71 -> [11, 11, 11, 12]
+  v0.6 state keys:     both -> ['0:0:0:0:0', '1:2:0:0:1', '1:3:1:1:1']
+
+Under v0.5 the two attempts shared no state at all, so 100 recorded wins taught
+100 disjoint tables. Under v0.6 they are the same experience, which is what
+makes learning from a handful of successes possible.
+
+Position is now measured over a window from 0.05 before the ramp to 0.30 after
+it (config: state_window_before_ramp / state_window_after_ramp). Before a ramp
+is found there is nothing to measure from, so every search state collapses into
+one: "keep sweeping".
+
+
+3. THE TIME PENALTY PUNISHED LATE PROBES FOR EARLY ONES
+-------------------------------------------------------
+v0.5 (line 946):  reward -= time_cost_per_second * elapsed
+
+elapsed was the age of the whole episode, so the same action at the same state
+scored worse purely for happening later in the attempt. Each probe is now
+charged only for its own duration, which is what the reward was meant to say.
+
+
+4. NOTHING WAS KEPT FROM A SUCCESSFUL ATTEMPT
+---------------------------------------------
+Now every confirmed success - human in OBSERVE, and the agent's own - writes:
+
+  data\successes\success_YYYYMMDD_HHMMSS.csv   full probe-by-probe trace
+  data\successes.csv                          one summary row per success
+
+The summary carries where the ramp was, how far past it the lock opened, how
+long the attempt took, how many probes it needed and the total reward. After
+offset_min_samples (3) successes, the median ramp-to-opening distance is used:
+when the agent finds a ramp it jumps straight to where locks have opened before
+instead of creeping there one 0.022 microstep at a time. STATS prints the
+learned distance and how many successes it rests on.
+
+
+5. MODEL COMPATIBILITY
+----------------------
+model.json now carries state_schema. v0.5 files are schema 1 (absolute
+position); this is schema 2 (distance from the ramp). On first startup the old
+Q values and demo priors are dropped with a printed note, because keys that
+meant something else would poison the new policy. Calibration, counters,
+recorded demos and self-play episodes are all kept - one TRAIN and one SELF
+TRAIN rebuild the policy from them.
+
+
+6. TESTS
+--------
+  python testit.py      (or Testit.bat)
+
+Runs on any machine: no Windows, no game, no cv2, no mss. It checks SUCCESS
+detection against the real frames, that the state key is ramp-relative, that
+the time penalty is per-probe, the learned ramp-to-opening distance, that
+success data is written, that the ramp jump is a real move, and that two human
+attempts with the same shape teach the same states.
