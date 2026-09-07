@@ -51,9 +51,11 @@ class Saadot:
 
     # napautys
     tap_ms: int = 35                 # kevyt napautys
-    huippu_ms: int = 110             # katto: nain kauan huippua odotetaan
-    palautus_ms: int = 110           # katto: nain kauan palautusta odotetaan
-    vakaa_ms: int = 25               # kun lukema ei enaa muutu tassa, jatketaan
+    viive_ms: int = 350              # aloitusarvo; mitataan ajon aikana itse
+    viive_min_ms: int = 60
+    huippu_ms: int = 130             # kauanko viiveen jalkeen viela katsotaan
+    palautus_ms: int = 130           # kauanko pesan annetaan asettua
+    vakaa_ms: int = 40               # kun lukema ei muutu tassa, se on asettunut
 
     # paatos
     tarahdys_min: float = 0.03       # tama nakyi, mutta palasi
@@ -62,7 +64,8 @@ class Saadot:
     # liike
     jana: float = 6000.0             # hiiriyksikkoa lukon laidasta laitaan
     pala: int = 900
-    haku_askel: float = 0.07
+    haku_askel: float = 0.11         # normaali koputusvali
+    tarina_askel: float = 0.04       # lyhyempi vali kun pesa juuri tarahti
     nykaisy: float = 0.035           # feather-saato kun edistys tyrehtyy
     nykaisy_min: float = 0.008
 
@@ -310,6 +313,10 @@ class Avaaja:
     def __init__(self, s: Saadot, silma: Silma, kasi: Kasi, naytto=None):
         self.s, self.silma, self.kasi, self.naytto = s, silma, kasi, naytto
         self.paikka = 0.0
+        # Kauanko napautyksesta kestaa etta vaste nakyy ruudulla. Ei arvata:
+        # aloitetaan varman paalle ja kiristetaan siihen mita oikeasti mitataan.
+        self.viive = float(s.viive_ms)
+        self.kuolleita = 0
 
     def kotiin(self):
         self.kasi.siirra(-self.s.jana * 1.4)
@@ -326,10 +333,15 @@ class Avaaja:
         time.sleep(0.018)
 
     def napauta(self) -> Tuple[str, float, float, bool]:
-        """Yksi kevyt napautys. Palauttaa (tulos, huippu, jai, auki).
+        """Yksi kevyt napautys. Palauttaa (tulos, nykaisy, jai, auki).
 
-        huippu = kuinka paljon pesa nykaisi napautyksen aikana
-        jai    = kuinka paljon siita jai jaljelle kun se ehti palata
+        nykaisy = kuinka paljon pesa nykaisi napautyksen aikana
+        jai     = kuinka paljon siita jai jaljelle kun se oli asettunut
+
+        Peli piirtaa vasteen ruudulle vasta viive_ms:n paasta, joten sita
+        ennen ei paateta mitaan. Aiemmin tama lopetti katsomisen 25 ms:n
+        jalkeen, eli ennen kuin lukko ehti kaantya - ja silloin jokainen
+        napautys nayttaa siita etta mitaan ei tapahtunut.
         """
         ennen = self.silma.lue()
         pohja = ennen.kaanto if ennen.ok else 0.0
@@ -337,12 +349,12 @@ class Avaaja:
 
         self.kasi.napauta(self.s.f_nappain, self.s.tap_ms)
 
-        # Odotetaan huippua vain niin kauan kuin lukema viela nousee, ja
-        # palautusta vain niin kauan kuin se viela laskee. Nain nopea peli
-        # menee nopeasti eika hitaampi hajoa.
+        # 1) katso mihin pesa nykaisee
         huippu = pohja
-        loppu = time.monotonic() + self.s.huippu_ms / 1000.0
-        vika_muutos = time.monotonic()
+        alku = time.monotonic()
+        loppu = alku + (self.viive + self.s.huippu_ms) / 1000.0
+        vika_nousu = alku
+        ensi_liike = None
         while time.monotonic() < loppu:
             k = self.silma.lue()
             if k.auki:
@@ -350,35 +362,59 @@ class Avaaja:
                 break
             if k.ok and k.kaanto > huippu + 0.004:
                 huippu = k.kaanto
-                vika_muutos = time.monotonic()
-            elif (time.monotonic() - vika_muutos) * 1000 >= self.s.vakaa_ms:
+                vika_nousu = time.monotonic()
+                if ensi_liike is None:
+                    ensi_liike = (vika_nousu - alku) * 1000.0
+            nyt = time.monotonic()
+            # Ohitetaan loput vasta kun viive on kulunut umpeen JA lukema on
+            # ollut rauhassa - muuten paatetaan ennen kuin peli on vastannut.
+            if ((nyt - alku) * 1000.0 >= self.viive
+                    and (nyt - vika_nousu) * 1000.0 >= self.s.vakaa_ms):
                 break
 
-        jalkeen = pohja
-        loppu = time.monotonic() + self.s.palautus_ms / 1000.0
-        vika_muutos = time.monotonic()
+        # Opitaan pelin oma viive: pidetaan reilu marginaali havaittuun, mutta
+        # ei koskaan lyhennetä sen alle mita on oikeasti nahty.
+        if ensi_liike is not None:
+            tavoite = max(self.s.viive_min_ms, min(float(self.s.viive_ms), 1.7 * ensi_liike))
+            self.viive = 0.7 * self.viive + 0.3 * tavoite
+            self.kuolleita = 0
+        else:
+            # Jos mitaan ei nay useaan kertaan perakkain, ehka odotetaan liian
+            # vahan aikaa. Kasvatetaan ikkunaa takaisin ennen kuin paatellaan
+            # etta koko lukossa ei ole mitaan.
+            self.kuolleita += 1
+            if self.kuolleita >= 6:
+                self.viive = float(self.s.viive_ms)
+                self.kuolleita = 0
+
+        # 2) anna asettua ja lue mihin se JAI - viimeinen lukema, ei minimi
+        jalkeen = huippu
+        alku = time.monotonic()
+        loppu = alku + self.s.palautus_ms / 1000.0
+        vika_muutos = alku
         while time.monotonic() < loppu:
             k = self.silma.lue()
             if k.auki:
                 auki = True
                 break
             if k.ok:
-                if k.kaanto < jalkeen - 0.004 or jalkeen == pohja:
-                    jalkeen = k.kaanto
+                if abs(k.kaanto - jalkeen) > 0.004:
                     vika_muutos = time.monotonic()
-                elif (time.monotonic() - vika_muutos) * 1000 >= self.s.vakaa_ms:
+                jalkeen = k.kaanto
+                if (time.monotonic() - vika_muutos) * 1000.0 >= self.s.vakaa_ms:
                     break
         jai = jalkeen - pohja
+        nykaisy = huippu - pohja
 
         if jai >= self.s.antoi_min:
             tulos = ANTOI
-        elif huippu - pohja >= self.s.tarahdys_min:
+        elif nykaisy >= self.s.tarahdys_min:
             tulos = TARAHTI
         else:
             tulos = EI_MITAAN
         if self.naytto:
-            self.naytto.merkitse(self.paikka, jalkeen, tulos)
-        return tulos, huippu - pohja, jai, auki
+            self.naytto.merkitse(self.paikka, jalkeen, tulos, pohja, huippu, jai)
+        return tulos, nykaisy, jai, auki
 
     def yritys(self) -> Tuple[bool, int]:
         self.kotiin()
@@ -394,8 +430,9 @@ class Avaaja:
             while self.kasi.pohjassa(self.s.tauko_nappain):
                 time.sleep(0.05)
 
-            tulos, _huippu, _jai, auki = self.napauta()
+            tulos, nykaisy, jai, auki = self.napauta()
             n += 1
+            print(f"   {self.paikka:5.2f}  nykaisy {nykaisy*90:5.1f}  jai {jai*90:+5.1f}  {tulos}")
             if auki:
                 return True, n
 
@@ -421,8 +458,11 @@ class Avaaja:
                         nykaisy = self.s.nykaisy
                 continue
 
-            # Ei viela mitaan: eteenpain.
-            seuraava = self.paikka + self.s.haku_askel
+            # Ei antanut periksi: eteenpain. Jos pesa tarahti, ollaan
+            # lahialueella - silloin eteenpain lyhyemmalla askeleella, ettei
+            # kapea ramppi jaa kahden koputuksen valiin.
+            askel = self.s.tarina_askel if tulos == TARAHTI else self.s.haku_askel
+            seuraava = self.paikka + askel
             self.siirry(0.0 if seuraava > 0.995 else seuraava)
 
         return False, n
@@ -442,17 +482,19 @@ class Naytto:
         self.ikkuna.title("lukko")
         self.ikkuna.attributes("-topmost", True)
         self.ikkuna.configure(bg="#15181c")
-        self.c = tk.Canvas(self.ikkuna, width=420, height=250, bg="#15181c", highlightthickness=0)
+        self.c = tk.Canvas(self.ikkuna, width=420, height=260, bg="#15181c", highlightthickness=0)
         self.c.pack()
         self.merkit = []
         self.kaanto = 0.0
         self.paikka = 0.0
         self.teksti = ""
+        self.viimeisin = (EI_MITAAN, 0.0, 0.0, 0.0)
 
-    def merkitse(self, paikka, kaanto, tulos):
+    def merkitse(self, paikka, kaanto, tulos, pohja=0.0, huippu=0.0, jai=0.0):
         self.merkit.append((paikka, tulos))
         self.merkit = self.merkit[-60:]
         self.kaanto, self.paikka = kaanto, paikka
+        self.viimeisin = (tulos, pohja, huippu, jai)
 
     def uusi_yritys(self):
         self.merkit = []
@@ -491,7 +533,14 @@ class Naytto:
             c.create_oval(x0, 100 + dy, x0 + 8, 108 + dy, fill=vari, outline="")
             c.create_text(x0 + 16, 104 + dy, text=nimi, anchor="w",
                           fill="#8b949e", font=("Consolas", 10))
-        c.create_text(215, 215, text=teksti or self.teksti, anchor="w",
+        tulos, pohja, huippu, jai = self.viimeisin
+        c.create_text(215, 178, text=f"pohja  {pohja*90:5.1f}", anchor="w",
+                      fill="#8b949e", font=("Consolas", 10))
+        c.create_text(215, 194, text=f"nykaisi{huippu*90:5.1f}", anchor="w",
+                      fill=self.VARI[TARAHTI], font=("Consolas", 10))
+        c.create_text(310, 186, text=f"JAI {jai*90:+5.1f} astetta", anchor="w",
+                      fill=self.VARI[tulos], font=("Consolas", 11, "bold"))
+        c.create_text(215, 228, text=teksti or self.teksti, anchor="w",
                       fill="#e6edf3", font=("Consolas", 11))
         self.ikkuna.update()
 
@@ -546,6 +595,51 @@ def aja(s: Saadot, naytolla: bool):
         print(f"\n{auki}/{n}")
 
 
+def katso(s: Saadot):
+    """Ei koske hiireen eika nappaimiin. Pelaa itse ja katso mita luvut tekee.
+
+    Tama kertoo kolme asiaa joita ei voi arvata: paljonko lukko oikeasti
+    kaantyy yhdesta napautyksesta, kauanko siina kestaa etta se nakyy
+    ruudulla, ja mihin se jaa. Kynnykset saadetaan naiden mukaan.
+    """
+    silma = Silma(s)
+    kasi = Kasi(s)
+    Seis(s, kasi)
+    print(f"naytto {silma.avaa()}   pelaa itse, F12 lopettaa\n")
+    print("  aika   kulma   muutos   F")
+    edellinen = None
+    pohja = None
+    huippu = 0.0
+    alku = time.monotonic()
+    f_alkoi = None
+    while True:
+        k = silma.lue()
+        f = kasi.pohjassa(s.f_nappain)
+        if k.ok:
+            if f and f_alkoi is None:
+                f_alkoi, pohja, huippu = time.monotonic(), k.kaanto, k.kaanto
+            if f_alkoi is not None:
+                huippu = max(huippu, k.kaanto)
+            if not f and f_alkoi is not None:
+                # painallus loppui: odota asettuminen ja tulosta yhteenveto
+                time.sleep(s.palautus_ms / 1000.0)
+                lopuksi = silma.lue()
+                print(f"  -> painallus {1000*(time.monotonic()-f_alkoi):4.0f} ms:  "
+                      f"pohja {pohja*90:5.1f}  nykaisi {huippu*90:5.1f}  "
+                      f"jai {(lopuksi.kaanto-pohja)*90:+5.1f} astetta")
+                f_alkoi = None
+            if edellinen is None or abs(k.kaanto - edellinen) > 0.004:
+                print(f"  {time.monotonic()-alku:6.2f} {k.kulma:7.1f} "
+                      f"{(k.kaanto-(edellinen if edellinen is not None else k.kaanto))*90:+8.1f}   "
+                      f"{'F' if f else ' '}")
+                edellinen = k.kaanto
+        if k.auki:
+            print("  AUKI")
+            time.sleep(1.0)
+            edellinen = None
+        time.sleep(0.004)
+
+
 def testaa(s: Saadot) -> int:
     from PIL import Image
     silma = Silma(s)
@@ -585,11 +679,15 @@ def testaa(s: Saadot) -> int:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--testaa", action="store_true")
+    ap.add_argument("--katso", action="store_true")
     ap.add_argument("--ei-nayttoa", action="store_true")
     a = ap.parse_args()
     s = Saadot.lataa()
     if a.testaa:
         return testaa(s)
+    if a.katso:
+        katso(s)
+        return 0
     aja(s, not a.ei_nayttoa)
     return 0
 
