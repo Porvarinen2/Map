@@ -40,6 +40,58 @@ Testit tarvitsevat lisaksi Pillow'n:  pip install pillow
 
 
 ================================================================
+  LUKKOKARTTA - rampin ja targetin leveys
+================================================================
+
+    Kartoita.bat   Mittaa rampin leveyden. Kun ramppi loytyy, se ei
+                   yritakaan avata lukkoa vaan kavelee sen yli lyhyin
+                   napautuksin ja kirjaa profiilin tiedostoon
+                   loki.jsonl. Aja 15-20 min yhta lukkotyyppia.
+
+    Kartta.bat     Lukee lokin, laskee leveydet ja avaa kartta.html
+                   selaimeen.
+
+MITA SE MITTAA - ja mita se EI mittaa
+
+Targetin PAIKKAA ei voi kartoittaa. Se arvotaan joka yrityksella
+uudelleen: omassa datassasi se oli kerran 957 ja kerran 3052 yksikon
+kohdalla. Sita ei opi mikaan.
+
+Rampin ja targetin LEVEYS sen sijaan on lukkotyypin ominaisuus ja
+pysyy samana. Juuri se on hyodyllinen tieto:
+
+  * Rampin leveys kertoo, kuinka pitkin askelin lukkoa voi skannata.
+    Jos ramppi on 400 yksikkoa leveä, sita voi skannata 320 yksikon
+    askelin - moninkertaisesti nykyista nopeammin, eika mitaan jaa
+    askelten valiin. Kapealle lukolle askel taas on pakko olla pieni.
+
+  * Targetin leveys kertoo, kuinka pienia hienonykaysten pitaa olla.
+
+Kartta.bat tulostaa suositellun askel_yksikkoa-arvon. Se on kapein
+mitattu ramppi kerrottuna 0,8:lla eli varmuusvaralla.
+
+TARKKUUDEN RAJA
+
+Kumpaakaan leveytta ei voi mitata tarkemmin kuin mittausaskel
+(kartoitus_askel, oletus 25 yksikkoa). Jos kartta nayttaa targetiksi
+"< 25 u", se on askelta kapeampi: pienenna kartoitus_askel arvoon
+esim. 10 ja kartoita uudelleen. Mittaus hidastuu mutta tarkentuu.
+
+LUKKOTYYPIN TUNNISTUS
+
+Lukkotyyppi arvataan varisavysta (punaisen ja sinisen erotus
+lukkopesan alueella). Mitattuna sinun kuvistasi:
+
+    Basic     -1,0        Rusted    +13,8
+    Medium    +1,8        Enforced  +29,4
+
+Tama on mitattu YHDESTA kuvasta per tyyppi, joten pelin valaistus voi
+siirtaa lukuja ja lajittelu menna vaarin. Kartta.html:n taulukossa on
+sarake "ruostesavy", joka kertoo oman lokisi todelliset arvot. Jos ne
+eroavat, paivita taulukko LUKKOTYYPIT lockpick.py:n lopusta.
+
+
+================================================================
   SAADOT
 ================================================================
 
@@ -107,10 +159,12 @@ luvut. Tiedoston arvot voittavat koodin oletukset.
   MITA TIEDOSTOT OVAT
 ================================================================
 
-    lockpick.py    Koko ohjelma: ruudunluku, syotteet, ohjaus.
+    lockpick.py    Koko ohjelma: ruudunluku, syotteet, ohjaus, kartta.
     testit.py      Testit pelin omia kuvia vasten.
     kuvat/         Pelin kuvakaappaukset, joita testit kayttavat.
     asetukset.json Syntyy komennolla --tallenna. Ei pakollinen.
+    loki.jsonl     Mittaukset. Syntyy ajaessa.
+    kartta.html    Lukkokartta. Syntyy komennolla --kartta.
 
 
 ================================================================

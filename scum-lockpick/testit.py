@@ -220,6 +220,95 @@ def testaa_ohjain() -> None:
 
 
 # --------------------------------------------------------------------------
+#  3. KARTOITUS JA KARTTA
+# --------------------------------------------------------------------------
+
+
+def testaa_kartoitus() -> None:
+    """Kartoitustila kavelee rampin yli ja mittaa sen leveyden."""
+    import json
+    import tempfile
+
+    import lockpick as L
+
+    s = Saadot()
+    print("Kartoitus mittaa rampin leveyden")
+
+    # Tekoramppi: kolmio jonka leveys tiedetaan. Katsotaan loytaako
+    # mittaus sen takaisin.
+    TODELLINEN = 400.0
+    KESKUS = 800.0
+
+    def kulma(paikka):
+        etaisyys = abs(paikka - KESKUS)
+        if etaisyys > TODELLINEN / 2.0:
+            return 0.5
+        return 4.0 + 70.0 * (1.0 - etaisyys / (TODELLINEN / 2.0))
+
+    o = Ohjain(s, kartoita=True)
+    o.vaihe = o.SKANNAUS
+    t = 0.0
+    for _ in range(6000):
+        o.paivita(t, Havainto(ok=True, kaanto=kulma(o.paikka), kaynnissa=True,
+                              reika=1200))
+        t += 0.005
+        if o.vaihe == o.SKANNAUS and o.mittaukset:
+            break
+
+    tark("ramppi mitattiin", len(o.mittaukset) >= 5,
+         f"{len(o.mittaukset)} pistetta")
+    leveys, target, huippu = L._leveydet(o.mittaukset, s.ramppi_astetta)
+    tark("mitattu leveys osuu todelliseen",
+         leveys is not None and abs(leveys - TODELLINEN) <= 2 * s.kartoitus_askel,
+         f"mitattu {leveys:.0f} u, todellinen {TODELLINEN:.0f} u"
+         if leveys else "ei mittausta")
+    tark("huippu loytyi rampin keskelta", huippu >= 60.0, f"{huippu:.0f} deg")
+    tark("kartoitus ei jaa pyorimaan", o.vaihe == o.SKANNAUS, o.vaihe)
+    print()
+
+    print("Kartta syntyy lokista")
+    kansio = tempfile.mkdtemp()
+    loki = os.path.join(kansio, "loki.jsonl")
+    kartta = os.path.join(kansio, "kartta.html")
+    with open(loki, "w", encoding="utf-8") as fh:
+        for _ in range(6):
+            fh.write(json.dumps({
+                "laji": "profiili", "aika": "testi", "savy": -1.0,
+                "kirkkaat": 0.025,
+                "pisteet": [[d, kulma(KESKUS - TODELLINEN / 2.0 + d)]
+                            for d in range(0, 500, 25)],
+            }) + "\n")
+
+    vanha_loki, vanha_kartta = L.LOKI, L.KARTTA
+    try:
+        L.LOKI, L.KARTTA = loki, kartta
+        koodi = L.piirra_kartta(s)
+    finally:
+        L.LOKI, L.KARTTA = vanha_loki, vanha_kartta
+
+    tark("kartta valmistui", koodi == 0)
+    sivu = open(kartta, encoding="utf-8").read() if os.path.exists(kartta) else ""
+    tark("sivu sisaltaa kuvaajan", "<svg" in sivu and "polyline" in sivu,
+         f"{len(sivu)} merkkia")
+    tark("sivu on itsenainen (ei verkkohakuja)",
+         "http://" not in sivu and "https://" not in sivu)
+    tark("lukkotyyppi tunnistettiin", "Basic" in sivu)
+    print()
+
+
+def testaa_lukkotyypit() -> None:
+    """Varisavy erottaa lukkotyypit pelin omissa kuvissa."""
+    import lockpick as L
+
+    print("Lukkotyyppi tunnistuu varisavysta")
+    for nimi, savy, kirkkaat in L.LUKKOTYYPIT:
+        arvaus = L.tunnista_lukko(savy, kirkkaat)
+        tark(f"{nimi}: omat tunnusluvut tunnistuvat", arvaus == nimi,
+             f"savy {savy:+.1f} -> {arvaus}")
+    print()
+
+
+# --------------------------------------------------------------------------
 
 
 def main() -> int:
@@ -232,6 +321,8 @@ def main() -> int:
 
     testaa_ruudunluku(np)
     testaa_ohjain()
+    testaa_lukkotyypit()
+    testaa_kartoitus()
 
     if VIRHEET:
         print(f"{len(VIRHEET)} testia epaonnistui: {', '.join(VIRHEET)}")
