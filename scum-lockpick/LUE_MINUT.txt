@@ -43,13 +43,41 @@ Testit tarvitsevat lisaksi Pillow'n:  pip install pillow
   LUKKOKARTTA - rampin ja targetin leveys
 ================================================================
 
-    Kartoita.bat   Mittaa rampin leveyden. Kun ramppi loytyy, se ei
-                   yritakaan avata lukkoa vaan kavelee sen yli lyhyin
-                   napautuksin ja kirjaa profiilin tiedostoon
-                   loki.jsonl. Aja 15-20 min yhta lukkotyyppia.
+KARTOITUS ON AUTOMAATTINEN
 
-    Kartta.bat     Lukee lokin, laskee leveydet ja avaa kartta.html
-                   selaimeen.
+Sinun ei tarvitse tehda mitaan. Aja.bat kartoittaa ajaessaan:
+jokainen painallus rampissa on samalla mittaus siita, kuinka paljon
+lukko antoi periksi juuri siina kohdassa. Kartta kertyy itsestaan.
+
+REAALIAIKAINEN SIVU
+
+Avaa kartta.html selaimeen ja jata se auki. Se paivittaa itsensa
+kahden sekunnin valein ajon aikana, joten naet mittausten kertyvan
+sita mukaa kun lukkoja avataan. Vihrea sykkiva merkki tarkoittaa
+etta ajo on kaynnissa. Vierityskohta sailyy paivitysten yli.
+
+ASKEL SAATYY ITSESTAAN
+
+Kun samasta lukkotyypista on viisi mittausta, skannausaskel
+asetetaan niiden mukaan: kapein havaittu ramppi kerrottuna 0,8:lla.
+Levea ramppi kestaa pitkan askeleen ja skannaus nopeutuu selvasti,
+kapea vaatii lyhyen.
+
+Esimerkki: 380 yksikon rampilla askel nousi 90:sta 200:aan ja
+skannausnopeus 437:sta 971 yksikkoon sekunnissa - eli yksi yritys
+kattaa yli kaksi kertaa enemman janaa.
+
+Askel pysyy aina valilla askel_min - askel_max (40-200). Nosta
+askel_max jos haluat antaa sille enemman varaa, tai laita
+saada_askel_itse: false jos haluat saataa sen itse.
+
+    Kartoita.bat   TIHEA mittaus. Kun ramppi loytyy, se ei yritakaan
+                   avata lukkoa vaan kavelee sen yli 25 yksikon
+                   valein. Tarkempi kuin ajon ohessa kertyva kartta,
+                   mutta uhraa yrityksia. Kayta jos haluat targetin
+                   leveyden tarkasti.
+
+    Kartta.bat     Avaa kartan selaimeen ilman ajoa.
 
 MITA SE MITTAA - ja mita se EI mittaa
 

@@ -393,6 +393,75 @@ def testaa_lukkotyypit() -> None:
     print()
 
 
+def testaa_reaaliaikainen_kartta() -> None:
+    """Kartta kertyy ajon ohessa ja askel saatyy sen mukaan itsestaan."""
+    import json
+    import os
+    import random
+    import tempfile
+
+    import lockpick as L
+
+    print("Kartta paivittyy ajon aikana ja saataa askelen")
+    s = Saadot()
+    lahto = s.askel_yksikkoa
+    RAMPPI, TARGET = 380.0, 60.0
+    random.seed(7)
+
+    def profiili():
+        alku = random.uniform(-0.30, -0.10) * RAMPPI
+        pisteet, d = [], 0.0
+        while d <= RAMPPI * 1.2:
+            e = abs(d + alku)
+            if e <= TARGET / 2:
+                k = 88.0
+            elif e <= RAMPPI / 2:
+                k = 4.0 + 70.0 * (1 - (e - TARGET / 2) / (RAMPPI / 2 - TARGET / 2))
+            else:
+                k = 0.6
+            pisteet.append([round(d, 1), round(max(0.0, k + random.gauss(0, 2)), 2)])
+            d += 25.0
+        return pisteet
+
+    kansio = tempfile.mkdtemp()
+    vanha_loki, vanha_kartta = L.LOKI, L.KARTTA
+    try:
+        L.LOKI = os.path.join(kansio, "loki.jsonl")
+        L.KARTTA = os.path.join(kansio, "kartta.html")
+        h = Havainto(ok=True, savy=-1.0, kirkkaat=0.025)
+        loki = L.Loki(L.LOKI, True)
+        ehdotukset = []
+        for _ in range(8):
+            loki.kirjaa("profiili", h, pisteet=profiili())
+            ehdotus = L.paivita_kartta(s, h)
+            ehdotukset.append(ehdotus)
+            if ehdotus:
+                s.askel_yksikkoa = ehdotus
+
+        tark("sivu syntyy heti ensimmaisesta mittauksesta",
+             os.path.exists(L.KARTTA))
+        tark("askelta ei saadeta liian aikaisin",
+             all(e is None for e in ehdotukset[:s.profiileja_ennen_saatoa - 1]),
+             f"{s.profiileja_ennen_saatoa} mittausta vaaditaan")
+        tark("tarpeeksi mittauksia -> askel saatyy", ehdotukset[-1] is not None,
+             f"{lahto:.0f} u -> {s.askel_yksikkoa:.0f} u")
+        tark("askel kasvoi levealla rampilla", s.askel_yksikkoa > lahto,
+             f"ramppi {RAMPPI:.0f} u -> askel {s.askel_yksikkoa:.0f} u")
+        tark("askel pysyy rajoissa",
+             s.askel_min <= s.askel_yksikkoa <= s.askel_max,
+             f"rajat {s.askel_min:.0f} - {s.askel_max:.0f} u")
+
+        sivu = open(L.KARTTA, encoding="utf-8").read()
+        tark("sivu paivittaa itsensa ajon aikana",
+             'http-equiv="refresh"' in sivu)
+        tark("sivu kertoo olevansa elava", "ajossa" in sivu)
+        tark("sivu ei hae mitaan verkosta",
+             "http://" not in sivu and "https://" not in sivu)
+    finally:
+        L.LOKI, L.KARTTA = vanha_loki, vanha_kartta
+    print()
+
+
 # --------------------------------------------------------------------------
 
 
@@ -410,6 +479,7 @@ def main() -> int:
     testaa_vaannon_katkaisu()
     testaa_lukkotyypit()
     testaa_kartoitus()
+    testaa_reaaliaikainen_kartta()
 
     if VIRHEET:
         print(f"{len(VIRHEET)} testia epaonnistui: {', '.join(VIRHEET)}")

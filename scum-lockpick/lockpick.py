@@ -110,6 +110,16 @@ class Saadot:
     # ominaisuus ja pysyy samana - ja juuri se kertoo, kuinka pitkin
     # askelin lukkoa voi skannata.
     loki: bool = True                   # kirjoitetaanko loki.jsonl
+    # Kartta paivittyy ajon aikana itsestaan. Pida kartta.html auki
+    # selaimessa niin naet mittausten kertyvan reaaliajassa.
+    kartta_paivitys_s: float = 2.0      # 0 = ei paivita ajon aikana
+    # Kun ramppeja on mitattu tarpeeksi, skannausaskel asetetaan niiden
+    # mukaan itsestaan: levea ramppi kestaa pitkan askeleen ja skannaus
+    # nopeutuu, kapea vaatii lyhyen.
+    saada_askel_itse: bool = True
+    profiileja_ennen_saatoa: int = 5    # nain monta mittausta ennen saatoa
+    askel_min: float = 40.0             # askel ei mene taman alle
+    askel_max: float = 200.0            # eika taman yli
     kartoitus_askel: float = 25.0       # askel rampin yli mitattaessa
     kartoitus_matka: float = 600.0      # kuinka pitkalle ramppia seurataan
     kartoitus_hukat: int = 4            # nain monta tyhjaa nappia = ramppi loppui
@@ -555,6 +565,11 @@ class Ohjain:
             self.paino_paalla = False
             self.irti_asti = nyt + self.s.irti_ms / 1000.0
             kesto = (nyt - self.paino_alkoi) * 1000.0
+            # Jokainen painallus on samalla mittaus: tassa kohdassa lukko
+            # antoi periksi nain paljon. Niin kartta kertyy myos silloin
+            # kun ollaan avaamassa lukkoa eika erikseen kartoittamassa.
+            self.mittaukset.append((round(self.paikka - self.rampin_alku, 1),
+                                    round(self.paino_huippu, 2)))
             return Kasky(vaihe=self.RAMPPI,
                          teksti=f"huippu {self.paino_huippu:.1f} deg ({kesto:.0f} ms)")
 
@@ -797,6 +812,8 @@ def aja(s: Saadot, testaa: bool, kartoita: bool = False) -> int:
     edellinen_vaihe = ohjain.vaihe
     ramppi_alkoi = 0.0
     ramppi_nahty = False
+    kartta_kirjoitettu = 0.0
+    mitattu_askel = None
 
     print("Kaynnistetaan..." if not testaa else "Testitila: ei syotteita.")
     time.sleep(0.5)
@@ -838,6 +855,11 @@ def aja(s: Saadot, testaa: bool, kartoita: bool = False) -> int:
                                     paras=round(ohjain.paras, 2),
                                     matka=round(ohjain.paikka - ohjain.rampin_alku, 1),
                                     kesto_ms=round((nyt - ramppi_alkoi) * 1000.0))
+                        # Ramppivaiheessa kertyneet mittaukset ovat yhta
+                        # arvokkaita kuin erikseen kartoitetut.
+                        if len(ohjain.mittaukset) >= 3:
+                            loki.kirjaa("profiili", havainto,
+                                        pisteet=[[d, a] for d, a in ohjain.mittaukset])
                         ramppi_nahty = False
                     # Yritys ei ole kaynnissa: painetaan SPACE ja aloitetaan alusta.
                     if kasi is not None:
@@ -852,6 +874,16 @@ def aja(s: Saadot, testaa: bool, kartoita: bool = False) -> int:
                     ohjain.alusta(jatka)
                     edellinen_vaihe = ohjain.vaihe
                     yrityksia += 1
+
+                    # Kartta ja askelen saato tehdaan yritysten valissa,
+                    # jottei tiedoston kirjoitus vie aikaa kesken mittausten.
+                    if (s.kartta_paivitys_s
+                            and nyt - kartta_kirjoitettu >= s.kartta_paivitys_s):
+                        kartta_kirjoitettu = nyt
+                        ehdotus = paivita_kartta(s, havainto)
+                        if ehdotus and s.saada_askel_itse:
+                            mitattu_askel = ehdotus
+                            s.askel_yksikkoa = ehdotus
                     viesti = f"aloitetaan yritys {yrityksia}"
                     kasky = Kasky(teksti=viesti)
                     if s.yrityksia and yrityksia > s.yrityksia:
@@ -887,7 +919,9 @@ def aja(s: Saadot, testaa: bool, kartoita: bool = False) -> int:
 
             if nyt - piirretty > 0.10:
                 piirretty = nyt
-                _piirra(s, ohjain, havainto, kasky, viesti, yrityksia, otsikko)
+                _piirra(s, ohjain, havainto, kasky, viesti, yrityksia, otsikko,
+                        f"kartoitettu {mitattu_askel:.0f} u" if mitattu_askel
+                        else "kartoitus kesken")
 
             jaljella = (1.0 / s.fps) - (time.perf_counter() - nyt)
             if jaljella > 0:
@@ -900,7 +934,7 @@ def _koko_ruutu(kaappaus):
             "width": monitori["width"], "height": monitori["height"]}
 
 
-def _piirra(s, ohjain, h, kasky, viesti, yrityksia, otsikko):
+def _piirra(s, ohjain, h, kasky, viesti, yrityksia, otsikko, kartoitus=""):
     tyhjenna()
     palkki = ""
     if h.ok:
@@ -922,7 +956,9 @@ def _piirra(s, ohjain, h, kasky, viesti, yrityksia, otsikko):
         f"  toiminto   {kasky.teksti}",
         f"  F          {'POHJASSA' if kasky.f else 'ylhaalla'}"
         f"   hiiri {kasky.hiiri:+7.1f} u",
-        f"  paikka     {ohjain.paikka:7.0f} u   yrityksia {yrityksia}",
+        f"  paikka     {ohjain.paikka:7.0f} / {s.jana_yksikkoa:.0f} u"
+        f"   yrityksia {yrityksia}",
+        f"  askel      {s.askel_yksikkoa:7.0f} u   {kartoitus}",
         "",
         f"  pikselit   avaimenreika {h.reika}   aikakaari {h.kaari}",
         "",
@@ -998,28 +1034,27 @@ def lue_loki(polku: str):
     return rivit
 
 
-def piirra_kartta(s: Saadot) -> int:
-    """Lukee lokin, laskee leveydet ja kirjoittaa kartta.html."""
+def _kokoa(s: Saadot) -> list:
+    """Lukee lokin ja laskee leveydet lukkotyypeittain."""
     rivit = lue_loki(LOKI)
     if not rivit:
-        print(f"Lokia ei ole viela: {LOKI}")
-        print("Aja ensin:  python lockpick.py --kartoita")
-        return 2
+        return []
 
     lukot: dict[str, dict] = {}
     for r in rivit:
         nimi = tunnista_lukko(r.get("savy", 0.0), r.get("kirkkaat", 0.0))
-        tiedot = lukot.setdefault(nimi, {"profiilit": [], "auki": 0, "rampit": 0,
-                                         "savyt": [], "kestot": []})
-        tiedot["savyt"].append(r.get("savy", 0.0))
+        t = lukot.setdefault(nimi, {"profiilit": [], "auki": 0, "rampit": 0,
+                                    "savyt": [], "kestot": []})
+        t["savyt"].append(r.get("savy", 0.0))
         if r["laji"] == "profiili":
-            tiedot["profiilit"].append(r["pisteet"])
+            t["profiilit"].append(r["pisteet"])
         elif r["laji"] == "auki":
-            tiedot["auki"] += 1
-            tiedot["kestot"].append(r.get("kesto_ms", 0))
+            t["auki"] += 1
+            t["kestot"].append(r.get("kesto_ms", 0))
         elif r["laji"] == "ramppi":
-            tiedot["rampit"] += 1
+            t["rampit"] += 1
 
+    mediaani = lambda xs: sorted(xs)[len(xs) // 2] if xs else None
     yhteenveto = []
     for nimi, t in sorted(lukot.items()):
         rampit, targetit = [], []
@@ -1028,18 +1063,57 @@ def piirra_kartta(s: Saadot) -> int:
             if r:
                 rampit.append(r)
                 targetit.append(g)
-        mediaani = lambda xs: sorted(xs)[len(xs) // 2] if xs else None
+        jono = sorted(rampit)
         yhteenveto.append({
             "nimi": nimi,
-            "profiileja": len(t["profiilit"]),
+            "profiileja": len(rampit),
             "auki": t["auki"],
             "rampit": t["rampit"],
             "ramppi": mediaani(rampit),
+            # Alaneljannes eika keskiarvo: askel mitoitetaan kapeimman
+            # havaitun rampin mukaan, jottei se ohita ikkunaa.
+            "kapein": jono[len(jono) // 4] if jono else None,
             "target": mediaani(targetit),
             "savy": sum(t["savyt"]) / len(t["savyt"]) if t["savyt"] else 0.0,
             "kesto": mediaani(t["kestot"]),
             "pisteet": t["profiilit"],
         })
+    return yhteenveto
+
+
+def paivita_kartta(s: Saadot, h: Havainto | None = None) -> float | None:
+    """Kirjoittaa kartta.html ajon aikana ja palauttaa askelsuosituksen.
+
+    Suositus lasketaan NYKYISEN lukon mittauksista, jos niita on
+    tarpeeksi. Se on kapein havaittu ramppi kerrottuna 0,8:lla eli
+    varmuusvaralla, ja rajattu valille askel_min - askel_max.
+    """
+    yhteenveto = _kokoa(s)
+    if not yhteenveto:
+        return None
+    try:
+        with open(KARTTA, "w", encoding="utf-8") as fh:
+            fh.write(_kartta_html(yhteenveto, s, elava=True))
+    except Exception:
+        pass                     # kartan kirjoitus ei saa kaataa ajoa
+
+    if h is None:
+        return None
+    nimi = tunnista_lukko(h.savy, h.kirkkaat)
+    for y in yhteenveto:
+        if (y["nimi"] == nimi and y["kapein"]
+                and y["profiileja"] >= s.profiileja_ennen_saatoa):
+            return max(s.askel_min, min(s.askel_max, y["kapein"] * 0.8))
+    return None
+
+
+def piirra_kartta(s: Saadot) -> int:
+    """Kirjoittaa kartta.html lokista ja avaa sen selaimeen."""
+    yhteenveto = _kokoa(s)
+    if not yhteenveto:
+        print(f"Lokia ei ole viela: {LOKI}")
+        print("Aja ensin:  Aja.bat  tai  Kartoita.bat")
+        return 2
 
     with open(KARTTA, "w", encoding="utf-8") as fh:
         fh.write(_kartta_html(yhteenveto, s))
@@ -1050,9 +1124,9 @@ def piirra_kartta(s: Saadot) -> int:
                   else (f"<{s.kartoitus_askel:.0f} u" if y["profiileja"] else "-"))
         print(f"  {y['nimi']:12} profiileja {y['profiileja']:3}   "
               f"ramppi {ramppi:>8}   target {target:>8}   auennut {y['auki']}")
-    kapein = [y["ramppi"] for y in yhteenveto if y["ramppi"]]
+    kapein = [y["kapein"] for y in yhteenveto if y["kapein"]]
     if kapein:
-        askel = min(kapein) * 0.8
+        askel = max(s.askel_min, min(s.askel_max, min(kapein) * 0.8))
         print(f"\nKapein mitattu ramppi {min(kapein):.0f} u "
               f"-> turvallinen askel_yksikkoa {askel:.0f}")
     try:
@@ -1137,7 +1211,7 @@ def _kuvaaja(y: dict, s: Saadot) -> str:
             f'role="img" aria-label="Mitattu ramppiprofiili">{"".join(osat)}</svg>')
 
 
-def _kartta_html(yhteenveto: list, s: Saadot) -> str:
+def _kartta_html(yhteenveto: list, s: Saadot, elava: bool = False) -> str:
     rivit, kuvaajat = [], []
     for y in yhteenveto:
         ramppi = f"{y['ramppi']:.0f} u" if y["ramppi"] else "&#8211;"
@@ -1169,9 +1243,18 @@ def _kartta_html(yhteenveto: list, s: Saadot) -> str:
                 if kapein else
                 "Ramppeja ei ole viela mitattu tarpeeksi askelsuosituksen antamiseen.")
 
+    # Ajon aikana sivu paivittaa itsensa, jotta mittaukset nakyvat
+    # kertyvan reaaliajassa. Vierityskohta sailyy latausten yli.
+    paivitys = (f'<meta http-equiv="refresh" content="{s.kartta_paivitys_s:.0f}">'
+                if elava and s.kartta_paivitys_s else "")
+    tila = ('<span class="elava"><i></i>ajossa &middot; paivittyy '
+            f'{s.kartta_paivitys_s:.0f} s valein</span>' if elava
+            else '<span class="pysahtynyt">pysaytetty kuva lokista</span>')
+    kello = time.strftime("%H:%M:%S")
     return f"""<!doctype html>
 <html lang="fi"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+{paivitys}
 <title>Lukkokartta</title>
 <style>
   :root {{ color-scheme: dark; }}
@@ -1207,9 +1290,18 @@ def _kartta_html(yhteenveto: list, s: Saadot) -> str:
   code {{ background: #1a2126; padding: 1px 6px; border-radius: 4px;
           font-size: 13px; color: #d7dee4; }}
   footer {{ color: #66707a; font-size: 13px; margin-top: 36px; max-width: 70ch; }}
+  .tila {{ display: flex; gap: 14px; align-items: center; color: #66707a;
+           font-size: 13px; margin: 0 0 20px; }}
+  .elava {{ color: #39ff6a; }}
+  .elava i {{ display: inline-block; width: 8px; height: 8px; margin-right: 7px;
+              border-radius: 50%; background: #39ff6a; vertical-align: middle;
+              animation: syke 1.6s ease-in-out infinite; }}
+  @keyframes syke {{ 0%, 100% {{ opacity: 1 }} 50% {{ opacity: .25 }} }}
+  @media (prefers-reduced-motion: reduce) {{ .elava i {{ animation: none }} }}
 </style></head><body><div class="kehys">
 
 <h1>LUKKOKARTTA</h1>
+<p class="tila">{tila}<span>paivitetty {kello}</span></p>
 <p class="johdanto">Mitatut rampit ja targetit lukkotyypeittain. Pystyakseli on
 lukkopesan kaanto, vaaka-akseli hiiriyksikkoa siita kohdasta jossa ramppi
 havaittiin. Targetin PAIKKAA ei voi kartoittaa &#8211; se arvotaan joka
@@ -1241,7 +1333,19 @@ nyt <code>kartoitus_askel = {s.kartoitus_askel:.0f}</code>. Jos target nakyy
 muodossa &#8220;&lt; {s.kartoitus_askel:.0f} u&#8221;, pienenna askelta ja
 kartoita uudelleen &#8211; mittaus hidastuu mutta tarkentuu.</footer>
 
-</div></body></html>
+</div>
+<script>
+  // Vierityskohta talteen, jotta itsepaivitys ei hyppaa alkuun.
+  try {{
+    var avain = "lukkokartta-vieritys";
+    var tallessa = sessionStorage.getItem(avain);
+    if (tallessa) window.scrollTo(0, parseInt(tallessa, 10) || 0);
+    window.addEventListener("beforeunload", function () {{
+      try {{ sessionStorage.setItem(avain, String(window.scrollY)); }} catch (e) {{}}
+    }});
+  }} catch (e) {{}}
+</script>
+</body></html>
 """
 
 
