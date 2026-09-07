@@ -52,10 +52,23 @@ class Saadot:
 
     # ---- SKANNAUS: tap, tap, tap ----
     askel_yksikkoa: float = 90.0        # hiiren siirto napautusten valissa
-    tap_ms: float = 90.0                # kuinka kauan F on pohjassa
-    tauko_ms: float = 130.0             # tauko napautuksen jalkeen, F ylhaalla
-    ramppi_astetta: float = 3.0         # nain paljon kaantoa = ramppi loytyi
+    tap_ms: float = 100.0               # kuinka kauan F on pohjassa
+    tauko_ms: float = 90.0              # tauko napautuksen jalkeen, F ylhaalla
+    ramppi_astetta: float = 2.5         # nain paljon kaantoa = ramppi loytyi
     jana_yksikkoa: float = 6000.0       # nain pitkalle skannataan, sitten alusta
+
+    # Yksi yritys kestaa noin kolme sekuntia eika sina aikana ehdi kayda
+    # koko janaa lapi. Siksi SEURAAVA yritys jatkaa siita mihin edellinen
+    # jai. Ilman tata joka yritys skannaisi saman vasemman reunan
+    # uudelleen eika loppuosaa nahtaisi koskaan.
+    jatka_skannausta: bool = True
+    siirto_pulssi: float = 240.0        # siirtyma jatkokohtaan, F ylhaalla
+
+    # Varmistus: yksikaan painallus ei saa jatkua tata pidempaan ilman
+    # etta lukko kaantyy. Kello nollautuu joka kerta kun F on ylhaalla,
+    # joten lyhyet napautukset eivat siita karsi - tama katkaisee vain
+    # yhtajaksoisen vaannon kohtaa vasten joka ei anna periksi.
+    paino_ilman_kaantoa_ms: float = 260.0
 
     # ---- RAMPPI: taap, taaaap, taaaap ----
     paino_min_ms: float = 120.0         # lyhin pitka painallus
@@ -271,8 +284,8 @@ class Kasky:
 
 
 class Ohjain:
-    ALKUUN, SKANNAUS, RAMPPI, KARTOITUS = ("alkuun", "skannaus", "ramppi",
-                                           "kartoitus")
+    ALKUUN, SIIRTO, SKANNAUS, RAMPPI, KARTOITUS = (
+        "alkuun", "siirto", "skannaus", "ramppi", "kartoitus")
 
     def __init__(self, s: Saadot, kartoita: bool = False):
         self.s = s
@@ -280,12 +293,15 @@ class Ohjain:
         self.mittaukset: list[tuple[float, float]] = []   # (paikka, kulma)
         self.alusta()
 
-    def alusta(self) -> None:
-        """Uusi yritys alkaa aina samalla tavalla."""
+    def alusta(self, jatka: float = 0.0) -> None:
+        """Uusi yritys. jatka = mista kohtaa janaa skannaus jatkuu."""
         self.vaihe = self.ALKUUN
         self.paikka = 0.0
+        self.jatka_paikasta = max(0.0, jatka)
         self.ajettu = 0.0
         self.seuraava_pulssi = 0.0
+        self.nousi_viimeksi = 0.0
+        self.f_oli_alhaalla = False
 
         self.lepo = 0.0
         self._lepo_naytteet: list[float] = []
@@ -318,6 +334,7 @@ class Ohjain:
 
     def paivita(self, nyt: float, h: Havainto) -> Kasky:
         if not h.ok:
+            self.f_oli_alhaalla = False
             return Kasky(vaihe=self.vaihe, teksti="lukkoa ei nay")
 
         # Lepokulma mitataan yrityksen alussa: pesa voi levata vinossa.
@@ -325,13 +342,31 @@ class Ohjain:
             self._lepo_naytteet.append(h.kaanto)
             self.lepo = sorted(self._lepo_naytteet)[len(self._lepo_naytteet) // 2]
 
+        # Kello yhtajaksoiselle painallukselle. Se nollautuu kun lukko
+        # kaantyy - ja myos aina kun F on ylhaalla, jotta lyhyet
+        # napautukset saavat aina taydet mittansa.
+        if not self.f_oli_alhaalla or self.kaanto(h) > 1.0:
+            self.nousi_viimeksi = nyt
+
         if self.vaihe == self.ALKUUN:
-            return self._alkuun(nyt)
-        if self.vaihe == self.SKANNAUS:
-            return self._skannaus(nyt, h)
-        if self.vaihe == self.KARTOITUS:
-            return self._kartoitus(nyt, h)
-        return self._ramppi(nyt, h)
+            kasky = self._alkuun(nyt)
+        elif self.vaihe == self.SIIRTO:
+            kasky = self._siirto(nyt)
+        elif self.vaihe == self.SKANNAUS:
+            kasky = self._skannaus(nyt, h)
+        elif self.vaihe == self.KARTOITUS:
+            kasky = self._kartoitus(nyt, h)
+        else:
+            kasky = self._ramppi(nyt, h)
+        return self._varmista_kevyt_ote(nyt, kasky)
+
+    def _varmista_kevyt_ote(self, nyt: float, kasky: Kasky) -> Kasky:
+        """Katkaisee painalluksen, joka jatkuu ilman etta lukko kaantyy."""
+        raja = self.s.paino_ilman_kaantoa_ms / 1000.0
+        if kasky.f and (nyt - self.nousi_viimeksi) > raja:
+            kasky = Kasky(kasky.hiiri, False, kasky.vaihe, "F ylos: lukko ei kaanny")
+        self.f_oli_alhaalla = kasky.f
+        return kasky
 
     def _siirra(self, nyt: float, yksikkoa: float, vaihe: str, teksti: str,
                f: bool) -> Kasky:
@@ -347,6 +382,10 @@ class Ohjain:
         mitaan, joten jokainen yritys alkaa samasta kohdasta."""
         if self.ajettu >= self.s.alkuun_yksikkoa:
             self.paikka = 0.0
+            if self.jatka_paikasta > self.s.askel_yksikkoa:
+                self.vaihe = self.SIIRTO
+                return Kasky(vaihe=self.SIIRTO,
+                             teksti=f"siirrytaan kohtaan {self.jatka_paikasta:.0f} u")
             self.vaihe = self.SKANNAUS
             return Kasky(vaihe=self.SKANNAUS, teksti="vasen reuna")
         if nyt < self.seuraava_pulssi:
@@ -356,6 +395,28 @@ class Ohjain:
         self.seuraava_pulssi = nyt + self.s.pulssi_ms / 1000.0
         osuus = self.ajettu / self.s.alkuun_yksikkoa * 100.0
         return Kasky(-askel, False, self.ALKUUN, f"vasemmalle {osuus:.0f} %")
+
+    # ---------------------------------------------------------- SIIRTO
+
+    def _siirto(self, nyt: float) -> Kasky:
+        """Nopea hyppy siihen kohtaan, mihin edellinen yritys jai.
+
+        F on ylhaalla koko matkan: tama alue on jo skannattu, joten
+        siella ei ole mitaan testattavaa eika tiirikkaa ole syyta
+        rasittaa. Pulssit ovat isoja, joten matka menee muutamassa
+        sadasosassa.
+        """
+        if self.paikka >= self.jatka_paikasta:
+            self.vaihe = self.SKANNAUS
+            return Kasky(vaihe=self.SKANNAUS,
+                         teksti=f"jatketaan {self.paikka:.0f} u")
+        if nyt < self.seuraava_pulssi:
+            return Kasky(vaihe=self.SIIRTO, teksti="siirrytaan")
+        askel = min(self.s.siirto_pulssi, self.jatka_paikasta - self.paikka)
+        self.seuraava_pulssi = nyt + self.s.pulssi_ms / 1000.0
+        self.paikka += askel
+        return Kasky(askel, False, self.SIIRTO,
+                     f"siirrytaan {self.paikka:.0f}/{self.jatka_paikasta:.0f} u")
 
     # -------------------------------------------------------- SKANNAUS
 
@@ -782,7 +843,13 @@ def aja(s: Saadot, testaa: bool, kartoita: bool = False) -> int:
                     if kasi is not None:
                         kasi.vapauta()
                         kasi.nappi(SCAN_SPACE)
-                    ohjain.alusta()
+                    # Jatketaan siita mihin edellinen yritys jai. Yksi
+                    # yritys ei ehdi kayda koko janaa lapi, joten ilman
+                    # tata skannattaisiin aina samaa vasenta reunaa.
+                    jatka = (ohjain.paikka if s.jatka_skannausta else 0.0)
+                    if jatka >= s.jana_yksikkoa:
+                        jatka = 0.0                # jana kayty, alusta
+                    ohjain.alusta(jatka)
                     edellinen_vaihe = ohjain.vaihe
                     yrityksia += 1
                     viesti = f"aloitetaan yritys {yrityksia}"

@@ -107,6 +107,43 @@ luvut. Tiedoston arvot voittavat koodin oletukset.
 
 
 ----------------------------------------------------------------
+  MITEN SKANNAUS ETENEE
+----------------------------------------------------------------
+
+Yksi yritys kestaa noin kolme sekuntia. Sina aikana ehditaan kayda
+noin 1300 hiiriyksikkoa - ei siis lahellekaan koko janaa. Siksi
+SEURAAVA yritys jatkaa siita mihin edellinen jai:
+
+    yritys 1:      0 -> 1350 u
+    yritys 2:   1350 -> 2610 u
+    yritys 3:   2610 -> 3870 u
+    yritys 4:   3870 -> 5040 u
+    yritys 5:   5040 -> jana kayty, alusta
+
+Jatkokohtaan siirrytaan nopeasti ja F YLHAALLA: se alue on jo
+skannattu, joten siella ei ole mitaan testattavaa.
+
+Jos tama kytketaan pois (jatka_skannausta: false), joka yritys
+skannaa saman vasemman reunan uudelleen eika loppuosaa nahda
+koskaan.
+
+OTE
+
+    napautus       100 ms, aina sama
+    tauko           90 ms, F ylhaalla
+    F pohjassa      noin puolet skannausajasta
+
+Yksikaan painallus ei voi jatkua yli 260 ms ilman etta lukko
+kaantyy (paino_ilman_kaantoa_ms). Se on ehdoton raja: lukkoa ei
+vaanneta kohtaa vasten joka ei anna periksi. Kun lukko kaantyy,
+painallus saa jatkua niin kauan kuin kaanto etenee.
+
+Kevyempi ote: pienenna tap_ms ja/tai kasvata tauko_ms. Kumpikin
+hidastaa skannausta, eli janan lapikayntiin menee enemman
+yrityksia.
+
+
+----------------------------------------------------------------
   JOS JOKIN EI TOIMI - katso tasta
 ----------------------------------------------------------------
 
@@ -119,9 +156,16 @@ luvut. Tiedoston arvot voittavat koodin oletukset.
     askel_yksikkoa     pienemmaksi (esim. 60)
 
 "Skannaus ei ehdi janan paahan"
+    Se ei ehdikaan yhdessa yrityksessa - seuraava jatkaa siita
+    mihin edellinen jai. Jos haluat silti nopeammin:
     askel_yksikkoa     isommaksi (esim. 120)
-    tauko_ms           pienemmaksi (esim. 100)
+    tauko_ms           pienemmaksi (esim. 70)
     Ala nosta askelta yli 150: oikea kohta voi jaada askelten valiin.
+
+"Jaa jumiin vasempaan reunaan"
+    Tarkista etta jatka_skannausta on true.
+    jana_yksikkoa      liian iso? Jos pelin jana on lyhyempi, haku
+                       kayttaa aikaa alueeseen jota ei ole olemassa.
 
 "Ei huomaa ramppia vaikka lukko selvasti liikkuu"
     ramppi_astetta     pienemmaksi (esim. 2.0)

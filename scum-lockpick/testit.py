@@ -219,6 +219,91 @@ def testaa_ohjain() -> None:
     print()
 
 
+def testaa_kattavuus() -> None:
+    """Skannaus etenee janalla eika jaa vasempaan reunaan.
+
+    Yksi yritys kestaa noin kolme sekuntia eika sina aikana ehdi kayda
+    koko janaa lapi. Jos jokainen yritys aloittaisi nollasta, sama vasen
+    reuna skannattaisiin loputtomiin eika loppuosaa nahtaisi koskaan.
+    """
+    s = Saadot()
+    print("Skannaus etenee janalla yritysten yli")
+
+    o = Ohjain(s)
+    paikka = 0.0
+    alut, loput, painallukset, f_alas, ruutuja = [], [], [], 0, 0
+    for _ in range(5):
+        o.alusta(paikka)
+        t, alku, kesken = 0.0, None, None
+        while t < 3.0:
+            k = o.paivita(t, havainto(0.5))         # lukko ei kaanny lainkaan
+            if alku is None and o.vaihe == o.SKANNAUS:
+                alku = o.paikka
+            if o.vaihe == o.SKANNAUS:
+                ruutuja += 1
+                f_alas += 1 if k.f else 0
+            if o.vaihe == o.SIIRTO and k.f:
+                painallukset.append(-1.0)           # merkki: F alhaalla siirrossa
+            if k.f and kesken is None:
+                kesken = t
+            elif not k.f and kesken is not None:
+                painallukset.append((t - kesken) * 1000.0)
+                kesken = None
+            t += 0.004
+        alut.append(alku or 0.0)
+        loput.append(o.paikka)
+        paikka = o.paikka if o.paikka < s.jana_yksikkoa else 0.0
+
+    tark("joka yritys alkaa siita mihin edellinen jai",
+         all(abs(a - l) < s.askel_yksikkoa for a, l in zip(alut[1:], loput[:-1])),
+         " -> ".join(f"{v:.0f}" for v in loput))
+    tark("skannaus etenee, ei jaa vasempaan reunaan",
+         max(loput) > 3000.0, f"pisimmillaan {max(loput):.0f} u")
+    tark("koko jana ehditaan kayda muutamassa yrityksessa",
+         max(loput) >= s.jana_yksikkoa * 0.75,
+         f"{max(loput):.0f} / {s.jana_yksikkoa:.0f} u viidessa yrityksessa")
+
+    oikeat = [p for p in painallukset if p > 0]
+    tark("F ei ole koskaan pohjassa siirtyman aikana",
+         all(p > 0 for p in painallukset), "F oli alhaalla siirrossa")
+    tark("yksikaan painallus ei ylita napautuksen mittaa",
+         bool(oikeat) and max(oikeat) <= s.tap_ms + 20.0,
+         f"pisin {max(oikeat):.0f} ms (napautus {s.tap_ms:.0f} ms)")
+    tark("F on pohjassa alle 55 % skannausajasta",
+         f_alas / max(1, ruutuja) <= 0.55,
+         f"{f_alas / max(1, ruutuja) * 100:.0f} %")
+    print()
+
+
+def testaa_vaannon_katkaisu() -> None:
+    """Yhtajaksoinen painallus katkeaa, jos lukko ei kaanny."""
+    s = Saadot()
+    print("Lukkoa ei vaanneta kohtaa vasten joka ei anna periksi")
+
+    o = skannaava(s)
+    aja_sarja(o, [0.5] * 40)
+    o.paivita(1.0, havainto(10.0))                  # ramppiin
+    tark("ollaan rampissa", o.vaihe == o.RAMPPI, o.vaihe)
+
+    # Kaanto jumittaa: painallus ei saa jatkua loputtomiin.
+    painallukset, _ = aja_sarja(o, [10.0] * 300, alku=1.005)
+    tark("jumittunut painallus katkeaa",
+         bool(painallukset) and max(painallukset) <= s.paino_ilman_kaantoa_ms + 40.0,
+         f"pisin {max(painallukset):.0f} ms "
+         f"(raja {s.paino_ilman_kaantoa_ms:.0f} ms)" if painallukset else "ei katkennut")
+
+    # Kaanto nousee koko ajan: silloin painallus SAA jatkua pitkaan.
+    o = skannaava(s)
+    aja_sarja(o, [0.5] * 40)
+    o.paivita(1.0, havainto(10.0))
+    nouseva = [min(80.0, 10.0 + i * 0.6) for i in range(150)]
+    painallukset, _ = aja_sarja(o, nouseva, alku=1.005)
+    tark("kaantyvaa lukkoa ei katkaista",
+         not painallukset or painallukset[0] >= 400.0,
+         f"{painallukset[0]:.0f} ms" if painallukset else "jatkui loppuun")
+    print()
+
+
 # --------------------------------------------------------------------------
 #  3. KARTOITUS JA KARTTA
 # --------------------------------------------------------------------------
@@ -321,6 +406,8 @@ def main() -> int:
 
     testaa_ruudunluku(np)
     testaa_ohjain()
+    testaa_kattavuus()
+    testaa_vaannon_katkaisu()
     testaa_lukkotyypit()
     testaa_kartoitus()
 
