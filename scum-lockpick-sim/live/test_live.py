@@ -185,20 +185,23 @@ def test_homing_finds_the_wall() -> None:
               "aukesi" if attempt.opened else f"{first:.0f} u")
 
 
-def test_scan_runs_left_to_right() -> None:
-    print("Skannaus kulkee vasemmalta oikealle")
+def test_search_runs_left_to_right() -> None:
+    print("Haku alkaa vasemmalta ja etenee oikealle")
     rng = random.Random(7)
     cfg = ControlConfig()
     _, controller, _ = run_attempt(LockConfig(tier="enforced", skill=3), cfg, rng,
                                    0.035, SearchMemory(), sweet_spot=55.0)
-    scans = [p.position for p in controller.probes if not p.ramp]
-    check("ensimmainen testi on vasemmassa reunassa",
-          bool(scans) and scans[0] < 1.0, f"{scans[0]:.0f} u" if scans else "ei testeja")
-    check("testit etenevat vain oikealle",
-          all(b >= a - 1e-6 for a, b in zip(scans, scans[1:])), f"{len(scans)} testia")
-    check("askel on tasainen",
-          len(scans) < 3 or len(set(round(b - a) for a, b in zip(scans, scans[1:]))) == 1,
-          f"{[round(b - a) for a, b in zip(scans, scans[1:])][:6]}")
+    # Sweetspot on oikeassa reunassa, joten se on loydettava pitkalta
+    # matkalta vasemmalta lahtien.
+    sweet_units = (55.0 - PICK_MIN) / 0.035
+    windows = [p.position for p in controller.probes if p.kind == "ikkuna"]
+    check("vasteikkuna loytyi", bool(windows), f"{len(controller.probes)} merkintaa")
+    check("ikkuna loydettiin sweetspotin vasemmalta puolelta",
+          bool(windows) and windows[0] <= sweet_units,
+          f"{windows[0]:.0f} u vs sweetspot {sweet_units:.0f} u" if windows else "")
+    check("pyyhkaisyn merkinnat etenevat oikealle",
+          all(b >= a - 1e-6 for a, b in zip(windows, windows[1:])),
+          f"{len(windows)} ikkunaa")
 
 
 def test_rising_turn_is_never_cut() -> None:
@@ -215,64 +218,91 @@ def test_rising_turn_is_never_cut() -> None:
           f"{rate:.0f} deg/s" if rate else "ei mittausta")
 
 
-def test_hold_cap_repairs_itself() -> None:
-    print("Liian lyhyt F-katto korjautuu itse")
-    lock = LockConfig(tier="basic", skill=1)
-    tight = batch(lock, sessions=80, maximum_hold_ms=320)
-    frozen = batch(lock, sessions=80, maximum_hold_ms=320, auto_raise_hold_cap=False)
-    check("itsekorjaus paalla: avautuu", tight["success"] > 0.80,
-          f"{tight['success'] * 100:.1f} %")
-    # Liian lyhyt katto ei enaa yksin esta avaamista, koska perakkaiset
-    # painallukset kerryttavat kaantoa - juuri sita pelaajat kutsuvat
-    # featheringiksi. Se kuitenkin hidastaa, joten itsekorjaus kannattaa.
-    check("itsekorjaus pois: hitaampi", frozen["attempts"] >= tight["attempts"],
-          f"{frozen['attempts']:.2f} vs {tight['attempts']:.2f} yritysta")
+def test_holding_f_is_what_makes_it_work() -> None:
+    """Vanhan version paavika oli, etta F irtosi kesken kaannon.
 
-
-def test_memory_is_off_by_default() -> None:
-    """Muisti auttaa vain jos sweetspot pysyy paikallaan yritysten yli.
-
-    Pelaajien mukaan se voi vaihtua, joten oletuksena jokainen yritys alkaa
-    vasemmasta reunasta puhtaalta polydalta.
+    Uudessa rakenteessa F on pohjassa jo pyyhkaisyn aikana. Se ei ole
+    makuasia vaan koko haun perusta: pesa kaantyy vain kun F on pohjassa,
+    joten ilman sita ikkunaa ei voi havaita lainkaan.
     """
-    print("Muisti on oletuksena pois")
+    print("F pohjassa pyyhkaisyn aikana on koko haun perusta")
+    lock = LockConfig(tier="basic", skill=1)
+    held = batch(lock, sessions=60)
+    tapped = batch(lock, sessions=60, sweep_hold_f=False)
+    check("F pohjassa: lukko aukeaa", held["success"] > 0.80,
+          f"{held['success'] * 100:.1f} %")
+    # F ylhaalla haku ei loyda ikkunaa lainkaan: se paatyy painamaan F:aa
+    # vain silloin kun kohina sattuu ylittamaan kynnyksen, eli umpimahkaan.
+    # Talla mallilla vasteikkuna on leveimmillaan noin 500 yksikkoa, joten
+    # umpimahkainenkin painelu osuu joskus - mutta selvasti harvemmin.
+    check("F ylhaalla pyyhkaisyssa: haku muuttuu umpimahkaiseksi",
+          tapped["success"] < held["success"] - 0.10,
+          f"{tapped['success'] * 100:.1f} % vs {held['success'] * 100:.1f} %")
+
+
+def test_search_memory_defaults() -> None:
+    """Mita muistetaan yritysten valilla ja miksi.
+
+    Sweetspotin PAIKKAA ei muisteta: pelaajien mukaan se vaihtuu, ja niin
+    se vaihtui myos kayttajan omassa nauhoituksessa (kerran 957, kerran
+    3052 yksikon kohdalla).
+
+    Sen sijaan muistetaan, mihin asti jana on jo pyyhkaisty. Jos jana on
+    pidempi kuin yhdessa yrityksessa ehtii kayda, aina alusta aloittaminen
+    jattaisi janan oikean paan ikuisesti kayvattamatta. Kumpikin oletus on
+    mitattu, ei arvattu.
+    """
+    print("Muistin oletukset")
     cfg = ControlConfig()
-    check("jatkaminen pois paalta", cfg.resume_search is False)
-    check("rampin muisti pois paalta", cfg.remember_ramp is False)
-    check("askelen oppiminen jaa paalle", cfg.learn_step_from_ramp is True)
+    check("pyyhkaisy jatkuu edellisesta kohdasta", cfg.resume_search is True)
+    check("vasteikkunan paikkaa ei muisteta", cfg.remember_zone is False)
 
-    lock = LockConfig(tier="medium", skill=0)     # lyhin aika, 2.75 s
-    stable_on = batch(lock, sessions=140, max_attempts=6, stable_sweet_spot=True,
-                      resume_search=True, remember_ramp=True)
-    stable_off = batch(lock, sessions=140, max_attempts=6, stable_sweet_spot=True)
-    check("pysyvalla sweetspotilla muisti nopeuttaa",
-          stable_on["attempts"] <= stable_off["attempts"] + 0.02,
-          f"{stable_on['attempts']:.2f} vs {stable_off['attempts']:.2f} yritysta")
+    lock = LockConfig(tier="basic", skill=1)
 
-    rolling_on = batch(lock, sessions=140, max_attempts=6,
-                       resume_search=True, remember_ramp=True)
-    rolling_off = batch(lock, sessions=140, max_attempts=6)
-    check("vaihtuvalla sweetspotilla muisti ei auta, siksi oletus on pois",
-          rolling_off["success"] >= rolling_on["success"],
-          f"pois {rolling_off['success'] * 100:.1f} % vs paalla "
-          f"{rolling_on['success'] * 100:.1f} %")
+    # Pitka jana: 126 deg / 0.012 deg per yksikko = 10500 yksikkoa, eli
+    # selvasti enemman kuin yhdessa yrityksessa ehtii pyyhkaista.
+    long_on = batch(lock, sessions=60, deg_per_unit=0.012, max_attempts=8)
+    long_off = batch(lock, sessions=60, deg_per_unit=0.012, max_attempts=8,
+                     resume_search=False)
+    check("pitkalla janalla jatkaminen auttaa",
+          long_on["success"] >= long_off["success"],
+          f"jatkaen {long_on['success'] * 100:.1f} % vs "
+          f"aina alusta {long_off['success'] * 100:.1f} %")
+
+    # Lyhyella janalla jatkaminen ei saa maksaa mitaan.
+    short_on = batch(lock, sessions=60, deg_per_unit=0.09, max_attempts=6)
+    check("lyhyella janalla jatkaminen ei maksa mitaan",
+          short_on["success"] > 0.90, f"{short_on['success'] * 100:.1f} %")
+
+    # Ikkunan paikan muistaminen ei auta, koska sweetspot vaihtuu.
+    zone_on = batch(lock, sessions=100, max_attempts=6, remember_zone=True)
+    zone_off = batch(lock, sessions=100, max_attempts=6)
+    check("vaihtuvalla sweetspotilla ikkunan muisti ei auta",
+          zone_off["success"] >= zone_on["success"] - 0.02,
+          f"pois {zone_off['success'] * 100:.1f} % vs "
+          f"paalla {zone_on['success'] * 100:.1f} %")
 
 
-def test_step_halves_after_empty_sweep() -> None:
-    """Jos koko jana kaydaan lapi loytamatta mitaan, askel oli liian harva."""
-    print("Askel tihenee jos jana kaytiin turhaan")
-    cfg = ControlConfig(scan_step_units=800.0)
-    memory = SearchMemory()
-    rng = random.Random(13)
-    steps = [memory.scan_step_units or cfg.scan_step_units]
-    for _ in range(4):
-        run_attempt(LockConfig(tier="enforced", skill=0), cfg, rng, 0.09, memory,
-                    sweet_spot=0.0)
-        steps.append(memory.scan_step_units or cfg.scan_step_units)
-    check("skannausvali pieneni", steps[-1] < steps[0],
-          " -> ".join(f"{s:.0f}" for s in steps))
-    check("vali ei mene minimin alle", steps[-1] >= cfg.minimum_scan_step_units,
-          f"{steps[-1]:.0f} u")
+def test_sweep_step_must_fit_the_window() -> None:
+    """Vanha 300 yksikon askel hyppasi mitatun ~120 yksikon ikkunan yli.
+
+    Tama on nauhoituksen selkein yksittainen loydos: 12 yrityksesta
+    viidessa pesa ei kaantynyt kertaakaan yli kuuden asteen, koska haku
+    ei kertaakaan pysahtynyt ikkunan kohdalle.
+    """
+    print("Pyyhkaisyaskel mahtuu vasteikkunaan")
+    lock = LockConfig(tier="basic", skill=1)
+    # Talla mallilla vasteikkuna on noin 500 yksikkoa leveimmillaan, joten
+    # askelen on selvasti ylitettava se ennen kuin ikkuna alkaa jaada
+    # askelten valiin.
+    fine = batch(lock, sessions=60)
+    coarse = batch(lock, sessions=60, sweep_step_units=1200.0)
+    check("mitattu askel avaa lukon", fine["success"] > 0.80,
+          f"{fine['success'] * 100:.1f} %")
+    check("ikkunaa leveampi askel hyppaa sen yli",
+          coarse["success"] < fine["success"],
+          f"1200 u: {coarse['success'] * 100:.1f} % vs "
+          f"{ControlConfig().sweep_step_units:.0f} u: {fine['success'] * 100:.1f} %")
 
 
 def test_no_input_without_detection() -> None:
@@ -298,16 +328,73 @@ def test_only_turn_is_used() -> None:
           f"{len(controller.probes)} testia")
 
 
+
+def test_residual_turn_does_not_fake_a_window() -> None:
+    """Debug 22:54:07: yritys alkoi noin 13.9 asteen residuaalikulmasta.
+
+    Jos kynnys laskettaisiin nollasta, tama olisi heti "ikkuna". Siksi
+    lepokulma MITATAAN yrityksen ensimmaisista ruuduista ja kynnys
+    lasketaan siita.
+    """
+    print("Residuaalikulma ei saa muuttua vaaraksi ikkunaksi")
+    controller = Controller(ControlConfig(), SearchMemory())
+    controller.phase = controller.SWEEP
+    controller._sweep_started = 0.0
+
+    now = 0.0
+    for _ in range(200):
+        controller.update(now, Observation(stamp=now, ok=True, turn=13.9,
+                                           running=True))
+        now += 0.005
+
+    check("lepokulma mitattiin oikein", abs(controller.rest_angle - 13.9) < 0.2,
+          f"{controller.rest_angle:.1f} deg")
+    check("ikkunaa ei lukittu", not controller.planner.ramp_locked)
+    check("pyyhkaisy jatkuu", controller.phase == controller.SWEEP,
+          controller.phase)
+
+
+def test_drive_never_lets_go_of_a_rising_turn() -> None:
+    """Kun pesa kaantyy, F ei saa irrota. Vanha versio irrotti 260 ms:ssa."""
+    print("Nouseva kaanto pitaa F:n pohjassa")
+    controller = Controller(ControlConfig(), SearchMemory())
+    controller.phase = controller.SWEEP
+    controller._sweep_started = 0.0
+
+    now = 0.0
+    for _ in range(10):                      # lepokulman mittaus
+        controller.update(now, Observation(stamp=now, ok=True, turn=1.0,
+                                           running=True))
+        now += 0.005
+    controller.update(now, Observation(stamp=now, ok=True, turn=60.0, running=True))
+    check("vaste vei ajovaiheeseen", controller.phase == controller.DRIVE,
+          controller.phase)
+
+    released = 0
+    turn = 60.0
+    for _ in range(120):                     # 600 ms nousevaa kaantoa
+        now += 0.005
+        turn = min(88.0, turn + 0.25)
+        action = controller.update(now, Observation(stamp=now, ok=True,
+                                                    turn=turn, running=True))
+        if not action.f_down:
+            released += 1
+    check("600 ms nousua ilman yhtaan irrotusta", released == 0,
+          f"{released} irrotusta, kaanto {turn:.1f} deg")
+
+
 def main() -> int:
     for test in [
         test_opens_without_seeing_the_pick,
         test_unknown_mouse_sensitivity,
         test_homing_finds_the_wall,
-        test_scan_runs_left_to_right,
+        test_search_runs_left_to_right,
         test_rising_turn_is_never_cut,
-        test_hold_cap_repairs_itself,
-        test_memory_is_off_by_default,
-        test_step_halves_after_empty_sweep,
+        test_holding_f_is_what_makes_it_work,
+        test_search_memory_defaults,
+        test_sweep_step_must_fit_the_window,
+        test_residual_turn_does_not_fake_a_window,
+        test_drive_never_lets_go_of_a_rising_turn,
         test_no_input_without_detection,
         test_only_turn_is_used,
     ]:

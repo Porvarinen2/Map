@@ -2,3 +2,7 @@ __pycache__/
 *.pyc
 scum-lockpick-sim/live/debug/
 scum-lockpick-sim/live/live_asetukset.json
+
+# raportit ja nauhoitukset syntyvat ajossa
+scum-lockpick-sim/live/manual_records/
+scum-lockpick-sim/live/debug_raportti.html

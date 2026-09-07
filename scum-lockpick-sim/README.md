@@ -1,5 +1,12 @@
 # SCUM Tiirikkapenkki
 
+> **LIVE 2.0 - SWEEP + DRIVE:** ohjain on kirjoitettu uudelleen kayttajan
+> omasta debug-nauhoituksesta mitatun datan pohjalta. F pysyy pohjassa koko
+> ajan: pyyhkaisyn aikana, vasteen loytyessa ja loppuun asti. Loppupeli
+> (vasteikkunasta lukon avautumiseen) on kokonaan uusi. Katso
+> [LIVE 2.0 -osio](#live-20--sweep--drive) ja `LIVE_2_0_MITA_MUUTTUI.txt`.
+
+
 Kolme osaa, jotka ajavat samaa lukkomallia ja samaa hakulogiikkaa:
 
 | Kansio | Mika | Ajetaan |
@@ -28,7 +35,13 @@ saman `--probe`-tilassa ja `Aja_Testit.bat` ajaa kaikki testit.
 
     F11   aloita / tauota
     F9    lopeta
-    F8    tallenna debug
+    F7    pelaajanauhoitus paalle / pois
+    F8    tallenna debug-paketti
+
+`Tee_Raportti.bat` tekee viimeisimmasta debug-paketista tai
+pelaajanauhoituksesta HTML-raportin ja avaa sen selaimeen: se piirtaa
+jokaisesta yrityksesta lukkopesan kaannon, F:n pidon ja hiiren paikan
+samalle aikajanalle. Sita kannattaa katsoa aina kun jokin ei toimi.
 
 Ohjelma piirtaa CMD-ikkunaan tilanteen: tiirikan kulman, lukkopesan kaannon,
 jaljella olevan ajan, hakuvaiheen ja tunnistuksen pikselimaarat.
@@ -68,14 +81,22 @@ ylimaarainen liike ei tee mitaan, joten jokainen yritys alkaa samasta
 kohdasta ilman etta sita tarvitsee mitata.
 
 ```
-ALOITUS (vasen reuna)
+ALOITUS (vasen reuna)          F POHJASSA KOKO AJAN
   |
-  +--F--+--F--+--F--+--F--+--F--+--F--+   vasemmalta oikealle
-                                |
-                                +-- lukko antoi periksi = RAMPPI
-                                    pienempi askel, hae pohja
-                                    TARGET -> F pohjaan
+  +---+---+---+---+---+---+---+---+---+---+   matelee oikealle
+                                  |
+                                  +-- pesa alkoi kaantya = VASTEIKKUNA
+                                      peruuta havainnon viiveen verran
+                                      |
+                                      +-- odota kunnes kaanto PYSAHTYY
+                                          pysahtynyt kulma kertoo etaisyyden
+                                          astu sen verran -> odota -> astu
+                                          ... kunnes lukko aukeaa
 ```
+
+F ei irtoa missaan valissa. Se on koko uudelleenkirjoituksen ydin: pesa
+kaantyy vain kun F on pohjassa, joten F:n irrottaminen haun ajaksi
+sokeuttaa ohjaimen juuri silloin kun se tarvitsisi mittarinsa.
 
 ### Miten se toimii
 
@@ -117,18 +138,35 @@ nakyviin ja aloituskehote palaa.
 
 ### Mita ohjelma oppii ajon aikana
 
-| Suure | Miksi |
-|---|---|
-| Lukkopesan kaantonopeus | maaraa kuinka kauan F:aa pitaa pitaa; ilman tata F:n kattoaika on arvaus. Jos katko on liian lyhyt, ohjelma nostaa sita itse. |
-| Skannausvali (hiiriyksikkoa) | jos koko jana kaydaan lapi loytamatta mitaan, vali oli liian harva ja se puolittuu. Kun ramppi loytyy, sen leveys kertoo sopivan valin. |
+Ohjain ei oleta mitaan koneesta tai pelin nopeudesta, vaan **mittaa** ne
+ajon aikana. Ilman tata se toimisi vain silla koneella, jolla se viritettiin.
 
-Asetuksissa on kaksi muistikytkinta, `resume_search` ja `remember_ramp`, jotka
-jatkaisivat uusinnassa siita mihin edellinen yritys jai. **Molemmat ovat
-oletuksena pois paalta**, koska pelaajien mukaan sweetspot voi vaihtua
-yritysten valilla - ja silloin muistista on haittaa (simulaatiossa 94 % vs
-100 %). Oletuskaytos on siis se, mita piirsit: jokainen yritys alkaa
-vasemmasta reunasta. Jos huomaat pelissasi etta kohta pysyy samana, laita
-nama paalle.
+| Suure | Miten mitataan | Mihin vaikuttaa |
+|---|---|---|
+| Havainnon vanhuus | `nyt - kuvan kaappaushetki` | kuinka kauan askeleen jalkeen ruudulla nakyy viela vanha tilanne. Ilman tata ohjain lukee vanhaa kuvaa ja astuu kahdesti yhden hinnalla. Mitattu vaikutus: 76 % vs 60 %. |
+| Ruutuvali | perakkaisten kaappausten mediaanivali | kuinka pitka asettumisikkuna tarvitaan |
+| Kulmalukeman kohina | erotusten alaneljannes kerrottuna 2,22:lla | kaikki kynnykset, joilla erotetaan aito kaanto kohinasta |
+| Kaantonopeus | kaannon muutos jaettuna ajalla | nakyy CMD-ikkunassa; kertoo etta pesa oikeasti liikkuu |
+| Yrityksen kesto | edellisen yrityksen pituus | milloin on loppukirin aika |
+
+Kohinan kerroin 2,22 ei ole viritysvakio vaan seuraa suoraan siita, etta
+riippumattoman normaalikohinan perakkaisten erotusten itseisarvon
+alaneljannes on 0,45-kertainen hajontaan nahden. Ilman kerrointa kohina
+aliarvioitiin yli kaksinkertaisesti ja kaikki siita johdetut kynnykset
+jaivat liian tiukoiksi.
+
+### Mita muistetaan yritysten valilla
+
+Sweetspotin **paikkaa ei muisteta**: se vaihtuu yritysten valilla, ja niin se
+vaihtui myos omassa nauhoituksessasi (kerran 957, kerran 3052 yksikon
+kohdalla). `remember_zone` on siksi oletuksena pois.
+
+Sen sijaan muistetaan **mihin asti jana on jo pyyhkaisty** (`resume_search`,
+oletuksena paalla) seka mitatut olosuhteet (viive ja yrityksen kesto). Jos
+jana on pidempi kuin yhdessa yrityksessa ehtii kayda, aina alusta
+aloittaminen jattaisi janan oikean paan ikuisesti kayvattamatta: mitattuna
+pitkalla janalla jatkaminen 80 % vs aina alusta 77 %, ja lyhyella janalla se
+ei maksa mitaan.
 
 ---
 
@@ -161,12 +199,19 @@ python lockpick_sim.py --settings ../../asetukset.json --tier basic
 
 ## Testit
 
+Windowsissa `Aja_Testit.bat` ajaa kaikki kerralla.
+
 ```bash
-cd sim  && python test_sim.py       # lukkomalli ja hakusaanto
-cd live && python test_live.py      # live-ohjain simuloitua lukkoa vasten
-cd live && python test_vision.py    # tunnistus pelin omia kuvia vasten
-cd live && python test_runner.py    # tilakone: aloitus, uusinta, avaus, tauko
-cd live && python test_gameplay.py  # oikean pelivideon 47 kehysta
+cd sim  && python test_sim.py                    # lukkomalli ja hakusaanto
+cd live && python test_vision.py                 # tunnistus pelin kuvista
+cd live && python test_inner_chamber.py          # pinkilla merkitty pesan alue
+cd live && python test_success_angles.py         # success-kulmat pelin kuvista
+cd live && python test_fast_scan_deep_target.py  # pyyhkaisyn ja ajon saannot
+cd live && python test_real_motion_guard.py      # tarina vs. aito kaanto
+cd live && python test_runner.py                 # tilakone valesyotteella
+cd live && python test_gameplay.py               # oikean pelivideon 47 kehysta
+cd live && python test_live.py                   # ohjain simuloitua lukkoa vasten
+cd live && python test_strategy.py               # strategia 16 mallimuunnelmaa vasten
 ```
 
 `test_vision.py` vaatii Pillowin (`pip install pillow`). Live-ajo ei vaadi.
@@ -228,12 +273,17 @@ molemmat ongelmat on poistettu rakenteellisesti:
 ```
 live/autolockpick_live.py   ruudunkaappaus, tunnistus, SendInput, CMD-nakyma
 live/lockpick_control.py    hakusaanto ja tilakone (jaettu logiikka)
+live/lock_sim.py            nauhoitukseen kalibroitu lukkomalli
+live/debug_report.py        HTML-raportti debug-paketista tai nauhoituksesta
 live/test_live.py           ohjain simuloitua lukkoa vasten
+live/test_strategy.py       strategia 16 mallimuunnelmaa vasten
 live/test_vision.py         tunnistus pelin omia kuvia vasten
+live/test_inner_chamber.py  pinkilla merkitty pyoriva pesa
 live/test_runner.py         tilakone valesyotteella
 live/test_gameplay.py       oikean pelivideon toisto
 live/references/            SCUMin ruutukaappaukset testeja varten
 live/gameplay/              47 kehysta oikeasta lockpick-yrityksesta
+live/traces/                oma debug-nauhoituksesi, johon malli on sovitettu
 
 sim/lockpick_model.py       lukon fysiikka: palautekayra, kaanto, kuluminen
 sim/solver.py               simulaation autolockpick
@@ -310,3 +360,115 @@ se ei mittaa asteita lainkaan.
 
 Automaattinen syote on pelin saantojen kannalta pelaajan oma vastuu; SCUMissa
 on EAC, ja palvelimilla voi olla omat saantonsa automaatiosta.
+
+
+---
+
+## LIVE 1.2 — PLAYER RECORDING + FULL DEBUG
+
+Automaattisen ratkaisun päätöslogiikkaa ei muutettu. Lisätty vain
+diagnostiikka ja manuaalisen pelaajan datankeruu.
+
+### F7 — PLAYER RECORDING
+
+F7 käynnistää täysin passiivisen tallennuksen. Automaattiohjaus menee
+välittömästi tauolle ja kaikki synteettiset syötteet vapautetaan.
+
+Tallennus tekee kansion:
+
+`live/manual_records/player_YYYYMMDD_HHMMSS/`
+
+- `frames/` — noin 25 annotoitua PNG-kuvaa sekunnissa
+- `telemetry.jsonl` — jokainen capture-frame
+- `events.jsonl` — nappien down/up ja yritysten tapahtumat
+- `summary.json` — koneellisesti luettava pelaajaprofiili
+- `summary.txt` — helposti luettava yhteenveto
+
+PNG-kuvan oikeassa paneelissa näkyy mm. lukkopesän kulma, kääntönopeus,
+timer, F DOWN/UP + pidon kesto, SPACE, cursor delta, vision-mittarit,
+yritysnumero, max turn ja viimeisimmät tapahtumat.
+
+### F8 — FULL DEBUG ZIP
+
+F8 luo suoraan lähetettävän ZIPin `live/debug/`-kansioon. Se sisältää
+raaka- ja annotoidun lock-kuvan, controller/planner/memory/vision-tilan,
+kaikki F-probet CSV:nä sekä noin viimeiset 1200 capture-eventtiä.
+
+### Hotkeyt
+
+- `F7` PLAYER RECORDING on/off
+- `F8` FULL DEBUG ZIP
+- `F11` automaatio päälle/tauolle
+- `F9` lopetus
+
+F7-tilassa F11 ei saa käynnistää automaatiota, jotta pelaajan data pysyy
+puhtaana.
+
+
+---
+
+## LIVE 1.3 — PLAYER-LEARNED
+
+Tama versio on kalibroitu 97.5 sekunnin manuaalisesta F7-tallennuksesta:
+14 oikeaa avausyritysta / 14 avattua lukkoa, 66 F-painallusta varsinaisten
+avausten aikana. Vanha automaatti piti F:aa debugissa tyypillisesti vain
+noin 58 ms; pelaajan oikeissa ramppiosumissa +3 deg vaste ilmestyi vasta
+67–173 ms kohdalla (mediaani noin 109 ms).
+
+Siksi global F-testi ei enaa voi luovuttaa 70 ms kohdalla. Minimum hold on nyt adaptiivinen: perusraja 120 ms, mutta
+30 ms toteutuneella framevalilla noin 180 ms. Stall-raja skaalautuu myos toteutuneeseen capture-FPS:aan.
+
+Lisaksi:
+- scan-stepin automaattinen oppiminen on oletuksena pois (debugissa se oli
+  kutistunut 40 mouse-unitiin ja teki hausta aivan liian tihean)
+- paikallishaussa 1–2 asteen erot eivat vaihda suuntaa joka testilla
+- 80+ deg FINISH vaatii taman F-painalluksen omaa vastetta; vanha residuaali
+  ei yksin lukitse sweetspottia
+- 90+ deg menee aina viimeistelyyn
+- automaattisesti nostettava F-katto on rajattu 1600 ms:iin
+- F7-recorder raportoi jatkossa myos +3 deg vasteen todellisen onset-ajan
+  ja haamuyritykset on poistettu yritystilastosta
+
+
+---
+
+## LIVE 1.4 — INNER CHAMBER ONLY
+
+Turn-detector on vaihdettu käyttämään vain käyttäjän pinkillä merkitsemää
+sisempää pyörivää lukkopesää. Ulomman lukon kuoren pikselit eivät enää
+vaikuta kaantokulmaan.
+
+Lisäksi pieni F-tärähdys merkitsee testipisteen hylätyksi: paikallishaku ei
+saa palata heti samaan kohtaan eikä korkea residuaalikulma saa muuttua
+sweetspotiksi ilman tämän F-painalluksen omaa jatkuvaa kääntöä.
+
+Katso `LIVE_1_4_MITA_MUUTTUI.txt`.
+
+
+---
+
+## LIVE 1.5 — REAL MOTION GUARD
+
+Lukkopesän absoluuttinen viistokulma ei enää tarkoita, että F:ää kannattaa
+pitää pohjassa. Controller seuraa nyt vain uutta oikealle etenevää
+high-water-markia.
+
+Paikallaan tapahtuva tärinä -> F ylös -> pieni askel oikealle -> uusi F-testi.
+Tätä jatketaan kunnes sisempi lukkopesä saavuttaa noin 90°.
+
+Katso `LIVE_1_5_MITA_MUUTTUI.txt`.
+
+
+---
+
+## LIVE 1.6 — FAST SCAN + DEEP TARGET
+
+Global-vaihe käyttää nyt vain noin 45 ms F-täppäystä ja seuraa reaktiota
+F ylhäällä. Pitkä F-pito alkaa vasta oikean rampin löydyttyä.
+
+Paikallishaku ei enää pidä 50–70 asteen rampin reunaa maksimina:
+huonompi piste vaihtaa suunnan ja puolittaa askelen. Hylätyn pisteen guard
+pienennettiin 35 -> 4 mouse-unitiin, jotta sweetspot voidaan oikeasti etsiä
+kahden rampinreunan välistä.
+
+Katso `LIVE_1_6_MITA_MUUTTUI.txt`.

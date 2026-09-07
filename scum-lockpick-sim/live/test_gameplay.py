@@ -82,9 +82,9 @@ def main() -> int:
     print("Mitattu kaantosarja")
     check("skannausvaihe pysyy lahella nollaa", max(scan) < 5.0,
           f"suurin {max(scan):.1f} deg 30 kehyksen aikana")
-    check("levossa oleva pesa ei ylita liikekynnysta",
-          max(scan) < ControlConfig().movement_found_degrees,
-          f"{max(scan):.1f} < {ControlConfig().movement_found_degrees:.1f} deg")
+    check("levossa oleva pesa ei ylita pyyhkaisyn kynnysta",
+          max(scan) < ControlConfig().sweep_trigger_degrees + 1.0,
+          f"{max(scan):.1f} vs kynnys {ControlConfig().sweep_trigger_degrees:.1f} deg")
     check("tyovaihe nousee lahes taydelle kaannolle", max(work) > 85.0,
           f"suurin {max(work):.1f} deg")
     check("kaanto nousee portaittain eika hyppaa kerralla",
@@ -119,35 +119,31 @@ def main() -> int:
     print("Ohjain lukee saman sarjan oikein")
     cfg = ControlConfig()
     controller = Controller(cfg)
-    controller.phase = controller.HOLD          # ohitetaan kotiinajo
+    controller.phase = controller.SWEEP          # ohitetaan kotiinajo
     controller._phase_started = 0.0
-    controller._last_progress = 0.0
-    controller._peak = 0.0
-    controller._hold_baseline = 0.0
-    controller.target = 0.0
+    controller._sweep_started = 0.0
 
-    saw_ramp = saw_finish = False
+    saw_window = saw_drive = False
+    held = 0
     for index, turn in enumerate(turns):
         action = controller.update(index / FPS, Observation(
             stamp=index / FPS, ok=True, turn=turn, running=True))
         if controller.planner.ramp_locked:
-            saw_ramp = True
-        if action.phase == controller.FINISH:
-            saw_finish = True
-        if controller.phase == controller.RELEASE:
-            # palautetaan HOLD-tilaan, koska nauhoitusta ei voi ohjata
-            controller.phase = controller.HOLD
-            controller._phase_started = index / FPS
-            controller._last_progress = index / FPS
-            controller._hold_baseline = turn
-            controller._peak = turn
+            saw_window = True
+        if action.phase == controller.DRIVE:
+            saw_drive = True
+        if action.f_down:
+            held += 1
 
-    check("ohjain tunnisti rampin", saw_ramp)
-    check("ohjain paatyi pitamaan F:aa pohjassa", saw_finish)
-    check("levossa olevasta vaiheesta ei syntynyt vaaraa ramppia",
-          all(p.score < cfg.movement_found_degrees
-              for p in controller.probes[:8] if p.position == 0.0) or saw_ramp,
-          f"{len(controller.probes)} testia")
+    check("ohjain tunnisti vasteikkunan", saw_window,
+          f"{len(controller.probes)} merkintaa")
+    check("ohjain siirtyi ajovaiheeseen", saw_drive)
+    check("F pysyi pohjassa lahes koko ajan", held >= 0.8 * len(turns),
+          f"{held}/{len(turns)} kehysta")
+    check("levossa olevasta vaiheesta ei syntynyt vaaraa ikkunaa",
+          all(p.score < cfg.sweep_trigger_degrees
+              for p in controller.probes[:8] if p.position == 0.0) or saw_window,
+          f"{len(controller.probes)} merkintaa")
     print()
 
     if FAILURES:

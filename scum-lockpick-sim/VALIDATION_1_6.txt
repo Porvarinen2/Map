@@ -1,0 +1,114 @@
+AUTOLOCKPICK LIVE 1.6 VALIDATION
+
+=== test_fast_scan_deep_target.py ===
+return=0
+light scan tap -> F-up watch: OK
+ramp hint -> strong same-point confirm: OK
+bad ramp edge -> reverse + halve: OK
+no same-edge fixation: OK
+
+STDERR:
+Spreadsheet runtime warmup failed during python startup
+Traceback (most recent call last):
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/patches/warm_spreadsheet_runtime_on_startup.py", line 26, in warm_spreadsheet_runtime_on_startup
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/spreadsheet_warmup.py", line 772, in warm_spreadsheet_runtime
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/rpc/connection.py", line 37, in get_or_create_client
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/rpc/daemon.py", line 124, in start_daemon
+TimeoutError: Timed out waiting for artifact tool daemon socket. Set ARTIFACT_TOOL_RPC_DAEMON_STARTUP_TIMEOUT_S=<seconds> to increase the limit.
+
+
+=== test_real_motion_guard.py ===
+return=0
+diagonal vibration -> F release: OK
+jam -> leave edge + smaller hill-climb step: OK
+continuous real rotation keeps F down: OK
+finish below 90 jam -> retry: OK
+90+ keeps F down: OK
+
+STDERR:
+Spreadsheet runtime warmup failed during python startup
+Traceback (most recent call last):
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/patches/warm_spreadsheet_runtime_on_startup.py", line 26, in warm_spreadsheet_runtime_on_startup
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/spreadsheet_warmup.py", line 772, in warm_spreadsheet_runtime
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/rpc/connection.py", line 37, in get_or_create_client
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/rpc/daemon.py", line 124, in start_daemon
+TimeoutError: Timed out waiting for artifact tool daemon socket. Set ARTIFACT_TOOL_RPC_DAEMON_STARTUP_TIMEOUT_S=<seconds> to increase the limit.
+
+
+=== test_inner_chamber.py ===
+return=0
+INNER CHAMBER geometry: OK
+reference turns: Lockpickstart.png=1.05, MaxSideLeft.png=1.51, MaxSideRight.png=1.45, Lockpicking.png=22.12
+tiny-twitch no-retest guard: OK
+
+STDERR:
+Spreadsheet runtime warmup failed during python startup
+Traceback (most recent call last):
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/patches/warm_spreadsheet_runtime_on_startup.py", line 26, in warm_spreadsheet_runtime_on_startup
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/spreadsheet_warmup.py", line 772, in warm_spreadsheet_runtime
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/rpc/connection.py", line 37, in get_or_create_client
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/rpc/daemon.py", line 124, in start_daemon
+TimeoutError: Timed out waiting for artifact tool daemon socket. Set ARTIFACT_TOOL_RPC_DAEMON_STARTUP_TIMEOUT_S=<seconds> to increase the limit.
+
+
+=== test_vision.py ===
+return=0
+Oikeat pelikuvat 1920x1080
+  OK    Lockpickstart.png: tunnistus onnistuu   metal=57475 reika=2798
+  OK    Lockpickstart.png: aloitusruutu, pesa suorassa   kaanto +1.0 deg
+  OK    MaxSideLeft.png: tunnistus onnistuu   metal=54521 reika=3101
+  OK    MaxSideLeft.png: pesa suorassa   kaanto +1.5 deg
+  OK    MaxSideRight.png: tunnistus onnistuu   metal=55543 reika=3101
+  OK    MaxSideRight.png: pesa suorassa   kaanto +1.5 deg
+  OK    Lockpicking.png: tunnistus onnistuu   metal=55599 reika=3013
+  OK    Lockpicking.png: pesa kaantyneena   kaanto +22.1 deg
+
+Tiirikan asento ei saa vaikuttaa kaannon lukemaan
+  OK    vasen ja oikea aariasento antavat saman kaannon   +1.5 vs +1.5 deg
+  OK    molemmat lukevat pesan suoraksi   +1.5 / +1.5 deg
+
+Sama tulos muilla resoluutioilla
+  OK    1280x720   kaanto +22.0 deg (1080p: +22.1)
+  OK    2560x1440   kaanto +22.0 deg (1080p: +22.1)
+  OK    1600x900   kaanto +22.1 deg (1080p: +22.1)
+
+Vaarat ruudut hylataan
+  OK    musta ruutu
+  OK    tasainen harmaa ruutu
+  OK    satunnaiskohina
+  OK    pelikuvan kulma ilman lukkoa
+
+Ajastimen kaynnissaolo kaaresta
+  OK    taysi liikkumaton kaari = ei kay
+  OK    kutistuva kaari = kay
+  OK    liian lyhyt historia ei riita
+  OK    pieni varina ei tulkita kaynniksi
+
+Kaikki tunnistustestit lapi.
+
+STDERR:
+Spreadsheet runtime warmup failed during python startup
+Traceback (most recent call last):
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/patches/warm_spreadsheet_runtime_on_startup.py", line 26, in warm_spreadsheet_runtime_on_startup
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/spreadsheet_warmup.py", line 772, in warm_spreadsheet_runtime
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/rpc/connection.py", line 37, in get_or_create_client
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/rpc/daemon.py", line 124, in start_daemon
+TimeoutError: Timed out waiting for artifact tool daemon socket. Set ARTIFACT_TOOL_RPC_DAEMON_STARTUP_TIMEOUT_S=<seconds> to increase the limit.
+
+
+=== test_success_angles.py ===
+return=0
+BasicSuccess.png: raw=-88.22 deg, clockwise branch=91.78 deg
+EnforcedSuccess.png: raw=-88.28 deg, clockwise branch=91.72 deg
+MediumSuccess.png: raw=-88.75 deg, clockwise branch=91.25 deg
+RustedSuccess.png: raw=-89.13 deg, clockwise branch=90.87 deg
+success-angle calibration: OK
+
+STDERR:
+Spreadsheet runtime warmup failed during python startup
+Traceback (most recent call last):
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/patches/warm_spreadsheet_runtime_on_startup.py", line 26, in warm_spreadsheet_runtime_on_startup
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/spreadsheet_warmup.py", line 772, in warm_spreadsheet_runtime
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/rpc/connection.py", line 37, in get_or_create_client
+  File "/tmp/tmp.L2TH2Y5coc/artifact_tool_v2-2.8.22/artifact_tool/rpc/daemon.py", line 124, in start_daemon
+TimeoutError: Timed out waiting for artifact tool daemon socket. Set ARTIFACT_TOOL_RPC_DAEMON_STARTUP_TIMEOUT_S=<seconds> to increase the limit.

@@ -1,0 +1,237 @@
+{
+  "version": "LIVE 1.5 REAL MOTION GUARD + FORWARD RETRY",
+  "tila": "ODOTTAA",
+  "active": false,
+  "player_recording": false,
+  "havainto": {
+    "ok": false,
+    "turn": 0.0,
+    "timer": 1.0,
+    "running": false
+  },
+  "physical_keys": {
+    "F": false,
+    "SPACE": false,
+    "ESC": false,
+    "W": false,
+    "A": false,
+    "S": false,
+    "D": false,
+    "SHIFT": false,
+    "CTRL": false,
+    "LMB": false,
+    "RMB": false
+  },
+  "cursor": [
+    1919,
+    929
+  ],
+  "tunnistus": {
+    "turn_source": "INNER_CHAMBER_ONLY",
+    "rotation_cx": 0.0,
+    "rotation_cy": -3.0,
+    "rotation_radius": 128.5,
+    "keyway_radius": 56.0,
+    "metal": 1717,
+    "keyhole": 245,
+    "rotation_pixels": 51844,
+    "elong": 20.764304306574356,
+    "timer": 0
+  },
+  "vaihe": "finish",
+  "last_action": {
+    "mouse_units": 0.0,
+    "f_down": true,
+    "phase": "finish",
+    "note": "90+ deg -> F POHJASSA 90.4"
+  },
+  "kaantonopeus": 138.94495573018028,
+  "paikka_u": 721.0,
+  "target_u": 721.0,
+  "skannausvali_u": 300.0,
+  "muisti": {
+    "resume_units": 0.0,
+    "ramp_units": null,
+    "ramp_score": 0.0,
+    "scan_step_units": null,
+    "swept_units": 0.0,
+    "wraps": 0
+  },
+  "planner": {
+    "ramp_locked": true,
+    "best_units": 710.0,
+    "best_score": 89.53903110558358,
+    "step": 11.0,
+    "local_direction": 1,
+    "responding": [
+      600.0,
+      710.0
+    ],
+    "samples": [
+      [
+        0.0,
+        1.8095192757305425
+      ],
+      [
+        300.0,
+        1.8062037524128722
+      ],
+      [
+        600.0,
+        4.869694020622311
+      ],
+      [
+        710.0,
+        89.53903110558358
+      ]
+    ]
+  },
+  "controller_private": {
+    "phase_started": 899483.7591102,
+    "last_progress": 899483.7591102,
+    "peak": 91.94916491570217,
+    "settled": 90.36362791541508,
+    "last_value": 91.94916491570217,
+    "hold_baseline": 74.7312765662089,
+    "hold_values": [
+      74.7312765662089,
+      70.44327564706882,
+      69.92599589250993,
+      73.49450365910536,
+      77.23852562800106,
+      80.95618071971289,
+      84.50954511881737,
+      89.81724157748056,
+      91.94916491570217,
+      91.54097077296376,
+      91.12425018891886,
+      90.36362791541508
+    ],
+    "release_ready": 899483.4259487,
+    "forward_peak": 91.94916491570217,
+    "forward_mark": 91.94916491570217,
+    "last_real_progress": 899483.7591102,
+    "shake_peak_response": 17.217888349493265,
+    "shake_return_frames": 0
+  },
+  "testit": [
+    {
+      "paikka_u": 0.0,
+      "kaanto": 1.8095192757305425,
+      "response": 0.0,
+      "ramp": false,
+      "laji": "tyhja"
+    },
+    {
+      "paikka_u": 300.0,
+      "kaanto": 1.8062037524128722,
+      "response": 0.2693224197845421,
+      "ramp": false,
+      "laji": "tyhja"
+    },
+    {
+      "paikka_u": 600.0,
+      "kaanto": 4.869694020622311,
+      "response": 3.0634902682094385,
+      "ramp": true,
+      "laji": "ramppi"
+    },
+    {
+      "paikka_u": 710.0,
+      "kaanto": 89.53903110558358,
+      "response": 86.90387850236678,
+      "ramp": true,
+      "laji": "finish-jumissa"
+    }
+  ],
+  "control": {
+    "home_units": 9000.0,
+    "home_pulse_units": 1200.0,
+    "scan_step_units": 300.0,
+    "minimum_scan_step_units": 120.0,
+    "maximum_scan_step_units": 900.0,
+    "fine_step_units": 110.0,
+    "minimum_step_units": 10.0,
+    "improvement_margin_degrees": 1.5,
+    "equal_margin_degrees": 2.5,
+    "max_units_per_pulse": 220.0,
+    "pulse_interval_ms": 16.0,
+    "minimum_hold_ms": 120.0,
+    "stall_release_ms": 105.0,
+    "maximum_hold_ms": 1600.0,
+    "auto_raise_hold_cap": true,
+    "maximum_auto_hold_ms": 1600.0,
+    "adaptive_stall_frames": 3.2,
+    "adaptive_hold_frames": 4.0,
+    "hold_latency_guard_ms": 60.0,
+    "finish_stall_ms": 650.0,
+    "finish_min_hold_ms": 420.0,
+    "strong_hold_degrees": 45.0,
+    "strong_stall_release_ms": 155.0,
+    "commit_degrees": 70.0,
+    "commit_stall_release_ms": 260.0,
+    "release_settle_ms": 55.0,
+    "progress_epsilon_degrees": 1.2,
+    "movement_found_degrees": 5.0,
+    "response_found_degrees": 3.0,
+    "shake_hint_degrees": 0.7,
+    "shake_return_degrees": 0.55,
+    "shake_return_frames": 2,
+    "shake_min_hold_ms": 70.0,
+    "rejected_position_guard_units": 35.0,
+    "real_progress_step_degrees": 0.9,
+    "jam_forward_step_units": 45.0,
+    "jam_stall_ms": 110.0,
+    "jam_min_hold_ms": 150.0,
+    "finish_jam_stall_ms": 145.0,
+    "finish_jam_min_hold_ms": 180.0,
+    "near_open_degrees": 80.0,
+    "finish_response_degrees": 3.0,
+    "absolute_finish_degrees": 90.0,
+    "finish_confirm_frames": 2,
+    "resume_search": false,
+    "remember_ramp": false,
+    "learn_step_from_ramp": false
+  },
+  "vision": {
+    "lock_radius_fraction": 0.139,
+    "roi_fraction": 0.3,
+    "center_offset_x": 0.0,
+    "center_offset_y": 0.0,
+    "metal_min": 55.0,
+    "metal_max": 205.0,
+    "dark_max": 22.0,
+    "bright_min": 185.0,
+    "running_arc_pixels": 1500,
+    "min_keyhole_elongation": 4.0,
+    "keyhole_outer": 0.66,
+    "rotation_center_offset_x_1080": 0.0,
+    "rotation_center_offset_y_1080": -3.0,
+    "rotation_area_radius_1080": 128.5,
+    "rotation_keyway_radius_1080": 56.0,
+    "rotation_min_keyway_pixels": 700,
+    "rotation_min_elongation": 5.0,
+    "timer_inner": 1.05,
+    "timer_outer": 1.75,
+    "min_metal_pixels": 2500,
+    "min_keyhole_pixels": 250
+  },
+  "run": {
+    "capture_fps": 90.0,
+    "open_turn_degrees": 45.0,
+    "lost_frames_for_end": 6,
+    "restart_key_interval_ms": 420.0,
+    "max_attempts": 0
+  },
+  "loki": [
+    "01:51:14  SPACE",
+    "01:51:14  yritys 84 alkoi",
+    "01:51:16  yritys 84 paattyi ilman avausta",
+    "01:51:17  SPACE",
+    "01:51:17  yritys 85 alkoi",
+    "01:51:19  LUKKO AUKI (yritys 85)",
+    "01:51:21  SPACE",
+    "01:51:25  tauko"
+  ],
+  "trace_frames": 1200
+}

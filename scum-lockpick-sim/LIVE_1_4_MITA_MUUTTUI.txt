@@ -1,0 +1,65 @@
+AUTOLOCKPICK LIVE 1.4 — INNER CHAMBER ONLY + SHAKE GUARD
+
+OLEELLINEN KORJAUS
+==================
+Koko lukkoa EI käytetä lukkopesän käännön mittaamiseen.
+
+Käyttäjän Rotations.zip / Rotationarea-On-Screen.png:
+- pinkki pyörivä alue @1920x1080:
+  x = 831..1088
+  y = 408..665
+  keskipiste noin 959.5 / 536.5
+  säde noin 128.5 px
+
+Runtime käyttää tätä geometriaa ruudun korkeudella skaalattuna.
+
+TURN-MITTAUS
+============
+- ulompi lukon kuori ei vaikuta turn-arvoon
+- timer-kaari ei vaikuta turn-arvoon
+- tiirikan visuaalinen asento ei vaikuta turn-arvoon
+- kääntö luetaan vain pinkin alueen sisällä olevan keskimmäisen
+  avainpesän/keywayn suunnasta
+- itse turn-maskin säde on noin 56 px @1080p, jotta ruuvimeisseli,
+  ulkokuori ja rusteiset reunat eivät vedä akselia väärään suuntaan
+
+Validointi oikeilla kuvilla:
+- Lockpickstart: pesä suorassa
+- MaxSideLeft: pesä suorassa vaikka tiirikka vasemmalla
+- MaxSideRight: pesä suorassa vaikka tiirikka oikealla
+- Lockpicking: pesä kääntyneenä
+- 47-frame gameplay-sekvenssissä keskusmittaus seuraa avautumista
+
+PIENI TÄRÄHDYS
+==============
+Pieni hetkellinen liike EI tarkoita ramppia.
+
+Jos F-painalluksen liike:
+- jää alle varsinaisen 3° sustained-response -rajan
+- tai käy vähän ylhäällä ja palautuu takaisin
+
+niin:
+1. F vapautetaan, kun tärähdys on varmistunut
+2. kohta merkitään hylätyksi
+3. paikallishaku EI paina F:ää samassa kohdassa uudestaan
+4. korkea residuaalinen lukkopesän kulma ei saa tehdä tästä kohdasta
+   "parempaa" tai SWEETSPOTia, jos juuri tämä F-painallus ei kierrä pesää
+
+DEBUG
+=====
+F8 FULL DEBUG sisältää edelleen:
+- ruutu_raw.png
+- ruutu_annotated.png
+- debug.json
+- trace.jsonl
+- probes.csv
+
+Detector debugissa näkyy nyt lisäksi:
+- turn_source = INNER_CHAMBER_ONLY
+- rotation_cx / rotation_cy
+- rotation_radius
+- keyway_radius
+- rotation_pixels
+
+Rotations.zip:n käyttäjän referenssit ovat paketissa:
+live/references/rotation_area/

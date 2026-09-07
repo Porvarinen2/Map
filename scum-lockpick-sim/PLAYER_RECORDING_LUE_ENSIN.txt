@@ -1,0 +1,49 @@
+AUTOLOCKPICK LIVE 1.2 - PLAYER RECORDING / DEBUG
+
+PLAYER RECORDING
+================
+1. Kaynnista Aja_Live.bat.
+2. Mene lukkoruudulle.
+3. Paina F7.
+4. Pelaa lukko itse.
+5. Paina F7 uudestaan kun haluat lopettaa.
+
+F7-tilassa automaatio on pakotetusti pois paalta.
+
+Tallenteet:
+    live\manual_records\player_YYYYMMDD_HHMMSS\
+
+frames\
+    Kuvasarja. Jokaisen PNG:n oikealla puolella nakyy kaanto, timer,
+    F/SPACE, F-pidon kesto, cursor delta, vision-data ja tapahtumat.
+
+telemetry.jsonl
+    Jokainen capture-frame koneellisesti luettavana.
+
+events.jsonl
+    F/SPACE/WASD/hiiren nappien down/up seka yritysten alut/loput.
+
+summary.json / summary.txt
+    F-pitoajat, F-testien valit, peak-turnit, yritysten kestot ja
+    hiiren X-liike F-testien valissa.
+
+HUOM:
+Jos SCUM kayttaa raw mouse inputia ja lukitsee Windows-kursorin, cursor-delta
+voi olla 0. Lukkopesan kaanto, F-painallukset, timer ja kuvat tallentuvat
+silti oikein.
+
+FULL DEBUG
+==========
+F8 tekee ZIPin live\debug\ kansioon:
+- ruutu_raw.png
+- ruutu_annotated.png
+- debug.json
+- trace.jsonl (~1200 viimeista capture-eventtia)
+- probes.csv
+
+HOTKEYT
+=======
+F7  PLAYER RECORDING on/off
+F8  FULL DEBUG ZIP
+F11 automaatio on/tauko
+F9  lopeta

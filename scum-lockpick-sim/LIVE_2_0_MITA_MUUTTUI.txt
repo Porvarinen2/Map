@@ -1,0 +1,132 @@
+LIVE 2.0 - SWEEP + DRIVE
+========================
+
+Lyhyesti: hakuvaihe toimi jo kohtuullisesti, mutta loppupeli - se osuus
+jossa vasteikkuna on loydetty ja lukko pitaisi saada auki - oli puutteellinen.
+Se on nyt kirjoitettu uudelleen. Kaikki alla oleva on mitattu, ei arvattu.
+
+
+MITEN LOPPUPELI TOIMII NYT
+--------------------------
+
+Perusidea on yksi lause:
+
+    Kun F on pohjassa, pesa kaantyy niin pitkalle kuin NYKYINEN kohta
+    sallii ja pysahtyy sitten. Se pysahtynyt kulma kertoo suoraan,
+    kuinka kaukana sweetspotista ollaan.
+
+Omasta nauhoituksestasi mitattuna:
+
+    58 yksikon paassa    ->  pesa kaantyy   4 astetta
+     8 yksikon paassa    ->  pesa kaantyy  83 astetta
+     6 yksikon paassa    ->  pesa kaantyy  89 astetta
+     1 yksikon paassa    ->  LUKKO AUKEAA
+
+Vaste siis romahtaa hyvin jyrkasti. Siksi ohjain ei enaa arvaa askelen
+pituutta vaan LASKEE sen puuttuvasta kaannosta: mita enemman 90 asteesta
+puuttuu, sita pidempi askel. Kun kaanto on jo 85, askel on vain pari
+yksikkoa, jottei muutaman yksikon levyista ydinta ohiteta.
+
+    odota kunnes kaanto pysahtyy
+      -> lue pysahtynyt kulma
+      -> astu sen verran kuin kulma kertoo
+      -> odota uudelleen
+      -> ... kunnes lukko aukeaa
+
+F ei irtoa missaan valissa.
+
+
+VIISI KONKREETTISTA KORJAUSTA
+-----------------------------
+
+1. VANHAA KUVAA EI ENAA LUETA UUTENA
+
+   Ruudulla nakyy askeleen jalkeen viela hetken vanha tilanne. Vanha versio
+   luki sen "pesa on jo pysahtynyt" -merkiksi ja astui heti uudelleen -
+   kaksi askelta yhden hinnalla, ja sweetspot meni ohi.
+
+   Nyt jokaisen havainnon kaappaushetki tarkistetaan, ja askeleen jalkeen
+   odotetaan ensimmainen havainto joka on kaapattu askeleen JALKEEN.
+   Tama ei ole arvio vaan aikaleima.
+
+   Mitattu vaikutus: 76 % vs 60 % (16 mallimuunnelman keskiarvo).
+
+2. KOHINA MITATTIIN YLI KAKSINKERTAISESTI VAARIN
+
+   Ohjain arvioi kulmalukeman kohinan perakkaisten erotusten
+   alaneljanneksesta. Alaneljannes on kuitenkin vain 0,45-kertainen
+   kohinan hajontaan nahden, joten kohina aliarvioitiin kertoimella 2,2 -
+   ja kaikki siita johdetut kynnykset jaivat aivan liian tiukoiksi.
+
+   Kerroin 1/0,4506 = 2,22 on nyt mukana. Tarkistettu: todellinen kohina
+   0,6 astetta luetaan 0,44:ksi, 1,0 luetaan 0,89:ksi ja 1,5 luetaan
+   1,33:ksi. Ennen korjausta kaikki luettiin 0,25:ksi.
+
+3. YDIN HAETAAN PUOLITTAMALLA
+
+   Lahella maalia askel oli kiintea. Jos ydin oli askelta kapeampi, se jai
+   ikuisesti kahden askeleen valiin. Nyt kun askel ylittaa ytimen (kaanto
+   huononee), askel puolittuu: 5,0 -> 2,5 -> 1,25 yksikkoa.
+
+4. MAALISSA MUTTEI AUKEA -> UUSI OTE
+
+   Nauhoituksessasi pesa jumitti 89 asteeseen F pohjassa. Vasta F:n
+   irrotus, pieni nykays ja uusi painallus vei sen 91,8 asteeseen ja lukko
+   aukesi. Vanha versio olisi jaanyt odottamaan loputtomiin.
+
+   Nyt 220 ms maalikulmassa ilman avautumista laukaisee saman liikkeen.
+
+   Rehellisyyden nimissa: simulaattori EI osaa toistaa tata jumia, joten
+   se ei nayta talle korjaukselle hyotya - se nayttaa vain, ettei se maksa
+   mitaan (76,7 % molemmilla). Ainoa todiste on oma nauhoituksesi, mutta
+   se on suora todiste.
+
+5. LOPPUKIRI
+
+   Yksi asettumisen odotus maksaa sen ajan, jolla ehtisi ottaa nelja
+   askelta. Kun aika on lopussa ja pesa on jo lahella maalia, odottaminen
+   ei enaa kannata: viimeisella 14 prosentilla yrityksesta otetaan pienia
+   askelia niin tiheaan kuin ehtii.
+
+   Mitattu vaikutus: +2,7 prosenttiyksikkoa.
+
+
+HAKUVAIHEEN KORJAUS
+-------------------
+
+Yksi asia loytyi myos hakuvaiheesta. Asetuksissa oli kytkin, jonka piti
+jatkaa pyyhkaisya siita mihin edellinen yritys jai - mutta se ei siirtanyt
+hiirta minnekaan, joten se ei tehnyt mitaan. Jos jana on pidempi kuin
+yhdessa yrityksessa ehtii kayda, jokainen yritys pyyhkaisi siis samaa
+vasenta paatya ja oikea pää jai ikuisesti kayvattamatta.
+
+Nyt siirtyma tehdaan oikeasti (uusi SEEK-vaihe, sama vauhti kuin
+kotiinajossa) ja se on oletuksena paalla. Sweetspotin PAIKKAA ei edelleenkaan
+muisteta, koska se vaihtuu - omassa nauhoituksessasikin se oli kerran
+957 ja kerran 3052 yksikon kohdalla.
+
+Samalla pyyhkaisyn kaantopiste sidottiin siihen, kuinka pitkalle YHDESSA
+yrityksessa ehtii (noin 5000 yksikkoa). Pidemmalle suunnitteleminen on
+turhaa, koska sweetspot arvotaan joka yrityksella uudelleen.
+Mitattu: 5000 antoi 89,6 %, 9000 antoi 84,4 %.
+
+
+DEBUG-PAKETTI
+-------------
+
+Tee_Raportti.bat tekee viimeisimmasta debug-paketista (F8) tai
+pelaajanauhoituksesta (F7) yhden HTML-tiedoston ja avaa sen selaimeen.
+Se piirtaa jokaisesta yrityksesta samalle aikajanalle:
+
+    - lukkopesan kaannon
+    - milloin F oli pohjassa (varjostus)
+    - hiiren paikan
+    - 90 asteen maaliviivan
+    - mihin yritys paattyi ja mika oli suurin kaanto
+
+Jos voit ottaa F7:lla nauhoituksen omasta kasin pelaamisestasi ja F8:lla
+paketin botin ajosta, raportin saa niista vierekkain:
+
+    python debug_report.py botti_kansio pelaaja_kansio
+
+Silloin nakee suoraan, missa kohtaa botti tekee toisin kuin sina.
