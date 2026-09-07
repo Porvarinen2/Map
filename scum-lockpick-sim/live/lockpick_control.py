@@ -1,61 +1,26 @@
-"""Autolockpickin paatoslogiikka: SWEEP + DRIVE.
+"""SCUM autolockpick - hakusaanto ja tilakone.
 
-Lukkopesa on ainoa mittari. Tiirikkaa ei tunnisteta lainkaan, ja hiirta
-ohjataan hiiriyksikkoina, joten pelin hiiriherkkyytta ei tarvitse tietaa.
+    tap, tap, tap, tap, taap, taaaap, taaaap, AUKI
 
-=====================================================================
-MITTAUKSET, JOIDEN VARAAN TAMA ON RAKENNETTU
-=====================================================================
+Nain se toimii. Kaksi vaihetta, ei muuta:
 
-Kaikki alla oleva on luettu kayttajan omista nauhoituksista
-(live/traces/debug_20260907_015126) ja pelin referenssikuvista:
+  SKANNAUS   Hiiri askeleen oikealle, lyhyt F-napautus, katsotaan
+             liikkuiko lukkopesa. Ei liikkunut -> askel oikealle ja
+             uusi napautus. Napautukset ovat kaikki samanmittaisia.
 
-  lepokulma            0.8 - 2.9 astetta  (kohinaa, ei liiketta)
-  onnistumiskulma      86 - 91 astetta    (success_angles-kuvat)
-  pesan kaantonopeus   ~139 astetta/s     (mitattu kaannon aikana)
-  taysi kaanto         ~0.65 s
-  vasteikkunan leveys  >= 100 hiiriyksikkoa
-                       (vihje kohdassa 900 u, taysi kaanto 952 u;
-                        vihje 3000 u, kaanto 3052 u)
-  koko jana            ~3600 hiiriyksikkoa
-  yrityksen kesto      2.5 - 3.9 s
+  RAMPPI     Lukkopesa (ja sen musta avaimenreika) kaantyi -> oikea
+             kohta loytyi. Nyt F:aa painetaan pohjassa niin kauan kuin
+             pesa kaantyy. Kun se pysahtyy, nykaistaan hieman ja
+             painetaan uudelleen. Mita lahempana ollaan, sita pidemman
+             aikaa pesa kaantyy - siita tulee "taap, taaaap, taaaap".
 
-=====================================================================
-MIKSI VANHA TAPA EI RIITTANYT
-=====================================================================
+Painallusten pituutta EI ole kasketty mihinkaan: se seuraa siita, kuinka
+kauan pesa jaksaa kaantya. Kaukana se pysahtyy heti (tap), lahella se
+kaantyy pitkaan (taaaap).
 
-Vanha haku teki erillisia F-testeja: nappaus, F ylos, katso vaste,
-siirry. Yksi testi maksoi noin 220 ms ja siirtyma oli 300 yksikkoa.
-Kaksi seurausta, jotka nakyvat suoraan nauhoituksessa:
-
-1. 300 yksikon askel HYPPAA vasteikkunan yli. Kahdestatoista yrityksesta
-   viidessa pesa ei kaantynyt kertaakaan yli kuuden asteen: ikkuna jai
-   kahden testin valiin.
-
-2. Kun ikkuna loytyi, aikaa oli jaljella liian vahan. Yrityksessa 10
-   ikkuna loytyi vasta 2.9 sekunnin kohdalla, pesa ehti kaantya 83
-   asteeseen ja aika loppui kesken.
-
-=====================================================================
-UUSI TAPA
-=====================================================================
-
-    HOME    hiiri vasempaan aariasentoon, F ylhaalla
-
-    SWEEP   F POHJASSA koko ajan. Hiiri matelee oikealle pienin askelin
-            ja pysahtyy hetkeksi joka askeleen jalkeen. Pesa alkaa
-            kaantya heti kun ikkunaan osutaan, joten haku ja kaannon
-            aloitus tapahtuvat samalla kertaa. 60 yksikon askel ei voi
-            hypata yli 100 yksikon ikkunasta.
-
-    DRIVE   F PYSYY POHJASSA. Pesa kaantyy. Ohjain ei paasta irti eika
-            palaa testaamaan: se vain odottaa. Jos kaanto pysahtyy,
-            hiirta siirretaan pieni nykays ja F pidetaan yha pohjassa.
-            Lahella 90 astetta nykays on minimaalinen.
-
-Ratkaiseva ero on se, etta DRIVE ei irrota F:aa. Nauhoituksessa juuri
-tama oli voittava siirto: kun pesa jumitti 89 asteeseen, viiden yksikon
-nykays vei sen 91.8 asteeseen ja lukko aukesi.
+Kaikki saadettavat luvut ovat heti alla yhdessa paikassa. Niita voi
+muuttaa myos pelia sammuttamatta tiedostosta live_asetukset.json,
+osiosta "control".
 """
 
 from __future__ import annotations
@@ -63,260 +28,46 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 
-# --------------------------------------------------------------------------
-# Asetukset
-# --------------------------------------------------------------------------
+# ==========================================================================
+#  SAADOT - kaikki taalla, yksi rivi kukin
+# ==========================================================================
 
 
 @dataclass
 class ControlConfig:
-    """Matkat hiiriyksikkoina, kulmat asteina, ajat millisekunteina."""
+    # ---- kotiinajo: hiiri vasempaan reunaan yrityksen alussa ----
+    home_units: float = 9000.0          # kuinka pitkalle vasemmalle tyonnetaan
+    home_pulse_units: float = 900.0     # yhden tyonnon koko (isompi = nykivampi)
+    home_pulse_ms: float = 12.0         # tyontojen valinen tauko
 
-    # ---- kotiinajo ----
-    # Tama tyonnetaan vasemmalle joka yrityksen alussa. Seinaa vasten
-    # ylimaarainen liike ei tee mitaan, joten lahtokohta on aina sama.
-    home_units: float = 9000.0
-    home_pulse_units: float = 1500.0
-    home_pulse_interval_ms: float = 12.0
-    # Kuinka pitkalle oikealle pyyhkaisya jatketaan ennen kuin palataan
-    # alkuun. Arvo on mitoitettu siihen, kuinka pitkalle YHDESSA
-    # yrityksessa ehtii: noin 1700 yksikkoa sekunnissa kertaa kolme
-    # sekuntia. Kaytannossa yksi yritys loppuu aikaan ennen tata, joten
-    # arvolla ei oletusasetuksilla ole vaikutusta: 3500 - 10000 antoivat
-    # kaikki saman 95.4 %. Sillä on merkitysta vain jos resume_search
-    # kytketaan paalle, jolloin se maaraa milloin haku palaa alkuun.
-    span_guess_units: float = 5000.0
+    # ---- SKANNAUS: tap, tap, tap ----
+    scan_step_units: float = 90.0       # hiiren siirto joka napautuksen valissa
+    tap_ms: float = 90.0                # kuinka kauan F on pohjassa napautuksessa
+    gap_ms: float = 120.0               # tauko napautuksen jalkeen, F ylhaalla
+    ramp_degrees: float = 3.0           # nain monta astetta kaantoa = ramppi
 
-    # ---- SWEEP: F pohjassa, hiiri matelee oikealle ----
-    # Askel on selvasti alle mitatun vasteikkunan (>= 100 u), joten
-    # ikkuna ei voi jaada kahden askeleen valiin.
-    sweep_step_units: float = 110.0
-    # Askel MUKAUTUU, jos yritys menee kokonaan hukkaan. Paattely nojaa
-    # siihen, ehtiko pyyhkaisy kierroksen loppuun:
-    #
-    #   kierros tuli tayteen eika mitaan loytynyt
-    #       -> koko jana kayty ja ikkuna jai askelten valiin -> LYHENNA
-    #   aika loppui kesken kierroksen
-    #       -> janaa ei ehditty kayda -> PIDENNA, jotta ehditaan kauemmas
-    #
-    # Tata tarvitaan, koska sweetspotin ikkuna ja koko jana skaalautuvat
-    # molemmat pelaajan hiiriherkkyyden mukana: pienella herkkyydella
-    # kumpikin on hiiriyksikoissa moninkertainen. Silmukka korjaa itsensa,
-    # koska liian pitka askel johtaa tayteen kierrokseen ilman loytoa ja
-    # sita kautta lyhentamiseen.
-    #
-    # Mitattu (live/test_live.py, kahdeksan yritysta, 100 sessiota):
-    #
-    #     herkkyys           mukautuva   kiintea
-    #     0.012 deg/yksikko    76.0 %     70.0 %
-    #     0.015 deg/yksikko    92.0 %     77.0 %
-    #     0.035 deg/yksikko   100.0 %    100.0 %
-    #     0.090 deg/yksikko   100.0 %    100.0 %
-    #
-    # Tavallisilla herkkyyksilla se ei tee mitaan, koska askel kelpaa jo.
-    adapt_sweep_step: bool = True
-    sweep_step_grow: float = 1.4
-    sweep_step_shrink: float = 0.7
-    sweep_step_min_units: float = 60.0
-    sweep_step_max_units: float = 420.0
-    sweep_dwell_ms: float = 45.0             # paikallaan askeleen jalkeen
-    sweep_trigger_degrees: float = 3.0       # tama lepokulman ylitse = ikkuna
-
-    # ---- naputus: nain tiirikka saastyy ----
-    # Pesa kaantyy vain kun F on pohjassa, joten ikkunan voi havaita VAIN
-    # F pohjassa. Mutta F pohjassa antamatonta kohtaa vasten kuluttaa
-    # tiirikkaa - kayttaja: "lockpickit menee rikki jo rampis". Siksi
-    # haku napauttaa: F alas lyhyeksi, sitten ylos.
-    #
-    # Ratkaiseva havainto: painalluksen tulosta EI tarvitse odottaa F
-    # pohjassa. Havainto on noin 80 ms vanha, joten painalluksen aikana
-    # syntynyt kaanto nakyy ruudulla vasta painalluksen JALKEEN. Niinpa
-    # F voidaan paastaa ylos heti ja lukea tulos sielta - ja liikkua
-    # samalla seuraavaan kohtaan. Nain F-aika on vain painalluksen
-    # mittainen, ei painallus plus odotus.
-    #
-    # Painalluksen pituuden alaraja tulee pelista: kayttajan omassa
-    # nauhoituksessa +3 asteen vaste ilmestyi 67-173 ms kohdalla
-    # (mediaani 109 ms). Tata lyhyempi napautus ei voi kertoa mitaan -
-    # juuri siksi vanha 45 ms:n napautus ei toiminut.
-    sweep_hold_f: bool = True                # False = puhdas naputus
-    probe_press_ms: float = 130.0            # F pohjassa yhdessa napautuksessa
-    probe_watch_ms: float = 110.0            # tulos luetaan taalla, F ylhaalla
-    probe_lag_steps: float = 1.0             # peruutus askelina kun ikkuna loytyi
-
-    # ---- vaannon katkaisu: tarkein tiirikkaa saastava saanto ----
-    # Tiirikkaa kuluttaa se, etta F on pohjassa kohtaa vasten joka EI anna
-    # periksi. Kun pesa kaantyy, lukko antaa periksi eika kuluta.
-    #
-    # Siksi F paastetaan irti aina kun pesa ei ole liikkunut hetkeen, ja
-    # painetaan heti uudelleen. Hiiri liikkuu koko ajan, myos irrotuksen
-    # aikana, joten haku ei hidastu lainkaan - vain vaanto katkeaa.
-    #
-    # Haussa raja on tiukka ja ajossa loysa, juuri kuten kayttaja pyysi:
-    # "ku etitaa sweetspot nii kevyesti napautellaa F ja sit ku loytyy
-    # sweetspot nii voidaan painella vahan enemman pohjas".
-    relax_when_stalled: bool = True
-    # Valmiit tasot. Jos jatat sweep_max_strain_ms / sweep_relax_ms
-    # arvoon None, taso maaraa ne. Mitattu 140 sessiota per rivi:
-    #
-    #   taso         avattu  yrityksia  haun F-osuus  painallus  kulutus
-    #   nopea        100,0 %    1,38        70,0 %      616 ms    1,98 s
-    #   tasapaino    100,0 %    1,49        56,6 %      300 ms    1,91 s
-    #   saastava      98,6 %    1,96        46,1 %      180 ms    2,48 s
-    #
-    # Vertailuksi: vanha versio, jota pidit riittavan kevyena, piti F:aa
-    # pohjassa 44,6 % ajasta ja sen painallusten mediaani oli 217 ms.
-    pick_care: str = "tasapaino"
-    sweep_max_strain_ms: float | None = None
-    sweep_relax_ms: float | None = None
-    drive_max_strain_ms: float = 900.0       # ajossa: lukko antaa periksi
-    drive_relax_ms: float = 70.0
-    # Havainto on vanha: nousu alkoi runsaan askeleen verran taaempaa.
-    # Peruutus on ASKELEINA, joten se skaalautuu itsestaan pyyhkaisyn
-    # nopeuden mukana. Mitattu ajovaiheen viive EI kelpaa tahan, koska
-    # se sisaltaa myos pesan lahtoviiveen: hitaalla pesalla se veisi
-    # peruutuksen kokonaan vasteikkunan ulkopuolelle (mitattu 71 -> 59 %).
-    sweep_lag_steps: float = 1.0
-
-    # ---- DRIVE: F pohjassa, pesa kaantyy ----
-    drive_nudge_with_f_down: bool = True     # liike F pohjassa (nopein)
-
-    # DRIVE ryomii kohti sweetspottia F pohjassa. Askel skaalataan sen
-    # mukaan, kuinka kaukana maalista ollaan: kaanto kertoo etaisyyden.
-    # Kaukana (kaanto 20) otetaan 20 yksikon askel, lahella (kaanto 85)
-    # kahden yksikon askel. Nain lahestyminen on nopeaa muttei ohita
-    # kolmen yksikon levyista ydinta.
-    drive_creep_gain: float = 0.28           # yksikkoa per puuttuva aste
-    drive_creep_min_units: float = 9.0
-    drive_creep_max_units: float = 60.0
-    # Asettumisaika ja suuntapaatoksen kynnys skaalataan MITATTUIHIN
-    # olosuhteisiin: hidas ruudunluku tarvitsee pidemman odotuksen ja
-    # kohinainen kulmalukema suuremman kynnyksen. Ilman tata ohjain
-    # romahtaa heti kun kone tai peli kayttaytyy toisin kuin viritettaessa.
-    # Askel otetaan vasta kun pesa on PYSAHTYNYT. Se on valttamatonta:
-    # kesken nousun kulmalukema aliarvioi laheisyyden, jolloin askel
-    # hyppaa sweetspotin yli. Mitattu vertailu: pysahtymista odottava
-    # strategia 45.6 %, tasaisin valein astuva 28.6 % (live/test_strategy.py).
-    drive_settle_ms: float = 65.0            # vahimmaisaika ilman muutosta
-    drive_settle_frames: float = 3.0         # ... ja vahintaan nain monta ruutua
-    # Ikkunassa oltava nain monta ERI RUUTUA. Aikavaatimus (yo.) maaraa
-    # kaytannossa naytemaaran; tama on vain alaraja, jotta puolikkaiden
-    # mediaanit voidaan ylipaataan laskea. Yli kolme kaantaa asetelman:
-    # neljalla ruudulla 65 %, viidella 22 % (16 mallimuunnelmaa).
-    drive_settle_samples: int = 3
-    drive_trend_degrees: float = 0.4         # puolikkaiden ero: alle taman asettunut
-    drive_trend_noise_factor: float = 0.8    # ... tai nain monta kertaa kohina
-    drive_worse_degrees: float = 0.7         # suuntapaatoksen kynnys
-    drive_noise_factor: float = 1.0          # ... tai nain monta kertaa kohina
-    drive_final_window_degrees: float = 8.0  # tata lahempana maalia hienoaskel
-    drive_final_step_units: float = 3.5
-    # Kun hienoaskel ylittaa ytimen (kaanto huononee), ydin on viimeisen
-    # kahden kohdan valissa. Silloin askel puolitetaan: puolitushaku.
-    # Ilman tata kapea ydin jaa loputtomasti askelten valiin, koska
-    # askel ei koskaan mene alle drive_final_step_unitsin.
-    drive_min_step_units: float = 1.0
-    drive_bisect_factor: float = 0.5
-
-    # Havainto on vanha. Askelen jalkeen ruudulla nakyy viela edellinen
-    # tilanne, jota ei saa tulkita asettumiseksi. Vanhuus ei ole arvaus:
-    # jokainen havainto kertoo itse kaappaushetkensa (obs.stamp), joten
-    # riittaa odottaa ensimmainen havainto joka on kaapattu askelen
-    # JALKEEN. Sen paalle lisataan pelin oma piirtoviive, jota ruudulta
-    # ei voi mitata.
-    # Simulaattorissa aikaleima on tasmallinen, joten viritys aanestaisi
-    # tahan nollaa. Oikeassa pelissa aikaleima otetaan vasta kaappauksen
-    # alkaessa, joten pelin oma piirtoviive (tyypillisesti 1-3 ruutua) jaa
-    # mittaamatta. Siksi tassa on pieni vara, jota simulaatio ei osaa
-    # perustella. Mitattu hinta simulaatiossa: alle prosenttiyksikko.
-    render_lag_ms: float = 15.0
-    drive_dead_max_ms: float = 200.0         # varmistus jos aikaleima pettaa
-
-    # Kun kaanto on maalissa muttei aukea, ote on vaarassa kohdassa
-    # muutaman yksikon verran. Nauhoituksessa juuri irrotus + pieni
-    # nykays vei 89 asteesta 91.8 asteeseen ja lukko aukesi.
-    goal_stall_ms: float = 220.0
-
-    # Loppukiri: kun aika on lopussa ja pesa on jo lahella maalia,
-    # asettumisen odottaminen maksaa enemman kuin se hyodyttaa. Silloin
-    # otetaan pienia askelia nykyiseen suuntaan niin tiheaan kuin ehtii.
-    sprint_after_fraction: float = 0.86      # osuus yrityksen kestosta
-    sprint_above_degrees: float = 30.0       # vain jos ollaan jo lahella
-    sprint_interval_ms: float = 45.0
-    # Kaytetaan vain ENNEN ensimmaista mittausta; sen jalkeen kesto
-    # opitaan aikansa loppuun ajaneista yrityksista. Arvo on pelin
-    # dokumentoitu perusaika, siis lyhin mahdollinen - ainoa luku tassa
-    # jolla on ulkopuolinen perustelu.
-    #
-    # Oikea mittari tahan ei ole yhden yrityksen onnistumisprosentti vaan
-    # se, kuinka monta yritysta lukon avaamiseen keskimaarin menee -
-    # pelissa yrityksia kuitenkin tulee perakkain. Mitattuna 16
-    # mallimuunnelmaa, kuusi yritysta, 150 sessiota per solu:
-    #
-    #     siemen                     avattu   yrityksia
-    #     2,50 s                     99,9 %     1,430
-    #     2,75 s                     99,6 %     1,344   <- valittu
-    #     3,00 s                     99,7 %     1,349
-    #     3,50 s                     99,8 %     1,363
-    #     ei kiria ennen mittausta   99,8 %     1,459
-    #
-    # Ero 2,75:n ja 3,00:n valilla on kohinaa; 2,75 valittiin siksi, etta
-    # sille on ulkopuolinen perustelu. Selvin havainto on, etta
-    # loppukirin jattaminen kokonaan pois on huonoin vaihtoehto.
-    expected_attempt_seconds: float = 2.75
-
-    # Jos nykaykset eivat auta, F paastetaan hetkeksi irti ja otetaan uusi
-    # ote. Nauhoituksessa juuri tama vei 89 asteesta 91.8 asteeseen.
-    rebite_after_stalls: int = 9
-    rebite_release_ms: float = 80.0
-    # Kun vaste hukkuu, ikkunaa haetaan ensin nain monta askelta
-    # molemmin puolin ennen kuin palataan koko janan pyyhkaisyyn.
-    rescan_steps: int = 2
+    # ---- RAMPPI: taap, taaaap, taaaap ----
+    press_min_ms: float = 120.0         # lyhin pitka painallus
+    press_max_ms: float = 1600.0        # pisin painallus
+    press_stall_ms: float = 130.0       # nain kauan ilman kaantoa = pesa pysahtyi
+    release_ms: float = 70.0            # F ylhaalla painallusten valissa
+    nudge_units: float = 14.0           # nykays kun pesa pysahtyi
+    nudge_fine_units: float = 4.0       # ... kun ollaan jo lahella maalia
+    fine_below_degrees: float = 12.0    # nain lahella maalia kaytetaan hienonykaysta
+    open_degrees: float = 88.0          # tasta ylospain F pysyy pohjassa loppuun
+    lost_degrees: float = 2.0           # kaanto putosi tanne = ramppi hukattiin
+    lost_presses: int = 3               # nain monta hukkaa perakkain -> takaisin skannaukseen
 
     # ---- yhteiset ----
-    max_units_per_pulse: float = 240.0
-    pulse_interval_ms: float = 20.0
-    success_angle_degrees: float = 90.0      # mitattu success-kuvista (86-91)
-    give_up_below_degrees: float = 3.0       # tama on pelkkaa kohinaa
-    rest_samples: int = 6                    # lepokulman naytteet yrityksen alussa
-
-    # ---- muisti yritysten valilla ----
-    # Pyyhkaisyn jatkaminen siita mihin edellinen yritys jai OLI RIKKI:
-    # kytkin oli olemassa, mutta se ei siirtanyt hiirta minnekaan, joten se
-    # ei tehnyt yhtaan mitaan. Nyt siirtyma tehdaan oikeasti (SEEK-vaihe).
-    #
-    # Kun se vihdoin toimi, se voitiin myos mitata - ja se on oletuksena
-    # POIS, koska se ei auta. Sweetspot arvotaan joka yrityksella uudelleen,
-    # joten mika tahansa yhta pitka patka on yhta hyva paikka etsia; sen
-    # sijaan jatkaminen ajaa haun ennemmin tai myohemmin oikean reunan
-    # taakse, missa hiiri ei enaa liiku ja koko yritys menee hukkaan.
-    # Mitattu (kuusi yritysta, 250 sessiota per solu):
-    #
-    #     jana      jatkaen   aina alusta
-    #     2500 u     98.8 %      100.0 %
-    #     3600 u     98.8 %      100.0 %
-    #     5500 u     98.4 %      100.0 %
-    #     9000 u     96.0 %       98.0 %
-    #    14000 u     84.4 %       83.6 %
-    #
-    # Vasta 14000 yksikon janalla se on yhta hyva, ja sekin ero on kohinaa.
-    resume_search: bool = False
-    # Siirtyma aloituskohtaan tehdaan samalla vauhdilla kuin kotiinajo.
-    # Pyyhkaisyn 110 yksikon pulsseilla se veisi turhaan aikaa, ja koska
-    # kotiinajo jo todistaa etta tallainen pulssi menee pelille perille,
-    # ei ole syyta liikkua hitaammin. Mitattuna 240 - 1500 yksikon
-    # pulssien ero jai kohinan sisaan (92 % vs 94 %), koska siirtyma on
-    # kaytannossa lyhyt: yksi yritys ehtii pyyhkaista koko janan.
-    seek_pulse_units: float = 1500.0
-    seek_pulse_interval_ms: float = 12.0
-    remember_zone: bool = False
+    max_units_per_pulse: float = 240.0  # yhden hiiripulssin katto
+    pulse_ms: float = 16.0              # pulssien valinen tauko
+    span_units: float = 6000.0          # nain pitkalle skannataan, sitten alusta
+    rest_frames: int = 6                # lepokulma mitataan naista ruuduista
 
 
-# Kuinka lujaa tiirikkaa saa vaantaa haun aikana: (puristus ms, lepo ms).
-PICK_CARE = {
-    "nopea": (300.0, 200.0),
-    "tasapaino": (240.0, 240.0),
-    "saastava": (180.0, 220.0),
-}
+# ==========================================================================
+#  Tietorakenteet
+# ==========================================================================
 
 
 @dataclass
@@ -348,18 +99,13 @@ class Probe:
 
 @dataclass
 class SearchMemory:
+    """Yritysten valilla sailyva tieto. Sweetspotin paikkaa ei muisteta."""
+
     resume_units: float = 0.0
     zone_units: float | None = None
     zone_score: float = 0.0
     sweeps: int = 0
     wraps: int = 0
-
-    # Mitatut olosuhteet. Nama EIVAT liity sweetspotin paikkaan vaan
-    # koneeseen ja peliin, joten ne kannattaa muistaa yritysten yli
-    # vaikka paikkamuisti on pois paalta.
-    lag_ms: float | None = None
-    attempt_seconds: float | None = None
-    sweep_step_units: float | None = None
 
     def forget_position(self) -> None:
         self.resume_units = 0.0
@@ -367,7 +113,7 @@ class SearchMemory:
 
 @dataclass
 class Bookkeeping:
-    """Nakyvyys kayttoliittymalle ja debug-paketille."""
+    """Pelkkaa nakyvyytta CMD-ikkunalle ja debug-paketille."""
 
     ramp_locked: bool = False
     best_units: float | None = None
@@ -378,827 +124,293 @@ class Bookkeeping:
     samples: list = field(default_factory=list)
 
 
-# --------------------------------------------------------------------------
-# Ohjain
-# --------------------------------------------------------------------------
+# ==========================================================================
+#  Ohjain
+# ==========================================================================
 
 
 class Controller:
-    """Ajaa yhta lockpick-yritysta.
+    """Yksi lockpick-yritys.
 
-    Vaiheet:
-        home    hiiri vasempaan reunaan, F ylhaalla
-        seek    nopea siirto edellisen pyyhkaisyn paattymiskohtaan
-        sweep   F pohjassa, hiiri matelee oikealle, odotetaan kaantoa
-        drive   F pohjassa, pesa kaantyy, nykaykset vain jos se pysahtyy
-        rebite  lyhyt F:n irrotus kun nykaykset eivat auta
-        done    jana kayty lapi
+    Vaiheet: home -> scan -> ramp -> (auki tai aika loppui)
     """
 
-    HOME, SEEK, SWEEP, DRIVE, REBITE, DONE = (
-        "home", "seek", "sweep", "drive", "rebite", "done")
+    HOME, SCAN, RAMP, DONE = "home", "scan", "ramp", "done"
 
     def __init__(self, cfg: ControlConfig, memory: SearchMemory | None = None):
         self.cfg = cfg
         self.memory = memory if memory is not None else SearchMemory()
-        # Tason arvot kayttoon vain jos niita ei ole erikseen annettu.
-        care = PICK_CARE.get(cfg.pick_care, PICK_CARE["tasapaino"])
-        self.strain_ms = (cfg.sweep_max_strain_ms
-                          if cfg.sweep_max_strain_ms is not None else care[0])
-        self.relax_ms = (cfg.sweep_relax_ms
-                         if cfg.sweep_relax_ms is not None else care[1])
         self.reset()
 
-    # ---------------------------------------------------------------- setup
+    # ------------------------------------------------------------------
 
     def reset(self) -> None:
         self.phase = self.HOME
         self.position = 0.0
         self.target = 0.0
         self.probes: list[Probe] = []
-        self.planner = Bookkeeping(step=self.cfg.drive_creep_max_units)
+        self.planner = Bookkeeping(step=self.cfg.nudge_units)
 
         self._homed = 0.0
         self._next_pulse = 0.0
-        self._phase_started = 0.0
 
-        # lepokulma mitataan yrityksen alussa
-        self._rest_values: list[float] = []
+        # lepokulma mitataan yrityksen ensimmaisista ruuduista
+        self._rest: list[float] = []
         self.rest_angle = 0.0
 
-        # kaannon seuranta
-        self._peak = 0.0
+        # kaantonopeuden mittaus (vain nakymaa varten)
+        self._rates: list[float] = []
+        self._last_turn = 0.0
         self._last_rise = 0.0
-        self._last_value = 0.0
-        self._turn_rates: list[float] = []
 
-        # DRIVE
-        self._nudge_direction = 1
-        self._stall_count = 0
-        self._entered_drive_at = 0.0
-        self._drive_entry_position = 0.0
-        self._rebite_until = 0.0
-        self._creep_scale = 1.0
-        self._settles = 0
-        self._settled_value = 0.0
-        self._last_change = 0.0
-        # Hienoaskel kutistuu puolitushaussa, kun ydin on ohitettu.
-        self._fine_step = self.cfg.drive_final_step_units
-        # Maalikulmassa vietetty aika: jos lukko ei aukea, ote on vaarassa.
-        self._goal_since = -1.0
-        self._next_sprint = 0.0
-        # Mitatut olosuhteet: ruutuvali ja kulmalukeman kohina.
-        self._frame_gaps: list[float] = []
-        self._angle_jitter: list[float] = []
-        self._last_stamp = -1.0
-        self._last_raw = 0.0
-        # Havainnon viive mitataan: aika askeleesta ensimmaiseen
-        # kulmamuutokseen. Se kertoo kuinka kauan ruudulla nakyy viela
-        # vanha tilanne, eli kuinka pitkaan asettumista on odotettava.
-        self._lag_samples: list[float] = []
-        self._stepped_at = -1.0
-        # Yrityksen kesto mitataan, jotta loppukiri osataan ajoittaa.
-        self._started_at = -1.0
-        self._elapsed = 0.0
-        # Asettumisikkuna: (hetki, kulma). Asettuminen paatellaan ikkunan
-        # vaihteluvalista eika yksittaisista ruutueroista, jotta kohina ei
-        # tulkitse liiketta pysahtymiseksi eika painvastoin.
-        self._window: list[tuple[float, float]] = []
-        # Ikkunaan otetaan vain UUDET ruudut. Ohjain paivittyy monta kertaa
-        # yhden ruudun aikana, joten ilman tata sama lukema tulisi ikkunaan
-        # seitsemasti ja mediaani laskettaisiin kopioista - jolloin
-        # keskiarvoistus ei vaimenna kohinaa lainkaan.
-        self._window_stamp = -1.0
-        # Paikallinen uusintahaku, kun vaste hukkuu ikkunan lahella.
-        self._rescan_left = 0
-        self._rescan_anchor = 0.0
-        self._rescan_index = 0
+        # SKANNAUS
+        self._tapping = False
+        self._tap_until = 0.0
+        self._gap_until = 0.0
+        self._tap_peak = 0.0
 
-        # Vaannon katkaisu
-        self._strain_since = -1.0
-        self._strain_peak = -1e9
-        self._relax_until = 0.0
-
-        # SWEEP / naputus
-        self._probe_until = 0.0
-        self._probe_watch_until = 0.0
-        self._probe_peak = 0.0
-        self._probe_pressing = False
-        self._probe_position = 0.0
-        self._probes_made = 0
-        self._wrapped = False
-        self._found_window = False
-        self._dwell_until = 0.0
-        self._sweep_started = 0.0
-        self._seek_target = 0.0
+        # RAMPPI
+        self._pressing = False
+        self._press_until = 0.0
+        self._press_started = 0.0
+        self._press_peak = 0.0
+        self._rise_at = 0.0
+        self._release_until = 0.0
+        self._best_peak = 0.0
+        self._direction = 1
+        self._misses = 0
 
     # ------------------------------------------------------------ mittarit
 
     @property
     def measured_turn_rate(self) -> float | None:
-        if not self._turn_rates:
+        if not self._rates:
             return None
-        ordered = sorted(self._turn_rates)
-        return ordered[len(ordered) // 2]
+        return sorted(self._rates)[len(self._rates) // 2]
 
     @property
-    def sweep_step(self) -> float:
-        """Kaytossa oleva pyyhkaisyaskel: opittu jos sellainen on."""
-        if self.cfg.adapt_sweep_step and self.memory.sweep_step_units:
-            return self.memory.sweep_step_units
-        return self.cfg.sweep_step_units
+    def scan_step(self) -> float:
+        return self.cfg.scan_step_units
 
-    @property
-    def scan_step(self) -> float:                # nakyma kayttaa tata nimea
-        return self.sweep_step
+    def _lift(self, obs: Observation) -> float:
+        """Kuinka paljon pesa on kaantynyt lepoasennostaan."""
+        return obs.turn - self.rest_angle
 
-    @property
-    def response(self) -> float:
-        """Kuinka paljon pesa on kaantynyt lepoasennosta."""
-        return max(0.0, self._peak - self.rest_angle)
-
-    @property
-    def frame_ms(self) -> float:
-        """Mitattu ruutuvali. Kertoo kuinka kauan asettumista on odotettava."""
-        if len(self._frame_gaps) < 4:
-            return 30.0
-        ordered = sorted(self._frame_gaps)
-        return ordered[len(ordered) // 2] * 1000.0
-
-    # Perakkaisten lukemien erotusten alaneljannes suhteessa kohinan
-    # keskihajontaan. Jos lukemat ovat riippumatonta normaalikohinaa
-    # hajonnalla s, erotuksen hajonta on s*sqrt(2) ja itseisarvon
-    # alaneljannes on 0.3186 * s * sqrt(2) = 0.4506 * s. Kertoimella
-    # 1/0.4506 = 2.22 alaneljanneksesta saadaan takaisin s.
-    NOISE_FROM_QUARTILE = 2.22
-
-    @property
-    def noise_degrees(self) -> float:
-        """Mitattu kulmalukeman kohina keskihajontana.
-
-        Kaytetaan perakkaisten lukemien erotusten ALANELJANNESTA, koska
-        kun pesa kaantyy, erot ovat suuria ja mediaani mittaisi kaantoa
-        eika kohinaa. Alaneljannes on kuitenkin vain 0.45-kertainen
-        hajontaan nahden, joten se on skaalattava takaisin - muuten
-        kohina aliarvioidaan yli kaksinkertaisesti ja kaikki siita
-        johdetut kynnykset jaavat liian tiukoiksi.
-        """
-        if len(self._angle_jitter) < 8:
-            return 0.5
-        ordered = sorted(self._angle_jitter)
-        return max(0.25, self.NOISE_FROM_QUARTILE * ordered[len(ordered) // 4])
-
-    @property
-    def lag_ms(self) -> float:
-        """Mitattu havainnon vanhuus: nyt miinus kaappaushetki.
-
-        Tama mitataan suoraan aikaleimasta eika paattelemalla pesan
-        liikkeesta. Se on tarkeaa, koska pesan liikkeesta paatelty viive
-        sisaltaisi myos pesan oman lahtoviiveen: hitaalla pesalla se
-        kaksinkertaistuisi ja ohjain jaisi odottamaan turhaan.
-        """
-        if len(self._lag_samples) < 4:
-            if self.memory.lag_ms is not None:
-                return self.memory.lag_ms
-            return self.cfg.render_lag_ms
-        ordered = sorted(self._lag_samples)
-        return clamp(ordered[len(ordered) // 2] * 1000.0 + self.cfg.render_lag_ms,
-                     1.0, self.cfg.drive_dead_max_ms)
-
-    @property
-    def expected_seconds(self) -> float:
-        """Mitattu yrityksen kesto. Kertoo milloin on loppukirin aika."""
-        if self.memory.attempt_seconds is not None:
-            return self.memory.attempt_seconds
-        return self.cfg.expected_attempt_seconds
-
-    def _settle_limit_ms(self) -> float:
-        return max(self.cfg.drive_settle_ms,
-                   self.cfg.drive_settle_frames * self.frame_ms)
-
-    def _stale(self, now: float, obs: Observation) -> bool:
-        """Onko havainto kaapattu ennen viimeista askelta?
-
-        Aikaleima kertoo sen suoraan. Varmistuksena on aikakatko: jos
-        aikaleimaan ei voi luottaa, odottaminen loppuu joka tapauksessa.
-        """
-        if self._stepped_at < 0.0:
-            return False
-        if now - self._stepped_at >= self.cfg.drive_dead_max_ms / 1000.0:
-            return False
-        extra = self.cfg.render_lag_ms / 1000.0
-        if obs.stamp <= 0.0:
-            return now - self._stepped_at < extra
-        return obs.stamp < self._stepped_at + extra
-
-    def _change_threshold(self) -> float:
-        return max(1.0, self.cfg.drive_noise_factor * self.noise_degrees)
-
-    def _note_rate(self, rate: float) -> None:
-        if 20.0 <= rate <= 3000.0:
-            self._turn_rates.append(rate)
-            del self._turn_rates[:-40]
-
-    def _pulse(self, now: float, units: float, phase: str, note: str,
-               f_down: bool) -> Action:
-        self._next_pulse = now + self.cfg.pulse_interval_ms / 1000.0
-        self.position += units
-        return Action(mouse_units=units, f_down=f_down, phase=phase, note=note)
-
-    def _mark_step(self, now: float) -> None:
-        """Merkitsee hetken, jonka jalkeen kaapatut havainnot ovat tuoreita."""
-        self._stepped_at = now
-        self._window = []
-        self._window_stamp = -1.0
-
-    def _record(self, position: float, score: float, kind: str) -> None:
-        self.probes.append(Probe(position=position, score=score,
-                                 ramp=self.planner.ramp_locked, kind=kind))
+    def _note(self, position: float, score: float, kind: str) -> None:
+        self.probes.append(Probe(position, score, self.planner.ramp_locked, kind))
         self.planner.samples.append((position, score))
-        if score >= self.cfg.sweep_trigger_degrees:
+        if score >= self.cfg.ramp_degrees:
             self.planner.responding.append(position)
         if score > self.planner.best_score:
             self.planner.best_score = score
             self.planner.best_units = position
-            self.memory.zone_units = position
-            self.memory.zone_score = score
 
-    # -------------------------------------------------------------- runko
+    def _move(self, now: float, units: float, phase: str, note: str,
+              f_down: bool) -> Action:
+        units = max(-self.cfg.max_units_per_pulse,
+                    min(self.cfg.max_units_per_pulse, units))
+        self._next_pulse = now + self.cfg.pulse_ms / 1000.0
+        self.position += units
+        return Action(units, f_down, phase, note)
+
+    # --------------------------------------------------------------- runko
 
     def update(self, now: float, obs: Observation) -> Action:
         if not obs.ok:
-            # Lukkoa ei nay. F ylos, mutta paikka ja mittaukset sailyvat.
             return Action(phase=self.phase, note="ei lukkoa nakyvissa")
 
-        if self._started_at < 0.0:
-            self._started_at = now
-        self._elapsed = now - self._started_at
+        # Lepokulma: pesa voi levata hieman vinossa, joten nollataso
+        # mitataan eika oleteta.
+        if len(self._rest) < self.cfg.rest_frames:
+            self._rest.append(obs.turn)
+            self.rest_angle = sorted(self._rest)[len(self._rest) // 2]
+            self._last_turn = obs.turn
 
-        # Lepokulma mitataan yrityksen ensimmaisista ruuduista, jotta
-        # kynnykset ovat oikeat myos jos pesa lepaa hieman vinossa.
-        if len(self._rest_values) < self.cfg.rest_samples:
-            self._rest_values.append(obs.turn)
-            self.rest_angle = sorted(self._rest_values)[len(self._rest_values) // 2]
-            self._peak = obs.turn
-            self._last_value = obs.turn
+        # Kaantonopeus vain nakymaa varten.
+        if obs.turn > self._last_turn + 1.0:
+            gap = now - self._last_rise
+            if 0.004 < gap < 1.0:
+                self._rates.append((obs.turn - self._last_turn) / gap)
+                del self._rates[:-30]
             self._last_rise = now
-
-        if obs.stamp > self._last_stamp:
-            if self._last_stamp > 0:
-                gap = obs.stamp - self._last_stamp
-                if 0.001 < gap < 0.5:
-                    self._frame_gaps.append(gap)
-                    del self._frame_gaps[:-40]
-                self._angle_jitter.append(abs(obs.turn - self._last_raw))
-                del self._angle_jitter[:-60]
-            self._last_raw = obs.turn
-            self._last_stamp = obs.stamp
-
-        self._track(now, obs)
+        if abs(obs.turn - self._last_turn) > 1.0:
+            self._last_turn = obs.turn
 
         if self.phase == self.HOME:
             return self._home(now, obs)
-        if self.phase == self.SEEK:
-            return self._seek(now, obs)
-        if self.phase == self.SWEEP:
-            return self._sweep(now, obs)
-        if self.phase == self.DRIVE:
-            return self._drive(now, obs)
-        if self.phase == self.REBITE:
-            return self._rebite(now, obs)
-        return Action(phase=self.DONE, note="jana kayty")
+        if self.phase == self.SCAN:
+            return self._scan(now, obs)
+        if self.phase == self.RAMP:
+            return self._ramp(now, obs)
+        return Action(phase=self.DONE, note="valmis")
 
-    def _track(self, now: float, obs: Observation) -> None:
-        """Seuraa huippua, nousua ja sita milloin kaanto viimeksi muuttui."""
-        change = obs.turn - self._last_value
-        threshold = self._change_threshold()
-
-        # Havainnon vanhuus mitataan suoraan aikaleimasta.
-        if 0.0 < obs.stamp <= now and now - obs.stamp < 0.5:
-            self._lag_samples.append(now - obs.stamp)
-            del self._lag_samples[:-40]
-        if change > threshold:
-            delta = now - self._last_rise
-            if delta > 0.004:
-                self._note_rate(change / delta)
-            self._last_rise = now
-        if abs(change) > threshold:
-            self._last_change = now
-        if abs(change) > threshold * 0.6:
-            self._last_value = obs.turn
-        self._peak = max(self._peak, obs.turn)
-
-        # Vaanto nollautuu aina kun pesa nousee: silloin lukko antaa
-        # periksi eika tiirikka kulu.
-        #
-        # Vertailu tehdaan HUIPPUUN eika edelliseen ruutuun. Tasainen
-        # hidas nousu - vaikka puoli astetta ruudussa - on yhta lailla
-        # periksiantamista, mutta ruutukohtaisena se jaisi kohinakynnyksen
-        # alle ja ohjain luulisi pesaa jumiksi kesken nousun.
-        #
-        # Lepojakson aikana tata EI paivitteta: F on ylhaalla, joten pesa
-        # ei voi antaa periksi, ja kohinapiikki nollaisi ajastimen kesken
-        # tauon - jolloin seuraavasta painalluksesta tulisi tynka. Mitattu
-        # ilman tata suojaa: painalluksia 12 ms:sta 236 ms:iin sekaisin.
-        if now >= self._relax_until and obs.turn > self._strain_peak + threshold * 0.5:
-            self._strain_peak = obs.turn
-            self._strain_since = now
-
-    # --------------------------------------------------------------- HOME
+    # ---------------------------------------------------------------- HOME
 
     def _home(self, now: float, obs: Observation) -> Action:
+        """Hiiri vasempaan reunaan. Seinaa vasten ylimaarainen liike ei
+        tee mitaan, joten jokainen yritys alkaa samasta kohdasta."""
         if self._homed >= self.cfg.home_units:
             self.position = 0.0
-            self.target = self._first_target()
-            self._seek_target = self.target
-            self._phase_started = now
-            self._sweep_started = now
-            self._next_pulse = now
-            self._dwell_until = 0.0
-            self._peak = obs.turn
-            self._last_value = obs.turn
-            self._last_rise = now
-            if self._seek_target > self.sweep_step:
-                self.phase = self.SEEK
-                return Action(phase=self.SEEK,
-                              note=f"siirtyy {self._seek_target:.0f} u kohtaan")
-            self.phase = self.SWEEP
-            return Action(phase=self.SWEEP, note="vasen reuna loydetty")
+            self.target = 0.0
+            self.phase = self.SCAN
+            self._tapping = False
+            self._gap_until = 0.0
+            return Action(phase=self.SCAN, note="vasen reuna, aloitetaan")
 
         if now < self._next_pulse:
             return Action(phase=self.HOME, note="kotiinajo")
 
         step = min(self.cfg.home_pulse_units, self.cfg.home_units - self._homed)
         self._homed += step
-        self._next_pulse = now + self.cfg.home_pulse_interval_ms / 1000.0
-        done = self._homed / self.cfg.home_units * 100.0
-        return Action(mouse_units=-step, f_down=False, phase=self.HOME,
-                      note=f"vasempaan reunaan {done:.0f} %")
+        self._next_pulse = now + self.cfg.home_pulse_ms / 1000.0
+        return Action(-step, False, self.HOME,
+                      f"vasempaan reunaan {self._homed / self.cfg.home_units * 100:.0f} %")
 
-    def _seek(self, now: float, obs: Observation) -> Action:
-        """Nopea siirto aloituskohtaan. F on ylhaalla, jotta pesa lepaa
-        ja lepokulma mitataan puhtaasta tilanteesta."""
-        if self.position >= self._seek_target - 1e-6:
-            self.phase = self.SWEEP
-            self._phase_started = now
-            self._sweep_started = now
-            self._dwell_until = 0.0
-            self._peak = obs.turn
-            self._last_value = obs.turn
-            self._last_rise = now
-            return Action(phase=self.SWEEP,
-                          note=f"aloitus {self.position:.0f} u")
+    # ---------------------------------------------------------------- SCAN
 
-        if now < self._next_pulse:
-            return Action(phase=self.SEEK, note="siirtyy")
+    def _scan(self, now: float, obs: Observation) -> Action:
+        """tap, tap, tap - askel oikealle, lyhyt napautus, katso liikkuiko.
 
-        step = min(self.cfg.seek_pulse_units, self._seek_target - self.position)
-        self.position += step
-        self._next_pulse = now + self.cfg.seek_pulse_interval_ms / 1000.0
-        return Action(mouse_units=step, f_down=False, phase=self.SEEK,
-                      note=f"siirtyy {self.position:.0f}/{self._seek_target:.0f} u")
-
-    def _first_target(self) -> float:
-        if self.cfg.remember_zone and self.memory.zone_units is not None:
-            return max(0.0, self.memory.zone_units - 2 * self.sweep_step)
-        if self.cfg.resume_search:
-            return max(0.0, self.memory.resume_units)
-        return 0.0
-
-    # -------------------------------------------------------------- SWEEP
-
-    def _sweep(self, now: float, obs: Observation) -> Action:
-        """Hakee vasteikkunan. Kaksi tapaa, naputus on oletus.
-
-        Naputus (probe): F alas lyhyeksi, sitten ylos - ja tulos luetaan
-        vasta F ylhaalla, koska havainto on vanha. Samalla siirrytaan
-        seuraavaan kohtaan. Nain F on pohjassa vain napautusten ajan ja
-        tiirikka saastyy.
-
-        Yhtajaksoinen pito (sweep_hold_f): F pohjassa koko pyyhkaisyn ajan.
-        Loytaa ikkunan nopeammin muttei saasta tiirikkaa lainkaan.
+        Napautukset ovat kaikki samanmittaisia. Tulos luetaan napautuksen
+        jalkeisella tauolla, koska ruudulla nakyva kuva on hieman vanhaa.
         """
-        if not self.cfg.sweep_hold_f:
-            return self._sweep_tapping(now, obs)
+        lift = self._lift(obs)
+        self._tap_peak = max(self._tap_peak, lift)
 
-        lift = obs.turn - self.rest_angle
-        if lift >= self.cfg.sweep_trigger_degrees:
-            return self._window_found(now, obs, lift,
-                                      self.cfg.sweep_lag_steps * self.sweep_step)
-        # Vaanto katkaistaan. Lepojakson ajan hiiri PYSYY PAIKALLAAN:
-        # jos se liikkuisi F ylhaalla, se voisi ohittaa vasteikkunan
-        # huomaamatta, koska pesa kaantyy vain F pohjassa. Nain koko
-        # matka kuljetaan F pohjassa ja jokainen kohta tulee testattua.
-        if self._relax_needed(now, self.strain_ms, self.relax_ms):
-            return Action(f_down=False, phase=self.SWEEP,
-                          note=f"tiirikka lepaa {self.position:.0f} u")
-        f_down = True
-        if self._wrap_if_done(now):
-            return Action(f_down=f_down, phase=self.SWEEP, note="jana kayty, alusta")
-        if now < self._dwell_until:
-            return Action(f_down=f_down, phase=self.SWEEP,
-                          note=f"paikallaan {self.position:.0f} u")
+        # Pesa kaantyi -> ramppi.
+        if self._tap_peak >= self.cfg.ramp_degrees:
+            return self._found_ramp(now, obs)
+
+        # 1) Napautus kaynnissa: F pohjassa, hiiri paikallaan.
+        if self._tapping:
+            if now < self._tap_until:
+                return Action(f_down=True, phase=self.SCAN,
+                              note=f"tap {self.position:.0f} u")
+            self._tapping = False
+            self._gap_until = now + self.cfg.gap_ms / 1000.0
+            self._note(self.position, self._tap_peak, "tap")
+            return Action(phase=self.SCAN, note=f"luetaan {self._tap_peak:.1f} deg")
+
+        # 2) Tauko: F ylhaalla, luetaan napautuksen tulos.
+        if now < self._gap_until:
+            return Action(phase=self.SCAN, note=f"luetaan {self._tap_peak:.1f} deg")
+
+        # 3) Askel oikealle ja uusi napautus.
+        if self.position >= self.cfg.span_units:
+            self.position = 0.0
+            self.memory.wraps += 1
+            self.memory.resume_units = 0.0
+            return Action(phase=self.SCAN, note="jana kayty, alusta")
+
         if now < self._next_pulse:
-            return Action(f_down=f_down, phase=self.SWEEP, note="pulssien valissa")
+            return Action(phase=self.SCAN, note="...")
 
-        step = min(self.sweep_step, self.cfg.max_units_per_pulse)
-        self._dwell_until = now + self.cfg.sweep_dwell_ms / 1000.0
+        self._tapping = True
+        self._tap_until = now + self.cfg.tap_ms / 1000.0
+        self._tap_peak = 0.0
         self.memory.resume_units = self.position
-        return self._pulse(now, step, self.SWEEP,
-                           f"matelee {self.position:.0f} u", f_down=f_down)
+        self.target = self.position + self.cfg.scan_step_units
+        return self._move(now, self.cfg.scan_step_units, self.SCAN,
+                          f"askel -> {self.target:.0f} u", f_down=True)
 
-    def _sweep_tapping(self, now: float, obs: Observation) -> Action:
-        """Napautus - liike - luenta, F alhaalla vain napautuksen ajan."""
-        lift = obs.turn - self.rest_angle
-        self._probe_peak = max(self._probe_peak, lift)
-
-        # Vaste nakyi jo kesken napautuksen: ei odoteta, vaan jatketaan
-        # suoraan ajovaiheeseen. Silloin F ei ehdi nousta valissa.
-        if self._probe_pressing and lift >= self.cfg.sweep_trigger_degrees:
-            return self._window_found(now, obs, lift,
-                                      self.cfg.sweep_lag_steps * self.sweep_step)
-
-        if self._probe_pressing:
-            if now < self._probe_until:
-                return Action(f_down=True, phase=self.SWEEP,
-                              note=f"napautus {self._probe_position:.0f} u")
-            # Napautus ohi: F ylos ja siirrytaan jo seuraavaan kohtaan.
-            # Edellisen napautuksen tulos luetaan matkan aikana.
-            self._probe_pressing = False
-            self._probe_watch_until = now + self.cfg.probe_watch_ms / 1000.0
-            self._probes_made += 1
-            self.memory.resume_units = self.position
-            if self._wrap_if_done(now):
-                return Action(phase=self.SWEEP, note="jana kayty, alusta")
-            step = min(self.sweep_step, self.cfg.max_units_per_pulse)
-            return self._pulse(now, step, self.SWEEP,
-                               f"F ylos, siirto {self.position:.0f} u", f_down=False)
-
-        # Luentaikkuna: F on ylhaalla, edellisen napautuksen tulos valuu
-        # ruudulle. Tama on se aika, jonka vanha versio hukkasi pitamalla
-        # F:aa turhaan pohjassa.
-        if now < self._probe_watch_until:
-            if self._probe_peak >= self.cfg.sweep_trigger_degrees:
-                back = self.cfg.probe_lag_steps * self.sweep_step
-                return self._window_found(now, obs, self._probe_peak, back)
-            return Action(phase=self.SWEEP,
-                          note=f"luetaan {self._probe_peak:.1f} deg")
-
-        if self._probe_peak >= self.cfg.sweep_trigger_degrees:
-            back = self.cfg.probe_lag_steps * self.sweep_step
-            return self._window_found(now, obs, self._probe_peak, back)
-
-        # Uusi napautus.
-        self._probe_pressing = True
-        self._probe_until = now + self.cfg.probe_press_ms / 1000.0
-        self._probe_peak = 0.0
-        self._probe_position = self.position
-        return Action(f_down=True, phase=self.SWEEP,
-                      note=f"napautus {self.position:.0f} u")
-
-    def _relax_needed(self, now: float, max_strain_ms: float,
-                      relax_ms: float) -> bool:
-        """Onko F:n aika paastaa hetkeksi irti?
-
-        Palauttaa True myos irrotuksen ajan, jotta soittaja pitaa F:n
-        ylhaalla koko lyhyen tauon.
-        """
-        if not self.cfg.relax_when_stalled:
-            return False
-        if now < self._relax_until:
-            return True
-        if self._strain_since < 0.0:
-            self._strain_since = now
-            return False
-        if now - self._strain_since >= max_strain_ms / 1000.0:
-            self._relax_until = now + relax_ms / 1000.0
-            self._strain_since = now + relax_ms / 1000.0
-            # Lepo paastaa pesan takaisin alas, joten huippu nollataan:
-            # muuten seuraava nousu ei nayttaisi nousulta.
-            self._strain_peak = -1e9
-            return True
-        return False
-
-    def _window_found(self, now: float, obs: Observation, lift: float,
-                      back: float) -> Action:
-        """Vasteikkuna loytyi: F pohjaan ja peruutus havainnon viiveen verran."""
-        self._record(self.position, lift, "ikkuna")
-        self._found_window = True
+    def _found_ramp(self, now: float, obs: Observation) -> Action:
+        """Lukkopesa kaantyi: siirrytaan painamaan pidempaan."""
+        self._note(self.position, self._tap_peak, "RAMPPI")
         self.planner.ramp_locked = True
-        self._enter_drive(now, obs)
-        self._rescan_anchor = self.position - back
-        self._rescan_left = self.cfg.rescan_steps
-        self._rescan_index = 0
-        if back > 0:
-            return self._pulse(now, -back, self.DRIVE,
-                               f"IKKUNA {lift:.1f} deg -> peruutus {back:.0f} u",
-                               f_down=True)
-        return Action(f_down=True, phase=self.DRIVE,
-                      note=f"IKKUNA {lift:.1f} deg -> F pysyy pohjassa")
+        self.phase = self.RAMP
+        # Nollasta, jotta ensimmainen pitka painallus lasketaan aina
+        # parannukseksi: silloin ensimmainen nykays menee OIKEALLE.
+        # Skannaus tulee vasemmalta, joten oikea kohta on edessapain.
+        self._best_peak = 0.0
+        self._direction = 1
+        self._misses = 0
+        self._start_press(now, obs)
+        return Action(f_down=True, phase=self.RAMP,
+                      note=f"RAMPPI {self._tap_peak:.1f} deg -> painetaan")
 
-    def _wrap_if_done(self, now: float) -> bool:
-        """Jana kayty: palataan alkuun."""
-        if self.position < self.cfg.span_guess_units:
-            return False
-        self.memory.wraps += 1
-        self._wrapped = True
-        self.position = 0.0
-        self.memory.resume_units = 0.0
-        self._record(self.position, 0.0, "kierros")
-        return True
+    # ---------------------------------------------------------------- RAMP
 
-    # -------------------------------------------------------------- DRIVE
+    def _start_press(self, now: float, obs: Observation) -> None:
+        self._pressing = True
+        self._press_started = now
+        self._press_until = now + self.cfg.press_max_ms / 1000.0
+        self._press_peak = self._lift(obs)
+        self._rise_at = now
 
-    def _enter_drive(self, now: float, obs: Observation) -> None:
-        self.phase = self.DRIVE
-        # Kesken oleva lepojakso perutaan: ikkuna loytyi, joten nyt lukko
-        # antaa periksi eika F:aa ole syyta pitaa ylhaalla hetkeakaan.
-        # Ilman tata haun lyhyt tauko jatkui ajovaiheen alkuun ja soi
-        # juuri sen hetken, jolloin pesa olisi lahtenyt kaantymaan.
-        self._relax_until = 0.0
-        self._strain_since = now
-        self._strain_peak = obs.turn
-        self._phase_started = now
-        self._entered_drive_at = now
-        self._drive_entry_position = self.position
-        self._last_rise = now
-        self._stall_count = 0
-        self._nudge_direction = 1
-        self._creep_scale = 1.0
-        self._settles = 0
-        self._settled_value = obs.turn
-        self._last_change = now
-        self._goal_since = -1.0
-        self._fine_step = self.cfg.drive_final_step_units
-        self._mark_step(now)
+    def _ramp(self, now: float, obs: Observation) -> Action:
+        """taap, taaaap, taaaap - paina niin kauan kuin pesa kaantyy.
 
-    def _drive(self, now: float, obs: Observation) -> Action:
-        """F PYSYY POHJASSA. Odota - astu - vertaa.
-
-        Tama on koko ohjaimen tarkein vaihe.
-
-        Perusidea: kun F on pohjassa, pesa kaantyy niin pitkalle kuin
-        NYKYINEN kohta sallii, ja pysahtyy sitten. Se pysahtynyt lukema
-        kertoo suoraan, kuinka kaukana sweetspotista ollaan - mitatusti
-        58 yksikon paassa 4 astetta, 8 yksikon paassa 83 astetta.
-
-        Siksi ohjain ei arvaa askelen pituutta vaan laskee sen puuttuvasta
-        kaannosta: mita enemman 90 asteesta puuttuu, sita pidempi askel.
-        Kun kaanto on jo 85, askel on vain pari yksikkoa, jottei kolmen
-        yksikon levyista ydinta ohiteta.
-
-        Suunta paatellaan vertaamalla kahta perakkaista pysahtynytta
-        lukemaa. Nouseva lukema = oikea suunta, laskeva = vaara suunta.
-        F ei irtoa valissa kertaakaan.
+        Painallus loppuu vasta kun pesa on lakannut kaantymasta. Siksi
+        painallus pitenee itsestaan sita mukaa kun lahestytaan oikeaa
+        kohtaa: kaukana pesa pysahtyy heti, lahella se kaantyy pitkaan.
         """
-        target = self.cfg.success_angle_degrees
-        lift = obs.turn - self.rest_angle
+        lift = self._lift(obs)
 
-        # Myos ajossa vaanto katkaistaan, mutta paljon loysemmalla
-        # rajalla: taalla lukko antaa periksi, joten pesan noustessa
-        # rasitusta ei kerry lainkaan. Raja purkaa vain sen tilanteen,
-        # jossa pesa on jumissa tasanteella eika mikaan etene.
-        if lift < target - 1.0 and self._relax_needed(
-                now, self.cfg.drive_max_strain_ms, self.cfg.drive_relax_ms):
-            return Action(f_down=False, phase=self.DRIVE,
-                          note=f"tiirikka lepaa {obs.turn:.1f} deg")
+        # Maalissa: ei enaa mitaan saatoa, pidetaan F pohjassa.
+        if lift >= self.cfg.open_degrees:
+            return Action(f_down=True, phase=self.RAMP,
+                          note=f"AUKEAA {lift:.1f} deg -> F pohjassa")
 
-        # Maalissa: ei enaa mitaan saatoa, anna pesan pyorahtaa loppuun.
-        # Jos lukko ei kuitenkaan aukea, ote on muutaman yksikon verran
-        # vaarassa kohdassa. Nauhoituksessa juuri irrotus ja pieni nykays
-        # vei 89 asteesta 91.8 asteeseen ja lukko aukesi. Siksi maalissa
-        # ei jaada odottamaan loputtomiin.
-        if obs.turn >= target - 1.0:
-            if self._goal_since < 0.0:
-                self._goal_since = now
-            if now - self._goal_since >= self.cfg.goal_stall_ms / 1000.0:
-                self._goal_since = -1.0
-                self.phase = self.REBITE
-                self._phase_started = now
-                self._rebite_until = now + self.cfg.rebite_release_ms / 1000.0
-                return Action(f_down=False, phase=self.REBITE,
-                              note=f"maalissa {obs.turn:.1f} deg muttei aukea "
-                                   f"-> uusi ote")
-            return Action(f_down=True, phase=self.DRIVE,
-                          note=f"MAALISSA {obs.turn:.1f} deg -> F pohjassa")
-        self._goal_since = -1.0
+        # --- painallus kaynnissa ---
+        if self._pressing:
+            if lift > self._press_peak + 1.0:
+                self._press_peak = lift
+                self._rise_at = now              # pesa kaantyy yha
+            still_turning = (now - self._rise_at) < self.cfg.press_stall_ms / 1000.0
+            long_enough = (now - self._press_started) >= self.cfg.press_min_ms / 1000.0
+            if now < self._press_until and (still_turning or not long_enough):
+                return Action(f_down=True, phase=self.RAMP,
+                              note=f"paina {lift:.1f} deg")
 
-        # Loppukiri. Kun aika on lopussa ja pesa on jo lahella maalia,
-        # asettumisen odottaminen maksaa enemman kuin se hyodyttaa: yksi
-        # odotus vie sen ajan jolla ehtisi ottaa nelja askelta. Siksi
-        # viimeisella hetkella otetaan pienia askelia nykyiseen suuntaan
-        # niin tiheaan kuin ehtii ja luotetaan siihen etta ydin osuu.
-        if (lift >= self.cfg.sprint_above_degrees
-                and self._elapsed >= self.cfg.sprint_after_fraction
-                * self.expected_seconds):
-            if now < self._next_sprint or now < self._next_pulse:
-                return Action(f_down=True, phase=self.DRIVE,
-                              note=f"loppukiri {obs.turn:.1f} deg")
-            self._next_sprint = now + self.cfg.sprint_interval_ms / 1000.0
-            step = self._fine_step * self._nudge_direction
-            self.planner.step = abs(step)
-            return self._pulse(now, step, self.DRIVE,
-                               f"LOPPUKIRI {obs.turn:.1f} deg {step:+.0f} u",
-                               f_down=True)
+            # Painallus ohi: F ylos hetkeksi.
+            self._pressing = False
+            self._release_until = now + self.cfg.release_ms / 1000.0
+            self._note(self.position, self._press_peak,
+                       f"paino {(now - self._press_started) * 1000:.0f} ms")
+            return Action(phase=self.RAMP, note=f"huippu {self._press_peak:.1f} deg")
 
-        # Vaste hukkui. Ikkuna on kuitenkin lahella, joten palataan siihen
-        # kohtaan jossa vaste oli paras eika jatketa pyyhkaisya eteenpain.
-        if lift < self.cfg.give_up_below_degrees and self._settles > 0:
-            self._record(self.position, lift, "hukkui")
-            # Ikkuna on lahella, joten sita haetaan ensin paikallisesti
-            # molemmilta puolilta. Vasta sitten palataan koko janan
-            # pyyhkaisyyn. Ilman tata vaarin arvattu peruutus vie haun
-            # ikkunan ohi eika sinne enaa palata.
-            if self._rescan_left > 0:
-                self._rescan_left -= 1
-                self._rescan_index += 1
-                offset = ((self._rescan_index + 1) // 2) * self.sweep_step
-                if self._rescan_index % 2 == 0:
-                    offset = -offset
-                target_pos = self._rescan_anchor + offset
-                jump = target_pos - self.position
-                self._enter_drive(now, obs)
-                self._nudge_direction = -1 if jump < 0 else 1
-                return self._pulse(now, jump, self.DRIVE,
-                                   f"paikallinen uusinta {target_pos:.0f} u",
-                                   f_down=True)
-            self.planner.ramp_locked = False
-            self.phase = self.SWEEP
-            self._phase_started = now
-            self._dwell_until = 0.0
-            self._peak = obs.turn
-            return Action(f_down=self.cfg.sweep_hold_f, phase=self.SWEEP,
-                          note="vaste hukkui -> takaisin pyyhkaisyyn")
+        # --- lyhyt tauko painallusten valissa ---
+        if now < self._release_until:
+            return Action(phase=self.RAMP, note="hetki irti")
 
-        # Kuollut aika: heti askeleen jalkeen ruudulla nakyy viela
-        # edellinen tilanne. Jos ne lukemat paastetaan asettumisikkunaan,
-        # ohjain toteaa vanhan tasanteen asettumiseksi ja astuu heti
-        # uudelleen. Silloin kaksi askelta menee yhden hinnalla ja
-        # sweetspot ohitetaan.
-        if self._stale(now, obs):
-            return Action(f_down=True, phase=self.DRIVE,
-                          note=f"vanha kuva {obs.turn:.1f} deg")
+        # --- verrataan ja nykaistaan ---
+        if self._press_peak < self.cfg.lost_degrees:
+            self._misses += 1
+            if self._misses >= self.cfg.lost_presses:
+                self.phase = self.SCAN                # ramppi hukattiin
+                self.planner.ramp_locked = False
+                self._tapping = False
+                self._gap_until = 0.0
+                self._tap_peak = 0.0
+                return Action(phase=self.SCAN, note="ramppi hukkui, skannataan")
+        else:
+            self._misses = 0
 
-        # Kaanto elaa viela: odotetaan. Talla ohjain "uskaltaa" pitaa F:n
-        # pohjassa sen sijaan etta hosuisi seuraavaan kohtaan.
-        #
-        # Asettuminen paatellaan vertaamalla ikkunan alkupuoliskon
-        # mediaania loppupuoliskon mediaaniin. Mediaani kestaa kohinaa, ja
-        # puolikkaiden ero mittaa nimenomaan TRENDIA - siis kaantyyko pesa
-        # viela. Yksittaisten ruutuerojen vertailu petti kohinaisella
-        # lukemalla.
-        limit = self._settle_limit_ms() / 1000.0
-        if obs.stamp <= 0.0 or obs.stamp > self._window_stamp:
-            self._window_stamp = obs.stamp
-            self._window.append((now, obs.turn))
-        self._window = [(t, a) for t, a in self._window if now - t <= limit]
-        n = len(self._window)
-        span_ok = n and (now - self._window[0][0]) >= limit * 0.85
-        if not span_ok or n < self.cfg.drive_settle_samples:
-            return Action(f_down=True, phase=self.DRIVE,
-                          note=f"kaantyy {obs.turn:.1f} deg")
+        if self._press_peak > self._best_peak + 1.0:
+            self._best_peak = self._press_peak        # parani: sama suunta
+        else:
+            self._direction *= -1                     # huononi: toiseen suuntaan
 
-        half = n // 2
-        med = lambda xs: sorted(xs)[len(xs) // 2]
-        first = med([a for _, a in self._window[:half]])
-        second = med([a for _, a in self._window[half:]])
-        trend_limit = max(self.cfg.drive_trend_degrees,
-                          self.cfg.drive_trend_noise_factor * self.noise_degrees)
-        if abs(second - first) > trend_limit:
-            return Action(f_down=True, phase=self.DRIVE,
-                          note=f"kaantyy {obs.turn:.1f} deg")
+        near = (self.cfg.open_degrees - self._press_peak) <= self.cfg.fine_below_degrees
+        step = (self.cfg.nudge_fine_units if near else self.cfg.nudge_units)
+        self.planner.step = step
+        self.planner.local_direction = self._direction
 
-        settled = med([a for _, a in self._window])
-        previous = self._settled_value
-        self._settled_value = settled
-        obs = Observation(stamp=obs.stamp, ok=True, turn=settled,
-                          timer=obs.timer, running=obs.running)
-        self._settles += 1
-        self._record(self.position, lift, f"asettui {obs.turn:.0f}")
-
-        if self._settles >= 2:
-            decide = max(self.cfg.drive_worse_degrees,
-                         self.cfg.drive_noise_factor * self.noise_degrees)
-            gain = obs.turn - previous
-            if gain < -decide:
-                # Vaara suunta: kaanto huononi. Kaannytaan ja lyhennetaan.
-                self._nudge_direction *= -1
-                self._creep_scale = max(0.3, self._creep_scale * 0.55)
-                self._stall_count += 1
-                # Lahella maalia huononeva kaanto tarkoittaa, etta ydin
-                # jai juuri taakse: se on viimeisen kahden kohdan valissa.
-                # Puolitetaan hienoaskel, jolloin haku kiristyy ytimen
-                # ymparille. Ilman tata kapea ydin jaa ikuisesti kahden
-                # yhta pitkan askeleen valiin.
-                if target - obs.turn <= self.cfg.drive_final_window_degrees:
-                    self._fine_step = max(self.cfg.drive_min_step_units,
-                                          self._fine_step
-                                          * self.cfg.drive_bisect_factor)
-            elif gain > decide:
-                # Oikea suunta: pidetaan suunta ja luotetaan askeleeseen.
-                self._stall_count = 0
-                self._creep_scale = min(1.0, self._creep_scale * 1.25)
-            else:
-                # Tasanne: sama suunta mutta reilumpi askel.
-                self._stall_count += 1
-                self._creep_scale = min(1.6, self._creep_scale * 1.3)
-
-        # Jos suunta heiluu eika mikaan auta, otetaan uusi ote F:sta.
-        if self._stall_count >= self.cfg.rebite_after_stalls:
-            self._stall_count = 0
-            self.phase = self.REBITE
-            self._phase_started = now
-            self._rebite_until = now + self.cfg.rebite_release_ms / 1000.0
-            return Action(f_down=False, phase=self.REBITE,
-                          note=f"jumissa {obs.turn:.1f} deg -> uusi ote")
-
-        step = self._creep_units(obs.turn, target) * self._nudge_direction
-        self._mark_step(now)
-        self._last_change = now
-        self._last_rise = now
-        self.planner.step = abs(step)
-        self.planner.local_direction = self._nudge_direction
-
-        return self._pulse(now, step, self.DRIVE,
-                           f"{obs.turn:.1f} deg -> askel {step:+.0f} u",
-                           f_down=self.cfg.drive_nudge_with_f_down)
-
-    def _creep_units(self, angle: float, target: float) -> float:
-        """Askelen pituus: puuttuva kaanto kertoo etaisyyden sweetspotista.
-
-        Aivan maalin lahella kaytetaan hienompaa askelta, koska avaava
-        ydin on vain muutaman hiiriyksikon levyinen: liian iso askel
-        hyppaa sen yli kerta toisensa jalkeen.
-        """
-        remaining = max(0.0, target - angle)
-        if remaining <= self.cfg.drive_final_window_degrees:
-            # Hienoalue: askel on tasan puolitushaun mittainen. Se alkaa
-            # ytimen levyisena ja puolittuu vasta kun ydin on ohitettu.
-            # Askelta EI saa laskea puuttuvasta kaannosta, koska talla
-            # alueella se olisi vain pari yksikkoa ja haku kavisi liian
-            # hitaaksi ehtiakseen ajoissa perille.
-            return self._fine_step
-        step = self.cfg.drive_creep_gain * remaining * self._creep_scale
-        return min(self.cfg.drive_creep_max_units,
-                   max(self.cfg.drive_creep_min_units, step))
-
-    # ------------------------------------------------------------- REBITE
-
-    def _rebite(self, now: float, obs: Observation) -> Action:
-        """Lyhyt F:n irrotus ja uusi ote.
-
-        Nauhoituksessa pesa jumitti 89 asteeseen F pohjassa. Irrotus,
-        pieni nykays ja uusi painallus vei sen 91.8 asteeseen ja lukko
-        aukesi. Tama on siis mitattu siirto, ei arvaus.
-        """
-        if now < self._rebite_until:
-            return Action(f_down=False, phase=self.REBITE, note="uusi ote")
-
-        # Nykays on hienoaskelen mittainen: uusi ote otetaan siita
-        # kohdasta johon oltiin jo paasty, ei kauempaa.
-        fine = self._fine_step
-        units = fine * self._nudge_direction
-        self._enter_drive(now, obs)
-        self._fine_step = fine
-        self._peak = obs.turn
-        return self._pulse(now, units, self.DRIVE,
-                           f"uusi ote + nykays {units:+.0f} u", f_down=True)
+        self._start_press(now, obs)
+        return self._move(now, step * self._direction, self.RAMP,
+                          f"nykays {step * self._direction:+.0f} u", f_down=True)
 
     # ------------------------------------------------------- yrityksen loppu
 
     def finish_attempt(self, opened: bool) -> None:
         self.memory.sweeps += 1
-        # Mitatut olosuhteet sailyvat yritysten yli: ne kertovat
-        # koneesta ja pelista, eivat sweetspotin paikasta. Seuraava
-        # yritys alkaa siis jo oikeilla kynnyksilla.
-        if len(self._lag_samples) >= 4:
-            self.memory.lag_ms = self.lag_ms
-
-        # Askelen mukautus: vain jos koko yritys meni hukkaan ilman
-        # yhtaan vastetta. Jos ikkuna loytyi, askel on hyva.
-        if self.cfg.adapt_sweep_step and not opened and not self._found_window:
-            factor = (self.cfg.sweep_step_shrink if self._wrapped
-                      else self.cfg.sweep_step_grow)
-            self.memory.sweep_step_units = clamp(
-                self.sweep_step * factor,
-                self.cfg.sweep_step_min_units, self.cfg.sweep_step_max_units)
-        # Yrityksen KESTO opitaan vain aikansa loppuun ajaneista
-        # yrityksista. Onnistunut yritys paattyy siihen etta lukko aukeaa,
-        # eli kesken aikarajan, joten se aliarvioisi ajan - ja loppukiri
-        # alkaisi joka kerta liian aikaisin.
-        if not opened and self._elapsed > 0.5:
-            previous = self.memory.attempt_seconds
-            self.memory.attempt_seconds = (self._elapsed if previous is None
-                                           else 0.5 * (previous + self._elapsed))
         if opened:
             self.memory.forget_position()
-            self.memory.zone_units = None
-            self.memory.zone_score = 0.0
 
 
-# --------------------------------------------------------------------------
-# Apufunktiot
-# --------------------------------------------------------------------------
+# ==========================================================================
+#  Apufunktiot (nakyman kayttoon)
+# ==========================================================================
 
 
 def full_turn_ms(turn_rate: float | None, degrees: float = 90.0) -> float | None:

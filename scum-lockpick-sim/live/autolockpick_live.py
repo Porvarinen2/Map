@@ -1883,7 +1883,8 @@ def main(argv=None) -> int:
     parser.add_argument("--selftest", action="store_true",
                         help="aja logiikka simulaatiota vasten")
     parser.add_argument("--fps", type=float, help="ruudunkaappauksia sekunnissa")
-    parser.add_argument("--scan-step", type=float, help="skannausvali asteina")
+    parser.add_argument("--scan-step", type=float,
+                        help="skannausaskel hiiriyksikkoina (oletus 90)")
     parser.add_argument("--save", action="store_true", help="tallenna asetukset ja lopeta")
     args = parser.parse_args(argv)
 
@@ -1894,7 +1895,7 @@ def main(argv=None) -> int:
     if args.fps:
         run.capture_fps = args.fps
     if args.scan_step:
-        control.sweep_step_units = args.scan_step
+        control.scan_step_units = args.scan_step
     if args.save:
         save_settings(control, vision, run)
         print(f"Asetukset tallennettu: {SETTINGS_FILE}")

@@ -82,9 +82,9 @@ def main() -> int:
     print("Mitattu kaantosarja")
     check("skannausvaihe pysyy lahella nollaa", max(scan) < 5.0,
           f"suurin {max(scan):.1f} deg 30 kehyksen aikana")
-    check("levossa oleva pesa ei ylita pyyhkaisyn kynnysta",
-          max(scan) < ControlConfig().sweep_trigger_degrees + 1.0,
-          f"{max(scan):.1f} vs kynnys {ControlConfig().sweep_trigger_degrees:.1f} deg")
+    check("levossa oleva pesa ei ylita rampin kynnysta",
+          max(scan) < ControlConfig().ramp_degrees + 1.0,
+          f"{max(scan):.1f} vs kynnys {ControlConfig().ramp_degrees:.1f} deg")
     check("tyovaihe nousee lahes taydelle kaannolle", max(work) > 85.0,
           f"suurin {max(work):.1f} deg")
     check("kaanto nousee portaittain eika hyppaa kerralla",
@@ -119,34 +119,23 @@ def main() -> int:
     print("Ohjain lukee saman sarjan oikein")
     cfg = ControlConfig()
     controller = Controller(cfg)
-    controller.phase = controller.SWEEP          # ohitetaan kotiinajo
-    controller._phase_started = 0.0
-    controller._sweep_started = 0.0
+    controller.phase = controller.SCAN          # ohitetaan kotiinajo
 
-    saw_window = saw_drive = False
-    held = 0
+    saw_ramp = held = 0
     for index, turn in enumerate(turns):
         action = controller.update(index / FPS, Observation(
             stamp=index / FPS, ok=True, turn=turn, running=True))
         if controller.planner.ramp_locked:
-            saw_window = True
-        if action.phase == controller.DRIVE:
-            saw_drive = True
+            saw_ramp = 1
         if action.f_down:
             held += 1
 
-    check("ohjain tunnisti vasteikkunan", saw_window,
+    check("ohjain tunnisti rampin", bool(saw_ramp),
           f"{len(controller.probes)} merkintaa")
-    check("ohjain siirtyi ajovaiheeseen", saw_drive)
-    # Nauhoituksessa pesa kaantyy koko ajan, eli lukko antaa periksi.
-    # Silloin vaantoa ei katkaista: F pysyy pohjassa. Tama erottaa
-    # periksiantavan lukon jumista - jalkimmaisessa F paastetaan irti.
-    check("periksiantavan lukon aikana F pysyy pohjassa",
-          held >= 0.55 * len(turns), f"{held}/{len(turns)} kehysta")
-    check("levossa olevasta vaiheesta ei syntynyt vaaraa ikkunaa",
-          all(p.score < cfg.sweep_trigger_degrees
-              for p in controller.probes[:8] if p.position == 0.0) or saw_window,
-          f"{len(controller.probes)} merkintaa")
+    check("ohjain paatyi ramppivaiheeseen", controller.phase == controller.RAMP,
+          controller.phase)
+    check("kaantyvan lukon aikana F on pohjassa", held >= 0.5 * len(turns),
+          f"{held}/{len(turns)} kehysta")
     print()
 
     if FAILURES:

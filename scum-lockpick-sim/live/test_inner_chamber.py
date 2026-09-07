@@ -105,14 +105,12 @@ def main():
     # Ohjain: pieni tarahdys ei ole vasteikkuna. Kayttajan saanto oli
     # "jos lukko tarahtaa eika kierra sillon ei oo oikee kohta". Uudessa
     # rakenteessa saanto on yksi kynnys: pyyhkaisy jatkuu kunnes pesa
-    # nousee lepokulmastaan sweep_trigger_degrees verran.
+    # nousee lepokulmastaan ramp_degrees verran.
     ccfg = ControlConfig()
 
     def sweeping():
         c = Controller(ccfg, SearchMemory())
-        c.phase = c.SWEEP
-        c._phase_started = 0.0
-        c._sweep_started = 0.0
+        c.phase = c.SCAN
         return c
 
     def feed(c, values, dt=0.005, start=0.0):
@@ -125,9 +123,9 @@ def main():
     # Lepokulma mitataan ensin, sitten yksi lyhyt tarahdys kynnyksen alle.
     twitch = sweeping()
     t = feed(twitch, [0.4] * 10)
-    twitch_size = ccfg.sweep_trigger_degrees - 0.6
+    twitch_size = ccfg.ramp_degrees - 0.6
     t = feed(twitch, [0.4 + twitch_size, 0.4], start=t)
-    assert twitch.phase == twitch.SWEEP, twitch.phase
+    assert twitch.phase == twitch.SCAN, twitch.phase
     assert not twitch.planner.ramp_locked
 
     # Sama ohjain, mutta pesa oikeasti kaantyy: nyt ikkuna lukittuu.
@@ -135,7 +133,7 @@ def main():
     t = feed(turning, [0.4] * 10)
     turning.update(t, Observation(stamp=t, ok=True, turn=0.4 + 12.0, running=True))
     assert turning.planner.ramp_locked
-    assert turning.phase == turning.DRIVE, turning.phase
+    assert turning.phase == turning.RAMP, turning.phase
 
     print("INNER CHAMBER geometry: OK")
     print(
@@ -148,7 +146,7 @@ def main():
     print(
         "twitch guard: "
         f"{twitch_size:.1f} deg ei riita, "
-        f"kynnys {ccfg.sweep_trigger_degrees:.1f} deg: OK"
+        f"kynnys {ccfg.ramp_degrees:.1f} deg: OK"
     )
     return 0
 

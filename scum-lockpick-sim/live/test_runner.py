@@ -213,9 +213,8 @@ def test_draw_survives_every_state() -> None:
         runner.draw(1.0, obs(1.0, turn=12.0, timer=0.4, running=True))
         # Jokainen ohjaimen vaihe erikseen: nakyman kaatuminen keskeyttaisi
         # koko ajon, ja uusi vaihe on helppo unohtaa nakymasta.
-        phases = [runner.controller.HOME, runner.controller.SEEK,
-                  runner.controller.SWEEP, runner.controller.DRIVE,
-                  runner.controller.REBITE, runner.controller.DONE]
+        phases = [runner.controller.HOME, runner.controller.SCAN,
+                  runner.controller.RAMP, runner.controller.DONE]
         for phase in phases:
             runner.controller.phase = phase
             runner.last_action.phase = phase

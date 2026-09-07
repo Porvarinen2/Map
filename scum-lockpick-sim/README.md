@@ -1,18 +1,29 @@
 # SCUM Tiirikkapenkki
 
-> **LIVE 2.1 - TIIRIKAN SAASTO:** haku ei enaa vaanna F:aa yhtajaksoisesti.
-> Tiirikkaa kuluttaa vain se, etta F on pohjassa kohtaa vasten joka EI anna
-> periksi - siksi vaanto katkaistaan haun aikana ja pidetaan pohjassa vasta
-> kun vasteikkuna on loytynyt. Haun painallukset ovat nyt mediaaniltaan
-> 236 ms (aiemmin 2328 ms). Tasoa saatelaan `pick_care`-asetuksella.
-> Katso [Kuinka lujaa tiirikkaa vaannetaan](#kuinka-lujaa-tiirikkaa-vaannetaan).
+> **LIVE 3.0 - YKSINKERTAINEN:** ohjain on kirjoitettu uusiksi kolmasosaan
+> entisesta koosta. Skannaus napauttaa F:aa lyhyesti ja tasaisesti, ja vasta
+> kun lukkopesa kaantyy, F painetaan pohjaan. Kaikki saadot ovat yhdessa
+> lohkossa tiedoston `live/lockpick_control.py` alussa - ja
+> [SAADOT.txt](SAADOT.txt) kertoo yhdella sivulla, mita mikin luku tekee ja
+> mita muuttaa jos jokin ei toimi.
 
-> **LIVE 2.0 - SWEEP + DRIVE:** ohjain on kirjoitettu uudelleen kayttajan
-> omasta debug-nauhoituksesta mitatun datan pohjalta. F pysyy pohjassa koko
-> ajan: pyyhkaisyn aikana, vasteen loytyessa ja loppuun asti. Loppupeli
-> (vasteikkunasta lukon avautumiseen) on kokonaan uusi. Katso
-> [LIVE 2.0 -osio](#live-20--sweep--drive) ja `LIVE_2_0_MITA_MUUTTUI.txt`.
+```
+tap, tap, tap, tap, taap, taaaap, taaaap, AUKI
+```
 
+**SKANNAUS** - askel oikealle, lyhyt F-napautus, katsotaan liikkuiko
+lukkopesa. Ei liikkunut -> askel oikealle ja uusi napautus. Kaikki
+napautukset ovat samanmittaisia ja kaikki askeleet yhta pitkia.
+
+**RAMPPI** - lukkopesa ja sen musta avaimenreika kaantyi, eli oikea kohta
+loytyi. Nyt F on pohjassa niin kauan kuin pesa kaantyy. Kun se pysahtyy,
+nykaistaan hieman ja painetaan uudelleen.
+
+Painallusten pituutta **ei ole kasketty mihinkaan**. Se seuraa siita, kuinka
+kauan pesa jaksaa kaantya: kaukana se pysahtyy heti (tap), lahella se kaantyy
+pitkaan (taaaap). Kuvio syntyy siis itsestaan, eika sita tarvitse virittaa.
+
+---
 
 Kolme osaa, jotka ajavat samaa lukkomallia ja samaa hakulogiikkaa:
 
@@ -155,54 +166,21 @@ jalkeiset uusinnat. Onnistuminen erottuu aikakatkaisusta siita, etta
 onnistuessa koko minipeli sulkeutuu, kun taas aikakatkaisussa lukko jaa
 nakyviin ja aloituskehote palaa.
 
-### Mita ohjelma oppii ajon aikana
+### Mita ohjelma EI tee
 
-Ohjain ei oleta mitaan koneesta tai pelin nopeudesta, vaan **mittaa** ne
-ajon aikana. Ilman tata se toimisi vain silla koneella, jolla se viritettiin.
+Aiemmat versiot mittasivat ajon aikana havaintoviivetta, ruutuvalia,
+kulmakohinaa ja yrityksen kestoa, ja johtivat niista kynnyksia. Se oli
+teoriassa oikein mutta kaytannossa kaikki ne saadot vaikuttivat toisiinsa,
+eika mitaan pystynyt virittamaan yksin. Kaikki tuo on poistettu.
 
-| Suure | Miten mitataan | Mihin vaikuttaa |
-|---|---|---|
-| Havainnon vanhuus | `nyt - kuvan kaappaushetki` | kuinka kauan askeleen jalkeen ruudulla nakyy viela vanha tilanne. Ilman tata ohjain lukee vanhaa kuvaa ja astuu kahdesti yhden hinnalla. Mitattu vaikutus: 76 % vs 60 %. |
-| Ruutuvali | perakkaisten kaappausten mediaanivali | kuinka pitka asettumisikkuna tarvitaan |
-| Kulmalukeman kohina | erotusten alaneljannes kerrottuna 2,22:lla | kaikki kynnykset, joilla erotetaan aito kaanto kohinasta |
-| Kaantonopeus | kaannon muutos jaettuna ajalla | nakyy CMD-ikkunassa; kertoo etta pesa oikeasti liikkuu |
-| Yrityksen kesto | edellisen yrityksen pituus | milloin on loppukirin aika |
+Ohjain ei enaa opi mitaan yritysten valilla eika saada itseaan ajon
+aikana. Se tekee joka kerta saman asian samoilla luvuilla, ja ne luvut
+ovat sinun muutettavissasi. Ainoa asia, joka mitataan, on lukkopesan
+**lepokulma** yrityksen ensimmaisista ruuduista - koska pesa voi levata
+hieman vinossa, eika nollatasoa siksi voi olettaa.
 
-Kohinan kerroin 2,22 ei ole viritysvakio vaan seuraa suoraan siita, etta
-riippumattoman normaalikohinan perakkaisten erotusten itseisarvon
-alaneljannes on 0,45-kertainen hajontaan nahden. Ilman kerrointa kohina
-aliarvioitiin yli kaksinkertaisesti ja kaikki siita johdetut kynnykset
-jaivat liian tiukoiksi.
-
-### Mita muistetaan yritysten valilla
-
-Sweetspotin **paikkaa ei muisteta**: se vaihtuu yritysten valilla, ja niin se
-vaihtui myos omassa nauhoituksessasi (kerran 957, kerran 3052 yksikon
-kohdalla). `remember_zone` on siksi oletuksena pois.
-
-Sen sijaan muistetaan **mitatut olosuhteet**: havainnon viive ja yrityksen
-kesto. Ne kertovat koneesta ja pelista, eivat sweetspotista, joten seuraava
-yritys alkaa jo oikeilla kynnyksilla.
-
-Kytkin `resume_search` (jatka siita mihin edellinen yritys jai) oli
-**rikki**: se oli olemassa, mutta ei siirtanyt hiirta minnekaan, joten se ei
-tehnyt yhtaan mitaan. Nyt siirtyma tehdaan oikeasti. Kun sen sai vihdoin
-mitattua, kavi ilmi ettei siita ole hyotya, joten se on edelleen oletuksena
-pois. Syy: koska sweetspot arvotaan uudelleen, mika tahansa yhta pitka patka
-on yhta hyva paikka etsia - mutta jatkaminen ajaa haun ennemmin tai myohemmin
-oikean reunan taakse, missa hiiri ei enaa liiku ja koko yritys menee hukkaan.
-
-| Jana | Jatkaen | Aina alusta |
-|---|---|---|
-| 2500 u | 98,8 % | **100,0 %** |
-| 3600 u | 98,8 % | **100,0 %** |
-| 5500 u | 98,4 % | **100,0 %** |
-| 9000 u | 96,0 % | **98,0 %** |
-| 14000 u | 84,4 % | 83,6 % |
-
-Vasta 14000 yksikon janalla ne ovat tasoissa, ja sekin ero on kohinaa.
-
----
+Sweetspotin paikkaa ei muisteta, koska se vaihtuu yritysten valilla:
+omassa nauhoituksessasi se oli kerran 957 ja kerran 3052 yksikon kohdalla.
 
 ## 2. Selainsimulaatio
 
@@ -236,17 +214,18 @@ python lockpick_sim.py --settings ../../asetukset.json --tier basic
 Windowsissa `Aja_Testit.bat` ajaa kaikki kerralla.
 
 ```bash
-cd sim  && python test_sim.py                    # lukkomalli ja hakusaanto
-cd live && python test_vision.py                 # tunnistus pelin kuvista
-cd live && python test_inner_chamber.py          # pinkilla merkitty pesan alue
-cd live && python test_success_angles.py         # success-kulmat pelin kuvista
-cd live && python test_fast_scan_deep_target.py  # pyyhkaisyn ja ajon saannot
-cd live && python test_real_motion_guard.py      # tarina vs. aito kaanto
-cd live && python test_runner.py                 # tilakone valesyotteella
-cd live && python test_gameplay.py               # oikean pelivideon 47 kehysta
-cd live && python test_live.py                   # ohjain simuloitua lukkoa vasten
-cd live && python test_strategy.py               # strategia 16 mallimuunnelmaa vasten
+cd sim  && python test_sim.py            # lukkomalli ja hakusaanto
+cd live && python test_vision.py         # tunnistus pelin kuvista
+cd live && python test_inner_chamber.py  # pinkilla merkitty pesan alue
+cd live && python test_success_angles.py # success-kulmat pelin kuvista
+cd live && python test_runner.py         # tilakone valesyotteella
+cd live && python test_gameplay.py       # oikean pelivideon 47 kehysta
+cd live && python test_control.py        # ohjaimen kayttaytyminen
 ```
+
+`test_control.py` tarkistaa **kuvion**, ei onnistumisprosenttia:
+napautukset ovat lyhyita ja samanmittaisia, hiiri liikkuu tasaisin pienin
+askelin, ja rampissa painallus kestaa niin kauan kuin pesa kaantyy.
 
 `test_vision.py` vaatii Pillowin (`pip install pillow`). Live-ajo ei vaadi.
 
@@ -309,8 +288,7 @@ live/autolockpick_live.py   ruudunkaappaus, tunnistus, SendInput, CMD-nakyma
 live/lockpick_control.py    hakusaanto ja tilakone (jaettu logiikka)
 live/lock_sim.py            nauhoitukseen kalibroitu lukkomalli
 live/debug_report.py        HTML-raportti debug-paketista tai nauhoituksesta
-live/test_live.py           ohjain simuloitua lukkoa vasten
-live/test_strategy.py       strategia 16 mallimuunnelmaa vasten
+live/test_control.py        ohjaimen kayttaytyminen (kuvio, ei prosentit)
 live/test_vision.py         tunnistus pelin omia kuvia vasten
 live/test_inner_chamber.py  pinkilla merkitty pyoriva pesa
 live/test_runner.py         tilakone valesyotteella
@@ -325,6 +303,7 @@ sim/lockpick_sim.py         komentorivi, eraajot ja vertailut
 sim/test_sim.py             mallin tarkistustestit
 
 web/scum_lockpick_sim.html  selainsimulaatio (yksi tiedosto)
+SAADOT.txt                  kaikki saadettavat luvut yhdella sivulla
 docs/MEKANIIKKA.md          mika on lahteista ja mika on taman mallin arviota
 ```
 
@@ -520,134 +499,14 @@ Katso `LIVE_1_6_MITA_MUUTTUI.txt`.
 
 ---
 
-## LIVE 2.0 — SWEEP + DRIVE
+## LIVE 2.0 / 2.1 — poistettu
 
-Hakuvaihe toimi jo kohtuullisesti; **loppupeli** — se osuus jossa vasteikkuna
-on loydetty ja lukko pitaisi saada auki — oli puutteellinen. Se on kirjoitettu
-uudelleen. `LIVE_2_0_MITA_MUUTTUI.txt` kertoo saman pidemmin.
+Naissa versioissa haku piti F:aa pohjassa yhtajaksoisesti ja ajovaihe
+kaytti asettumisikkunoita, mitattua havaintoviivetta, puolitushakua,
+loppukiria ja kolmea otetasoa. Se toimi mallia vasten mutta pelissa se
+napautteli ja painoi pohjaan sekavasti, skannasi isoin loikin ja oli
+liian monimutkainen viritettavaksi.
 
-### Kaksi vaihetta, F pohjassa molemmissa
-
-**SWEEP** — hiiri matelee vasemmalta oikealle 110 yksikon askelin, F pohjassa
-koko ajan. Pesa alkaa kaantya heti kun ikkunaan osutaan, joten haku ja kaannon
-aloitus tapahtuvat samalla kertaa. Askel on selvasti mitattua ~120 yksikon
-ikkunaa lyhyempi, joten ikkuna ei voi jaada kahden askeleen valiin.
-
-**DRIVE** — F pysyy pohjassa. Odota kunnes kaanto pysahtyy, lue pysahtynyt
-kulma, astu sen verran kuin kulma kertoo, odota uudelleen.
-
-Pysahtymista on pakko odottaa: kesken nousun kulmalukema aliarvioi
-laheisyyden, jolloin askel hyppaa sweetspotin yli. Mitattu vertailu:
-pysahtymista odottava strategia 45,6 %, tasaisin valein astuva 28,6 %.
-
-### Tulos
-
-`live/test_strategy.py` ajaa saman ohjaimen 16:ta mallin muunnelmaa vasten,
-200 sessiota kutakin. Malli on kalibroitu omaan nauhoitukseesi; muunnelmissa
-vaihdellaan viivetta, kohinaa, ytimen leveytta, ruudunlukunopeutta, pesan
-kaantonopeutta, janan pituutta ja aikarajaa.
-
-| Malli | Yksi yritys | Kuusi yritysta |
-|---|---|---|
-| **perusmalli (kalibroitu nauhoitukseesi)** | **81,0 %** | **100,0 %** |
-| naytonluku nopea, viive 30 ms | 91,5 % | 100,0 % |
-| naytonluku hidas, viive 90 ms | 67,5 % | 100,0 % |
-| kohinainen kulmalukema 1,5 deg | 52,0 % | 96,0 % |
-| kapea ydin 1,5 u | 75,5 % | 100,0 % |
-| levea ydin 5 u | 89,0 % | 100,0 % |
-| hidas ruudunluku 50 ms | 70,0 % | 100,0 % |
-| hidas pesa 90 deg/s | 46,5 % | 99,5 % |
-| nopea pesa 220 deg/s | 92,0 % | 100,0 % |
-| pitka jana 5500 u | 72,5 % | 100,0 % |
-| lyhyt jana 2500 u | 91,5 % | 100,0 % |
-| lyhyt aika 2,5 s | 62,5 % | 99,5 % |
-| pitka aika 4,0 s | 89,5 % | 100,0 % |
-| pesa ei kaanny liikkeessa | 80,5 % | 100,0 % |
-| kapea vasteikkuna | 60,0 % | 100,0 % |
-| tiirikka ajautuu kaannon mukana | 79,0 % | 100,0 % |
-| **keskiarvo** | **75,0 %** | **99,7 %** |
-
-Vertailukohta: omassa debug-nauhoituksessasi vanha versio avasi 12 yrityksesta
-yhden, eli 8 %. F oli siina pohjassa 40-65 % ajasta; nyt 95 %.
-
-Toisella, riippumattomalla mallilla (`sim/lockpick_model.py`, oma
-palautekayransa ja kulumismallinsa) kaikki nelja lukkotyyppia - Rusted,
-Basic, Medium ja Enforced - aukeavat 100 % sessioista keskimaarin yhdella
-yrityksella.
-
-### Mika loppupelissa oli rikki
-
-| Vika | Korjaus | Mitattu vaikutus |
-|---|---|---|
-| Askeleen jalkeen luettiin viela vanhaa kuvaa ja se tulkittiin pysahtymiseksi — kaksi askelta yhden hinnalla | Havainnon kaappausaikaleima tarkistetaan; odotetaan ensimmainen askeleen JALKEEN kaapattu ruutu | 76 % vs 60 % |
-| Kohina aliarvioitiin kertoimella 2,2, joten kaikki kynnykset olivat liian tiukkoja | Alaneljanneksen ja hajonnan valinen kerroin 2,22 mukaan | kohina 0,6/1,0/1,5 luetaan nyt 0,44/0,89/1,33, ennen kaikki 0,25 |
-| Asettumisikkuna laski saman ruudun monta kertaa, joten mediaani ei vaimentanut kohinaa | Ikkunaan vain uudet ruudut | kuudella yrityksella 98,8 % -> 99,4 % |
-| Hienoaskel oli kiintea, joten askelta kapeampi ydin jai ikuisesti askelten valiin | Askel puolittuu ylityksesta: 5,0 -> 2,5 -> 1,25 u | kapea ydin 58 % -> 80 % |
-| Maalikulmassa jaatiin odottamaan loputtomiin | 220 ms ilman avautumista -> uusi ote ja nykays | nauhoituksessa juuri tama avasi lukon; simulaatiossa 0 (katso alla) |
-| Viimeiset sekunnin murto-osat kuluivat odottamiseen | Loppukiri: pienia askelia niin tiheaan kuin ehtii | +2,7 prosenttiyksikkoa |
-| `resume_search` ei siirtanyt hiirta minnekaan, joten kytkin ei tehnyt mitaan | Oikea SEEK-vaihe. Kun kytkin vihdoin toimi, se voitiin mitata - eika siita ole hyotya, joten oletus pysyy poissa | jatkaen 98,8 %, aina alusta 100,0 % |
-| Pyyhkaisyaskel oli kiintea, vaikka sweetspotin ikkuna ja koko jana skaalautuvat molemmat hiiriherkkyyden mukana | Askel mukautuu: taysi kierros ilman loytoa lyhentaa sita, kesken jaanyt kierros pidentaa | pienella herkkyydella 92 % vs 77 % |
-| Yrityksen kesto opittiin myos onnistuneista yrityksista, jotka paattyvat kesken aikarajan - joten se aliarvioitiin ja loppukiri alkoi liian aikaisin | Kesto opitaan vain aikansa loppuun ajaneista | - |
-
-### Kuinka lujaa tiirikkaa vaannetaan
-
-Tiirikkaa kuluttaa se, etta F on pohjassa kohtaa vasten joka ei anna
-periksi. Ohjain katkaisee siksi vaannon aina kun pesa ei ole liikkunut
-hetkeen - ja jatkaa heti perään. Kolme tasoa, `live_asetukset.json`:in
-`control`-osiossa avaimella `pick_care`:
-
-| `pick_care` | Avattu | Yrityksia | Haun F-osuus | Painallus | Kulutus |
-|---|---|---|---|---|---|
-| `nopea` | 100,0 % | 1,43 | 63,4 % | 376 ms | 1,91 s |
-| **`tasapaino`** (oletus) | **100,0 %** | **1,59** | **55,5 %** | **304 ms** | 2,02 s |
-| `saastava` | 99,3 % | 1,80 | 49,6 % | 196 ms | 2,23 s |
-| ei katkaisua (`relax_when_stalled: false`) | 100,0 % | 1,20 | 87,7 % | 2328 ms | 1,80 s |
-
-Vertailuksi: omassa pelaamisessasi F oli pohjassa 44,6 % ajasta ja
-painallusten mediaani oli 217 ms, pisin 732 ms. Oletustasolla botin haun
-painallukset ovat mediaaniltaan 236 ms ja pisin 412 ms - siis kevyempia
-kuin omasi.
-
-**Huomaa vaihtokauppa.** Sarakkeet "haun F-osuus" ja "kulutus" kertovat eri
-asiaa, ja ne menevat eri suuntiin:
-
-- Jos peli kuluttaa tiirikkaa sen mukaan **kuinka kauan yhtajaksoisesti
-  vaannat**, kevyempi taso on parempi.
-- Jos se kuluttaa **kokonaisajan** mukaan, `nopea` on parempi, koska se
-  avaa lukon harvemmilla yrityksilla.
-
-En pysty ratkaisemaan tata taalta - se vaatii pelia. Aloita oletuksesta ja
-vaihda tasoa sen mukaan, kumpi pitaa tiirikat ehjempina.
-
-### Mita ohjain mittaa itsestaan
-
-Ohjain ei oleta koneen nopeutta vaan mittaa sen: havainnon vanhuuden
-aikaleimasta, ruutuvalin kaappausten valeista, kulmalukeman kohinan
-erotusten alaneljanneksesta ja yrityksen keston edellisesta yrityksesta.
-Naista johdetaan asettumisikkuna, kuollut aika ja kaikki kynnykset. Ilman
-tata ohjain toimisi vain silla koneella, jolla se viritettiin.
-
-### Rehellisyyden nimissa
-
-**Maalikulman jumivahdille simulaatio ei nayta hyotya.** Simulaattori ei osaa
-toistaa sita, etta pesa jumittaisi 89 asteeseen aukeamatta. Se nayttaa vain,
-ettei korjaus maksa mitaan (76,7 % kummallakin). Ainoa todiste on oma
-nauhoituksesi, jossa 89 astetta -> F irti -> +5 yksikon nykays -> 91,8
-astetta -> lukko auki. Se on suora todiste, mutta yhdesta tapauksesta.
-
-**Yksi asia on syyta tarkistaa pelissa.** Ohjain pitaa F:n pohjassa myos koko
-pyyhkaisyn ajan, siis useita sekunteja yhteen menoon. Omassa nauhoituksessasi
-sina naputit F:aa, joten pitkaa yhtajaksoista pitoa ei ole nahty pelissa. Jos
-peli kayttaytyy sen kanssa oudosti, `live_asetukset.json`-tiedoston
-`control`-osioon voi laittaa `"sweep_hold_f": false`. Huomaa kuitenkin, etta
-silloin haku menettaa ainoan mittarinsa: mitattuna 100 % -> 5 %. Tiirikan
-kuluminen ei ainakaan mallissa ole ongelma, koska lukko aukeaa yleensa
-ensimmaisella yrityksella: rikkoutuneita tiirikoita 0,00 lukkoa kohti seka
-Basic- etta Enforced-lukolla.
-
-**Prosentit ovat mallin sisaisia.** Ne kertovat asetusten ja strategioiden
-keskinaisesta paremmuudesta, eivat pelin onnistumisprosenttia. Malli on
-sovitettu omaan nauhoitukseesi (`live/traces/`), ja `live/test_strategy.py`
-ajaa saman ohjaimen 16:ta mallin muunnelmaa vasten — eri viiveilla,
-kohinatasoilla, ytimen leveyksilla ja aikarajoilla — juuri siksi, ettei tulos
-olisi pelkkaa yhteen malliin sovittamista.
+Koko koneisto on poistettu ja korvattu LIVE 3.0:n kahdella vaiheella.
+Ohjain on nyt 429 riviä entisen yli tuhannen sijaan ja saatoja on 21,
+kaikki yhdessa lohkossa. Ks. [SAADOT.txt](SAADOT.txt).
