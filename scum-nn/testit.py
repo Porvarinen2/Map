@@ -136,36 +136,46 @@ def testi_siirto():
     kello = [0.0]
 
     class ValeSilma:
+        """Nayttaa mita pesa TEKEE: kaanto kertyy painalluksen aikana ja
+        palautuu kun ote irtoaa. Ilman kumpaakaan testi ei mittaisi samaa
+        asiaa kuin oikea peli."""
         def __init__(self, lukko):
-            self.lukko, self.auki, self.nyt = lukko, False, 0.0
+            self.lukko, self.auki = lukko, False
+            self.pito_alkoi = None
+            self.viimeksi = 0.0
+        def _katto(self):
+            d = np.abs(self.lukko.paikka - self.lukko.aukko)
+            k = np.clip((self.lukko.ramppi - d)
+                        / np.maximum(1e-6, self.lukko.ramppi - self.lukko.target), 0, 1)
+            return float(np.where(d <= self.lukko.target, 1.0, k)[0]), float(d[0])
+        def kaanto_nyt(self):
+            if self.pito_alkoi is None:
+                return 0.0                      # ote irti -> pesa palautuu
+            pito = (kello[0] - self.pito_alkoi) * 1000.0
+            katto, d = self._katto()
+            k = katto * float(peli.pito_osuus(pito, self.lukko.tau)[0])
+            if d <= float(self.lukko.target[0]) and k >= peli.Lukot.AVAUS:
+                self.auki = True
+            return k
         def lue(self):
             kello[0] += 0.002
-            return SIL.Kuva(True, float(self.nyt), self.nyt * 90, True, bool(self.auki))
+            k = self.kaanto_nyt()
+            if self.pito_alkoi is not None:
+                self.viimeksi = k
+            return SIL.Kuva(True, k, k * 90, True, bool(self.auki))
         def nollaa(self):
             pass
 
     class ValeKasi:
         def __init__(self, lukko):
             self.lukko = lukko
-            self.pito_alkoi = None
         def siirra(self, yksikkoa):
             kello[0] += 0.02
             self.lukko.paikka = np.clip(self.lukko.paikka + yksikkoa / P.JANA, 0.0, 1.0)
         def nappi(self, vk, alas):
             if vk != P.F:
                 return
-            if alas:
-                self.pito_alkoi = kello[0]
-            elif self.pito_alkoi is not None:
-                pito = (kello[0] - self.pito_alkoi) * 1000.0
-                d = np.abs(self.lukko.paikka - self.lukko.aukko)
-                katto = np.clip((self.lukko.ramppi - d)
-                                / np.maximum(1e-6, self.lukko.ramppi - self.lukko.target), 0, 1)
-                katto = np.where(d <= self.lukko.target, 1.0, katto)
-                k = katto * peli.pito_osuus(pito, self.lukko.tau)
-                self.silma.nyt = float(k[0])
-                self.silma.auki = bool((d <= self.lukko.target)[0] and k[0] >= peli.Lukot.AVAUS)
-                self.pito_alkoi = None
+            self.silma.pito_alkoi = kello[0] if alas else None
         def napauta(self, vk, ms):
             kello[0] += ms / 1000.0
         def pohjassa(self, vk):
