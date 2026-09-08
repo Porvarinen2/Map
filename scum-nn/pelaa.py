@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
-"""Opetettu verkko pelaa oikeaa lukkoa.
+"""Opetettu verkko pelaa oikeaa lukkoa, pelkan ruudun perusteella.
 
-Havainto rakennetaan samalla peli.Kartta-luokalla kuin opetuksessa, joten
-verkko nakee pelin tasmalleen samassa muodossa kuin simulaatiossa.
+Havainto rakennetaan samalla peli.Usko-luokalla kuin opetuksessa: sama
+Bayes-paivitys, samat hypoteesit, samat skalaarit. Verkko nakee pelin siis
+tasmalleen samassa muodossa kuin simulaatiossa.
 
-    python pelaa.py
-    python pelaa.py --naytteista     antaa verkon arpoa (ei aina ahne)
+    py pelaa.py
+    py pelaa.py --naytteista     verkko saa arpoa (ei aina ahne)
 """
 from __future__ import annotations
 
@@ -27,13 +28,8 @@ POLITIIKKA = JUURI / "politiikka.npz"
 
 JANA = 6000.0          # hiiriyksikkoa lukon laidasta laitaan
 PALA = 900
-TAP_MS = 35
-VIIVE_MS = 350         # aloitusarvo; mitataan ajon aikana
-VIIVE_MIN = 60
-HUIPPU_MS = 130
-PALAUTUS_MS = 130
-VAKAA_MS = 40
-BUDJETTI_S = 3.4
+LUKU_MS = 150          # kauanko painalluksen jalkeen huippua viela katsotaan
+VAKAA_MS = 45
 VALISSA_S = 0.55
 F, SPACE, SEIS = 0x46, 0x20, 0x7B
 
@@ -101,7 +97,7 @@ class Kasi:
 
 
 def vahti(kasi: Kasi):
-    """F12 lopettaa heti, kesken napautyksenkin."""
+    """F12 lopettaa heti, kesken painalluksenkin."""
     def silmukka():
         while True:
             if kasi.pohjassa(SEIS):
@@ -116,11 +112,10 @@ def vahti(kasi: Kasi):
 
 
 class Pelaaja:
-    def __init__(self, v: V.Verkko, silma: S.Silma, kasi: Kasi, ahne: bool = True):
+    def __init__(self, v, silma, kasi, ahne=True, budjetti_s=3.4):
         self.v, self.silma, self.kasi, self.ahne = v, silma, kasi, ahne
+        self.budjetti_s = budjetti_s
         self.rng = np.random.default_rng(0)
-        self.viive = float(VIIVE_MS)
-        self.kuolleita = 0
         self.paikka = 0.0
 
     def kotiin(self):
@@ -133,114 +128,116 @@ class Pelaaja:
         uusi = float(np.clip(uusi, 0.0, 1.0))
         if abs(uusi - self.paikka) > 1e-4:
             self.kasi.siirra((uusi - self.paikka) * JANA)
-            time.sleep(0.018)
+            time.sleep(0.02)
         self.paikka = uusi
 
-    def napauta(self):
-        """Yksi kevyt napautys. Palauttaa (nykaisy, jai, kaanto, auki)."""
-        ennen = self.silma.lue()
-        pohja = ennen.kaanto if ennen.ok else 0.0
-        auki = ennen.auki
-        self.kasi.napauta(F, TAP_MS)
+    def paina(self, pito_ms: float):
+        """Paina F annetun ajan ja lue kuinka pitkalle pesa kaantyi.
 
-        huippu = pohja
-        alku = time.monotonic()
-        loppu = alku + (self.viive + HUIPPU_MS) / 1000.0
-        vika_nousu = alku
-        ensi = None
+        Palauttaa (havaittu kaanto 0..1, aukesiko). Sama suure kuin
+        simulaatiossa: 1.0 = 90 astetta.
+        """
+        pohja = self.silma.lue()
+        alku_kaanto = pohja.kaanto if pohja.ok else 0.0
+        auki = pohja.auki
+        huippu = alku_kaanto
+
+        self.kasi.nappi(F, True)
+        loppu = time.monotonic() + pito_ms / 1000.0
         while time.monotonic() < loppu:
+            k = self.silma.lue()
+            if k.auki:
+                auki = True
+                break
+            if k.ok and k.kaanto > huippu:
+                huippu = k.kaanto
+        self.kasi.nappi(F, False)
+
+        # Huippu voi nakya vasta hetki painalluksen jalkeen.
+        alku = time.monotonic()
+        vika = alku
+        while (time.monotonic() - alku) * 1000.0 < LUKU_MS:
             k = self.silma.lue()
             if k.auki:
                 auki = True
                 break
             if k.ok and k.kaanto > huippu + 0.004:
                 huippu = k.kaanto
-                vika_nousu = time.monotonic()
-                if ensi is None:
-                    ensi = (vika_nousu - alku) * 1000.0
-            nyt = time.monotonic()
-            if (nyt - alku) * 1000.0 >= self.viive and (nyt - vika_nousu) * 1000.0 >= VAKAA_MS:
+                vika = time.monotonic()
+            elif (time.monotonic() - vika) * 1000.0 >= VAKAA_MS:
                 break
-
-        # opitaan pelin oma vaste-viive, ei arvata sita
-        if ensi is not None:
-            self.viive = 0.7 * self.viive + 0.3 * max(VIIVE_MIN, min(float(VIIVE_MS), 1.7 * ensi))
-            self.kuolleita = 0
-        else:
-            self.kuolleita += 1
-            if self.kuolleita >= 6:
-                self.viive, self.kuolleita = float(VIIVE_MS), 0
-
-        jalkeen = huippu
-        alku = time.monotonic()
-        loppu = alku + PALAUTUS_MS / 1000.0
-        vika = alku
-        while time.monotonic() < loppu:
-            k = self.silma.lue()
-            if k.auki:
-                auki = True
-                break
-            if k.ok:
-                if abs(k.kaanto - jalkeen) > 0.004:
-                    vika = time.monotonic()
-                jalkeen = k.kaanto
-                if (time.monotonic() - vika) * 1000.0 >= VAKAA_MS:
-                    break
-        return max(0.0, huippu - pohja), max(0.0, jalkeen - pohja), jalkeen, auki
+        return max(0.0, huippu - alku_kaanto), auki
 
     def yritys(self):
         self.kotiin()
-        kartta = peli.Kartta(1)
-        kaanto = np.zeros(1)
+        usko = peli.Usko(1)
         alku = time.monotonic()
+        viime_hav = viime_pito = paras_kaanto = 0.0
         n = 0
-        budjetti = max(6, int(BUDJETTI_S * 1000 / (self.viive + 200)))
-        while time.monotonic() - alku < BUDJETTI_S and n < budjetti + 6:
-            aika = np.array([1.0 - n / max(1, budjetti)])
-            o = kartta.havainto(kaanto, aika, np.array([self.paikka]))
-            a, _lp, _v = self.v.valitse(o, self.rng, ahne=self.ahne)
-            siirto = peli.SIIRROT[int(a[0])]
+        while True:
+            kulunut = time.monotonic() - alku
+            if kulunut >= self.budjetti_s:
+                return False, n
+            jaljella = np.array([np.clip(1.0 - kulunut / self.budjetti_s, 0.0, 1.0)])
+            paras = usko.paras()
+            o = np.concatenate([
+                usko.nakyma(np.array([self.paikka])) * peli.USKO_NAKYY,
+                np.stack([
+                    np.array([self.paikka]), np.array([1.0 - self.paikka]),
+                    np.array([viime_hav]), np.array([viime_pito / 1500.0]),
+                    usko.entropia(),
+                    np.clip(paras - self.paikka, -1.0, 1.0),
+                    np.abs(paras - self.paikka),
+                    jaljella, np.array([paras_kaanto]),
+                    np.array([min(1.5, n / 20.0)]),
+                ], axis=1)], axis=1)
 
-            vanha = np.array([self.paikka])
-            self.siirry(self.paikka + siirto)
-            kartta.siirry(vanha, np.array([self.paikka]))
+            teot, _lp, _arv = self.v.valitse(o, self.rng, ahne=self.ahne)
+            siirto_i, pito_i = int(teot[0, 0]), int(teot[0, 1])
+            pito = float(peli.PIDOT_MS[pito_i])
+            kohde = (float(paras[0]) if siirto_i >= peli.USKOON
+                     else self.paikka + float(peli.SIIRROT[min(siirto_i, peli.USKOON - 1)]))
+            self.siirry(kohde)
 
-            nyk, jai, uusi_kaanto, auki = self.napauta()
+            hav, auki = self.paina(pito)
             n += 1
-            kartta.merkitse(np.array([jai]), np.array([nyk]))
-            kaanto = np.array([uusi_kaanto])
-            print(f"   {self.paikka:5.2f}  siirto {siirto:+.2f}  nykaisy {nyk*90:5.1f}  "
-                  f"jai {jai*90:+5.1f}")
+            viime_hav, viime_pito = hav, pito
+            paras_kaanto = max(paras_kaanto, hav)
+            usko.paivita(np.array([self.paikka]), np.array([hav]), np.array([pito]))
+            print(f"   {self.paikka:5.3f}  pito {pito:5.0f} ms  kaanto {hav*90:5.1f}  "
+                  f"usko {usko.paras()[0]:5.3f} (ent {usko.entropia()[0]:.2f})")
             if auki:
                 return True, n
-        return False, n
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--naytteista", action="store_true")
+    ap.add_argument("--budjetti", type=float, default=3.4)
     a = ap.parse_args()
     if not POLITIIKKA.exists():
-        print("politiikka.npz puuttuu - aja ensin: python treeni.py")
+        print("politiikka.npz puuttuu - aja ensin: py treeni.py")
         return 1
     if not WIN:
         print("Pelaaminen vaatii Windowsin.")
         return 1
-    v = V.Verkko(peli.HAVAINTO, 128, peli.TOIMINTOJA)
+    d = np.load(POLITIIKKA)
+    piilo = d["W1"].shape[1]
+    v = V.Verkko(peli.HAVAINTO, piilo, [peli.SIIRTOJA, peli.PITOJA])
     v.lataa(POLITIIKKA)
     silma, kasi = S.Silma(), Kasi()
     vahti(kasi)
-    print(f"naytto {silma.avaa()}   F12 = seis\n")
-    p = Pelaaja(v, silma, kasi, ahne=not a.naytteista)
+    print(f"naytto {silma.avaa()}   verkko {piilo} piilossa   F12 = seis\n")
+    p = Pelaaja(v, silma, kasi, ahne=not a.naytteista, budjetti_s=a.budjetti)
     n = auki = 0
     while True:
         n += 1
         kasi.napauta(SPACE, 28)
         time.sleep(0.2)
-        ok, napautyksia = p.yritys()
+        ok, askelia = p.yritys()
         auki += ok
-        print(f"{n:4d} {'AUKI' if ok else 'ei  '}  {napautyksia:2d} napautysta   "
-              f"{auki}/{n}  ({100*auki/n:.0f}%)   viive-arvio {p.viive:.0f} ms")
+        print(f"{n:4d} {'AUKI' if ok else 'ei  '}  {askelia:2d} painallusta   "
+              f"{auki}/{n}  ({100*auki/n:.0f}%)")
         if not ok:
             time.sleep(VALISSA_S)
 

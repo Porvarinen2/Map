@@ -1,0 +1,46 @@
+KONETEHON KAYTTO
+================
+
+Oletukset ovat 4-ytimiselle koneelle. Jos sinulla on enemman, nosta naita:
+
+  py treeni.py --ymparistoja 8192 --askelia 64 --piilo 384 --kierroksia 4000
+
+  --ymparistoja   montako lukkoa pelataan rinnakkain. Tama on se joka syo
+                  RAMia ja pitaa ytimet toissa. 2048 = 72 MB puskuri,
+                  8192 = 290 MB, 32768 = 1.2 GB.
+  --askelia       montako askelta kerataan ennen oppimista. 64 on hyva.
+  --piilo         verkon leveys. 192 riittaa tahan, mutta 384 tai 512
+                  kayttaa isoa konetta paremmin eika haittaa.
+  --kierroksia    kuinka kauan opetetaan. Tulos nousee viela 4000:ssa.
+
+Mittaus tassa 4 ytimella:
+
+  ymparistoja   naytetta/s
+        512        25 000
+       2048        38 700
+       8192        38 700    <- ytimet loppuu kesken, ei RAM
+
+Eli isolla koneella kannattaa nostaa SEKA --ymparistoja ETTA --piilo:
+matriisitulot kasvavat ja BLAS jakaa ne useammalle ytimelle. Pelkka
+--ymparistoja ei auta jos ytimia on vahan.
+
+Naytetta/s ei ole se joka ratkaisee vaan kuinka monta OIKEAA lukkoa
+nahdaan. 131 072 naytetta/kierros = noin 15 000 kokonaista yritysta.
+
+
+AUKON LEVEYS
+============
+
+Aukon puolileveys arvotaan log-tasaisesti valilla 0.004 - 0.090, eli
+vaikeimmalla lukolla aukko on 0.8% koko janasta. Jakauma peli.py:ssa:
+
+    RAMPPI_ALA_VAIKEA = 0.004
+    RAMPPI_YLA        = 0.090
+
+Jos oikea peli on viela kapeampi, laske RAMPPI_ALA_VAIKEA. Katso miltä
+se nayttaa:
+
+    py nayta.py --ramppi 0.006
+
+Opetus alkaa leveilla aukoilla ja kapenee ensimmaisen 40% aikana. Suoraan
+kapeimmilla aloittaminen ei opi mitaan, koska osumia tulee liian harvoin.

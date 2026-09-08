@@ -24,19 +24,29 @@ def alusta(rng, sisaan: int, ulos: int, skaala: float = 1.0):
 
 
 class Verkko:
-    def __init__(self, sisaan: int, piilo: int, toimintoja: int, siemen: int = 0):
+    """Runko + arvopaa + yksi tai useampi politiikkapaa.
+
+    Lukkopelissa paita on kaksi: minne siirrytaan ja kuinka kauan F:aa
+    painetaan. Ne ovat eri paatoksia, joten ne saavat omat softmaxinsa -
+    yksi yhteinen 13x5 = 65 vaihtoehdon paa oppisi hitaammin eika jakaisi
+    mitaan siirtojen ja pitojen valilla.
+    """
+
+    def __init__(self, sisaan: int, piilo: int, toimintoja, siemen: int = 0):
         rng = np.random.default_rng(siemen)
         self.p: Dict[str, np.ndarray] = {
             "W1": alusta(rng, sisaan, piilo, np.sqrt(2)),
             "b1": np.zeros(piilo),
             "W2": alusta(rng, piilo, piilo, np.sqrt(2)),
             "b2": np.zeros(piilo),
-            "Wp": alusta(rng, piilo, toimintoja, 0.01),   # pieni -> alussa tasainen politiikka
-            "bp": np.zeros(toimintoja),
+            "Wp": alusta(rng, piilo, int(np.sum(toimintoja)), 0.01),  # pieni -> alussa tasainen
+            "bp": np.zeros(int(np.sum(toimintoja))),
             "Wv": alusta(rng, piilo, 1, 1.0),
             "bv": np.zeros(1),
         }
-        self.toimintoja = toimintoja
+        self.paat = [int(toimintoja)] if np.isscalar(toimintoja) else [int(x) for x in toimintoja]
+        self.toimintoja = int(np.sum(self.paat))
+        self.rajat = np.cumsum([0] + self.paat)
 
     # ---- eteenpain ------------------------------------------------------
 
@@ -78,18 +88,32 @@ class Verkko:
         z = logit - logit.max(axis=1, keepdims=True)
         return z - np.log(np.exp(z).sum(axis=1, keepdims=True))
 
+    def log_softmax_paittain(self, logit: np.ndarray) -> np.ndarray:
+        """Sama, mutta jokainen paa normalisoidaan erikseen."""
+        ulos = np.empty_like(logit)
+        for i in range(len(self.paat)):
+            a, b = self.rajat[i], self.rajat[i + 1]
+            ulos[:, a:b] = self.log_softmax(logit[:, a:b])
+        return ulos
+
     def valitse(self, x: np.ndarray, rng, ahne: bool = False):
+        """Palauttaa (toiminnot (N, paita), yhteis-logp, arvo)."""
         logit, arvo, _ = self.eteen(x)
-        logp = self.log_softmax(logit)
-        if ahne:
-            a = logp.argmax(axis=1)
-        else:
-            todnak = np.exp(logp)
-            kumul = todnak.cumsum(axis=1)
-            r = rng.random((len(x), 1))
-            a = (r > kumul).sum(axis=1)
-            a = np.clip(a, 0, self.toimintoja - 1)
-        return a, logp[np.arange(len(x)), a], arvo
+        logp = self.log_softmax_paittain(logit)
+        n = len(x)
+        teot = np.zeros((n, len(self.paat)), dtype=np.int64)
+        yht = np.zeros(n)
+        for i in range(len(self.paat)):
+            a, b = self.rajat[i], self.rajat[i + 1]
+            osa = logp[:, a:b]
+            if ahne:
+                v = osa.argmax(axis=1)
+            else:
+                kumul = np.exp(osa).cumsum(axis=1)
+                v = np.clip((rng.random((n, 1)) > kumul).sum(axis=1), 0, self.paat[i] - 1)
+            teot[:, i] = v
+            yht += osa[np.arange(n), v]
+        return teot, yht, arvo
 
     def tallenna(self, polku):
         np.savez(polku, **self.p)
@@ -125,10 +149,16 @@ class Adam:
 
 def gae(palkkiot: np.ndarray, arvot: np.ndarray, lopetus: np.ndarray,
         gamma: float = 0.99, lam: float = 0.95):
-    """Yleistetty etuestimaatti. arvot on pituudeltaan T+1."""
-    T = len(palkkiot)
-    etu = np.zeros(T)
-    kertyma = 0.0
+    """Yleistetty etuestimaatti.
+
+    Toimii seka yhdelle jonolle (palkkiot muotoa (T,), arvot (T+1,)) etta
+    kaikille ymparistoille kerralla ((T, N) ja (T+1, N)). Silmukka kulkee
+    vain ajassa, ei ymparistojen yli - se olisi kymmeniatuhansia python-
+    kierroksia jokaisella opetuskierroksella.
+    """
+    T = palkkiot.shape[0]
+    etu = np.zeros_like(palkkiot)
+    kertyma = np.zeros(palkkiot.shape[1:])
     for t in range(T - 1, -1, -1):
         jatkuu = 1.0 - lopetus[t]
         delta = palkkiot[t] + gamma * arvot[t + 1] * jatkuu - arvot[t]
@@ -138,7 +168,7 @@ def gae(palkkiot: np.ndarray, arvot: np.ndarray, lopetus: np.ndarray,
 
 
 def ppo_paivitys(verkko: Verkko, adam: Adam, x, a, vanha_logp, etu, kohde_arvo,
-                 rng, kierroksia=4, era=256, leikkaus=0.2, entropia=0.01, arvo_kerroin=0.5):
+                 rng, kierroksia=4, era=8192, leikkaus=0.2, entropia=0.01, arvo_kerroin=0.5):
     n = len(x)
     etu = (etu - etu.mean()) / (etu.std() + 1e-8)
     for _ in range(kierroksia):
@@ -147,8 +177,12 @@ def ppo_paivitys(verkko: Verkko, adam: Adam, x, a, vanha_logp, etu, kohde_arvo,
             idx = jarjestys[alku:alku + era]
             xb, ab = x[idx], a[idx]
             logit, arvo, vali = verkko.eteen(xb)
-            logp_kaikki = Verkko.log_softmax(logit)
-            logp = logp_kaikki[np.arange(len(idx)), ab]
+            logp_kaikki = verkko.log_softmax_paittain(logit)
+            rivi = np.arange(len(idx))
+            logp = np.zeros(len(idx))
+            for i in range(len(verkko.paat)):
+                p0, p1 = verkko.rajat[i], verkko.rajat[i + 1]
+                logp += logp_kaikki[rivi, p0 + ab[:, i]]
             suhde = np.exp(logp - vanha_logp[idx])
             eb = etu[idx]
 
@@ -158,15 +192,20 @@ def ppo_paivitys(verkko: Verkko, adam: Adam, x, a, vanha_logp, etu, kohde_arvo,
             dsuhde = np.where(kaytossa, eb, 0.0) / len(idx)
             dlogp = dsuhde * suhde
             todnak = np.exp(logp_kaikki)
-            dlogit = -todnak * dlogp[:, None]
-            dlogit[np.arange(len(idx)), ab] += dlogp
-            dlogit = -dlogit                                 # maksimointi -> minimointi
-
-            # --- entropiabonus ---
-            H = -(todnak * logp_kaikki).sum(1)
-            dH = todnak * (-(logp_kaikki + 1.0))
-            dH = dH - todnak * (-(todnak * (logp_kaikki + 1.0)).sum(1, keepdims=True))
-            dlogit += -entropia * dH / len(idx)
+            dlogit = np.zeros_like(logit)
+            H = np.zeros(len(idx))
+            for i in range(len(verkko.paat)):
+                p0, p1 = verkko.rajat[i], verkko.rajat[i + 1]
+                pk = todnak[:, p0:p1]
+                lp = logp_kaikki[:, p0:p1]
+                d = -pk * dlogp[:, None]
+                d[rivi, ab[:, i]] += dlogp
+                dlogit[:, p0:p1] = -d                        # maksimointi -> minimointi
+                # --- entropiabonus, paittain ---
+                H += -(pk * lp).sum(1)
+                dH = pk * (-(lp + 1.0))
+                dH = dH - pk * (-(pk * (lp + 1.0)).sum(1, keepdims=True))
+                dlogit[:, p0:p1] += -entropia * dH / len(idx)
 
             # --- arvopaa ---
             darvo = arvo_kerroin * 2.0 * (arvo - kohde_arvo[idx]) / len(idx)

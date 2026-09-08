@@ -46,6 +46,10 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--n", type=int, default=5)
     ap.add_argument("--satunnainen", action="store_true")
+    ap.add_argument("--vaikeus", type=float, default=1.0,
+                    help="0 = vain leveat aukot, 1 = mukana kapeimmat")
+    ap.add_argument("--ramppi", type=float, default=None,
+                    help="pakota aukon puolileveys, esim 0.006")
     a = ap.parse_args()
 
     from pathlib import Path
@@ -62,7 +66,8 @@ def main() -> int:
     rng = np.random.default_rng(1)
     auki_yht = 0
     for yritys in range(1, a.n + 1):
-        L = peli.Lukot(1, rng)
+        L = peli.Lukot(1, rng, vaikeus=a.vaikeus,
+                       ramppi_ala=a.ramppi, ramppi_yla=a.ramppi)
         print(f"--- yritys {yritys}  "
               f"(aukko {L.aukko[0]:.2f}, ramppi +-{L.ramppi[0]:.02f}, "
               f"{'kierto jaa' if L.raikka[0] > 0.5 else 'kierto palautuu'}, "
