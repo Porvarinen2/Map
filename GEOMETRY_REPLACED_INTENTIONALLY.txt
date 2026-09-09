@@ -1,0 +1,4 @@
+v0.17.6.2 intentionally includes/replaces freelearn_config.json.
+Reason: this patch locks each lock type to one fixed ramp/target geometry.
+Only the hidden target center/location is randomized per attempt.
+Recommended: after install, use WIPE SIMULATION DATA once before retraining.

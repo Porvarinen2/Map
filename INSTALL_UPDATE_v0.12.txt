@@ -1,0 +1,13 @@
+LOCKPICK v0.12 UPDATE
+=====================
+
+SAFEST UPDATE:
+Extract the UPDATE_ONLY zip directly into your existing Lockpick folder and overwrite program/readme files.
+The update-only archive intentionally contains no data folder, so it cannot overwrite your newer checkpoints, demonstrations or audit history.
+
+FULL archive:
+Contains the data snapshot that was inside the Lockpick.zip supplied for this update. Use it for a clean separate install. Do not use the FULL archive over a newer actively-trained folder unless you intentionally want that older snapshot.
+
+Main trainer: MAX_OFFLINE_TRAIN.bat
+60-minute shortcut: MAX_OFFLINE_60MIN.bat
+Legacy fallback: MAX_OFFLINE_v011_FALLBACK.bat

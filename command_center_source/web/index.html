@@ -1,0 +1,570 @@
+<!doctype html>
+<html lang="fi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lockpick AI Command Center</title>
+<style>
+:root{
+  --bg:#07090e;--panel:#0d1119;--panel2:#101722;--line:#27354a;--text:#edf4ff;--muted:#8fa0b8;
+  --good:#43d17a;--warn:#ffd34d;--bad:#d83d4c;--cyan:#63d4ff;--purple:#aa8cff;--orange:#ff9f43
+}
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(1100px 650px at 70% -10%,#1c2b4a66,transparent),var(--bg);color:var(--text);font-family:Inter,Segoe UI,Arial,sans-serif;font-size:14px}
+.app{max-width:1760px;margin:auto;padding:16px}
+.top{display:flex;gap:14px;align-items:center;justify-content:space-between;margin-bottom:13px}
+.brand h1{font-size:25px;margin:0;letter-spacing:.5px}.brand small{color:var(--muted)}
+.pill{border:1px solid var(--line);background:#0b1018;padding:8px 12px;border-radius:999px;color:var(--muted)}
+.pill strong{color:var(--text)}
+.badge{display:inline-flex;align-items:center;gap:6px;padding:4px 7px;border-radius:999px;background:#101a28;border:1px solid #2b3a50;font-size:11px}
+.dot{width:7px;height:7px;border-radius:50%;background:#6f7b8a}.dot.on{background:var(--good);box-shadow:0 0 10px #43d17a88}
+.grid{display:grid;grid-template-columns:370px 1fr;gap:14px}
+.panel{background:linear-gradient(180deg,#111723,#0b1018);border:1px solid var(--line);border-radius:14px;box-shadow:0 14px 40px #0005;padding:13px}
+.panel h2{font-size:13px;text-transform:uppercase;letter-spacing:1px;margin:0 0 11px;color:#bfd0ea}
+.controls{display:grid;gap:8px}
+.row{display:flex;gap:8px;align-items:center}.row label{width:148px;color:var(--muted)}
+input,select,button{font:inherit}
+.num,select{width:100%;background:#080c12;border:1px solid #29364a;color:var(--text);padding:8px 9px;border-radius:8px;outline:none}
+.num:focus,select:focus{border-color:#4d6e9e}
+.btn{border:1px solid #34445c;background:#162134;color:var(--text);padding:8px 11px;border-radius:9px;cursor:pointer;font-weight:650}
+.btn:hover{filter:brightness(1.14)}.btn.wipe{background:#3b1c20;border-color:#8f303b}.btn.wipeall{background:#641d28;border-color:#d1495b}.dangerbox{border:1px solid #62303a;background:#180d12;border-radius:10px;padding:9px}.dangerbox .note{color:#c9aab0}.btn.primary{background:#1b5633;border-color:#2e8c54}.btn.danger{background:#54202a;border-color:#a83c4b}.btn.cyan{background:#123f55;border-color:#287396}.btn.small{padding:6px 9px;font-size:12px}
+.preset{display:flex;gap:6px;flex-wrap:wrap}.hr{height:1px;background:var(--line);margin:11px 0}
+.note{color:var(--muted);font-size:12px;line-height:1.45}.note b{color:#cbd9ec}
+.stats{display:grid;grid-template-columns:repeat(6,minmax(110px,1fr));gap:9px;margin-bottom:12px}
+.stat{background:#0b1018;border:1px solid var(--line);border-radius:11px;padding:9px}.stat .k{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.7px}.stat .v{font-size:19px;font-weight:760;margin-top:3px}.stat.good .v{color:var(--good)}.stat.cyan .v{color:var(--cyan)}
+.maincol{min-width:0}.showbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:9px}.showbar h2{margin:0;font-size:15px}.righttop{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.slider{width:120px}
+.lockgrid{display:grid;grid-template-columns:1fr 1fr;gap:11px}
+.lockcard{background:#090d14;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.lockhead{padding:7px 10px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #1f2a39}.lockhead strong{font-size:14px}.lockhead span{color:var(--muted);font-size:11px}
+.lockvis{position:relative;height:205px;background:radial-gradient(circle at 50% 52%,#111722,#020305 70%);overflow:hidden;display:flex;align-items:center;justify-content:center}
+.lockvis img{width:82%;height:96%;object-fit:contain;opacity:.76;filter:saturate(.82) brightness(.72);pointer-events:none}
+.overlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.trace{height:108px;width:100%;display:block;background:#070a10;border-top:1px solid #1d2736}
+.lockfoot{display:grid;grid-template-columns:repeat(7,max-content);gap:10px;padding:7px 9px;color:var(--muted);font-size:11px;overflow:auto}.lockfoot b{color:var(--text)}
+.chartwrap{height:205px;margin-top:12px}.chart{width:100%;height:100%;background:#080c12;border:1px solid var(--line);border-radius:10px}
+.lower{display:grid;grid-template-columns:1.1fr .9fr;gap:14px;margin-top:13px}
+.geomGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}.economyGrid{display:grid;grid-template-columns:repeat(2,1fr);gap:7px}
+.field label{display:block;color:var(--muted);font-size:10px;margin:0 0 4px}.field input{width:100%}
+.preview{height:145px;width:100%;background:#080c12;border:1px solid var(--line);border-radius:10px;margin-top:9px}
+.tabs{display:flex;gap:6px;margin-bottom:9px}.tab{flex:1}
+.log{height:285px;overflow:auto;background:#05080d;border:1px solid var(--line);border-radius:10px;padding:9px;font-family:Consolas,monospace;font-size:11px;white-space:pre-wrap;color:#b8c8dc}
+.miniStats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px}.realityGrid{display:grid;grid-template-columns:repeat(2,1fr);gap:7px}.realityTable{width:100%;border-collapse:collapse;font-size:11px;margin-top:9px}.realityTable th,.realityTable td{padding:5px 4px;border-bottom:1px solid #233044;text-align:right}.realityTable th:first-child,.realityTable td:first-child{text-align:left}.realityChart{height:145px;width:100%;background:#080c12;border:1px solid var(--line);border-radius:10px;margin-top:9px}.rlog{height:86px;overflow:auto;background:#05080d;border:1px solid var(--line);border-radius:8px;padding:7px;font-family:Consolas,monospace;font-size:10px;white-space:pre-wrap;color:#9fb2ca;margin-top:8px}.mini{background:#090e16;border:1px solid #233044;border-radius:9px;padding:8px}.mini .k{font-size:10px;color:var(--muted)}.mini .v{font-weight:700;margin-top:2px}
+.legend{display:flex;gap:10px;flex-wrap:wrap;font-size:11px;color:var(--muted);margin-top:6px}.sw{display:inline-block;width:12px;height:4px;border-radius:2px;margin-right:4px;vertical-align:middle}
+.toast{position:fixed;right:20px;bottom:20px;background:#142031;border:1px solid #3c5373;padding:11px 14px;border-radius:10px;opacity:0;transform:translateY(10px);transition:.2s;pointer-events:none;z-index:20}.toast.show{opacity:1;transform:none}
+@media(max-width:1180px){.grid{grid-template-columns:1fr}.stats{grid-template-columns:repeat(3,1fr)}.lower{grid-template-columns:1fr}.lockgrid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="top">
+    <div class="brand">
+      <h1>LOCKPICK AI COMMAND CENTER</h1>
+      <small>v0.18.0 FREELEARN · REAL↔SIM bridge · fixed per-lock geometry · full physical X · TAP/HOLD</small>
+    </div>
+    <div class="pill"><span class="badge"><span id="statusDot" class="dot"></span><strong id="statusText">OFFLINE</strong></span> &nbsp; Attempts <strong id="attemptsTop">0</strong></div>
+  </div>
+
+  <div class="grid">
+    <aside>
+      <div class="panel">
+        <h2>Training control</h2>
+        <div class="controls">
+          <div class="row"><label>Training minutes</label><input id="minutes" class="num" type="number" min="0" value="540"><span class="note">0=∞</span></div>
+          <div class="row"><label>Vector envs</label><input id="envs" class="num" type="number" min="256" step="256" value="8192"></div>
+          <div class="row"><label>Lock show interval</label><input id="showEvery" class="num" type="number" min="1000" step="1000" value="1000000"></div>
+          <div class="preset">
+            <button class="btn small" onclick="setShow(100000)">100k</button>
+            <button class="btn small" onclick="setShow(500000)">500k</button>
+            <button class="btn small cyan" onclick="setShow(1000000)">1M</button>
+            <button class="btn small" onclick="setShow(5000000)">5M</button>
+            <button class="btn small" onclick="setShow(10000000)">10M</button>
+          </div>
+          <div class="row"><button class="btn primary" style="flex:1" onclick="startTraining()">▶ START TRAINING</button><button class="btn danger" onclick="stopTraining()">■ STOP</button></div>
+          <div class="row"><button class="btn cyan" style="flex:1" onclick="requestShowcase()">⚡ LOCK SHOW NOW</button></div>
+        </div>
+        <div class="hr"></div>
+        <h2>Free-learn contract</h2>
+        <div class="note">
+          Neural näkee vain <b>X-sijainnin, näkyvän lock-turnin, näkyvän turn-deltan, oman F-historian, oman toteutuneen X-liikkeen, ajan, lukkotyypin sekä lukon fyysiset X-rajat</b>.
+          <b>F-toiminnot:</b> neural voi valita MOVE/RELEASE, <b>F TAP</b> tai <b>F HOLD</b>. TAP on yksi 25 ms staattinen testi. HOLDin pituus ei ole preset: neural päättää itse jatkamalla HOLDia frame kerrallaan ja lopettaa valitsemalla RELEASE.
+          <b>STATIC-F:</b> X liikkuu vain täydellä MOVE-framella kun F oli jo valmiiksi UP. TAP, HOLD ja vapautusframe lukitsevat X:n täysin. Neural ei voi skannata ramppia F pohjassa.
+          Neural ei näe targettia, rampin rajoja tai depth-arvoa suoraan. Rampin syvyys vaikuttaa fysiikkaan jatkuvana gradienttina ja näkyy neuralille vain lukon oikeana liikkeenä.
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top:13px">
+        <h2>Data reset · danger zone</h2>
+        <div class="dangerbox">
+          <div class="note"><b>WIPE SIMULATION DATA</b> nollaa vain tämän FREELEARN-simulaation mallin, best/latest-checkpointit, progressin, telemetrian, lock show -datan ja simulaation login. Se <b>ei koske</b> Human Teach / oikean pelin demoihin, vanhaan neural_smart-dataan, referensseihin tai asetuksiin.</div>
+          <div class="row" style="margin-top:9px"><button class="btn wipe" style="flex:1" onclick="wipeSimulation()">♻ WIPE SIMULATION DATA</button><span id="simDataSize" class="note">…</span></div>
+          <div class="hr"></div>
+          <div class="note"><b>WIPE ALL DATA</b> tyhjentää kokonaan <code>data\</code>- ja <code>checkpoints\</code>-kansioiden sisällön: simulaatio, Human Teach/demot, neural_smart, audit/evaluation ja kaikki checkpointit. Ohjelma, referenssit ja <code>freelearn_config.json</code> jäävät.</div>
+          <div class="row" style="margin-top:9px"><button class="btn wipeall" style="flex:1" onclick="wipeAllData()">☠ WIPE ALL DATA</button><span id="allDataSize" class="note">…</span></div>
+          <div class="note" style="margin-top:7px">Wipe on estetty treenin ollessa käynnissä, jotta checkpointtia ei voida poistaa kesken kirjoituksen. Paina ensin STOP.</div>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top:13px">
+        <h2>REAL ↔ SIM BRIDGE · SCUM reality calibration</h2>
+        <div class="row"><label>Capture lock type</label><select id="realLock"><option>Auto</option><option>Rusted</option><option>Basic</option><option>Medium</option><option>Enforced</option></select></div>
+        <div class="row" style="margin-top:8px"><button class="btn cyan" style="flex:1" onclick="startReality()">● START REAL CAPTURE</button><button class="btn danger" onclick="stopReality()">■ STOP</button></div>
+        <div class="realityGrid" style="margin-top:9px">
+          <div class="mini"><div class="k">Recorder</div><div class="v" id="realState">OFFLINE</div></div>
+          <div class="mini"><div class="k">REAL probes</div><div class="v" id="realSamples">0</div></div>
+          <div class="mini"><div class="k">Episodes</div><div class="v" id="realEpisodes">0</div></div>
+          <div class="mini"><div class="k">REAL↔SIM match</div><div class="v" id="realMatch">0.0%</div></div>
+        </div>
+        <div class="row" style="margin-top:9px"><button class="btn primary" style="flex:1" onclick="fitReality()">⚙ FIT SIMULATOR TO REAL DATA</button></div>
+        <table class="realityTable"><thead><tr><th>Lock</th><th>N</th><th>Match</th><th>Turn τ</th><th>Return τ</th><th>Ramp</th></tr></thead><tbody id="realityRows"></tbody></table>
+        <canvas id="realityChart" class="realityChart"></canvas>
+        <div class="legend"><span><i class="sw" style="background:#63d4ff"></i>REAL screen response</span><span><i class="sw" style="background:#ffd34d"></i>SIM replay</span></div>
+        <div id="realityLog" class="rlog">Start REAL CAPTURE while SCUM lockpick UI is visible. F12 also stops capture.</div>
+        <div class="note" style="margin-top:7px"><b>Ei target leakkiä:</b> neural ei saa target/ramp-rajoja eikä fitted centeriä. Bridge mittaa ruudulta X:n, lock-turnin, F TAP/HOLD -ajan, palautumisen, successin ja lukkotyypin. FIT säätää vain havaittavaa dynamiikkaa (turn/return τ, ramp response, sensor noise). <b>Sun fixed target/ramp leveydet eivät muutu automaattisesti.</b> F:n aikana X pysyy staattisena myös tässä datassa.</div>
+      </div>
+
+      <div class="panel" style="margin-top:13px">
+        <h2>Player lock F economy · hot reload</h2>
+        <div class="economyGrid">
+          <div class="field"><label>Soft goal: off-target F ≤</label><input class="num" id="eGoal" type="number" step="1" min="1"></div>
+          <div class="field"><label>Success efficiency bonus</label><input class="num" id="eBonus" type="number" step="0.1" min="0"></div>
+          <div class="field"><label>Preferred first-pass X (%)</label><input class="num" id="ePrefPct" type="number" step="1" min="5" max="95"></div>
+          <div class="field"><label>Preferred-zone success bonus</label><input class="num" id="ePrefBonus" type="number" step="0.1" min="0"></div>
+          <div class="field"><label>Pick break budget min</label><input class="num" id="eBreakMin" type="number" step="0.25" min="1"></div>
+          <div class="field"><label>Pick break budget max</label><input class="num" id="eBreakMax" type="number" step="0.25" min="1"></div>
+          <div class="field"><label>Dead tap damage</label><input class="num" id="eDeadTap" type="number" step="0.05" min="0"></div>
+          <div class="field"><label>Ramp tap damage</label><input class="num" id="eRampTap" type="number" step="0.05" min="0"></div>
+          <div class="field"><label>Dead hold dmg / sec</label><input class="num" id="eDeadHold" type="number" step="0.05" min="0"></div>
+          <div class="field"><label>Ramp hold dmg / sec</label><input class="num" id="eRampHold" type="number" step="0.05" min="0"></div>
+          <div class="field"><label>Max off-target F time (s)</label><input class="num" id="eMaxOffTime" type="number" step="0.025" min="0.025"></div>
+          <div class="field"><label>Off-target time penalty / sec</label><input class="num" id="eOffTimePenalty" type="number" step="0.05" min="0"></div>
+          <div class="field"><label>Time-cap extra break penalty</label><input class="num" id="eTimeBreakPenalty" type="number" step="0.1" min="0"></div>
+        </div>
+        <div class="row" style="margin-top:9px"><button class="btn primary" style="flex:1" onclick="saveAll()">SAVE + HOT RELOAD</button></div>
+        <div class="note" style="margin-top:7px">Basic/Medium/Enforced käyttävät koko fyysistä X-aluetta <b>0…1</b>, mutta checkpoint-yhteensopivuuden takia neuralin sisäinen koordinaattiasteikko pysyy vanhana <b>0…0.5</b>. Tämä on vain koordinaattimuunnos: target/rampit skaalataan fyysiselle 0…1 laudalle, joten niiden suhteellinen leveys ei puolitu. Ensimmäinen 50% on edelleen <b>reward-prioriteetti, EI hard limit</b>.</div>
+      </div>
+
+      <div class="panel" style="margin-top:13px">
+        <h2>Geometry editor · hot reload</h2>
+        <div class="tabs" id="lockTabs"></div>
+        <div class="row"><label>Fixed geometry profile</label><select id="templateSel" onchange="loadTemplateForm()"></select></div>
+        <div class="geomGrid" style="margin-top:9px">
+          <div class="field"><label>Target half-width</label><input class="num" id="gTarget" type="number" step="0.0001"></div>
+          <div class="field"><label>Ramp left</label><input class="num" id="gLeft" type="number" step="0.001"></div>
+          <div class="field"><label>Ramp right</label><input class="num" id="gRight" type="number" step="0.001"></div>
+          <div class="field"><label>Curve exponent</label><input class="num" id="gExp" type="number" step="0.05"></div>
+          <div class="field"><label>Turn τ ms</label><input class="num" id="gTau" type="number" step="5"></div>
+          <div class="field"><label>Return τ ms</label><input class="num" id="gReturn" type="number" step="5"></div>
+        </div>
+        <canvas id="geomPreview" class="preview"></canvas>
+        <div class="legend">
+          <span><i class="sw" style="background:#d83d4c"></i>dead</span>
+          <span><i class="sw" style="background:linear-gradient(90deg,#d83d4c,#ffd34d)"></i>ramp depth</span>
+          <span><i class="sw" style="background:#43d17a"></i>target</span>
+          <span><i class="sw" style="background:#63d4ff"></i>neural X</span>
+        </div>
+        <div class="row" style="margin-top:9px"><button class="btn primary" style="flex:1" onclick="saveAll()">SAVE + HOT RELOAD</button><button class="btn" onclick="loadConfig()">RELOAD</button></div>
+        <div class="note" style="margin-top:7px"><span id="geomMeta"></span><br>FIXED PER LOCK: target/ramp width + curve stay constant for this lock type; only target location changes. Ramp depth: red → yellow, target green.</div>
+      </div>
+    </aside>
+
+    <main class="maincol">
+      <div class="stats">
+        <div class="stat cyan"><div class="k">Attempts</div><div class="v" id="sAttempts">0</div></div>
+        <div class="stat"><div class="k">Steps / sec</div><div class="v" id="sSps">0</div></div>
+        <div class="stat good"><div class="k">Rusted</div><div class="v" id="sR">0%</div></div>
+        <div class="stat good"><div class="k">Basic</div><div class="v" id="sB">0%</div></div>
+        <div class="stat good"><div class="k">Medium</div><div class="v" id="sM">0%</div></div>
+        <div class="stat good"><div class="k">Enforced</div><div class="v" id="sE">0%</div></div>
+      </div>
+
+      <div class="panel">
+        <div class="showbar">
+          <h2>Neural Lock Show · 4 simultaneous lock replays</h2>
+          <div class="righttop">
+            <span id="showMeta" class="note">No showcase yet</span>
+            <label class="note">Playback</label>
+            <input id="playSpeed" class="slider" type="range" min="0.25" max="8" step="0.25" value="2">
+            <span id="playSpeedTxt">2×</span>
+            <button class="btn small" onclick="replayShowcase()">↻ Replay</button>
+          </div>
+        </div>
+        <div class="lockgrid" id="lockGrid"></div>
+        <div class="chartwrap"><canvas id="chart" class="chart"></canvas></div>
+      </div>
+
+      <div class="lower">
+        <div class="panel">
+          <h2>Training telemetry</h2>
+          <div class="miniStats">
+            <div class="mini"><div class="k">PPO loss</div><div class="v" id="sLoss">0</div></div>
+            <div class="mini"><div class="k">KL</div><div class="v" id="sKl">0</div></div>
+            <div class="mini"><div class="k">Entropy</div><div class="v" id="sEnt">0</div></div>
+            <div class="mini"><div class="k">Best mean</div><div class="v" id="sBest">0%</div></div>
+          </div>
+          <div id="ramNote" class="note">FREELEARN uses bounded rollouts.</div>
+        </div>
+        <div class="panel">
+          <h2>Trainer console</h2>
+          <div id="log" class="log">Trainer log will appear here after START TRAINING.</div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+<div id="toast" class="toast"></div>
+
+<script>
+const locks=['Rusted','Basic','Medium','Enforced'];
+let cfg=null,activeLock='Rusted',showcase=null,lastShowId=-999,animReq=0,animStart=0,progress=[],reality=null;
+
+function fmt(n){return Number(n||0).toLocaleString('en-US')}
+function pct(v){return (100*Number(v||0)).toFixed(1)+'%'}
+function toast(s){const e=document.getElementById('toast');e.textContent=s;e.classList.add('show');setTimeout(()=>e.classList.remove('show'),2200)}
+async function api(path,opt){const r=await fetch(path,opt);if(!r.ok)throw new Error(await r.text());const t=await r.text();return t?JSON.parse(t):{}}
+function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
+function lerp(a,b,t){return a+(b-a)*t}
+function hexRgb(h){h=h.replace('#','');return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)]}
+function mixColor(a,b,t,alpha=1){const A=hexRgb(a),B=hexRgb(b);return `rgba(${Math.round(lerp(A[0],B[0],t))},${Math.round(lerp(A[1],B[1],t))},${Math.round(lerp(A[2],B[2],t))},${alpha})`}
+
+function initLocks(){
+  const grid=document.getElementById('lockGrid');grid.innerHTML='';
+  for(const n of locks){
+    const id=n.toLowerCase(),card=document.createElement('div');card.className='lockcard';
+    card.innerHTML=`
+      <div class="lockhead"><strong>${n}</strong><span id="${id}Meta">waiting</span></div>
+      <div class="lockvis"><img id="${id}Img" src="/asset/${n}.png"><canvas id="${id}Ov" class="overlay"></canvas></div>
+      <canvas id="${id}Tr" class="trace"></canvas>
+      <div class="lockfoot">
+        <span>t <b id="${id}T">0.00s</b></span>
+        <span>turn <b id="${id}Turn">0.000</b></span>
+        <span>Δ <b id="${id}Delta">0.000</b></span>
+        <span>F <b id="${id}F">UP</b></span>
+        <span>X <b id="${id}Move">MOVE</b></span>
+        <span>press <b id="${id}Press">0/0</b></span>
+        <span>wear <b id="${id}Wear">0/—</b></span>
+        <span>result <b id="${id}Res">—</b></span>
+      </div>`;
+    grid.appendChild(card);
+  }
+}
+
+function resizeCanvas(c){
+  const r=c.getBoundingClientRect(),d=devicePixelRatio||1;
+  if(c.width!==Math.floor(r.width*d)||c.height!==Math.floor(r.height*d)){c.width=Math.floor(r.width*d);c.height=Math.floor(r.height*d)}
+  const x=c.getContext('2d');x.setTransform(d,0,0,d,0,0);return{x,w:r.width,h:r.height}
+}
+
+function depthAt(g,p){
+  if(!g)return 0;
+  const d=p-g.center,ad=Math.abs(d),th=Number(g.target_half||0),exp=Math.max(.05,Number(g.curve_exp||1));
+  if(ad<=th)return 1;
+  if(d < -th){
+    const q=(-d-th)/Math.max(Number(g.ramp_left||0),1e-9);
+    return q>=1?0:Math.pow(clamp(1-q,0,1),exp);
+  }
+  const q=(d-th)/Math.max(Number(g.ramp_right||0),1e-9);
+  return q>=1?0:Math.pow(clamp(1-q,0,1),exp);
+}
+function depthColor(depth,alpha=1){
+  if(depth>=.999)return `rgba(67,209,122,${alpha})`;
+  if(depth<=.001)return `rgba(216,61,76,${alpha})`;
+  const t=Math.pow(clamp(depth,0,1),.62);
+  return mixColor('#d83d4c','#ffd34d',t,alpha);
+}
+function xToArc(g,p,start=-Math.PI*.94,end=-Math.PI*.06){
+  return start+(end-start)*clamp(p/Math.max(g.allowed_max,1e-9),0,1);
+}
+
+function drawTurnRotor(ctx,cx,cy,r,turn,fDown){
+  const ang=(-18+clamp(turn,0,1)*82)*Math.PI/180;
+  ctx.save();ctx.translate(cx,cy);ctx.rotate(ang);
+  ctx.fillStyle='rgba(6,10,16,.62)';ctx.beginPath();ctx.arc(0,0,r*.35,0,Math.PI*2);ctx.fill();
+  ctx.strokeStyle=fDown?'#aa8cff':'#d8e7fa';ctx.lineWidth=5;ctx.lineCap='round';
+  ctx.beginPath();ctx.moveTo(-r*.04,0);ctx.lineTo(r*.56,0);ctx.stroke();
+  ctx.fillStyle=fDown?'#aa8cff':'#d8e7fa';ctx.fillRect(r*.49,-5,r*.13,10);
+  ctx.restore();
+  ctx.strokeStyle='rgba(216,231,250,.22)';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(cx,cy,r*.38,0,Math.PI*2);ctx.stroke();
+}
+
+function drawGradientBar(ctx,g,x0,y,w,h,pos){
+  const segs=180,dx=w/segs;
+  for(let i=0;i<segs;i++){
+    const p=g.allowed_max*(i+.5)/segs;
+    ctx.fillStyle=depthColor(depthAt(g,p),.82);
+    ctx.fillRect(x0+i*dx,y,dx+1,h);
+  }
+  ctx.strokeStyle='#dbe8ff';ctx.lineWidth=1;ctx.strokeRect(x0,y,w,h);
+  if(g.lock&&g.lock!=='Rusted'){
+    const pf=clamp(Number(g.preferred_search_fraction??cfg?.physics?.player_efficiency?.preferred_search_fraction??.5),.05,.95),pp=x0+w*pf;
+    ctx.save();ctx.setLineDash([4,3]);ctx.strokeStyle='rgba(99,212,255,.9)';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(pp,y-4);ctx.lineTo(pp,y+h+4);ctx.stroke();ctx.restore();
+  }
+  const px=x0+w*clamp(pos/g.allowed_max,0,1);
+  ctx.strokeStyle='#63d4ff';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(px,y-9);ctx.lineTo(px,y+h+8);ctx.stroke();
+}
+
+function drawGeomCanvas(c,g,pos,turn,frame){
+  const {x,w,h}=resizeCanvas(c);x.clearRect(0,0,w,h);if(!g)return;
+  const img=c.parentElement?.querySelector('img');
+  const cx=w*.5,cy=h*.49,r=Math.min(h*.38,w*.20);
+  const start=-Math.PI*.94,end=-Math.PI*.06;
+  const segs=150,dr=(end-start)/segs;
+
+  // Continuous hidden geometry ring shown only in Command Center.
+  x.lineCap='butt';x.lineWidth=Math.max(8,r*.105);
+  for(let i=0;i<segs;i++){
+    const p=g.allowed_max*(i+.5)/segs;
+    x.strokeStyle=depthColor(depthAt(g,p),.92);
+    x.beginPath();x.arc(cx,cy,r,start+i*dr,start+(i+1)*dr+.002);x.stroke();
+  }
+  x.strokeStyle='rgba(220,232,248,.38)';x.lineWidth=2;x.beginPath();x.arc(cx,cy,r+8,start,end);x.stroke();
+  x.beginPath();x.arc(cx,cy,r-8,start,end);x.stroke();
+
+  // Neural's current horizontal X marker.
+  const pa=xToArc(g,pos,start,end),mx=cx+Math.cos(pa)*r,my=cy+Math.sin(pa)*r;
+  x.strokeStyle=frame&&frame.f?'#aa8cff':'#63d4ff';x.lineWidth=4;x.beginPath();
+  x.moveTo(cx+Math.cos(pa)*(r-16),cy+Math.sin(pa)*(r-16));
+  x.lineTo(cx+Math.cos(pa)*(r+17),cy+Math.sin(pa)*(r+17));x.stroke();
+  x.fillStyle=frame&&frame.f?'#aa8cff':'#63d4ff';x.beginPath();x.arc(mx,my,4.5,0,Math.PI*2);x.fill();
+
+  // Lock rotation visualization.
+  drawTurnRotor(x,cx,cy,r,turn||0,frame&&frame.f);
+
+  // Visible response meter and geometry bar.
+  const pad=18,barW=w-pad*2;
+  x.fillStyle='rgba(4,8,13,.75)';x.fillRect(pad,10,barW,26);
+  x.fillStyle='#7f90a8';x.font='10px Segoe UI';x.fillText('VISIBLE LOCK TURN',pad+5,20);
+  x.fillStyle='#122334';x.fillRect(pad+105,15,Math.max(30,barW-112),9);
+  x.fillStyle='#63d4ff';x.fillRect(pad+105,15,Math.max(0,(barW-112)*clamp(turn||0,0,1)),9);
+  if(frame){
+    const d=Number(frame.turn_delta||0);
+    x.fillStyle=d>0.0002?'#43d17a':d<-0.0002?'#ff5d6c':'#8fa0b8';
+    x.fillText(`Δ ${d>=0?'+':''}${d.toFixed(4)}`,pad+5,32);
+  }
+
+  drawGradientBar(x,g,pad,h-26,barW,12,pos||0);
+  x.fillStyle='rgba(4,8,13,.72)';x.fillRect(pad,42,Math.min(310,barW),18);
+  x.fillStyle='#d7e7ff';x.font='10px Segoe UI';
+  x.fillText(`${g.template||''} · geometry visible to YOU, hidden from neural`,pad+5,54);
+  if(frame&&frame.f){
+    x.fillStyle='rgba(126,93,220,.88)';x.fillRect(w-164,42,146,18);
+    x.fillStyle='#f4efff';x.font='bold 10px Segoe UI';const fm=String(frame.f_mode||'').toUpperCase(); const txt=fm==='TAP'?'F TAP · X STATIC':(fm==='HOLD'?`F HOLD ${Number(frame.hold_run_ms||0)}ms · X STATIC`:'F DOWN · X STATIC'); x.fillText(txt,w-156,54);
+  }
+}
+
+function drawTrace(c,g,frames,idx){
+  const {x,w,h}=resizeCanvas(c);x.clearRect(0,0,w,h);if(!g||!frames)return;
+  const pad=18,scale=(w-2*pad)/Math.max(g.allowed_max,1e-9),X=v=>pad+v*scale;
+  x.strokeStyle='#192436';x.lineWidth=1;
+  for(let k=0;k<=10;k++){x.beginPath();x.moveTo(pad+k*(w-2*pad)/10,0);x.lineTo(pad+k*(w-2*pad)/10,h);x.stroke()}
+  if(g.lock&&g.lock!=='Rusted'){const pf=clamp(Number(g.preferred_search_fraction??cfg?.physics?.player_efficiency?.preferred_search_fraction??.5),.05,.95),xx=X(g.allowed_max*pf);x.save();x.setLineDash([4,4]);x.strokeStyle='rgba(99,212,255,.5)';x.beginPath();x.moveTo(xx,0);x.lineTo(xx,h);x.stroke();x.restore()}
+  // X movement trace
+  x.strokeStyle='rgba(99,212,255,.35)';x.lineWidth=1.5;x.beginPath();
+  for(let i=0;i<=Math.min(idx,frames.length-1);i++){
+    const f=frames[i],yy=6+(h-26)*i/Math.max(1,frames.length-1),xx=X(f.pos);
+    i?x.lineTo(xx,yy):x.moveTo(xx,yy);
+  } x.stroke();
+
+  let seg=null;
+  const stop=Math.min(idx,frames.length-1);
+  for(let i=0;i<=stop;i++){
+    const f=frames[i];
+    if(f.f && seg===null)seg={t:f.t_ms,x:f.pos,depth:Number(f.depth||0)};
+    const closing=seg!==null && ((!f.f) || i===stop);
+    if(closing){
+      const dur=Math.max(25,f.t_ms-seg.t+(i===stop&&f.f?25:0)),len=Math.min(h-17,8+dur*.095);
+      x.strokeStyle=depthColor(seg.depth,.98);x.lineWidth=3;x.beginPath();x.moveTo(X(seg.x),4);x.lineTo(X(seg.x),4+len);x.stroke();
+      x.fillStyle=depthColor(seg.depth,1);x.beginPath();x.arc(X(seg.x),4,3,0,Math.PI*2);x.fill();
+      seg=null;
+    }
+  }
+  x.fillStyle='#8fa0b8';x.font='10px Consolas';
+  x.fillText('F trace: TAP = one-frame mark · HOLD = vertical duration · color = hidden ramp depth shown to YOU',8,h-5);
+}
+
+function replayShowcase(){if(!showcase)return;cancelAnimationFrame(animReq);animStart=performance.now();animReq=requestAnimationFrame(animFrame)}
+function animFrame(now){
+  if(!showcase)return;
+  const speed=Number(document.getElementById('playSpeed').value),frameMs=showcase.frame_ms||25,idx=Math.floor((now-animStart)*speed/frameMs);let any=false;
+  showcase.locks.forEach(l=>{
+    const id=l.lock.toLowerCase(),frames=l.frames||[],i=Math.min(idx,Math.max(0,frames.length-1));
+    const f=frames[i]||{t_ms:0,pos:0,turn:0,turn_delta:0,f:0,f_mode:'MOVE/RELEASE',hold_run_ms:0,off_target_f_sec:0,non_target_presses:0,total_presses:0,pick_wear:0,pick_budget:0};
+    drawGeomCanvas(document.getElementById(id+'Ov'),l,f.pos,f.turn,f);
+    drawTrace(document.getElementById(id+'Tr'),l,frames,i);
+    document.getElementById(id+'T').textContent=(f.t_ms/1000).toFixed(2)+'s';
+    document.getElementById(id+'Turn').textContent=Number(f.turn||0).toFixed(3);
+    document.getElementById(id+'Delta').textContent=(Number(f.turn_delta||0)>=0?'+':'')+Number(f.turn_delta||0).toFixed(4);
+    document.getElementById(id+'Delta').style.color=Number(f.turn_delta||0)>0.0002?'#43d17a':Number(f.turn_delta||0)<-0.0002?'#ff5d6c':'#8fa0b8';
+    document.getElementById(id+'F').textContent=f.f?(f.f_mode==='TAP'?'TAP':`HOLD ${Number(f.hold_run_ms||0)}ms`):'UP';
+    document.getElementById(id+'F').style.color=f.f?'#aa8cff':'#8fa0b8';
+    const moveEl=document.getElementById(id+'Move');
+    moveEl.textContent=f.f?'LOCKED':(f.move_blocked?'LOCKED':'MOVE');
+    moveEl.style.color=(f.f||f.move_blocked)?'#aa8cff':'#63d4ff';
+    document.getElementById(id+'Press').textContent=`${f.total_presses||0}/${f.non_target_presses||0}`;
+    document.getElementById(id+'Wear').textContent=l.lock==='Rusted'?'n/a':`${Number(f.pick_wear||0).toFixed(1)}/${Number(f.pick_budget||l.pick_break_budget||0).toFixed(1)} · Foff ${Number(f.off_target_f_sec||0).toFixed(3)}/${Number(l.max_off_target_f_sec||1).toFixed(2)}s`;
+    const last=idx>=frames.length-1;
+    document.getElementById(id+'Res').textContent=last?(l.success?'OPEN':(f.pick_broken?(f.time_cap_broken?'PICK BREAK · 1S F CAP':'PICK BREAK'):'FAIL')):'…';
+    document.getElementById(id+'Res').style.color=l.success?'#43d17a':'#ff5d6c';
+    document.getElementById(id+'Meta').textContent=`${l.template} · target @ ${Number(l.center).toFixed(4)}`;
+    if(idx<frames.length-1)any=true;
+  });
+  if(any)animReq=requestAnimationFrame(animFrame);
+}
+
+async function pollShow(){
+  try{
+    const s=await api('/api/showcase');
+    if(s&&s.showcase!==undefined&&s.showcase!==lastShowId&&s.showcase>=0){
+      showcase=s;lastShowId=s.showcase;
+      document.getElementById('showMeta').textContent=`Show #${s.showcase} · ${fmt(s.attempts)} attempts · ${s.created}`;
+      replayShowcase();
+    }
+  }catch(e){}
+}
+
+async function pollStatus(){
+  try{
+    const s=await api('/api/status'),on=s.running||s.status==='training';
+    document.getElementById('statusDot').className='dot '+(on?'on':'');
+    document.getElementById('statusText').textContent=on?'TRAINING':'OFFLINE';
+    const a=s.attempts||0;document.getElementById('attemptsTop').textContent=fmt(a);document.getElementById('sAttempts').textContent=fmt(a);
+    document.getElementById('sSps').textContent=fmt(Math.round(s.steps_per_sec||0));
+    const r=s.success_rates||{};document.getElementById('sR').textContent=pct(r.Rusted);document.getElementById('sB').textContent=pct(r.Basic);document.getElementById('sM').textContent=pct(r.Medium);document.getElementById('sE').textContent=pct(r.Enforced);
+    document.getElementById('sLoss').textContent=Number(s.loss||0).toFixed(3);document.getElementById('sKl').textContent=Number(s.kl||0).toFixed(4);document.getElementById('sEnt').textContent=Number(s.entropy||0).toFixed(3);document.getElementById('sBest').textContent=pct(s.best_mean);
+    document.getElementById('ramNote').textContent=s.ram_note||'FREELEARN uses bounded rollouts; no huge replay bank.';
+    if(s.showcase_every_attempts)document.getElementById('showEvery').value=s.showcase_every_attempts;
+  }catch(e){}
+  try{
+    const l=await fetch('/api/log').then(r=>r.text()),el=document.getElementById('log');
+    if(el.textContent!==l){el.textContent=l;el.scrollTop=el.scrollHeight}
+  }catch(e){}
+}
+async function loadProgress(){try{progress=await api('/api/progress');drawChart()}catch(e){}}
+function drawChart(){
+  const c=document.getElementById('chart'),{x,w,h}=resizeCanvas(c);x.clearRect(0,0,w,h);x.fillStyle='#080c12';x.fillRect(0,0,w,h);
+  const pad={l:44,r:14,t:16,b:25};x.strokeStyle='#1e2a3a';x.fillStyle='#8394ac';x.font='10px Segoe UI';
+  for(let k=0;k<=5;k++){const y=pad.t+(h-pad.t-pad.b)*k/5;x.beginPath();x.moveTo(pad.l,y);x.lineTo(w-pad.r,y);x.stroke();x.fillText((100-20*k)+'%',5,y+3)}
+  if(!progress.length){x.fillText('No progress samples yet',pad.l+10,pad.t+20);return}
+  const pts=progress.slice(-140),maxA=Math.max(...pts.map(p=>p.attempts)),minA=Math.min(...pts.map(p=>p.attempts)),cols={Rusted:'#43d17a',Basic:'#63d4ff',Medium:'#ffd34d',Enforced:'#aa8cff'};
+  for(const n of locks){x.strokeStyle=cols[n];x.lineWidth=2;x.beginPath();pts.forEach((p,i)=>{const xx=pad.l+(w-pad.l-pad.r)*((p.attempts-minA)/Math.max(1,maxA-minA)),yy=pad.t+(h-pad.t-pad.b)*(1-(p[n]||0));i?x.lineTo(xx,yy):x.moveTo(xx,yy)});x.stroke()}
+  let xx=pad.l;for(const n of locks){x.fillStyle=cols[n];x.fillRect(xx,h-15,10,3);x.fillStyle='#b9c9dd';x.fillText(n,xx+14,h-11);xx+=90}
+}
+
+async function loadConfig(){
+  cfg=await api('/api/config');
+  document.getElementById('showEvery').value=cfg.training.showcase_every_attempts;
+  document.getElementById('envs').value=cfg.training.envs;
+  const e=cfg.physics.player_efficiency||{};
+  const set=(id,v)=>document.getElementById(id).value=v;
+  set('eGoal',e.soft_goal_non_target_presses??8);set('eBonus',e.success_efficiency_bonus??3);
+  set('ePrefPct',100*(e.preferred_search_fraction??.5));set('ePrefBonus',e.preferred_region_success_bonus??2);
+  set('eBreakMin',e.pick_break_budget_min??6);set('eBreakMax',e.pick_break_budget_max??8);
+  set('eDeadTap',e.dead_press_damage??1);set('eRampTap',e.ramp_press_damage??.65);
+  set('eDeadHold',e.hold_damage_per_sec_dead??.55);set('eRampHold',e.hold_damage_per_sec_ramp??.32);
+  set('eMaxOffTime',e.max_off_target_f_sec??1.0);set('eOffTimePenalty',e.off_target_time_penalty_per_sec??.35);set('eTimeBreakPenalty',e.off_target_time_break_extra_penalty??3.0);
+  renderTabs();loadTemplateSelect();loadTemplateForm();
+}
+function renderTabs(){
+  const t=document.getElementById('lockTabs');t.innerHTML='';
+  locks.forEach(n=>{const b=document.createElement('button');b.className='btn small tab'+(n===activeLock?' cyan':'');b.textContent=n;b.onclick=()=>{activeLock=n;renderTabs();loadTemplateSelect();loadTemplateForm()};t.appendChild(b)})
+}
+function loadTemplateSelect(){
+  const s=document.getElementById('templateSel');s.innerHTML='';
+  (cfg.locks[activeLock].templates||[]).forEach((t,i)=>{const o=document.createElement('option');o.value=i;o.textContent=t.name;s.appendChild(o)})
+}
+function loadTemplateForm(){
+  if(!cfg)return;
+  const s=document.getElementById('templateSel'),t=cfg.locks[activeLock].templates[Number(s.value)||0],set=(id,v)=>document.getElementById(id).value=v;
+  set('gTarget',t.target_half);set('gLeft',t.ramp_left);set('gRight',t.ramp_right);set('gExp',t.curve_exp);set('gTau',t.turn_tau_ms);set('gReturn',t.return_tau_ms);
+  const l=cfg.locks[activeLock], phys=Number(l.physical_max??1), span=Number(l.policy_span??(activeLock==='Rusted'?1:.5));document.getElementById('geomMeta').textContent=`${activeLock}: time ${l.time_limit_sec}s · physical X 0…${phys} · neural coord 0…${span}`;
+  drawGeomPreview();
+}
+function formToTemplate(){
+  const i=Number(document.getElementById('templateSel').value)||0,t=cfg.locks[activeLock].templates[i],get=id=>Number(document.getElementById(id).value);
+  t.target_half=get('gTarget');t.ramp_left=get('gLeft');t.ramp_right=get('gRight');t.curve_exp=get('gExp');t.turn_tau_ms=get('gTau');t.return_tau_ms=get('gReturn');return t
+}
+function formToEconomy(){
+  const e=cfg.physics.player_efficiency||(cfg.physics.player_efficiency={}),get=id=>Number(document.getElementById(id).value);
+  e.enabled=true;e.soft_goal_non_target_presses=Math.max(1,Math.round(get('eGoal')));e.success_efficiency_bonus=Math.max(0,get('eBonus'));
+  e.preferred_search_fraction=clamp(get('ePrefPct')/100,.05,.95);e.preferred_region_success_bonus=Math.max(0,get('ePrefBonus'));
+  e.pick_break_enabled=true;e.pick_break_budget_min=Math.max(1,get('eBreakMin'));e.pick_break_budget_max=Math.max(e.pick_break_budget_min,get('eBreakMax'));
+  e.dead_press_damage=Math.max(0,get('eDeadTap'));e.ramp_press_damage=Math.max(0,get('eRampTap'));e.hold_damage_per_sec_dead=Math.max(0,get('eDeadHold'));e.hold_damage_per_sec_ramp=Math.max(0,get('eRampHold'));
+  e.max_off_target_f_sec=Math.max(.025,get('eMaxOffTime'));e.off_target_time_penalty_per_sec=Math.max(0,get('eOffTimePenalty'));e.off_target_time_break_extra_penalty=Math.max(0,get('eTimeBreakPenalty'));
+}
+function drawGeomPreview(){
+  if(!cfg)return;const t=formToTemplate(),l=cfg.locks[activeLock],c=document.getElementById('geomPreview');
+  const phys=Number(l.physical_max??1),span=Math.max(.0001,Number(l.policy_span??(activeLock==='Rusted'?1:.5))),scale=phys/span;
+  const g={lock:activeLock,allowed_max:phys,policy_span:span,geometry_scale:scale,center:phys*.5,target_half:t.target_half*scale,ramp_left:t.ramp_left*scale,ramp_right:t.ramp_right*scale,curve_exp:t.curve_exp,template:t.name,preferred_search_fraction:(cfg.physics?.player_efficiency?.preferred_search_fraction??.5)};
+  drawGeomCanvas(c,g,phys*.5,0,{f:0,turn_delta:0});
+}
+['gTarget','gLeft','gRight','gExp','gTau','gReturn'].forEach(id=>document.addEventListener('input',e=>{if(e.target.id===id)drawGeomPreview()}));
+async function saveAll(){
+  try{
+    formToTemplate();formToEconomy();cfg.training.showcase_every_attempts=Number(document.getElementById('showEvery').value);
+    await api('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
+    toast('Geometry + TAP/HOLD economy + soft first-pass priority saved; trainer hot reload queued')
+  }catch(e){toast('Save failed: '+e.message)}
+}
+function setShow(n){
+  document.getElementById('showEvery').value=n;
+  if(cfg){cfg.training.showcase_every_attempts=n;api('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)}).then(()=>toast('Lock show interval '+fmt(n)))}
+}
+async function startTraining(){
+  const body={minutes:Number(document.getElementById('minutes').value),envs:Number(document.getElementById('envs').value),showcase_every:Number(document.getElementById('showEvery').value)};
+  try{await saveAll();await api('/api/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});toast('Training started')}catch(e){toast('Start failed: '+e.message)}
+}
+async function stopTraining(){try{await api('/api/stop',{method:'POST'});toast('Stop requested')}catch(e){toast('Stop failed')}}
+function humanBytes(n){n=Number(n||0);if(n<1024)return n+' B';const u=['KiB','MiB','GiB','TiB'];let i=-1;do{n/=1024;i++}while(n>=1024&&i<u.length-1);return n.toFixed(n>=100?0:n>=10?1:2)+' '+u[i]}
+async function refreshWipeStats(){
+  try{const s=await api('/api/wipe/status');document.getElementById('simDataSize').textContent=`${humanBytes(s.simulation_bytes)} · ${fmt(s.simulation_files)} files`;document.getElementById('allDataSize').textContent=`${humanBytes(s.all_bytes)} · ${fmt(s.all_files)} files`}catch(e){}
+}
+function resetDashboardAfterWipe(){
+  showcase=null;lastShowId=-999;progress=[];cancelAnimationFrame(animReq);drawChart();
+  document.getElementById('showMeta').textContent='No showcase yet';
+  for(const n of locks){const id=n.toLowerCase();document.getElementById(id+'Meta').textContent='waiting';document.getElementById(id+'T').textContent='0.00s';document.getElementById(id+'Turn').textContent='0.000';document.getElementById(id+'Delta').textContent='0.000';document.getElementById(id+'F').textContent='UP';document.getElementById(id+'Move').textContent='MOVE';document.getElementById(id+'Press').textContent='0/0';document.getElementById(id+'Wear').textContent='0/—';document.getElementById(id+'Res').textContent='—'}
+}
+async function doWipe(mode,confirmText){
+  try{const r=await api('/api/wipe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode,confirm:confirmText})});resetDashboardAfterWipe();await pollStatus();await loadProgress();await refreshWipeStats();toast(`${mode==='all'?'ALL DATA':'Simulation data'} wiped · ${humanBytes(r.removed_bytes)} removed`)}catch(e){toast('Wipe blocked: '+e.message)}
+}
+async function wipeSimulation(){
+  if(!confirm('WIPE SIMULATION DATA?\n\nThis resets ONLY FREELEARN simulation checkpoints + telemetry/progress/showcase/log. Human Teach, real-game demos, neural_smart, references and config stay untouched.\n\nTraining must be STOPPED.'))return;
+  await doWipe('simulation','WIPE SIM');
+}
+async function wipeAllData(){
+  if(!confirm('DANGER: WIPE ALL DATA deletes EVERYTHING inside data\\ and checkpoints\\.\n\nThis includes Human Teach/demos, neural_smart, audit/evaluation and all simulation/checkpoint data. Program, references and config remain.'))return;
+  const t=prompt('Type WIPE ALL exactly to confirm:','');if(t!=='WIPE ALL'){toast('All-data wipe cancelled');return}
+  await doWipe('all','WIPE ALL');
+}
+async function requestShowcase(){try{await api('/api/showcase/request',{method:'POST'});toast('Lock Show requested')}catch(e){toast('Request failed')}}
+
+async function startReality(){
+  try{const lock=document.getElementById('realLock').value;await api('/api/reality/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lock})});toast('REAL capture started · '+lock);setTimeout(pollReality,500)}catch(e){toast('REAL capture failed: '+e.message)}
+}
+async function stopReality(){try{await api('/api/reality/stop',{method:'POST'});toast('REAL capture stop requested');setTimeout(pollReality,1400)}catch(e){toast('REAL stop failed: '+e.message)}}
+async function fitReality(){
+  try{toast('Fitting REAL → SIM physics…');const r=await api('/api/reality/fit',{method:'POST'});if(r.output)document.getElementById('realityLog').textContent=r.output;await pollReality();toast('REAL → SIM fit applied to new simulator episodes')}catch(e){toast('Fit failed: '+e.message)}
+}
+function drawRealityChart(){
+  const c=document.getElementById('realityChart');if(!c)return;const {x,w,h}=resizeCanvas(c);x.clearRect(0,0,w,h);x.fillStyle='#080c12';x.fillRect(0,0,w,h);
+  const pad={l:34,r:10,t:12,b:20};x.strokeStyle='#1e2a3a';x.fillStyle='#8394ac';x.font='9px Segoe UI';for(let k=0;k<=4;k++){const y=pad.t+(h-pad.t-pad.b)*k/4;x.beginPath();x.moveTo(pad.l,y);x.lineTo(w-pad.r,y);x.stroke();x.fillText((100-25*k)+'%',3,y+3)}
+  if(!reality?.fit?.locks){x.fillText('No REAL fit yet',pad.l+8,pad.t+18);return}
+  const chosen=document.getElementById('realLock')?.value;let lk=(chosen&&chosen!=='Auto')?chosen:null;if(!lk||!reality.fit.locks[lk]?.comparison?.length){lk=locks.find(n=>reality.fit.locks[n]?.comparison?.length)}
+  const pts=lk?reality.fit.locks[lk]?.comparison||[]:[];if(!pts.length){x.fillText('Need confident REAL probes for comparison',pad.l+8,pad.t+18);return}
+  const minX=Math.min(...pts.map(p=>p.x_rel)),maxX=Math.max(...pts.map(p=>p.x_rel));const mapX=v=>pad.l+(w-pad.l-pad.r)*(v-minX)/Math.max(.001,maxX-minX),mapY=v=>pad.t+(h-pad.t-pad.b)*(1-clamp(v,0,1));
+  const draw=(key,col)=>{x.strokeStyle=col;x.lineWidth=2;x.beginPath();pts.forEach((p,i)=>{const xx=mapX(p.x_rel),yy=mapY(p[key]);i?x.lineTo(xx,yy):x.moveTo(xx,yy)});x.stroke()};draw('real','#63d4ff');draw('sim','#ffd34d');x.fillStyle='#b9c9dd';x.fillText(lk+' · X relative to inferred episode center (human UI only)',pad.l,h-6);
+}
+async function pollReality(){
+  try{const r=await api('/api/reality/status');reality=r;const on=!!r.running||r.recorder==='recording';document.getElementById('realState').textContent=on?'RECORDING':'OFFLINE';document.getElementById('realState').style.color=on?'#43d17a':'#edf4ff';document.getElementById('realSamples').textContent=fmt(r.samples||0);document.getElementById('realEpisodes').textContent=fmt(r.episodes||0);document.getElementById('realMatch').textContent=pct(r.overall_match||r.fit?.overall_match||0);
+    const tb=document.getElementById('realityRows');tb.innerHTML='';for(const n of locks){const q=r.fit?.locks?.[n]||r.fit_locks?.[n]||{};const tr=document.createElement('tr');tr.innerHTML=`<td>${n}${q.enabled?' ✓':''}</td><td>${fmt(q.samples||0)}</td><td>${pct(q.match||0)}</td><td>${Number(q.turn_tau_scale||1).toFixed(2)}×</td><td>${Number(q.return_tau_scale||1).toFixed(2)}×</td><td>${Number(q.ramp_gain||1).toFixed(2)}×</td>`;tb.appendChild(tr)}
+    if(on){const d=r.detected_lock?`Detected ${r.detected_lock} (${pct(r.detected_lock_conf||0)}) · X ${r.last_x??'—'} · turn ${r.last_turn??'—'} · successScore ${r.success_score??'—'}`:'Waiting for SCUM lock UI…';document.getElementById('realityLog').textContent=d}else{try{const l=await fetch('/api/reality/log').then(x=>x.text());if(l.trim())document.getElementById('realityLog').textContent=l}catch(e){}}
+    drawRealityChart();
+  }catch(e){}
+}
+
+document.getElementById('playSpeed').oninput=e=>document.getElementById('playSpeedTxt').textContent=Number(e.target.value).toFixed(2).replace(/\.00$/,'')+'×';
+window.addEventListener('resize',()=>{drawChart();drawRealityChart();if(showcase)replayShowcase()});
+document.addEventListener('change',e=>{if(e.target.id==='realLock')drawRealityChart()});
+initLocks();loadConfig();pollStatus();pollShow();loadProgress();refreshWipeStats();pollReality();
+setInterval(pollStatus,1000);setInterval(pollShow,1500);setInterval(loadProgress,5000);setInterval(refreshWipeStats,5000);setInterval(pollReality,1200);
+</script>
+</body>
+</html>

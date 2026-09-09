@@ -1,0 +1,16 @@
+{
+  "config_version": 14,
+  "live_lock_type_detection": true,
+  "live_lock_type_sample_frames": 4,
+  "live_lock_type_sample_gap_ms": 18,
+  "live_lock_type_min_confidence": 0.42,
+  "live_lock_type_softmax_temp": 0.65,
+  "rusted_budget_sec": 10.0,
+  "rusted_max_dead_probes": 36,
+  "rusted_max_steps": 48,
+  "rusted_meaningful_response": 0.030,
+  "player_budget_sec": 3.0,
+  "player_max_dead_probes": 7,
+  "player_max_steps": 14,
+  "player_meaningful_response": 0.050
+}

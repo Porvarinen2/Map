@@ -1,0 +1,2 @@
+This hotfix intentionally does not include freelearn_config.json.
+Keep your current v0.17.6 config/settings. The new trainer applies the coordinate bridge automatically.

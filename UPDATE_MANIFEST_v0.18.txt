@@ -1,0 +1,27 @@
+v0.18.0 UPDATE CONTENTS
+=======================
+freelearn_trainer.py
+real_sim_bridge.py
+LockpickCommandCenter.exe
+START_COMMAND_CENTER.bat
+REAL_BRIDGE_CAPTURE_AUTO.bat
+REAL_BRIDGE_FIT.bat
+command_center_source\main.go
+command_center_source\go.mod
+command_center_source\web\index.html
+command_center_source\assets\Rusted.png
+command_center_source\assets\Basic.png
+command_center_source\assets\Medium.png
+command_center_source\assets\Enforced.png
+README_v0.18_REAL_SIM_BRIDGE.txt
+
+Intentionally NOT included:
+- freelearn_config.json (preserves your current fixed geometry / F economy)
+- data\
+- checkpoints\
+- lockpick_learner.py (uses your existing current live vision/controller file)
+
+v0.18.1 launcher patch:
+- START_REAL_CAPTURE_HIDDEN.bat: passive recorder hidden in background; Command Center not required
+- STOP_REAL_CAPTURE.bat: clean stop via stop.flag
+- STOP_REAL_CAPTURE_AND_FIT.bat: stop, wait for flush, then fit

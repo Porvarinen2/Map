@@ -1,0 +1,11 @@
+UPDATE-SAFE PACKAGE
+===================
+This ZIP intentionally does NOT contain data/, config.json, or config_neural_smart.json.
+Extract over the existing Lockpick folder: existing demos, calibration, checkpoints,
+elite data and settings remain untouched.
+
+On first run in a completely new empty folder, the programs create missing data/
+and config files automatically.
+
+Existing v0.10 config_neural_smart.json is automatically migrated to v0.11 PPO
+stability settings while unrelated values are preserved.

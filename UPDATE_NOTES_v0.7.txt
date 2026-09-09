@@ -1,0 +1,15 @@
+v0.7 FAST changes
+=================
+- Added HUMAN TEACH -> automatic neural behavior cloning.
+- Human failures are retained: helpful parts positive, harmful terminal actions negative.
+- Added zero-success actor-head recovery before BC (body/value preserved; rescue checkpoint saved).
+- Raised neural meaningful-response threshold to 0.085 because supplied v0.6 log showed ~0.045-0.056 dead-zone baseline.
+- Added phase action masks to prevent left-boundary collapse and reduce action search space.
+- Added short/medium/long F curriculum.
+- Added stronger first-wobble/new-best/success shaping and adaptive near-miss failure penalty.
+- Added decaying entropy pressure for faster exploitation.
+- Added human rehearsal after PPO updates.
+- Added elite SUCCESS/near-success auxiliary replay (not stale PPO replay).
+- Added best rolling-training checkpoint and restore option.
+- Added FAST verify regression for the exact v0.6 left-boundary failure.
+- Existing v0.6 checkpoint/data are preserved and compatible.
