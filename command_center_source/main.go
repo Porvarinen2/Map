@@ -27,12 +27,26 @@ type Server struct {
 	mu         sync.Mutex
 	cmd        *exec.Cmd
 	realityCmd *exec.Cmd
+	liveCmd    *exec.Cmd
 }
 
 type StartReq struct {
 	Minutes       float64 `json:"minutes"`
 	Envs          int     `json:"envs"`
 	ShowcaseEvery int64   `json:"showcase_every"`
+	Visual        bool    `json:"visual"`
+	VisualQuality string  `json:"visual_quality"`
+}
+
+type LiveReq struct {
+	Mode     string `json:"mode"`
+	Lock     string `json:"lock"`
+	Attempts int    `json:"attempts"`
+}
+
+type VisualEvalReq struct {
+	Episodes int `json:"episodes"`
+	Envs     int `json:"envs"`
 }
 
 type WipeReq struct {
@@ -391,7 +405,11 @@ func (s *Server) apiStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if q.Envs < 64 {
-		q.Envs = 8192
+		if q.Visual {
+			q.Envs = 96
+		} else {
+			q.Envs = 8192
+		}
 	}
 	if q.ShowcaseEvery < 1000 {
 		q.ShowcaseEvery = 1000000
@@ -429,11 +447,19 @@ func (s *Server) apiStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	trainer := filepath.Join(s.root, "freelearn_trainer.py")
+	args := []string{trainer, "--minutes", fmt.Sprintf("%.4f", q.Minutes), "--envs", strconv.Itoa(q.Envs), "--showcase-every", strconv.FormatInt(q.ShowcaseEvery, 10)}
+	if q.Visual {
+		quality := q.VisualQuality
+		if quality != "live" {
+			quality = "fast"
+		}
+		args = append(args, "--visual", "--visual-quality", quality)
+	}
 	var cmd *exec.Cmd
 	if p, err := exec.LookPath("py.exe"); err == nil {
-		cmd = exec.Command(p, "-3", trainer, "--minutes", fmt.Sprintf("%.4f", q.Minutes), "--envs", strconv.Itoa(q.Envs), "--showcase-every", strconv.FormatInt(q.ShowcaseEvery, 10))
+		cmd = exec.Command(p, append([]string{"-3"}, args...)...)
 	} else if p, err := exec.LookPath("python.exe"); err == nil {
-		cmd = exec.Command(p, trainer, "--minutes", fmt.Sprintf("%.4f", q.Minutes), "--envs", strconv.Itoa(q.Envs), "--showcase-every", strconv.FormatInt(q.ShowcaseEvery, 10))
+		cmd = exec.Command(p, args...)
 	} else {
 		logf.Close()
 		http.Error(w, "Python not found (py.exe/python.exe)", 500)
@@ -657,6 +683,189 @@ func (s *Server) apiProgress(w http.ResponseWriter, r *http.Request) {
 	jsonReply(w, out)
 }
 
+func (s *Server) liveDir(parts ...string) string {
+	p := append([]string{s.root, "data", "live"}, parts...)
+	return filepath.Join(p...)
+}
+
+func (s *Server) liveRunningLocked() bool {
+	return s.liveCmd != nil && s.liveCmd.Process != nil && s.liveCmd.ProcessState == nil
+}
+
+// apiVision reports the sensor model the simulator trains against plus the
+// calibration the live reader will use.
+func (s *Server) apiVision(w http.ResponseWriter, r *http.Request) {
+	out := map[string]any{}
+	if b, err := os.ReadFile(s.configPath()); err == nil {
+		var c map[string]any
+		if json.Unmarshal(b, &c) == nil {
+			out["vision"] = c["vision"]
+		}
+	}
+	if b, err := os.ReadFile(s.dataPath("live", "turn_calibration.json")); err == nil {
+		var t map[string]any
+		if json.Unmarshal(b, &t) == nil {
+			out["turn_calibration"] = t
+		}
+	}
+	if b, err := os.ReadFile(s.dataPath("freelearn_telemetry.json")); err == nil {
+		var t map[string]any
+		if json.Unmarshal(b, &t) == nil {
+			out["vision_attempts"] = t["vision_attempts"]
+			out["vision_scale"] = t["vision_scale"]
+			out["visual_sim"] = t["visual_sim"]
+		}
+	}
+	if b, err := os.ReadFile(s.dataPath("live", "visual_eval.json")); err == nil {
+		var t map[string]any
+		if json.Unmarshal(b, &t) == nil {
+			out["last_eval"] = t
+		}
+	}
+	jsonReply(w, out)
+}
+
+func (s *Server) apiVisualCalibrate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method", 405)
+		return
+	}
+	s.mu.Lock()
+	running := s.runningLocked()
+	s.mu.Unlock()
+	if running {
+		http.Error(w, "Stop training first: calibration rewrites freelearn_config.json and the trainer reads the vision model at startup.", 409)
+		return
+	}
+	cmd, err := pythonCommand(s.root, filepath.Join(s.root, "freelearn_visual_sim.py"), "--calibrate")
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		http.Error(w, string(out)+"\n"+err.Error(), 500)
+		return
+	}
+	jsonReply(w, map[string]any{"ok": true, "output": string(out)})
+}
+
+func (s *Server) apiVisualEval(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method", 405)
+		return
+	}
+	var q VisualEvalReq
+	_ = json.NewDecoder(r.Body).Decode(&q)
+	if q.Episodes < 8 {
+		q.Episodes = 96
+	}
+	if q.Envs < 4 {
+		q.Envs = 48
+	}
+	cmd, err := pythonCommand(s.root, filepath.Join(s.root, "freelearn_visual_sim.py"), "--eval",
+		"--episodes", strconv.Itoa(q.Episodes), "--envs", strconv.Itoa(q.Envs))
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		http.Error(w, string(out)+"\n"+err.Error(), 500)
+		return
+	}
+	jsonReply(w, map[string]any{"ok": true, "output": string(out)})
+}
+
+func (s *Server) apiLiveStart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method", 405)
+		return
+	}
+	var q LiveReq
+	_ = json.NewDecoder(r.Body).Decode(&q)
+	valid := map[string]bool{"Auto": true, "Rusted": true, "Basic": true, "Medium": true, "Enforced": true}
+	if !valid[q.Lock] {
+		q.Lock = "Auto"
+	}
+	args := []string{filepath.Join(s.root, "freelearn_live.py"), "--lock", q.Lock}
+	switch q.Mode {
+	case "observe":
+		args = append(args, "--observe")
+	case "calibrate":
+		args = append(args, "--calibrate")
+	default:
+		q.Mode = "play"
+		if q.Attempts > 0 {
+			args = append(args, "--attempts", strconv.Itoa(q.Attempts))
+		}
+		args = append(args, "--trace")
+	}
+	if err := os.MkdirAll(s.liveDir(), 0755); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.liveRunningLocked() {
+		http.Error(w, "live agent already running", 409)
+		return
+	}
+	cmd, err := pythonCommand(s.root, args...)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	logf, err := os.OpenFile(s.liveDir("live_console.log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	cmd.Stdout, cmd.Stderr = logf, logf
+	if err := cmd.Start(); err != nil {
+		logf.Close()
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	s.liveCmd = cmd
+	go func(c *exec.Cmd, f *os.File) {
+		_ = c.Wait()
+		_ = f.Close()
+		s.mu.Lock()
+		if s.liveCmd == c {
+			s.liveCmd = nil
+		}
+		s.mu.Unlock()
+	}(cmd, logf)
+	jsonReply(w, map[string]any{"ok": true, "pid": cmd.Process.Pid, "mode": q.Mode, "lock": q.Lock})
+}
+
+func (s *Server) apiLiveStop(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method", 405)
+		return
+	}
+	s.mu.Lock()
+	cmd := s.liveCmd
+	s.mu.Unlock()
+	if cmd != nil && cmd.Process != nil {
+		_ = exec.Command("taskkill", "/PID", strconv.Itoa(cmd.Process.Pid), "/T", "/F").Run()
+	}
+	jsonReply(w, map[string]any{"ok": true})
+}
+
+func (s *Server) apiLiveStatus(w http.ResponseWriter, r *http.Request) {
+	m := map[string]any{"attempts": 0, "successes": 0}
+	if b, err := os.ReadFile(s.liveDir("live_status.json")); err == nil {
+		_ = json.Unmarshal(b, &m)
+	}
+	s.mu.Lock()
+	m["running"] = s.liveRunningLocked()
+	s.mu.Unlock()
+	m["log"] = tailFile(s.liveDir("live_console.log"), 40)
+	jsonReply(w, m)
+}
+
 func (s *Server) handler() http.Handler {
 	mux := http.NewServeMux()
 	webfs, _ := fs.Sub(content, "web")
@@ -693,6 +902,12 @@ func (s *Server) handler() http.Handler {
 	mux.HandleFunc("/api/reality/fit", s.apiRealityFit)
 	mux.HandleFunc("/api/reality/replay", s.apiRealityReplay)
 	mux.HandleFunc("/api/reality/log", s.apiRealityLog)
+	mux.HandleFunc("/api/vision", s.apiVision)
+	mux.HandleFunc("/api/visual/calibrate", s.apiVisualCalibrate)
+	mux.HandleFunc("/api/visual/eval", s.apiVisualEval)
+	mux.HandleFunc("/api/live/start", s.apiLiveStart)
+	mux.HandleFunc("/api/live/stop", s.apiLiveStop)
+	mux.HandleFunc("/api/live/status", s.apiLiveStatus)
 	return mux
 }
 

@@ -6,228 +6,530 @@
 <title>Lockpick AI Command Center</title>
 <style>
 :root{
-  --bg:#07090e;--panel:#0d1119;--panel2:#101722;--line:#27354a;--text:#edf4ff;--muted:#8fa0b8;
-  --good:#43d17a;--warn:#ffd34d;--bad:#d83d4c;--cyan:#63d4ff;--purple:#aa8cff;--orange:#ff9f43
+  --bg:#070a0f;--card:#0f141d;--card2:#131a25;--line:#243040;--line2:#2f3d51;
+  --text:#e9f0fa;--muted:#8493a8;--dim:#5f6d80;
+  --good:#3fd07d;--warn:#ffcc4d;--bad:#e2495a;--cyan:#5cc9f5;--purple:#a68cff;--orange:#ff9f43;
+  --r:12px;
 }
 *{box-sizing:border-box}
-body{margin:0;background:radial-gradient(1100px 650px at 70% -10%,#1c2b4a66,transparent),var(--bg);color:var(--text);font-family:Inter,Segoe UI,Arial,sans-serif;font-size:14px}
-.app{max-width:1760px;margin:auto;padding:16px}
-.top{display:flex;gap:14px;align-items:center;justify-content:space-between;margin-bottom:13px}
-.brand h1{font-size:25px;margin:0;letter-spacing:.5px}.brand small{color:var(--muted)}
-.pill{border:1px solid var(--line);background:#0b1018;padding:8px 12px;border-radius:999px;color:var(--muted)}
-.pill strong{color:var(--text)}
-.badge{display:inline-flex;align-items:center;gap:6px;padding:4px 7px;border-radius:999px;background:#101a28;border:1px solid #2b3a50;font-size:11px}
-.dot{width:7px;height:7px;border-radius:50%;background:#6f7b8a}.dot.on{background:var(--good);box-shadow:0 0 10px #43d17a88}
-.grid{display:grid;grid-template-columns:370px 1fr;gap:14px}
-.panel{background:linear-gradient(180deg,#111723,#0b1018);border:1px solid var(--line);border-radius:14px;box-shadow:0 14px 40px #0005;padding:13px}
-.panel h2{font-size:13px;text-transform:uppercase;letter-spacing:1px;margin:0 0 11px;color:#bfd0ea}
-.controls{display:grid;gap:8px}
-.row{display:flex;gap:8px;align-items:center}.row label{width:148px;color:var(--muted)}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 Inter,"Segoe UI",Arial,sans-serif}
+a{color:var(--cyan)}
+.topbar{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:22px;
+  padding:10px 20px;background:#0a0e15ee;backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.brand{font-weight:800;letter-spacing:.6px;font-size:15px;white-space:nowrap}
+.brand .ver{color:var(--dim);font-weight:600;font-size:11px;margin-left:6px}
+nav.tabs{display:flex;gap:4px;flex:1;overflow:auto}
+nav.tabs button{border:1px solid transparent;background:none;color:var(--muted);padding:7px 13px;border-radius:9px;
+  cursor:pointer;font:inherit;font-weight:600;white-space:nowrap}
+nav.tabs button:hover{color:var(--text);background:#151d29}
+nav.tabs button.active{color:var(--text);background:#17212f;border-color:var(--line2)}
+.status{display:flex;align-items:center;gap:9px;white-space:nowrap;font-size:12px;color:var(--muted)}
+.dot{width:8px;height:8px;border-radius:50%;background:#4a5566}
+.dot.on{background:var(--good);box-shadow:0 0 9px #3fd07d99}
+.dot.live{background:var(--purple);box-shadow:0 0 9px #a68cff99}
+.status b{color:var(--text)}
+
+.kpis{display:grid;grid-template-columns:repeat(7,1fr);gap:10px;padding:14px 20px 0}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:10px 12px}
+.kpi .k{font-size:10px;letter-spacing:.8px;text-transform:uppercase;color:var(--muted)}
+.kpi .v{font-size:20px;font-weight:750;margin-top:2px}
+.kpi .sub{font-size:11px;color:var(--dim);margin-top:1px}
+.kpi.cyan .v{color:var(--cyan)}.kpi.good .v{color:var(--good)}.kpi.purple .v{color:var(--purple)}
+
+main{padding:14px 20px 26px;max-width:1860px;margin:0 auto}
+section.page{display:none}
+section.page.active{display:block}
+.cols{display:grid;gap:14px}
+.cols.c2{grid-template-columns:minmax(340px,420px) 1fr}
+.cols.c2e{grid-template-columns:1fr 1fr}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-bottom:14px}
+.card:last-child{margin-bottom:0}
+.card > h2{margin:0 0 3px;font-size:13px;letter-spacing:.9px;text-transform:uppercase;color:#c3d3e8}
+.card > .lead{color:var(--muted);font-size:12px;margin:0 0 12px}
+.card.accent{border-color:#2c4a63}
+details{margin-top:10px;border-top:1px solid var(--line);padding-top:8px}
+details summary{cursor:pointer;color:var(--muted);font-size:12px;list-style:none}
+details summary::-webkit-details-marker{display:none}
+details summary:before{content:"▸ ";color:var(--dim)}
+details[open] summary:before{content:"▾ "}
+details .note{margin-top:8px}
+.note{color:var(--muted);font-size:12px;line-height:1.55}
+.note b{color:#c9d8ec}
+.hr{height:1px;background:var(--line);margin:12px 0}
+
+.field{margin-bottom:9px}
+.field > label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px}
 input,select,button{font:inherit}
-.num,select{width:100%;background:#080c12;border:1px solid #29364a;color:var(--text);padding:8px 9px;border-radius:8px;outline:none}
-.num:focus,select:focus{border-color:#4d6e9e}
-.btn{border:1px solid #34445c;background:#162134;color:var(--text);padding:8px 11px;border-radius:9px;cursor:pointer;font-weight:650}
-.btn:hover{filter:brightness(1.14)}.btn.wipe{background:#3b1c20;border-color:#8f303b}.btn.wipeall{background:#641d28;border-color:#d1495b}.dangerbox{border:1px solid #62303a;background:#180d12;border-radius:10px;padding:9px}.dangerbox .note{color:#c9aab0}.btn.primary{background:#1b5633;border-color:#2e8c54}.btn.danger{background:#54202a;border-color:#a83c4b}.btn.cyan{background:#123f55;border-color:#287396}.btn.small{padding:6px 9px;font-size:12px}
-.preset{display:flex;gap:6px;flex-wrap:wrap}.hr{height:1px;background:var(--line);margin:11px 0}
-.note{color:var(--muted);font-size:12px;line-height:1.45}.note b{color:#cbd9ec}
-.stats{display:grid;grid-template-columns:repeat(6,minmax(110px,1fr));gap:9px;margin-bottom:12px}
-.stat{background:#0b1018;border:1px solid var(--line);border-radius:11px;padding:9px}.stat .k{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.7px}.stat .v{font-size:19px;font-weight:760;margin-top:3px}.stat.good .v{color:var(--good)}.stat.cyan .v{color:var(--cyan)}
-.maincol{min-width:0}.showbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:9px}.showbar h2{margin:0;font-size:15px}.righttop{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.slider{width:120px}
-.lockgrid{display:grid;grid-template-columns:1fr 1fr;gap:11px}
-.lockcard{background:#090d14;border:1px solid var(--line);border-radius:12px;overflow:hidden}
-.lockhead{padding:7px 10px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #1f2a39}.lockhead strong{font-size:14px}.lockhead span{color:var(--muted);font-size:11px}
-.lockvis{position:relative;height:205px;background:radial-gradient(circle at 50% 52%,#111722,#020305 70%);overflow:hidden;display:flex;align-items:center;justify-content:center}
+.num,select{width:100%;background:#080c12;border:1px solid var(--line2);color:var(--text);
+  padding:8px 10px;border-radius:9px;outline:none}
+.num:focus,select:focus{border-color:#3f7fb0}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
+.row{display:flex;gap:9px;align-items:center}
+.row.wrap{flex-wrap:wrap}
+.btn{border:1px solid var(--line2);background:#18212e;color:var(--text);padding:9px 13px;border-radius:9px;
+  cursor:pointer;font-weight:650}
+.btn:hover{filter:brightness(1.15)}
+.btn:disabled{opacity:.45;cursor:not-allowed;filter:none}
+.btn.primary{background:#17553a;border-color:#2b8a5b}
+.btn.cyan{background:#123f57;border-color:#2a7ba1}
+.btn.purple{background:#2c2350;border-color:#5b48a8}
+.btn.danger{background:#4d1f28;border-color:#9b3a48}
+.btn.small{padding:6px 10px;font-size:12px;font-weight:600}
+.btn.wide{flex:1}
+.seg{display:flex;gap:0;border:1px solid var(--line2);border-radius:9px;overflow:hidden}
+.seg button{flex:1;border:0;background:#0b1018;color:var(--muted);padding:9px 8px;cursor:pointer;font-weight:650}
+.seg button.on{background:#1c2a3b;color:var(--text)}
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
+.tile{background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:9px 10px}
+.tile .k{font-size:10px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted)}
+.tile .v{font-weight:750;margin-top:2px;font-size:15px}
+.bar{height:8px;border-radius:6px;background:#111a25;border:1px solid var(--line);overflow:hidden;margin-top:7px}
+.bar > i{display:block;height:100%;background:linear-gradient(90deg,#2a7ba1,#5cc9f5)}
+.log{height:250px;overflow:auto;background:#05080d;border:1px solid var(--line);border-radius:10px;padding:10px;
+  font-family:Consolas,ui-monospace,monospace;font-size:11px;white-space:pre-wrap;color:#adbdd2}
+.log.short{height:150px}
+table.t{width:100%;border-collapse:collapse;font-size:12px}
+table.t th,table.t td{padding:6px 5px;border-bottom:1px solid var(--line);text-align:right}
+table.t th{color:var(--muted);font-weight:600;font-size:11px}
+table.t th:first-child,table.t td:first-child{text-align:left}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:var(--muted);margin-top:8px}
+.sw{display:inline-block;width:12px;height:4px;border-radius:2px;margin-right:5px;vertical-align:middle}
+
+.showbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px;flex-wrap:wrap}
+.showbar h2{margin:0;font-size:14px;letter-spacing:.5px}
+.lockgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.lockcard{background:#080c12;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.lockhead{padding:8px 11px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line)}
+.lockhead strong{font-size:14px}.lockhead span{color:var(--muted);font-size:11px}
+.lockvis{position:relative;height:205px;background:radial-gradient(circle at 50% 52%,#111722,#020305 70%);
+  overflow:hidden;display:flex;align-items:center;justify-content:center}
 .lockvis img{width:82%;height:96%;object-fit:contain;opacity:.76;filter:saturate(.82) brightness(.72);pointer-events:none}
 .overlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
-.trace{height:108px;width:100%;display:block;background:#070a10;border-top:1px solid #1d2736}
-.lockfoot{display:grid;grid-template-columns:repeat(7,max-content);gap:10px;padding:7px 9px;color:var(--muted);font-size:11px;overflow:auto}.lockfoot b{color:var(--text)}
-.chartwrap{height:205px;margin-top:12px}.chart{width:100%;height:100%;background:#080c12;border:1px solid var(--line);border-radius:10px}
-.lower{display:grid;grid-template-columns:1.1fr .9fr;gap:14px;margin-top:13px}
-.geomGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}.economyGrid{display:grid;grid-template-columns:repeat(2,1fr);gap:7px}
-.field label{display:block;color:var(--muted);font-size:10px;margin:0 0 4px}.field input{width:100%}
-.preview{height:145px;width:100%;background:#080c12;border:1px solid var(--line);border-radius:10px;margin-top:9px}
-.tabs{display:flex;gap:6px;margin-bottom:9px}.tab{flex:1}
-.log{height:285px;overflow:auto;background:#05080d;border:1px solid var(--line);border-radius:10px;padding:9px;font-family:Consolas,monospace;font-size:11px;white-space:pre-wrap;color:#b8c8dc}
-.miniStats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px}.realityGrid{display:grid;grid-template-columns:repeat(2,1fr);gap:7px}.realityTable{width:100%;border-collapse:collapse;font-size:11px;margin-top:9px}.realityTable th,.realityTable td{padding:5px 4px;border-bottom:1px solid #233044;text-align:right}.realityTable th:first-child,.realityTable td:first-child{text-align:left}.realityChart{height:145px;width:100%;background:#080c12;border:1px solid var(--line);border-radius:10px;margin-top:9px}.rlog{height:86px;overflow:auto;background:#05080d;border:1px solid var(--line);border-radius:8px;padding:7px;font-family:Consolas,monospace;font-size:10px;white-space:pre-wrap;color:#9fb2ca;margin-top:8px}.mini{background:#090e16;border:1px solid #233044;border-radius:9px;padding:8px}.mini .k{font-size:10px;color:var(--muted)}.mini .v{font-weight:700;margin-top:2px}
-.legend{display:flex;gap:10px;flex-wrap:wrap;font-size:11px;color:var(--muted);margin-top:6px}.sw{display:inline-block;width:12px;height:4px;border-radius:2px;margin-right:4px;vertical-align:middle}
-.toast{position:fixed;right:20px;bottom:20px;background:#142031;border:1px solid #3c5373;padding:11px 14px;border-radius:10px;opacity:0;transform:translateY(10px);transition:.2s;pointer-events:none;z-index:20}.toast.show{opacity:1;transform:none}
-@media(max-width:1180px){.grid{grid-template-columns:1fr}.stats{grid-template-columns:repeat(3,1fr)}.lower{grid-template-columns:1fr}.lockgrid{grid-template-columns:1fr}}
+.trace{height:104px;width:100%;display:block;background:#070a10;border-top:1px solid var(--line)}
+.lockfoot{display:grid;grid-template-columns:repeat(7,max-content);gap:11px;padding:8px 10px;color:var(--muted);font-size:11px;overflow:auto}
+.lockfoot b{color:var(--text)}
+canvas.chart{width:100%;height:210px;background:#080c12;border:1px solid var(--line);border-radius:10px}
+canvas.preview{width:100%;height:150px;background:#080c12;border:1px solid var(--line);border-radius:10px;margin-top:10px}
+canvas.small{width:100%;height:150px;background:#080c12;border:1px solid var(--line);border-radius:10px;margin-top:10px}
+.slider{width:130px}
+.dangerbox{border:1px solid #6a3441;background:#170d11;border-radius:10px;padding:12px}
+.toast{position:fixed;right:20px;bottom:20px;background:#152232;border:1px solid #3c5373;padding:11px 15px;
+  border-radius:10px;opacity:0;transform:translateY(10px);transition:.2s;pointer-events:none;z-index:60;max-width:520px}
+.toast.show{opacity:1;transform:none}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:999px;background:#141d29;
+  border:1px solid var(--line2);font-size:11px;color:var(--muted)}
+.pill.ok{color:var(--good);border-color:#2b6a4a}
+.pill.warn{color:var(--warn);border-color:#6d5a24}
+@media(max-width:1400px){.kpis{grid-template-columns:repeat(4,1fr)}}
+@media(max-width:1150px){.cols.c2,.cols.c2e{grid-template-columns:1fr}.lockgrid{grid-template-columns:1fr}
+  .kpis{grid-template-columns:repeat(2,1fr)}.tiles{grid-template-columns:repeat(2,1fr)}}
 </style>
 </head>
 <body>
-<div class="app">
-  <div class="top">
-    <div class="brand">
-      <h1>LOCKPICK AI COMMAND CENTER</h1>
-      <small>v0.18.0 FREELEARN · REAL↔SIM bridge · fixed per-lock geometry · full physical X · TAP/HOLD</small>
-    </div>
-    <div class="pill"><span class="badge"><span id="statusDot" class="dot"></span><strong id="statusText">OFFLINE</strong></span> &nbsp; Attempts <strong id="attemptsTop">0</strong></div>
-  </div>
 
-  <div class="grid">
-    <aside>
-      <div class="panel">
-        <h2>Training control</h2>
-        <div class="controls">
-          <div class="row"><label>Training minutes</label><input id="minutes" class="num" type="number" min="0" value="540"><span class="note">0=∞</span></div>
-          <div class="row"><label>Vector envs</label><input id="envs" class="num" type="number" min="256" step="256" value="8192"></div>
-          <div class="row"><label>Lock show interval</label><input id="showEvery" class="num" type="number" min="1000" step="1000" value="1000000"></div>
-          <div class="preset">
+<header class="topbar">
+  <div class="brand">LOCKPICK AI · COMMAND CENTER<span class="ver">v0.20 live vision</span></div>
+  <nav class="tabs" id="tabs">
+    <button data-tab="train" class="active">Treeni</button>
+    <button data-tab="show">Lock show</button>
+    <button data-tab="vision">Näkö &amp; peli</button>
+    <button data-tab="tuning">Geometria</button>
+    <button data-tab="bridge">Real bridge</button>
+    <button data-tab="data">Data</button>
+  </nav>
+  <div class="status">
+    <span class="dot" id="statusDot"></span><b id="statusText">OFFLINE</b>
+    <span id="liveBadge" class="pill" style="display:none"><span class="dot live"></span>LIVE</span>
+  </div>
+</header>
+
+<div class="kpis">
+  <div class="kpi cyan"><div class="k">Attempts</div><div class="v" id="sAttempts">0</div><div class="sub" id="sMode">fast simulator</div></div>
+  <div class="kpi"><div class="k">Steps / sec</div><div class="v" id="sSps">0</div><div class="sub" id="sBestSub">best mean —</div></div>
+  <div class="kpi good"><div class="k">Rusted</div><div class="v" id="sR">0%</div></div>
+  <div class="kpi good"><div class="k">Basic</div><div class="v" id="sB">0%</div></div>
+  <div class="kpi good"><div class="k">Medium</div><div class="v" id="sM">0%</div></div>
+  <div class="kpi good"><div class="k">Enforced</div><div class="v" id="sE">0%</div></div>
+  <div class="kpi purple"><div class="k">Näkömalli</div><div class="v" id="sVision">0%</div><div class="sub" id="sVisionSub">0 attempts</div></div>
+</div>
+
+<main>
+
+<!-- ------------------------------------------------------------------ TRAINING -->
+<section class="page active" id="tab-train">
+  <div class="cols c2">
+    <div>
+      <div class="card accent">
+        <h2>Treenin käynnistys</h2>
+        <p class="lead">Nopea simulaattori treenaa mitatulla sensorimallilla. Visuaalinen simulaattori renderöi lukon ja lukee sen samalla lukijalla kuin pelissä.</p>
+        <div class="field">
+          <label>Simulaattori</label>
+          <div class="seg" id="modeSeg">
+            <button class="on" data-mode="fast">Nopea · ~150k yritystä/min</button>
+            <button data-mode="visual">Visuaalinen · ~2k/min</button>
+          </div>
+        </div>
+        <div class="grid2">
+          <div class="field"><label>Treeniminuutit (0 = kunnes STOP)</label><input id="minutes" class="num" type="number" min="0" value="540"></div>
+          <div class="field"><label>Rinnakkaiset envit</label><input id="envs" class="num" type="number" min="64" step="32" value="8192"></div>
+        </div>
+        <div class="field" id="visualQualityField" style="display:none">
+          <label>Näytteenotto visuaalisessa simussa</label>
+          <select id="visualQuality">
+            <option value="fast">fast · karkeampi hila, nopeampi</option>
+            <option value="live">live · täsmälleen pelin geometria</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Lock show -väli (yrityksinä)</label>
+          <input id="showEvery" class="num" type="number" min="1000" step="1000" value="1000000">
+          <div class="row wrap" style="margin-top:7px">
             <button class="btn small" onclick="setShow(100000)">100k</button>
             <button class="btn small" onclick="setShow(500000)">500k</button>
             <button class="btn small cyan" onclick="setShow(1000000)">1M</button>
             <button class="btn small" onclick="setShow(5000000)">5M</button>
             <button class="btn small" onclick="setShow(10000000)">10M</button>
           </div>
-          <div class="row"><button class="btn primary" style="flex:1" onclick="startTraining()">▶ START TRAINING</button><button class="btn danger" onclick="stopTraining()">■ STOP</button></div>
-          <div class="row"><button class="btn cyan" style="flex:1" onclick="requestShowcase()">⚡ LOCK SHOW NOW</button></div>
         </div>
-        <div class="hr"></div>
-        <h2>Free-learn contract</h2>
+        <div class="row" style="margin-top:12px">
+          <button class="btn primary wide" onclick="startTraining()">▶ START</button>
+          <button class="btn danger" onclick="stopTraining()">■ STOP</button>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <button class="btn cyan wide" onclick="requestShowcase()">⚡ Lock show nyt</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Vapaan oppimisen sopimus</h2>
+        <p class="lead">Neural näkee vain sen mitä ruudulta voi mitata.</p>
         <div class="note">
-          Neural näkee vain <b>X-sijainnin, näkyvän lock-turnin, näkyvän turn-deltan, oman F-historian, oman toteutuneen X-liikkeen, ajan, lukkotyypin sekä lukon fyysiset X-rajat</b>.
-          <b>F-toiminnot:</b> neural voi valita MOVE/RELEASE, <b>F TAP</b> tai <b>F HOLD</b>. TAP on yksi 25 ms staattinen testi. HOLDin pituus ei ole preset: neural päättää itse jatkamalla HOLDia frame kerrallaan ja lopettaa valitsemalla RELEASE.
-          <b>STATIC-F:</b> X liikkuu vain täydellä MOVE-framella kun F oli jo valmiiksi UP. TAP, HOLD ja vapautusframe lukitsevat X:n täysin. Neural ei voi skannata ramppia F pohjassa.
-          Neural ei näe targettia, rampin rajoja tai depth-arvoa suoraan. Rampin syvyys vaikuttaa fysiikkaan jatkuvana gradienttina ja näkyy neuralille vain lukon oikeana liikkeenä.
+          Syötteet: <b>X-sijainti, näkyvä lock-turn, turn-delta, oma F-historia, oma toteutunut X-liike, aika, lukkotyyppi ja X-rajat</b>.
         </div>
+        <details>
+          <summary>Tarkat säännöt</summary>
+          <div class="note">
+            <b>F-toiminnot:</b> MOVE/RELEASE, F TAP tai F HOLD. TAP on yksi 25 ms staattinen testi; HOLDin pituuden neural päättää itse jatkamalla HOLDia frame kerrallaan.<br>
+            <b>STATIC-F:</b> X liikkuu vain täydellä MOVE-framella kun F oli jo UP. TAP, HOLD ja vapautusframe lukitsevat X:n.<br>
+            <b>Ei vuotoa:</b> target, rampin rajat ja depth-arvo eivät ole syötteissä. Rampin syvyys näkyy neuralille vain lukon liikkeenä.
+          </div>
+        </details>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <h2>Live-näön valmius</h2>
+        <p class="lead">Kuinka pitkälle politiikka on treenattu sillä sensorimallilla jonka se saa pelissä.</p>
+        <div class="tiles">
+          <div class="tile"><div class="k">Vision attempts</div><div class="v" id="tVisionAtt">0</div></div>
+          <div class="tile"><div class="k">Mallin voimakkuus</div><div class="v" id="tVisionScale">0%</div></div>
+          <div class="tile"><div class="k">Simulaattori</div><div class="v" id="tSimMode">fast</div></div>
+          <div class="tile"><div class="k">Best mean</div><div class="v" id="sBest">0%</div></div>
+        </div>
+        <div class="bar"><i id="visionBar" style="width:0%"></i></div>
+        <div class="note" id="visionHint" style="margin-top:7px">—</div>
       </div>
 
-      <div class="panel" style="margin-top:13px">
-        <h2>Data reset · danger zone</h2>
-        <div class="dangerbox">
-          <div class="note"><b>WIPE SIMULATION DATA</b> nollaa vain tämän FREELEARN-simulaation mallin, best/latest-checkpointit, progressin, telemetrian, lock show -datan ja simulaation login. Se <b>ei koske</b> Human Teach / oikean pelin demoihin, vanhaan neural_smart-dataan, referensseihin tai asetuksiin.</div>
-          <div class="row" style="margin-top:9px"><button class="btn wipe" style="flex:1" onclick="wipeSimulation()">♻ WIPE SIMULATION DATA</button><span id="simDataSize" class="note">…</span></div>
-          <div class="hr"></div>
-          <div class="note"><b>WIPE ALL DATA</b> tyhjentää kokonaan <code>data\</code>- ja <code>checkpoints\</code>-kansioiden sisällön: simulaatio, Human Teach/demot, neural_smart, audit/evaluation ja kaikki checkpointit. Ohjelma, referenssit ja <code>freelearn_config.json</code> jäävät.</div>
-          <div class="row" style="margin-top:9px"><button class="btn wipeall" style="flex:1" onclick="wipeAllData()">☠ WIPE ALL DATA</button><span id="allDataSize" class="note">…</span></div>
-          <div class="note" style="margin-top:7px">Wipe on estetty treenin ollessa käynnissä, jotta checkpointtia ei voida poistaa kesken kirjoituksen. Paina ensin STOP.</div>
+      <div class="card">
+        <h2>Telemetria</h2>
+        <div class="tiles">
+          <div class="tile"><div class="k">PPO loss</div><div class="v" id="sLoss">0</div></div>
+          <div class="tile"><div class="k">KL</div><div class="v" id="sKl">0</div></div>
+          <div class="tile"><div class="k">Entropy</div><div class="v" id="sEnt">0</div></div>
+          <div class="tile"><div class="k">Attempts</div><div class="v" id="sAttempts2">0</div></div>
         </div>
+        <div class="note" id="ramNote" style="margin-top:9px">FREELEARN käyttää rajattua rollouttia.</div>
       </div>
 
-      <div class="panel" style="margin-top:13px">
-        <h2>REAL ↔ SIM BRIDGE · SCUM reality calibration</h2>
-        <div class="row"><label>Capture lock type</label><select id="realLock"><option>Auto</option><option>Rusted</option><option>Basic</option><option>Medium</option><option>Enforced</option></select></div>
-        <div class="row" style="margin-top:8px"><button class="btn cyan" style="flex:1" onclick="startReality()">● START REAL CAPTURE</button><button class="btn danger" onclick="stopReality()">■ STOP</button></div>
-        <div class="realityGrid" style="margin-top:9px">
-          <div class="mini"><div class="k">Recorder</div><div class="v" id="realState">OFFLINE</div></div>
-          <div class="mini"><div class="k">REAL probes</div><div class="v" id="realSamples">0</div></div>
-          <div class="mini"><div class="k">Episodes</div><div class="v" id="realEpisodes">0</div></div>
-          <div class="mini"><div class="k">REAL↔SIM match</div><div class="v" id="realMatch">0.0%</div></div>
-        </div>
-        <div class="row" style="margin-top:9px"><button class="btn primary" style="flex:1" onclick="fitReality()">⚙ FIT SIMULATOR TO REAL DATA</button></div>
-        <table class="realityTable"><thead><tr><th>Lock</th><th>N</th><th>Match</th><th>Turn τ</th><th>Return τ</th><th>Ramp</th></tr></thead><tbody id="realityRows"></tbody></table>
-        <canvas id="realityChart" class="realityChart"></canvas>
-        <div class="legend"><span><i class="sw" style="background:#63d4ff"></i>REAL screen response</span><span><i class="sw" style="background:#ffd34d"></i>SIM replay</span></div>
-        <div id="realityLog" class="rlog">Start REAL CAPTURE while SCUM lockpick UI is visible. F12 also stops capture.</div>
-        <div class="note" style="margin-top:7px"><b>Ei target leakkiä:</b> neural ei saa target/ramp-rajoja eikä fitted centeriä. Bridge mittaa ruudulta X:n, lock-turnin, F TAP/HOLD -ajan, palautumisen, successin ja lukkotyypin. FIT säätää vain havaittavaa dynamiikkaa (turn/return τ, ramp response, sensor noise). <b>Sun fixed target/ramp leveydet eivät muutu automaattisesti.</b> F:n aikana X pysyy staattisena myös tässä datassa.</div>
-      </div>
-
-      <div class="panel" style="margin-top:13px">
-        <h2>Player lock F economy · hot reload</h2>
-        <div class="economyGrid">
-          <div class="field"><label>Soft goal: off-target F ≤</label><input class="num" id="eGoal" type="number" step="1" min="1"></div>
-          <div class="field"><label>Success efficiency bonus</label><input class="num" id="eBonus" type="number" step="0.1" min="0"></div>
-          <div class="field"><label>Preferred first-pass X (%)</label><input class="num" id="ePrefPct" type="number" step="1" min="5" max="95"></div>
-          <div class="field"><label>Preferred-zone success bonus</label><input class="num" id="ePrefBonus" type="number" step="0.1" min="0"></div>
-          <div class="field"><label>Pick break budget min</label><input class="num" id="eBreakMin" type="number" step="0.25" min="1"></div>
-          <div class="field"><label>Pick break budget max</label><input class="num" id="eBreakMax" type="number" step="0.25" min="1"></div>
-          <div class="field"><label>Dead tap damage</label><input class="num" id="eDeadTap" type="number" step="0.05" min="0"></div>
-          <div class="field"><label>Ramp tap damage</label><input class="num" id="eRampTap" type="number" step="0.05" min="0"></div>
-          <div class="field"><label>Dead hold dmg / sec</label><input class="num" id="eDeadHold" type="number" step="0.05" min="0"></div>
-          <div class="field"><label>Ramp hold dmg / sec</label><input class="num" id="eRampHold" type="number" step="0.05" min="0"></div>
-          <div class="field"><label>Max off-target F time (s)</label><input class="num" id="eMaxOffTime" type="number" step="0.025" min="0.025"></div>
-          <div class="field"><label>Off-target time penalty / sec</label><input class="num" id="eOffTimePenalty" type="number" step="0.05" min="0"></div>
-          <div class="field"><label>Time-cap extra break penalty</label><input class="num" id="eTimeBreakPenalty" type="number" step="0.1" min="0"></div>
-        </div>
-        <div class="row" style="margin-top:9px"><button class="btn primary" style="flex:1" onclick="saveAll()">SAVE + HOT RELOAD</button></div>
-        <div class="note" style="margin-top:7px">Basic/Medium/Enforced käyttävät koko fyysistä X-aluetta <b>0…1</b>, mutta checkpoint-yhteensopivuuden takia neuralin sisäinen koordinaattiasteikko pysyy vanhana <b>0…0.5</b>. Tämä on vain koordinaattimuunnos: target/rampit skaalataan fyysiselle 0…1 laudalle, joten niiden suhteellinen leveys ei puolitu. Ensimmäinen 50% on edelleen <b>reward-prioriteetti, EI hard limit</b>.</div>
-      </div>
-
-      <div class="panel" style="margin-top:13px">
-        <h2>Geometry editor · hot reload</h2>
-        <div class="tabs" id="lockTabs"></div>
-        <div class="row"><label>Fixed geometry profile</label><select id="templateSel" onchange="loadTemplateForm()"></select></div>
-        <div class="geomGrid" style="margin-top:9px">
-          <div class="field"><label>Target half-width</label><input class="num" id="gTarget" type="number" step="0.0001"></div>
-          <div class="field"><label>Ramp left</label><input class="num" id="gLeft" type="number" step="0.001"></div>
-          <div class="field"><label>Ramp right</label><input class="num" id="gRight" type="number" step="0.001"></div>
-          <div class="field"><label>Curve exponent</label><input class="num" id="gExp" type="number" step="0.05"></div>
-          <div class="field"><label>Turn τ ms</label><input class="num" id="gTau" type="number" step="5"></div>
-          <div class="field"><label>Return τ ms</label><input class="num" id="gReturn" type="number" step="5"></div>
-        </div>
-        <canvas id="geomPreview" class="preview"></canvas>
+      <div class="card">
+        <h2>Onnistumisprosentti</h2>
+        <canvas id="chart" class="chart"></canvas>
         <div class="legend">
-          <span><i class="sw" style="background:#d83d4c"></i>dead</span>
-          <span><i class="sw" style="background:linear-gradient(90deg,#d83d4c,#ffd34d)"></i>ramp depth</span>
-          <span><i class="sw" style="background:#43d17a"></i>target</span>
-          <span><i class="sw" style="background:#63d4ff"></i>neural X</span>
+          <span><i class="sw" style="background:#3fd07d"></i>Rusted</span>
+          <span><i class="sw" style="background:#5cc9f5"></i>Basic</span>
+          <span><i class="sw" style="background:#ffcc4d"></i>Medium</span>
+          <span><i class="sw" style="background:#a68cff"></i>Enforced</span>
         </div>
-        <div class="row" style="margin-top:9px"><button class="btn primary" style="flex:1" onclick="saveAll()">SAVE + HOT RELOAD</button><button class="btn" onclick="loadConfig()">RELOAD</button></div>
-        <div class="note" style="margin-top:7px"><span id="geomMeta"></span><br>FIXED PER LOCK: target/ramp width + curve stay constant for this lock type; only target location changes. Ramp depth: red → yellow, target green.</div>
-      </div>
-    </aside>
-
-    <main class="maincol">
-      <div class="stats">
-        <div class="stat cyan"><div class="k">Attempts</div><div class="v" id="sAttempts">0</div></div>
-        <div class="stat"><div class="k">Steps / sec</div><div class="v" id="sSps">0</div></div>
-        <div class="stat good"><div class="k">Rusted</div><div class="v" id="sR">0%</div></div>
-        <div class="stat good"><div class="k">Basic</div><div class="v" id="sB">0%</div></div>
-        <div class="stat good"><div class="k">Medium</div><div class="v" id="sM">0%</div></div>
-        <div class="stat good"><div class="k">Enforced</div><div class="v" id="sE">0%</div></div>
       </div>
 
-      <div class="panel">
-        <div class="showbar">
-          <h2>Neural Lock Show · 4 simultaneous lock replays</h2>
-          <div class="righttop">
-            <span id="showMeta" class="note">No showcase yet</span>
-            <label class="note">Playback</label>
-            <input id="playSpeed" class="slider" type="range" min="0.25" max="8" step="0.25" value="2">
-            <span id="playSpeedTxt">2×</span>
-            <button class="btn small" onclick="replayShowcase()">↻ Replay</button>
-          </div>
-        </div>
-        <div class="lockgrid" id="lockGrid"></div>
-        <div class="chartwrap"><canvas id="chart" class="chart"></canvas></div>
+      <div class="card">
+        <h2>Treenikonsoli</h2>
+        <div id="log" class="log">Treenin loki ilmestyy tähän kun painat START.</div>
       </div>
-
-      <div class="lower">
-        <div class="panel">
-          <h2>Training telemetry</h2>
-          <div class="miniStats">
-            <div class="mini"><div class="k">PPO loss</div><div class="v" id="sLoss">0</div></div>
-            <div class="mini"><div class="k">KL</div><div class="v" id="sKl">0</div></div>
-            <div class="mini"><div class="k">Entropy</div><div class="v" id="sEnt">0</div></div>
-            <div class="mini"><div class="k">Best mean</div><div class="v" id="sBest">0%</div></div>
-          </div>
-          <div id="ramNote" class="note">FREELEARN uses bounded rollouts.</div>
-        </div>
-        <div class="panel">
-          <h2>Trainer console</h2>
-          <div id="log" class="log">Trainer log will appear here after START TRAINING.</div>
-        </div>
-      </div>
-    </main>
+    </div>
   </div>
-</div>
+</section>
+
+<!-- ------------------------------------------------------------------ LOCK SHOW -->
+<section class="page" id="tab-show">
+  <div class="card">
+    <div class="showbar">
+      <h2>Neural lock show · 4 samanaikaista replayta</h2>
+      <div class="row wrap">
+        <span id="showMeta" class="note">Ei showcasea vielä</span>
+        <span class="note">Nopeus</span>
+        <input id="playSpeed" class="slider" type="range" min="0.25" max="8" step="0.25" value="2">
+        <span id="playSpeedTxt" class="note">2×</span>
+        <button class="btn small" onclick="replayShowcase()">↻ Replay</button>
+        <button class="btn small cyan" onclick="requestShowcase()">⚡ Uusi show</button>
+      </div>
+    </div>
+    <div class="lockgrid" id="lockGrid"></div>
+    <div class="legend">
+      <span><i class="sw" style="background:#e2495a"></i>dead</span>
+      <span><i class="sw" style="background:linear-gradient(90deg,#e2495a,#ffcc4d)"></i>ramp depth</span>
+      <span><i class="sw" style="background:#3fd07d"></i>target</span>
+      <span><i class="sw" style="background:#5cc9f5"></i>neural X</span>
+      <span><i class="sw" style="background:#a68cff"></i>F pohjassa · X lukittu</span>
+    </div>
+  </div>
+</section>
+
+<!-- ------------------------------------------------------------------ VISION + LIVE -->
+<section class="page" id="tab-vision">
+  <div class="cols c2e">
+    <div>
+      <div class="card accent">
+        <h2>1 · Sensorin kalibrointi</h2>
+        <p class="lead">Renderöi lukon pelin mittakaavassa, lukee sen live-lukijalla ja kirjoittaa mitatun virheen simulaattorin sensorimalliksi. Peliä ei tarvita.</p>
+        <div class="row">
+          <button class="btn primary wide" id="btnCal" onclick="visualCalibrate()">⚙ Kalibroi pikseleistä</button>
+        </div>
+        <div class="note" style="margin-top:8px">Pysäytä treeni ensin: kalibrointi kirjoittaa <code>freelearn_config.json</code>iin ja treeni lukee näkömallin vain käynnistyessä.</div>
+        <table class="t" style="margin-top:10px">
+          <thead><tr><th>Malli</th><th>Gain ±</th><th>Offset ±</th><th>Turn-kohina</th><th>X-kohina</th><th>Latenssi</th></tr></thead>
+          <tbody id="visionRows"></tbody>
+        </table>
+        <div id="calOut" class="log short" style="margin-top:10px">Ei kalibrointia tässä istunnossa.</div>
+      </div>
+
+      <div class="card">
+        <h2>2 · Visuaalinen arviointi</h2>
+        <p class="lead">Pelaa simulaattoria renderöityjen framejen läpi: mitä politiikka saa auki kun havainto tulee pikseleistä.</p>
+        <div class="grid2">
+          <div class="field"><label>Yrityksiä</label><input id="evEpisodes" class="num" type="number" min="8" step="8" value="96"></div>
+          <div class="field"><label>Rinnakkaiset envit</label><input id="evEnvs" class="num" type="number" min="4" step="4" value="48"></div>
+        </div>
+        <div class="row"><button class="btn cyan wide" id="btnEval" onclick="visualEval()">▶ Aja arviointi</button></div>
+        <div id="evalOut" class="log short" style="margin-top:10px">Ei arviointia tässä istunnossa.</div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card accent">
+        <h2>3 · Live-agentti SCUMissa</h2>
+        <p class="lead">Ajaa treenatun politiikan pelissä pelkän lukon visuaalisen liikkeen perusteella. Avaa lockpick-minipeli ensin. F12 pysäyttää.</p>
+        <div class="grid2">
+          <div class="field"><label>Lukkotyyppi</label>
+            <select id="liveLock"><option>Auto</option><option>Rusted</option><option selected>Basic</option><option>Medium</option><option>Enforced</option></select>
+          </div>
+          <div class="field"><label>Yrityksiä (0 = kunnes F12)</label><input id="liveAttempts" class="num" type="number" min="0" value="0"></div>
+        </div>
+        <div class="row wrap">
+          <button class="btn primary wide" onclick="liveStart('play')">▶ Pelaa</button>
+          <button class="btn cyan" onclick="liveStart('observe')">👁 Tarkkaile</button>
+          <button class="btn" onclick="liveStart('calibrate')">🖱 Kalibroi hiiri</button>
+          <button class="btn danger" onclick="liveStop()">■ Stop</button>
+        </div>
+        <div class="tiles" style="margin-top:11px">
+          <div class="tile"><div class="k">Tila</div><div class="v" id="lState">OFFLINE</div></div>
+          <div class="tile"><div class="k">Yritykset</div><div class="v" id="lAttempts">0</div></div>
+          <div class="tile"><div class="k">Auki</div><div class="v" id="lOpened">0</div></div>
+          <div class="tile"><div class="k">Onnistuminen</div><div class="v" id="lRate">0%</div></div>
+          <div class="tile"><div class="k">Frame</div><div class="v" id="lFrame">— ms</div></div>
+          <div class="tile"><div class="k">Ruutuluku</div><div class="v" id="lRead">— ms</div></div>
+          <div class="tile"><div class="k">Myöhässä</div><div class="v" id="lOver">0</div></div>
+          <div class="tile"><div class="k">Viimeisin</div><div class="v" id="lLast">—</div></div>
+        </div>
+        <div id="liveLog" class="log" style="margin-top:10px">Live-agentin loki ilmestyy tähän.</div>
+        <details>
+          <summary>Mitä rivit kertovat</summary>
+          <div class="note">
+            <b>frames</b> selvästi alle 120 → silmukka ei ehdi 25 ms tahtiin.<br>
+            <b>x</b> kapea alue → hiiren gain väärin (kalibroi hiiri) tai tiirikkaa ei tunnisteta.<br>
+            <b>best turn</b> ≈ 0 vaikka painalluksia on → lukon kääntymistä ei nähdä; aja Tarkkaile.
+          </div>
+        </details>
+      </div>
+
+      <div class="card">
+        <h2>Turn-kalibrointi lukoittain</h2>
+        <p class="lead">Lepokulma ja täyden kierron span, jotka muuntavat ruudun kulman simulaattorin 0…1 turn-arvoksi.</p>
+        <table class="t">
+          <thead><tr><th>Lukko</th><th>Lepokulma</th><th>Täysi kierto</th><th>Suurin nähty</th><th>Successeja</th></tr></thead>
+          <tbody id="turnCalRows"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ------------------------------------------------------------------ TUNING -->
+<section class="page" id="tab-tuning">
+  <div class="cols c2e">
+    <div class="card">
+      <h2>Geometria · hot reload</h2>
+      <p class="lead">Lukkotyypin kiinteä target/ramp. Vain targetin sijainti vaihtuu yritysten välillä.</p>
+      <div class="row wrap" id="lockTabs" style="margin-bottom:9px"></div>
+      <div class="field"><label>Profiili</label><select id="templateSel" onchange="loadTemplateForm()"></select></div>
+      <div class="grid3">
+        <div class="field"><label>Target half-width</label><input class="num" id="gTarget" type="number" step="0.0001"></div>
+        <div class="field"><label>Ramp left</label><input class="num" id="gLeft" type="number" step="0.001"></div>
+        <div class="field"><label>Ramp right</label><input class="num" id="gRight" type="number" step="0.001"></div>
+        <div class="field"><label>Curve exponent</label><input class="num" id="gExp" type="number" step="0.05"></div>
+        <div class="field"><label>Turn τ ms</label><input class="num" id="gTau" type="number" step="5"></div>
+        <div class="field"><label>Return τ ms</label><input class="num" id="gReturn" type="number" step="5"></div>
+      </div>
+      <canvas id="geomPreview" class="preview"></canvas>
+      <div class="legend">
+        <span><i class="sw" style="background:#e2495a"></i>dead</span>
+        <span><i class="sw" style="background:linear-gradient(90deg,#e2495a,#ffcc4d)"></i>ramp depth</span>
+        <span><i class="sw" style="background:#3fd07d"></i>target</span>
+        <span><i class="sw" style="background:#5cc9f5"></i>neural X</span>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn primary wide" onclick="saveAll()">Tallenna + hot reload</button>
+        <button class="btn" onclick="loadConfig()">Lataa uudelleen</button>
+      </div>
+      <div class="note" style="margin-top:8px" id="geomMeta"></div>
+    </div>
+
+    <div class="card">
+      <h2>Tiirikkatalous · hot reload</h2>
+      <p class="lead">Kuinka kalliita hukkapainallukset ovat ja milloin tiirikka katkeaa.</p>
+      <div class="grid2">
+        <div class="field"><label>Soft goal: off-target F ≤</label><input class="num" id="eGoal" type="number" step="1" min="1"></div>
+        <div class="field"><label>Success efficiency bonus</label><input class="num" id="eBonus" type="number" step="0.1" min="0"></div>
+        <div class="field"><label>Ensimmäisen haun osuus X:stä (%)</label><input class="num" id="ePrefPct" type="number" step="1" min="5" max="95"></div>
+        <div class="field"><label>Preferred-zone success bonus</label><input class="num" id="ePrefBonus" type="number" step="0.1" min="0"></div>
+        <div class="field"><label>Pick break budget min</label><input class="num" id="eBreakMin" type="number" step="0.25" min="1"></div>
+        <div class="field"><label>Pick break budget max</label><input class="num" id="eBreakMax" type="number" step="0.25" min="1"></div>
+        <div class="field"><label>Dead tap damage</label><input class="num" id="eDeadTap" type="number" step="0.05" min="0"></div>
+        <div class="field"><label>Ramp tap damage</label><input class="num" id="eRampTap" type="number" step="0.05" min="0"></div>
+        <div class="field"><label>Dead hold dmg / s</label><input class="num" id="eDeadHold" type="number" step="0.05" min="0"></div>
+        <div class="field"><label>Ramp hold dmg / s</label><input class="num" id="eRampHold" type="number" step="0.05" min="0"></div>
+        <div class="field"><label>Max off-target F (s)</label><input class="num" id="eMaxOffTime" type="number" step="0.025" min="0.025"></div>
+        <div class="field"><label>Off-target penalty / s</label><input class="num" id="eOffTimePenalty" type="number" step="0.05" min="0"></div>
+        <div class="field"><label>Time-cap break penalty</label><input class="num" id="eTimeBreakPenalty" type="number" step="0.1" min="0"></div>
+      </div>
+      <div class="row" style="margin-top:10px"><button class="btn primary wide" onclick="saveAll()">Tallenna + hot reload</button></div>
+      <details>
+        <summary>Koordinaatistosta</summary>
+        <div class="note">Basic/Medium/Enforced käyttävät koko fyysistä X-aluetta <b>0…1</b>, mutta checkpoint-yhteensopivuuden takia neuralin sisäinen asteikko on <b>0…0.5</b>. Target ja rampit skaalataan fyysiselle laudalle, joten suhteellinen leveys säilyy. Ensimmäinen 50 % on reward-prioriteetti, ei hard limit.</div>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- ------------------------------------------------------------------ REAL BRIDGE -->
+<section class="page" id="tab-bridge">
+  <div class="cols c2e">
+    <div class="card">
+      <h2>Real ↔ sim bridge</h2>
+      <p class="lead">Nauhoittaa oikeasta pelistä ruutudataa ja sovittaa simulaattorin havaittavan fysiikan sitä vastaavaksi.</p>
+      <div class="field"><label>Nauhoituksen lukkotyyppi</label>
+        <select id="realLock"><option>Auto</option><option>Rusted</option><option>Basic</option><option>Medium</option><option>Enforced</option></select>
+      </div>
+      <div class="row"><button class="btn cyan wide" onclick="startReality()">● Aloita nauhoitus</button><button class="btn danger" onclick="stopReality()">■ Stop</button></div>
+      <div class="tiles" style="margin-top:11px">
+        <div class="tile"><div class="k">Recorder</div><div class="v" id="realState">OFFLINE</div></div>
+        <div class="tile"><div class="k">Probet</div><div class="v" id="realSamples">0</div></div>
+        <div class="tile"><div class="k">Episodit</div><div class="v" id="realEpisodes">0</div></div>
+        <div class="tile"><div class="k">REAL↔SIM match</div><div class="v" id="realMatch">0%</div></div>
+      </div>
+      <div class="row" style="margin-top:11px"><button class="btn primary wide" onclick="fitReality()">⚙ Sovita simulaattori oikeaan dataan</button></div>
+      <table class="t" style="margin-top:10px">
+        <thead><tr><th>Lukko</th><th>N</th><th>Match</th><th>Turn τ</th><th>Return τ</th><th>Ramp</th></tr></thead>
+        <tbody id="realityRows"></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h2>REAL vs SIM -vaste</h2>
+      <canvas id="realityChart" class="small"></canvas>
+      <div class="legend">
+        <span><i class="sw" style="background:#5cc9f5"></i>REAL ruutuvaste</span>
+        <span><i class="sw" style="background:#ffcc4d"></i>SIM replay</span>
+      </div>
+      <div id="realityLog" class="log short" style="margin-top:10px">Aloita nauhoitus kun SCUMin lockpick-UI on näkyvissä. F12 pysäyttää myös.</div>
+      <details>
+        <summary>Mitä fit muuttaa</summary>
+        <div class="note">Bridge mittaa ruudulta X:n, lock-turnin, F TAP/HOLD -ajan, palautumisen, successin ja lukkotyypin. FIT säätää vain havaittavaa dynamiikkaa (turn/return τ, ramp response, sensor noise). <b>Kiinteät target/ramp-leveydet eivät muutu.</b> Neural ei saa targettia eikä fitattua centeriä.</div>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- ------------------------------------------------------------------ DATA -->
+<section class="page" id="tab-data">
+  <div class="cols c2e">
+    <div class="card">
+      <h2>Datan nollaus</h2>
+      <p class="lead">Wipe on estetty treenin ollessa käynnissä. Paina ensin STOP.</p>
+      <div class="dangerbox">
+        <div class="note"><b>WIPE SIMULATION DATA</b> nollaa vain FREELEARN-simulaation mallin, best/latest-checkpointit, progressin, telemetrian, lock show -datan ja login. Human Teach, oikean pelin demot, neural_smart, referenssit ja asetukset säilyvät.</div>
+        <div class="row" style="margin-top:10px"><button class="btn danger wide" onclick="wipeSimulation()">♻ Wipe simulation data</button><span id="simDataSize" class="note">…</span></div>
+        <div class="hr"></div>
+        <div class="note"><b>WIPE ALL DATA</b> tyhjentää <code>data\</code>- ja <code>checkpoints\</code>-kansiot kokonaan. Ohjelma, referenssit ja <code>freelearn_config.json</code> jäävät.</div>
+        <div class="row" style="margin-top:10px"><button class="btn danger wide" onclick="wipeAllData()">☠ Wipe all data</button><span id="allDataSize" class="note">…</span></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Työjärjestys</h2>
+      <p class="lead">Nollasta pelaavaan agenttiin.</p>
+      <div class="note">
+        1 · <b>Näkö &amp; peli → Kalibroi pikseleistä</b>. Mittaa lukijan virheen ja kirjoittaa sen simulaattorille.<br>
+        2 · <b>Treeni → START</b> nopealla simulaattorilla, kunnes näkömallin voimakkuus on 100 % ja onnistumiset tasaantuvat.<br>
+        3 · <b>Treeni → visuaalinen simulaattori</b> viimeistelyyn, jos haluat treenata suoraan pikseleillä.<br>
+        4 · <b>Näkö &amp; peli → Aja arviointi</b>. Näet paljonko politiikka avaa pikselien kautta.<br>
+        5 · <b>Kalibroi hiiri</b> pelissä kerran, sitten <b>Tarkkaile</b> että turn-lukema seuraa lukkoa.<br>
+        6 · <b>Pelaa</b>.
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
 <div id="toast" class="toast"></div>
 
 <script>
 const locks=['Rusted','Basic','Medium','Enforced'];
 let cfg=null,activeLock='Rusted',showcase=null,lastShowId=-999,animReq=0,animStart=0,progress=[],reality=null;
+let trainMode='fast',visionInfo=null;
 
 function fmt(n){return Number(n||0).toLocaleString('en-US')}
 function pct(v){return (100*Number(v||0)).toFixed(1)+'%'}
-function toast(s){const e=document.getElementById('toast');e.textContent=s;e.classList.add('show');setTimeout(()=>e.classList.remove('show'),2200)}
+function toast(s){const e=document.getElementById('toast');e.textContent=s;e.classList.add('show');setTimeout(()=>e.classList.remove('show'),2600)}
 async function api(path,opt){const r=await fetch(path,opt);if(!r.ok)throw new Error(await r.text());const t=await r.text();return t?JSON.parse(t):{}}
 function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
 function lerp(a,b,t){return a+(b-a)*t}
 function hexRgb(h){h=h.replace('#','');return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)]}
 function mixColor(a,b,t,alpha=1){const A=hexRgb(a),B=hexRgb(b);return `rgba(${Math.round(lerp(A[0],B[0],t))},${Math.round(lerp(A[1],B[1],t))},${Math.round(lerp(A[2],B[2],t))},${alpha})`}
+function el(id){return document.getElementById(id)}
 
+/* ---------------- tabs ---------------- */
+function showTab(name){
+  document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));
+  document.querySelectorAll('section.page').forEach(s=>s.classList.toggle('active',s.id==='tab-'+name));
+  if(name==='train')drawChart();
+  if(name==='show'&&showcase)replayShowcase();
+  if(name==='tuning')drawGeomPreview();
+  if(name==='bridge')drawRealityChart();
+}
+document.getElementById('tabs').addEventListener('click',e=>{const b=e.target.closest('button');if(b)showTab(b.dataset.tab)});
+document.getElementById('modeSeg').addEventListener('click',e=>{
+  const b=e.target.closest('button');if(!b)return;
+  trainMode=b.dataset.mode;
+  document.querySelectorAll('#modeSeg button').forEach(x=>x.classList.toggle('on',x===b));
+  el('visualQualityField').style.display=trainMode==='visual'?'block':'none';
+  el('envs').value=trainMode==='visual'?96:(cfg?.training?.envs||8192);
+});
+
+/* ---------------- lock show ---------------- */
 function initLocks(){
-  const grid=document.getElementById('lockGrid');grid.innerHTML='';
+  const grid=el('lockGrid');grid.innerHTML='';
   for(const n of locks){
     const id=n.toLowerCase(),card=document.createElement('div');card.className='lockcard';
     card.innerHTML=`
@@ -247,129 +549,91 @@ function initLocks(){
     grid.appendChild(card);
   }
 }
-
 function resizeCanvas(c){
   const r=c.getBoundingClientRect(),d=devicePixelRatio||1;
+  if(!r.width||!r.height)return{x:c.getContext('2d'),w:0,h:0};
   if(c.width!==Math.floor(r.width*d)||c.height!==Math.floor(r.height*d)){c.width=Math.floor(r.width*d);c.height=Math.floor(r.height*d)}
   const x=c.getContext('2d');x.setTransform(d,0,0,d,0,0);return{x,w:r.width,h:r.height}
 }
-
 function depthAt(g,p){
   if(!g)return 0;
   const d=p-g.center,ad=Math.abs(d),th=Number(g.target_half||0),exp=Math.max(.05,Number(g.curve_exp||1));
   if(ad<=th)return 1;
-  if(d < -th){
-    const q=(-d-th)/Math.max(Number(g.ramp_left||0),1e-9);
-    return q>=1?0:Math.pow(clamp(1-q,0,1),exp);
-  }
+  if(d < -th){const q=(-d-th)/Math.max(Number(g.ramp_left||0),1e-9);return q>=1?0:Math.pow(clamp(1-q,0,1),exp)}
   const q=(d-th)/Math.max(Number(g.ramp_right||0),1e-9);
   return q>=1?0:Math.pow(clamp(1-q,0,1),exp);
 }
 function depthColor(depth,alpha=1){
-  if(depth>=.999)return `rgba(67,209,122,${alpha})`;
-  if(depth<=.001)return `rgba(216,61,76,${alpha})`;
-  const t=Math.pow(clamp(depth,0,1),.62);
-  return mixColor('#d83d4c','#ffd34d',t,alpha);
+  if(depth>=.999)return `rgba(63,208,125,${alpha})`;
+  if(depth<=.001)return `rgba(226,73,90,${alpha})`;
+  return mixColor('#e2495a','#ffcc4d',Math.pow(clamp(depth,0,1),.62),alpha);
 }
-function xToArc(g,p,start=-Math.PI*.94,end=-Math.PI*.06){
-  return start+(end-start)*clamp(p/Math.max(g.allowed_max,1e-9),0,1);
-}
-
+function xToArc(g,p,start=-Math.PI*.94,end=-Math.PI*.06){return start+(end-start)*clamp(p/Math.max(g.allowed_max,1e-9),0,1)}
 function drawTurnRotor(ctx,cx,cy,r,turn,fDown){
   const ang=(-18+clamp(turn,0,1)*82)*Math.PI/180;
   ctx.save();ctx.translate(cx,cy);ctx.rotate(ang);
   ctx.fillStyle='rgba(6,10,16,.62)';ctx.beginPath();ctx.arc(0,0,r*.35,0,Math.PI*2);ctx.fill();
-  ctx.strokeStyle=fDown?'#aa8cff':'#d8e7fa';ctx.lineWidth=5;ctx.lineCap='round';
+  ctx.strokeStyle=fDown?'#a68cff':'#d8e7fa';ctx.lineWidth=5;ctx.lineCap='round';
   ctx.beginPath();ctx.moveTo(-r*.04,0);ctx.lineTo(r*.56,0);ctx.stroke();
-  ctx.fillStyle=fDown?'#aa8cff':'#d8e7fa';ctx.fillRect(r*.49,-5,r*.13,10);
+  ctx.fillStyle=fDown?'#a68cff':'#d8e7fa';ctx.fillRect(r*.49,-5,r*.13,10);
   ctx.restore();
   ctx.strokeStyle='rgba(216,231,250,.22)';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(cx,cy,r*.38,0,Math.PI*2);ctx.stroke();
 }
-
 function drawGradientBar(ctx,g,x0,y,w,h,pos){
   const segs=180,dx=w/segs;
-  for(let i=0;i<segs;i++){
-    const p=g.allowed_max*(i+.5)/segs;
-    ctx.fillStyle=depthColor(depthAt(g,p),.82);
-    ctx.fillRect(x0+i*dx,y,dx+1,h);
-  }
+  for(let i=0;i<segs;i++){const p=g.allowed_max*(i+.5)/segs;ctx.fillStyle=depthColor(depthAt(g,p),.82);ctx.fillRect(x0+i*dx,y,dx+1,h)}
   ctx.strokeStyle='#dbe8ff';ctx.lineWidth=1;ctx.strokeRect(x0,y,w,h);
   if(g.lock&&g.lock!=='Rusted'){
     const pf=clamp(Number(g.preferred_search_fraction??cfg?.physics?.player_efficiency?.preferred_search_fraction??.5),.05,.95),pp=x0+w*pf;
-    ctx.save();ctx.setLineDash([4,3]);ctx.strokeStyle='rgba(99,212,255,.9)';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(pp,y-4);ctx.lineTo(pp,y+h+4);ctx.stroke();ctx.restore();
+    ctx.save();ctx.setLineDash([4,3]);ctx.strokeStyle='rgba(92,201,245,.9)';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(pp,y-4);ctx.lineTo(pp,y+h+4);ctx.stroke();ctx.restore();
   }
   const px=x0+w*clamp(pos/g.allowed_max,0,1);
-  ctx.strokeStyle='#63d4ff';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(px,y-9);ctx.lineTo(px,y+h+8);ctx.stroke();
+  ctx.strokeStyle='#5cc9f5';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(px,y-9);ctx.lineTo(px,y+h+8);ctx.stroke();
 }
-
 function drawGeomCanvas(c,g,pos,turn,frame){
-  const {x,w,h}=resizeCanvas(c);x.clearRect(0,0,w,h);if(!g)return;
-  const img=c.parentElement?.querySelector('img');
+  const {x,w,h}=resizeCanvas(c);if(!w||!h)return;x.clearRect(0,0,w,h);if(!g)return;
   const cx=w*.5,cy=h*.49,r=Math.min(h*.38,w*.20);
-  const start=-Math.PI*.94,end=-Math.PI*.06;
-  const segs=150,dr=(end-start)/segs;
-
-  // Continuous hidden geometry ring shown only in Command Center.
+  const start=-Math.PI*.94,end=-Math.PI*.06,segs=150,dr=(end-start)/segs;
   x.lineCap='butt';x.lineWidth=Math.max(8,r*.105);
-  for(let i=0;i<segs;i++){
-    const p=g.allowed_max*(i+.5)/segs;
-    x.strokeStyle=depthColor(depthAt(g,p),.92);
-    x.beginPath();x.arc(cx,cy,r,start+i*dr,start+(i+1)*dr+.002);x.stroke();
-  }
+  for(let i=0;i<segs;i++){const p=g.allowed_max*(i+.5)/segs;x.strokeStyle=depthColor(depthAt(g,p),.92);x.beginPath();x.arc(cx,cy,r,start+i*dr,start+(i+1)*dr+.002);x.stroke()}
   x.strokeStyle='rgba(220,232,248,.38)';x.lineWidth=2;x.beginPath();x.arc(cx,cy,r+8,start,end);x.stroke();
   x.beginPath();x.arc(cx,cy,r-8,start,end);x.stroke();
-
-  // Neural's current horizontal X marker.
   const pa=xToArc(g,pos,start,end),mx=cx+Math.cos(pa)*r,my=cy+Math.sin(pa)*r;
-  x.strokeStyle=frame&&frame.f?'#aa8cff':'#63d4ff';x.lineWidth=4;x.beginPath();
-  x.moveTo(cx+Math.cos(pa)*(r-16),cy+Math.sin(pa)*(r-16));
-  x.lineTo(cx+Math.cos(pa)*(r+17),cy+Math.sin(pa)*(r+17));x.stroke();
-  x.fillStyle=frame&&frame.f?'#aa8cff':'#63d4ff';x.beginPath();x.arc(mx,my,4.5,0,Math.PI*2);x.fill();
-
-  // Lock rotation visualization.
+  x.strokeStyle=frame&&frame.f?'#a68cff':'#5cc9f5';x.lineWidth=4;x.beginPath();
+  x.moveTo(cx+Math.cos(pa)*(r-16),cy+Math.sin(pa)*(r-16));x.lineTo(cx+Math.cos(pa)*(r+17),cy+Math.sin(pa)*(r+17));x.stroke();
+  x.fillStyle=frame&&frame.f?'#a68cff':'#5cc9f5';x.beginPath();x.arc(mx,my,4.5,0,Math.PI*2);x.fill();
   drawTurnRotor(x,cx,cy,r,turn||0,frame&&frame.f);
-
-  // Visible response meter and geometry bar.
   const pad=18,barW=w-pad*2;
   x.fillStyle='rgba(4,8,13,.75)';x.fillRect(pad,10,barW,26);
   x.fillStyle='#7f90a8';x.font='10px Segoe UI';x.fillText('VISIBLE LOCK TURN',pad+5,20);
   x.fillStyle='#122334';x.fillRect(pad+105,15,Math.max(30,barW-112),9);
-  x.fillStyle='#63d4ff';x.fillRect(pad+105,15,Math.max(0,(barW-112)*clamp(turn||0,0,1)),9);
-  if(frame){
-    const d=Number(frame.turn_delta||0);
-    x.fillStyle=d>0.0002?'#43d17a':d<-0.0002?'#ff5d6c':'#8fa0b8';
-    x.fillText(`Δ ${d>=0?'+':''}${d.toFixed(4)}`,pad+5,32);
-  }
-
+  x.fillStyle='#5cc9f5';x.fillRect(pad+105,15,Math.max(0,(barW-112)*clamp(turn||0,0,1)),9);
+  if(frame){const d=Number(frame.turn_delta||0);x.fillStyle=d>0.0002?'#3fd07d':d<-0.0002?'#ff5d6c':'#8493a8';x.fillText(`Δ ${d>=0?'+':''}${d.toFixed(4)}`,pad+5,32)}
   drawGradientBar(x,g,pad,h-26,barW,12,pos||0);
   x.fillStyle='rgba(4,8,13,.72)';x.fillRect(pad,42,Math.min(310,barW),18);
   x.fillStyle='#d7e7ff';x.font='10px Segoe UI';
-  x.fillText(`${g.template||''} · geometry visible to YOU, hidden from neural`,pad+5,54);
+  x.fillText(`${g.template||''} · geometria näkyy sinulle, ei neuralille`,pad+5,54);
   if(frame&&frame.f){
     x.fillStyle='rgba(126,93,220,.88)';x.fillRect(w-164,42,146,18);
-    x.fillStyle='#f4efff';x.font='bold 10px Segoe UI';const fm=String(frame.f_mode||'').toUpperCase(); const txt=fm==='TAP'?'F TAP · X STATIC':(fm==='HOLD'?`F HOLD ${Number(frame.hold_run_ms||0)}ms · X STATIC`:'F DOWN · X STATIC'); x.fillText(txt,w-156,54);
+    x.fillStyle='#f4efff';x.font='bold 10px Segoe UI';
+    const fm=String(frame.f_mode||'').toUpperCase();
+    x.fillText(fm==='TAP'?'F TAP · X STATIC':(fm==='HOLD'?`F HOLD ${Number(frame.hold_run_ms||0)}ms · X STATIC`:'F DOWN · X STATIC'),w-156,54);
   }
 }
-
 function drawTrace(c,g,frames,idx){
-  const {x,w,h}=resizeCanvas(c);x.clearRect(0,0,w,h);if(!g||!frames)return;
+  const {x,w,h}=resizeCanvas(c);if(!w||!h)return;x.clearRect(0,0,w,h);if(!g||!frames)return;
   const pad=18,scale=(w-2*pad)/Math.max(g.allowed_max,1e-9),X=v=>pad+v*scale;
   x.strokeStyle='#192436';x.lineWidth=1;
   for(let k=0;k<=10;k++){x.beginPath();x.moveTo(pad+k*(w-2*pad)/10,0);x.lineTo(pad+k*(w-2*pad)/10,h);x.stroke()}
-  if(g.lock&&g.lock!=='Rusted'){const pf=clamp(Number(g.preferred_search_fraction??cfg?.physics?.player_efficiency?.preferred_search_fraction??.5),.05,.95),xx=X(g.allowed_max*pf);x.save();x.setLineDash([4,4]);x.strokeStyle='rgba(99,212,255,.5)';x.beginPath();x.moveTo(xx,0);x.lineTo(xx,h);x.stroke();x.restore()}
-  // X movement trace
-  x.strokeStyle='rgba(99,212,255,.35)';x.lineWidth=1.5;x.beginPath();
-  for(let i=0;i<=Math.min(idx,frames.length-1);i++){
-    const f=frames[i],yy=6+(h-26)*i/Math.max(1,frames.length-1),xx=X(f.pos);
-    i?x.lineTo(xx,yy):x.moveTo(xx,yy);
-  } x.stroke();
-
-  let seg=null;
-  const stop=Math.min(idx,frames.length-1);
+  if(g.lock&&g.lock!=='Rusted'){const pf=clamp(Number(g.preferred_search_fraction??cfg?.physics?.player_efficiency?.preferred_search_fraction??.5),.05,.95),xx=X(g.allowed_max*pf);x.save();x.setLineDash([4,4]);x.strokeStyle='rgba(92,201,245,.5)';x.beginPath();x.moveTo(xx,0);x.lineTo(xx,h);x.stroke();x.restore()}
+  x.strokeStyle='rgba(92,201,245,.35)';x.lineWidth=1.5;x.beginPath();
+  for(let i=0;i<=Math.min(idx,frames.length-1);i++){const f=frames[i],yy=6+(h-26)*i/Math.max(1,frames.length-1),xx=X(f.pos);i?x.lineTo(xx,yy):x.moveTo(xx,yy)}
+  x.stroke();
+  let seg=null;const stop=Math.min(idx,frames.length-1);
   for(let i=0;i<=stop;i++){
     const f=frames[i];
-    if(f.f && seg===null)seg={t:f.t_ms,x:f.pos,depth:Number(f.depth||0)};
-    const closing=seg!==null && ((!f.f) || i===stop);
+    if(f.f&&seg===null)seg={t:f.t_ms,x:f.pos,depth:Number(f.depth||0)};
+    const closing=seg!==null&&((!f.f)||i===stop);
     if(closing){
       const dur=Math.max(25,f.t_ms-seg.t+(i===stop&&f.f?25:0)),len=Math.min(h-17,8+dur*.095);
       x.strokeStyle=depthColor(seg.depth,.98);x.lineWidth=3;x.beginPath();x.moveTo(X(seg.x),4);x.lineTo(X(seg.x),4+len);x.stroke();
@@ -377,194 +641,327 @@ function drawTrace(c,g,frames,idx){
       seg=null;
     }
   }
-  x.fillStyle='#8fa0b8';x.font='10px Consolas';
-  x.fillText('F trace: TAP = one-frame mark · HOLD = vertical duration · color = hidden ramp depth shown to YOU',8,h-5);
+  x.fillStyle='#8493a8';x.font='10px Consolas';
+  x.fillText('F-jälki: TAP = yksi frame · HOLD = pystysuora kesto · väri = rampin syvyys',8,h-5);
 }
-
 function replayShowcase(){if(!showcase)return;cancelAnimationFrame(animReq);animStart=performance.now();animReq=requestAnimationFrame(animFrame)}
 function animFrame(now){
   if(!showcase)return;
-  const speed=Number(document.getElementById('playSpeed').value),frameMs=showcase.frame_ms||25,idx=Math.floor((now-animStart)*speed/frameMs);let any=false;
+  const speed=Number(el('playSpeed').value),frameMs=showcase.frame_ms||25,idx=Math.floor((now-animStart)*speed/frameMs);let any=false;
   showcase.locks.forEach(l=>{
     const id=l.lock.toLowerCase(),frames=l.frames||[],i=Math.min(idx,Math.max(0,frames.length-1));
     const f=frames[i]||{t_ms:0,pos:0,turn:0,turn_delta:0,f:0,f_mode:'MOVE/RELEASE',hold_run_ms:0,off_target_f_sec:0,non_target_presses:0,total_presses:0,pick_wear:0,pick_budget:0};
-    drawGeomCanvas(document.getElementById(id+'Ov'),l,f.pos,f.turn,f);
-    drawTrace(document.getElementById(id+'Tr'),l,frames,i);
-    document.getElementById(id+'T').textContent=(f.t_ms/1000).toFixed(2)+'s';
-    document.getElementById(id+'Turn').textContent=Number(f.turn||0).toFixed(3);
-    document.getElementById(id+'Delta').textContent=(Number(f.turn_delta||0)>=0?'+':'')+Number(f.turn_delta||0).toFixed(4);
-    document.getElementById(id+'Delta').style.color=Number(f.turn_delta||0)>0.0002?'#43d17a':Number(f.turn_delta||0)<-0.0002?'#ff5d6c':'#8fa0b8';
-    document.getElementById(id+'F').textContent=f.f?(f.f_mode==='TAP'?'TAP':`HOLD ${Number(f.hold_run_ms||0)}ms`):'UP';
-    document.getElementById(id+'F').style.color=f.f?'#aa8cff':'#8fa0b8';
-    const moveEl=document.getElementById(id+'Move');
+    drawGeomCanvas(el(id+'Ov'),l,f.pos,f.turn,f);
+    drawTrace(el(id+'Tr'),l,frames,i);
+    el(id+'T').textContent=(f.t_ms/1000).toFixed(2)+'s';
+    el(id+'Turn').textContent=Number(f.turn||0).toFixed(3);
+    el(id+'Delta').textContent=(Number(f.turn_delta||0)>=0?'+':'')+Number(f.turn_delta||0).toFixed(4);
+    el(id+'Delta').style.color=Number(f.turn_delta||0)>0.0002?'#3fd07d':Number(f.turn_delta||0)<-0.0002?'#ff5d6c':'#8493a8';
+    el(id+'F').textContent=f.f?(f.f_mode==='TAP'?'TAP':`HOLD ${Number(f.hold_run_ms||0)}ms`):'UP';
+    el(id+'F').style.color=f.f?'#a68cff':'#8493a8';
+    const moveEl=el(id+'Move');
     moveEl.textContent=f.f?'LOCKED':(f.move_blocked?'LOCKED':'MOVE');
-    moveEl.style.color=(f.f||f.move_blocked)?'#aa8cff':'#63d4ff';
-    document.getElementById(id+'Press').textContent=`${f.total_presses||0}/${f.non_target_presses||0}`;
-    document.getElementById(id+'Wear').textContent=l.lock==='Rusted'?'n/a':`${Number(f.pick_wear||0).toFixed(1)}/${Number(f.pick_budget||l.pick_break_budget||0).toFixed(1)} · Foff ${Number(f.off_target_f_sec||0).toFixed(3)}/${Number(l.max_off_target_f_sec||1).toFixed(2)}s`;
+    moveEl.style.color=(f.f||f.move_blocked)?'#a68cff':'#5cc9f5';
+    el(id+'Press').textContent=`${f.total_presses||0}/${f.non_target_presses||0}`;
+    el(id+'Wear').textContent=l.lock==='Rusted'?'n/a':`${Number(f.pick_wear||0).toFixed(1)}/${Number(f.pick_budget||l.pick_break_budget||0).toFixed(1)} · Foff ${Number(f.off_target_f_sec||0).toFixed(3)}/${Number(l.max_off_target_f_sec||1).toFixed(2)}s`;
     const last=idx>=frames.length-1;
-    document.getElementById(id+'Res').textContent=last?(l.success?'OPEN':(f.pick_broken?(f.time_cap_broken?'PICK BREAK · 1S F CAP':'PICK BREAK'):'FAIL')):'…';
-    document.getElementById(id+'Res').style.color=l.success?'#43d17a':'#ff5d6c';
-    document.getElementById(id+'Meta').textContent=`${l.template} · target @ ${Number(l.center).toFixed(4)}`;
+    el(id+'Res').textContent=last?(l.success?'OPEN':(f.pick_broken?(f.time_cap_broken?'PICK BREAK · 1S F CAP':'PICK BREAK'):'FAIL')):'…';
+    el(id+'Res').style.color=l.success?'#3fd07d':'#ff5d6c';
+    el(id+'Meta').textContent=`${l.template} · target @ ${Number(l.center).toFixed(4)}`;
     if(idx<frames.length-1)any=true;
   });
   if(any)animReq=requestAnimationFrame(animFrame);
 }
-
 async function pollShow(){
   try{
     const s=await api('/api/showcase');
     if(s&&s.showcase!==undefined&&s.showcase!==lastShowId&&s.showcase>=0){
       showcase=s;lastShowId=s.showcase;
-      document.getElementById('showMeta').textContent=`Show #${s.showcase} · ${fmt(s.attempts)} attempts · ${s.created}`;
+      el('showMeta').textContent=`Show #${s.showcase} · ${fmt(s.attempts)} yritystä · ${s.created}`;
       replayShowcase();
     }
   }catch(e){}
 }
 
+/* ---------------- status ---------------- */
 async function pollStatus(){
   try{
     const s=await api('/api/status'),on=s.running||s.status==='training';
-    document.getElementById('statusDot').className='dot '+(on?'on':'');
-    document.getElementById('statusText').textContent=on?'TRAINING':'OFFLINE';
-    const a=s.attempts||0;document.getElementById('attemptsTop').textContent=fmt(a);document.getElementById('sAttempts').textContent=fmt(a);
-    document.getElementById('sSps').textContent=fmt(Math.round(s.steps_per_sec||0));
-    const r=s.success_rates||{};document.getElementById('sR').textContent=pct(r.Rusted);document.getElementById('sB').textContent=pct(r.Basic);document.getElementById('sM').textContent=pct(r.Medium);document.getElementById('sE').textContent=pct(r.Enforced);
-    document.getElementById('sLoss').textContent=Number(s.loss||0).toFixed(3);document.getElementById('sKl').textContent=Number(s.kl||0).toFixed(4);document.getElementById('sEnt').textContent=Number(s.entropy||0).toFixed(3);document.getElementById('sBest').textContent=pct(s.best_mean);
-    document.getElementById('ramNote').textContent=s.ram_note||'FREELEARN uses bounded rollouts; no huge replay bank.';
-    if(s.showcase_every_attempts)document.getElementById('showEvery').value=s.showcase_every_attempts;
+    el('statusDot').className='dot '+(on?'on':'');
+    el('statusText').textContent=on?(s.visual_sim?'VISUAL TRAINING':'TRAINING'):'OFFLINE';
+    const a=s.attempts||0;el('sAttempts').textContent=fmt(a);el('sAttempts2').textContent=fmt(a);
+    el('sSps').textContent=fmt(Math.round(s.steps_per_sec||0));
+    el('sMode').textContent=s.visual_sim?'visual simulator':'fast simulator';
+    el('tSimMode').textContent=s.visual_sim?'visual':'fast';
+    const r=s.success_rates||{};
+    el('sR').textContent=pct(r.Rusted);el('sB').textContent=pct(r.Basic);el('sM').textContent=pct(r.Medium);el('sE').textContent=pct(r.Enforced);
+    el('sLoss').textContent=Number(s.loss||0).toFixed(3);el('sKl').textContent=Number(s.kl||0).toFixed(4);
+    el('sEnt').textContent=Number(s.entropy||0).toFixed(3);el('sBest').textContent=pct(s.best_mean);
+    el('sBestSub').textContent='best mean '+pct(s.best_mean);
+    el('ramNote').textContent=s.ram_note||'FREELEARN käyttää rajattua rollouttia.';
+    const va=Number(s.vision_attempts||0),warm=Number(visionInfo?.vision?.curriculum_attempts||1500000);
+    const ready=clamp(va/Math.max(warm,1),0,1);
+    el('sVision').textContent=(100*ready).toFixed(0)+'%';
+    el('sVisionSub').textContent=fmt(va)+' attempts';
+    el('tVisionAtt').textContent=fmt(va);
+    el('tVisionScale').textContent=(100*Number(s.vision_scale||0)).toFixed(0)+'%';
+    el('visionBar').style.width=(100*ready).toFixed(1)+'%';
+    el('visionHint').textContent=ready>=1
+      ? 'Näkömalli on täydessä voimassa. Politiikka treenaa sillä sensorilla jonka se saa pelissä.'
+      : `Näkömalli vahvistuu asteittain: ${fmt(va)} / ${fmt(warm)} yritystä. Live-peliä kannattaa kokeilla vasta kun tämä on 100 %.`;
+    if(s.showcase_every_attempts)el('showEvery').value=s.showcase_every_attempts;
   }catch(e){}
   try{
-    const l=await fetch('/api/log').then(r=>r.text()),el=document.getElementById('log');
-    if(el.textContent!==l){el.textContent=l;el.scrollTop=el.scrollHeight}
+    const l=await fetch('/api/log').then(r=>r.text()),e2=el('log');
+    if(e2.textContent!==l){e2.textContent=l;e2.scrollTop=e2.scrollHeight}
   }catch(e){}
 }
 async function loadProgress(){try{progress=await api('/api/progress');drawChart()}catch(e){}}
 function drawChart(){
-  const c=document.getElementById('chart'),{x,w,h}=resizeCanvas(c);x.clearRect(0,0,w,h);x.fillStyle='#080c12';x.fillRect(0,0,w,h);
+  const c=el('chart'),{x,w,h}=resizeCanvas(c);if(!w||!h)return;
+  x.clearRect(0,0,w,h);x.fillStyle='#080c12';x.fillRect(0,0,w,h);
   const pad={l:44,r:14,t:16,b:25};x.strokeStyle='#1e2a3a';x.fillStyle='#8394ac';x.font='10px Segoe UI';
   for(let k=0;k<=5;k++){const y=pad.t+(h-pad.t-pad.b)*k/5;x.beginPath();x.moveTo(pad.l,y);x.lineTo(w-pad.r,y);x.stroke();x.fillText((100-20*k)+'%',5,y+3)}
-  if(!progress.length){x.fillText('No progress samples yet',pad.l+10,pad.t+20);return}
-  const pts=progress.slice(-140),maxA=Math.max(...pts.map(p=>p.attempts)),minA=Math.min(...pts.map(p=>p.attempts)),cols={Rusted:'#43d17a',Basic:'#63d4ff',Medium:'#ffd34d',Enforced:'#aa8cff'};
-  for(const n of locks){x.strokeStyle=cols[n];x.lineWidth=2;x.beginPath();pts.forEach((p,i)=>{const xx=pad.l+(w-pad.l-pad.r)*((p.attempts-minA)/Math.max(1,maxA-minA)),yy=pad.t+(h-pad.t-pad.b)*(1-(p[n]||0));i?x.lineTo(xx,yy):x.moveTo(xx,yy)});x.stroke()}
-  let xx=pad.l;for(const n of locks){x.fillStyle=cols[n];x.fillRect(xx,h-15,10,3);x.fillStyle='#b9c9dd';x.fillText(n,xx+14,h-11);xx+=90}
+  if(!progress.length){x.fillText('Ei progress-dataa vielä',pad.l+10,pad.t+20);return}
+  const pts=progress.slice(-140),maxA=Math.max(...pts.map(p=>p.attempts)),minA=Math.min(...pts.map(p=>p.attempts)),
+        cols={Rusted:'#3fd07d',Basic:'#5cc9f5',Medium:'#ffcc4d',Enforced:'#a68cff'};
+  for(const n of locks){x.strokeStyle=cols[n];x.lineWidth=2;x.beginPath();
+    pts.forEach((p,i)=>{const xx=pad.l+(w-pad.l-pad.r)*((p.attempts-minA)/Math.max(1,maxA-minA)),yy=pad.t+(h-pad.t-pad.b)*(1-(p[n]||0));i?x.lineTo(xx,yy):x.moveTo(xx,yy)});x.stroke()}
 }
 
+/* ---------------- config / tuning ---------------- */
 async function loadConfig(){
   cfg=await api('/api/config');
-  document.getElementById('showEvery').value=cfg.training.showcase_every_attempts;
-  document.getElementById('envs').value=cfg.training.envs;
-  const e=cfg.physics.player_efficiency||{};
-  const set=(id,v)=>document.getElementById(id).value=v;
+  el('showEvery').value=cfg.training.showcase_every_attempts;
+  if(trainMode!=='visual')el('envs').value=cfg.training.envs;
+  const e=cfg.physics.player_efficiency||{},set=(id,v)=>el(id).value=v;
   set('eGoal',e.soft_goal_non_target_presses??8);set('eBonus',e.success_efficiency_bonus??3);
   set('ePrefPct',100*(e.preferred_search_fraction??.5));set('ePrefBonus',e.preferred_region_success_bonus??2);
   set('eBreakMin',e.pick_break_budget_min??6);set('eBreakMax',e.pick_break_budget_max??8);
   set('eDeadTap',e.dead_press_damage??1);set('eRampTap',e.ramp_press_damage??.65);
   set('eDeadHold',e.hold_damage_per_sec_dead??.55);set('eRampHold',e.hold_damage_per_sec_ramp??.32);
-  set('eMaxOffTime',e.max_off_target_f_sec??1.0);set('eOffTimePenalty',e.off_target_time_penalty_per_sec??.35);set('eTimeBreakPenalty',e.off_target_time_break_extra_penalty??3.0);
+  set('eMaxOffTime',e.max_off_target_f_sec??1.0);set('eOffTimePenalty',e.off_target_time_penalty_per_sec??.35);
+  set('eTimeBreakPenalty',e.off_target_time_break_extra_penalty??3.0);
   renderTabs();loadTemplateSelect();loadTemplateForm();
 }
 function renderTabs(){
-  const t=document.getElementById('lockTabs');t.innerHTML='';
-  locks.forEach(n=>{const b=document.createElement('button');b.className='btn small tab'+(n===activeLock?' cyan':'');b.textContent=n;b.onclick=()=>{activeLock=n;renderTabs();loadTemplateSelect();loadTemplateForm()};t.appendChild(b)})
+  const t=el('lockTabs');t.innerHTML='';
+  locks.forEach(n=>{const b=document.createElement('button');b.className='btn small'+(n===activeLock?' cyan':'');b.textContent=n;
+    b.onclick=()=>{activeLock=n;renderTabs();loadTemplateSelect();loadTemplateForm()};t.appendChild(b)})
 }
 function loadTemplateSelect(){
-  const s=document.getElementById('templateSel');s.innerHTML='';
+  const s=el('templateSel');s.innerHTML='';
   (cfg.locks[activeLock].templates||[]).forEach((t,i)=>{const o=document.createElement('option');o.value=i;o.textContent=t.name;s.appendChild(o)})
 }
 function loadTemplateForm(){
   if(!cfg)return;
-  const s=document.getElementById('templateSel'),t=cfg.locks[activeLock].templates[Number(s.value)||0],set=(id,v)=>document.getElementById(id).value=v;
+  const t=cfg.locks[activeLock].templates[Number(el('templateSel').value)||0],set=(id,v)=>el(id).value=v;
   set('gTarget',t.target_half);set('gLeft',t.ramp_left);set('gRight',t.ramp_right);set('gExp',t.curve_exp);set('gTau',t.turn_tau_ms);set('gReturn',t.return_tau_ms);
-  const l=cfg.locks[activeLock], phys=Number(l.physical_max??1), span=Number(l.policy_span??(activeLock==='Rusted'?1:.5));document.getElementById('geomMeta').textContent=`${activeLock}: time ${l.time_limit_sec}s · physical X 0…${phys} · neural coord 0…${span}`;
+  const l=cfg.locks[activeLock],phys=Number(l.physical_max??1),span=Number(l.policy_span??(activeLock==='Rusted'?1:.5));
+  el('geomMeta').textContent=`${activeLock}: aika ${l.time_limit_sec}s · fyysinen X 0…${phys} · neural-koordinaatti 0…${span}`;
   drawGeomPreview();
 }
 function formToTemplate(){
-  const i=Number(document.getElementById('templateSel').value)||0,t=cfg.locks[activeLock].templates[i],get=id=>Number(document.getElementById(id).value);
+  const i=Number(el('templateSel').value)||0,t=cfg.locks[activeLock].templates[i],get=id=>Number(el(id).value);
   t.target_half=get('gTarget');t.ramp_left=get('gLeft');t.ramp_right=get('gRight');t.curve_exp=get('gExp');t.turn_tau_ms=get('gTau');t.return_tau_ms=get('gReturn');return t
 }
 function formToEconomy(){
-  const e=cfg.physics.player_efficiency||(cfg.physics.player_efficiency={}),get=id=>Number(document.getElementById(id).value);
+  const e=cfg.physics.player_efficiency||(cfg.physics.player_efficiency={}),get=id=>Number(el(id).value);
   e.enabled=true;e.soft_goal_non_target_presses=Math.max(1,Math.round(get('eGoal')));e.success_efficiency_bonus=Math.max(0,get('eBonus'));
   e.preferred_search_fraction=clamp(get('ePrefPct')/100,.05,.95);e.preferred_region_success_bonus=Math.max(0,get('ePrefBonus'));
   e.pick_break_enabled=true;e.pick_break_budget_min=Math.max(1,get('eBreakMin'));e.pick_break_budget_max=Math.max(e.pick_break_budget_min,get('eBreakMax'));
-  e.dead_press_damage=Math.max(0,get('eDeadTap'));e.ramp_press_damage=Math.max(0,get('eRampTap'));e.hold_damage_per_sec_dead=Math.max(0,get('eDeadHold'));e.hold_damage_per_sec_ramp=Math.max(0,get('eRampHold'));
-  e.max_off_target_f_sec=Math.max(.025,get('eMaxOffTime'));e.off_target_time_penalty_per_sec=Math.max(0,get('eOffTimePenalty'));e.off_target_time_break_extra_penalty=Math.max(0,get('eTimeBreakPenalty'));
+  e.dead_press_damage=Math.max(0,get('eDeadTap'));e.ramp_press_damage=Math.max(0,get('eRampTap'));
+  e.hold_damage_per_sec_dead=Math.max(0,get('eDeadHold'));e.hold_damage_per_sec_ramp=Math.max(0,get('eRampHold'));
+  e.max_off_target_f_sec=Math.max(.025,get('eMaxOffTime'));e.off_target_time_penalty_per_sec=Math.max(0,get('eOffTimePenalty'));
+  e.off_target_time_break_extra_penalty=Math.max(0,get('eTimeBreakPenalty'));
 }
 function drawGeomPreview(){
-  if(!cfg)return;const t=formToTemplate(),l=cfg.locks[activeLock],c=document.getElementById('geomPreview');
+  if(!cfg)return;const t=formToTemplate(),l=cfg.locks[activeLock],c=el('geomPreview');
   const phys=Number(l.physical_max??1),span=Math.max(.0001,Number(l.policy_span??(activeLock==='Rusted'?1:.5))),scale=phys/span;
-  const g={lock:activeLock,allowed_max:phys,policy_span:span,geometry_scale:scale,center:phys*.5,target_half:t.target_half*scale,ramp_left:t.ramp_left*scale,ramp_right:t.ramp_right*scale,curve_exp:t.curve_exp,template:t.name,preferred_search_fraction:(cfg.physics?.player_efficiency?.preferred_search_fraction??.5)};
-  drawGeomCanvas(c,g,phys*.5,0,{f:0,turn_delta:0});
+  drawGeomCanvas(c,{lock:activeLock,allowed_max:phys,policy_span:span,geometry_scale:scale,center:phys*.5,
+    target_half:t.target_half*scale,ramp_left:t.ramp_left*scale,ramp_right:t.ramp_right*scale,curve_exp:t.curve_exp,template:t.name,
+    preferred_search_fraction:(cfg.physics?.player_efficiency?.preferred_search_fraction??.5)},phys*.5,0,{f:0,turn_delta:0});
 }
-['gTarget','gLeft','gRight','gExp','gTau','gReturn'].forEach(id=>document.addEventListener('input',e=>{if(e.target.id===id)drawGeomPreview()}));
+document.addEventListener('input',e=>{if(['gTarget','gLeft','gRight','gExp','gTau','gReturn'].includes(e.target.id))drawGeomPreview()});
 async function saveAll(){
   try{
-    formToTemplate();formToEconomy();cfg.training.showcase_every_attempts=Number(document.getElementById('showEvery').value);
+    formToTemplate();formToEconomy();cfg.training.showcase_every_attempts=Number(el('showEvery').value);
     await api('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
-    toast('Geometry + TAP/HOLD economy + soft first-pass priority saved; trainer hot reload queued')
-  }catch(e){toast('Save failed: '+e.message)}
+    toast('Geometria ja tiirikkatalous tallennettu · hot reload jonossa')
+  }catch(e){toast('Tallennus epäonnistui: '+e.message)}
 }
 function setShow(n){
-  document.getElementById('showEvery').value=n;
-  if(cfg){cfg.training.showcase_every_attempts=n;api('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)}).then(()=>toast('Lock show interval '+fmt(n)))}
+  el('showEvery').value=n;
+  if(cfg){cfg.training.showcase_every_attempts=n;api('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)}).then(()=>toast('Lock show -väli '+fmt(n)))}
 }
 async function startTraining(){
-  const body={minutes:Number(document.getElementById('minutes').value),envs:Number(document.getElementById('envs').value),showcase_every:Number(document.getElementById('showEvery').value)};
-  try{await saveAll();await api('/api/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});toast('Training started')}catch(e){toast('Start failed: '+e.message)}
+  const body={minutes:Number(el('minutes').value),envs:Number(el('envs').value),showcase_every:Number(el('showEvery').value),
+              visual:trainMode==='visual',visual_quality:el('visualQuality').value};
+  try{await saveAll();await api('/api/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    toast(trainMode==='visual'?'Visuaalinen treeni käynnistyi':'Treeni käynnistyi')}
+  catch(e){toast('Käynnistys epäonnistui: '+e.message)}
 }
-async function stopTraining(){try{await api('/api/stop',{method:'POST'});toast('Stop requested')}catch(e){toast('Stop failed')}}
+async function stopTraining(){try{await api('/api/stop',{method:'POST'});toast('Stop pyydetty')}catch(e){toast('Stop epäonnistui')}}
+async function requestShowcase(){try{await api('/api/showcase/request',{method:'POST'});toast('Lock show pyydetty')}catch(e){toast('Pyyntö epäonnistui')}}
+
+/* ---------------- vision + live ---------------- */
+async function pollVision(){
+  try{
+    visionInfo=await api('/api/vision');
+    const v=visionInfo.vision||{};
+    const rows=[['Mitattu malli',v.turn_gain_error,v.turn_offset_error,v.turn_noise,v.x_noise,v.obs_latency_frames_max]];
+    const tb=el('visionRows');tb.innerHTML='';
+    rows.forEach(r=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML=`<td>${r[0]}</td><td>${(100*Number(r[1]||0)).toFixed(1)}%</td><td>${Number(r[2]||0).toFixed(3)}</td>
+        <td>${Number(r[3]||0).toFixed(4)}</td><td>${Number(r[4]||0).toFixed(4)}</td><td>0…${Number(r[5]||0)} framea</td>`;
+      tb.appendChild(tr);
+    });
+    if(v.calibrated_at){
+      const t=document.createElement('tr');
+      t.innerHTML=`<td colspan="6" style="text-align:left;color:#8493a8">Kalibroitu ${v.calibrated_at} · ${v.calibrated_from||''}</td>`;
+      tb.appendChild(t);
+    }else{
+      const t=document.createElement('tr');
+      t.innerHTML=`<td colspan="6" style="text-align:left;color:#ffcc4d">Ei mitattua kalibrointia — arvot ovat oletuksia. Aja "Kalibroi pikseleistä".</td>`;
+      tb.appendChild(t);
+    }
+    const cal=visionInfo.turn_calibration?.locks||{},cb=el('turnCalRows');cb.innerHTML='';
+    for(const n of locks){
+      const e=cal[n]||{},tr=document.createElement('tr');
+      tr.innerHTML=`<td>${n}</td><td>${e.rest_deg!==undefined?Number(e.rest_deg).toFixed(1)+'°':'—'}</td>
+        <td>${e.span_deg!==undefined?Number(e.span_deg).toFixed(1)+'°':'—'}</td>
+        <td>${e.observed_max_deg!==undefined?Number(e.observed_max_deg).toFixed(1)+'°':'—'}</td>
+        <td>${fmt(e.success_samples||0)}</td>`;
+      cb.appendChild(tr);
+    }
+  }catch(e){}
+}
+async function visualCalibrate(){
+  const b=el('btnCal');b.disabled=true;b.textContent='Kalibroidaan…';
+  try{const r=await api('/api/visual/calibrate',{method:'POST'});el('calOut').textContent=r.output||'ok';await pollVision();toast('Sensorimalli mitattu ja kirjoitettu configiin')}
+  catch(e){el('calOut').textContent=e.message;toast('Kalibrointi epäonnistui')}
+  b.disabled=false;b.textContent='⚙ Kalibroi pikseleistä';
+}
+async function visualEval(){
+  const b=el('btnEval');b.disabled=true;b.textContent='Ajetaan…';
+  try{const r=await api('/api/visual/eval',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({episodes:Number(el('evEpisodes').value),envs:Number(el('evEnvs').value)})});
+    el('evalOut').textContent=r.output||'ok';toast('Visuaalinen arviointi valmis')}
+  catch(e){el('evalOut').textContent=e.message;toast('Arviointi epäonnistui')}
+  b.disabled=false;b.textContent='▶ Aja arviointi';
+}
+async function liveStart(mode){
+  try{
+    await api('/api/live/start',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({mode,lock:el('liveLock').value,attempts:Number(el('liveAttempts').value)})});
+    toast(mode==='play'?'Live-agentti käynnistyi · F12 pysäyttää':(mode==='observe'?'Tarkkailu käynnissä · ei syötteitä':'Hiiren kalibrointi käynnissä'));
+    setTimeout(pollLive,600);
+  }catch(e){toast('Live-käynnistys epäonnistui: '+e.message)}
+}
+async function liveStop(){try{await api('/api/live/stop',{method:'POST'});toast('Live-agentti pysäytetty');setTimeout(pollLive,600)}catch(e){toast('Stop epäonnistui')}}
+async function pollLive(){
+  try{
+    const s=await api('/api/live/status');
+    const on=!!s.running;
+    el('liveBadge').style.display=on?'inline-flex':'none';
+    el('lState').textContent=on?'KÄYNNISSÄ':'OFFLINE';el('lState').style.color=on?'#3fd07d':'#e9f0fa';
+    el('lAttempts').textContent=fmt(s.attempts||0);
+    el('lOpened').textContent=fmt(s.successes||0);
+    el('lRate').textContent=pct(s.success_rate||0);
+    el('lFrame').textContent=s.mean_frame_ms!==undefined?Number(s.mean_frame_ms).toFixed(1)+' ms':'— ms';
+    el('lRead').textContent=s.mean_read_ms!==undefined?Number(s.mean_read_ms).toFixed(1)+' ms':'— ms';
+    el('lOver').textContent=fmt(s.overrun_frames||0);
+    el('lLast').textContent=s.last_result?`${s.last_result} · ${s.last_lock||''}`:'—';
+    el('lLast').style.color=s.last_result==='SUCCESS'?'#3fd07d':'#e9f0fa';
+    if(s.log&&s.log.trim()){const e2=el('liveLog');if(e2.textContent!==s.log){e2.textContent=s.log;e2.scrollTop=e2.scrollHeight}}
+  }catch(e){}
+}
+
+/* ---------------- data ---------------- */
 function humanBytes(n){n=Number(n||0);if(n<1024)return n+' B';const u=['KiB','MiB','GiB','TiB'];let i=-1;do{n/=1024;i++}while(n>=1024&&i<u.length-1);return n.toFixed(n>=100?0:n>=10?1:2)+' '+u[i]}
 async function refreshWipeStats(){
-  try{const s=await api('/api/wipe/status');document.getElementById('simDataSize').textContent=`${humanBytes(s.simulation_bytes)} · ${fmt(s.simulation_files)} files`;document.getElementById('allDataSize').textContent=`${humanBytes(s.all_bytes)} · ${fmt(s.all_files)} files`}catch(e){}
+  try{const s=await api('/api/wipe/status');
+    el('simDataSize').textContent=`${humanBytes(s.simulation_bytes)} · ${fmt(s.simulation_files)} tiedostoa`;
+    el('allDataSize').textContent=`${humanBytes(s.all_bytes)} · ${fmt(s.all_files)} tiedostoa`}catch(e){}
 }
 function resetDashboardAfterWipe(){
   showcase=null;lastShowId=-999;progress=[];cancelAnimationFrame(animReq);drawChart();
-  document.getElementById('showMeta').textContent='No showcase yet';
-  for(const n of locks){const id=n.toLowerCase();document.getElementById(id+'Meta').textContent='waiting';document.getElementById(id+'T').textContent='0.00s';document.getElementById(id+'Turn').textContent='0.000';document.getElementById(id+'Delta').textContent='0.000';document.getElementById(id+'F').textContent='UP';document.getElementById(id+'Move').textContent='MOVE';document.getElementById(id+'Press').textContent='0/0';document.getElementById(id+'Wear').textContent='0/—';document.getElementById(id+'Res').textContent='—'}
+  el('showMeta').textContent='Ei showcasea vielä';
+  for(const n of locks){const id=n.toLowerCase();
+    el(id+'Meta').textContent='waiting';el(id+'T').textContent='0.00s';el(id+'Turn').textContent='0.000';
+    el(id+'Delta').textContent='0.000';el(id+'F').textContent='UP';el(id+'Move').textContent='MOVE';
+    el(id+'Press').textContent='0/0';el(id+'Wear').textContent='0/—';el(id+'Res').textContent='—'}
 }
 async function doWipe(mode,confirmText){
-  try{const r=await api('/api/wipe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode,confirm:confirmText})});resetDashboardAfterWipe();await pollStatus();await loadProgress();await refreshWipeStats();toast(`${mode==='all'?'ALL DATA':'Simulation data'} wiped · ${humanBytes(r.removed_bytes)} removed`)}catch(e){toast('Wipe blocked: '+e.message)}
+  try{const r=await api('/api/wipe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode,confirm:confirmText})});
+    resetDashboardAfterWipe();await pollStatus();await loadProgress();await refreshWipeStats();
+    toast(`${mode==='all'?'ALL DATA':'Simulaatiodata'} tyhjennetty · ${humanBytes(r.removed_bytes)}`)}
+  catch(e){toast('Wipe estetty: '+e.message)}
 }
 async function wipeSimulation(){
-  if(!confirm('WIPE SIMULATION DATA?\n\nThis resets ONLY FREELEARN simulation checkpoints + telemetry/progress/showcase/log. Human Teach, real-game demos, neural_smart, references and config stay untouched.\n\nTraining must be STOPPED.'))return;
+  if(!confirm('WIPE SIMULATION DATA?\n\nNollaa vain FREELEARN-simulaation checkpointit + telemetrian/progressin/showcasen/login. Human Teach, oikean pelin demot, neural_smart, referenssit ja config säilyvät.\n\nTreenin pitää olla pysäytetty.'))return;
   await doWipe('simulation','WIPE SIM');
 }
 async function wipeAllData(){
-  if(!confirm('DANGER: WIPE ALL DATA deletes EVERYTHING inside data\\ and checkpoints\\.\n\nThis includes Human Teach/demos, neural_smart, audit/evaluation and all simulation/checkpoint data. Program, references and config remain.'))return;
-  const t=prompt('Type WIPE ALL exactly to confirm:','');if(t!=='WIPE ALL'){toast('All-data wipe cancelled');return}
+  if(!confirm('VAARA: WIPE ALL DATA poistaa KAIKEN data\\- ja checkpoints\\-kansioista.'))return;
+  const t=prompt('Kirjoita WIPE ALL vahvistaaksesi:','');if(t!=='WIPE ALL'){toast('Peruttu');return}
   await doWipe('all','WIPE ALL');
 }
-async function requestShowcase(){try{await api('/api/showcase/request',{method:'POST'});toast('Lock Show requested')}catch(e){toast('Request failed')}}
 
+/* ---------------- real bridge ---------------- */
 async function startReality(){
-  try{const lock=document.getElementById('realLock').value;await api('/api/reality/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lock})});toast('REAL capture started · '+lock);setTimeout(pollReality,500)}catch(e){toast('REAL capture failed: '+e.message)}
+  try{const lock=el('realLock').value;await api('/api/reality/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lock})});
+    toast('REAL capture käynnistyi · '+lock);setTimeout(pollReality,500)}catch(e){toast('REAL capture epäonnistui: '+e.message)}
 }
-async function stopReality(){try{await api('/api/reality/stop',{method:'POST'});toast('REAL capture stop requested');setTimeout(pollReality,1400)}catch(e){toast('REAL stop failed: '+e.message)}}
+async function stopReality(){try{await api('/api/reality/stop',{method:'POST'});toast('REAL capture stop pyydetty');setTimeout(pollReality,1400)}catch(e){toast('Stop epäonnistui')}}
 async function fitReality(){
-  try{toast('Fitting REAL → SIM physics…');const r=await api('/api/reality/fit',{method:'POST'});if(r.output)document.getElementById('realityLog').textContent=r.output;await pollReality();toast('REAL → SIM fit applied to new simulator episodes')}catch(e){toast('Fit failed: '+e.message)}
+  try{toast('Sovitetaan REAL → SIM…');const r=await api('/api/reality/fit',{method:'POST'});
+    if(r.output)el('realityLog').textContent=r.output;await pollReality();toast('Fit käytössä uusissa simulaatioepisodeissa')}
+  catch(e){toast('Fit epäonnistui: '+e.message)}
 }
 function drawRealityChart(){
-  const c=document.getElementById('realityChart');if(!c)return;const {x,w,h}=resizeCanvas(c);x.clearRect(0,0,w,h);x.fillStyle='#080c12';x.fillRect(0,0,w,h);
-  const pad={l:34,r:10,t:12,b:20};x.strokeStyle='#1e2a3a';x.fillStyle='#8394ac';x.font='9px Segoe UI';for(let k=0;k<=4;k++){const y=pad.t+(h-pad.t-pad.b)*k/4;x.beginPath();x.moveTo(pad.l,y);x.lineTo(w-pad.r,y);x.stroke();x.fillText((100-25*k)+'%',3,y+3)}
-  if(!reality?.fit?.locks){x.fillText('No REAL fit yet',pad.l+8,pad.t+18);return}
-  const chosen=document.getElementById('realLock')?.value;let lk=(chosen&&chosen!=='Auto')?chosen:null;if(!lk||!reality.fit.locks[lk]?.comparison?.length){lk=locks.find(n=>reality.fit.locks[n]?.comparison?.length)}
-  const pts=lk?reality.fit.locks[lk]?.comparison||[]:[];if(!pts.length){x.fillText('Need confident REAL probes for comparison',pad.l+8,pad.t+18);return}
-  const minX=Math.min(...pts.map(p=>p.x_rel)),maxX=Math.max(...pts.map(p=>p.x_rel));const mapX=v=>pad.l+(w-pad.l-pad.r)*(v-minX)/Math.max(.001,maxX-minX),mapY=v=>pad.t+(h-pad.t-pad.b)*(1-clamp(v,0,1));
-  const draw=(key,col)=>{x.strokeStyle=col;x.lineWidth=2;x.beginPath();pts.forEach((p,i)=>{const xx=mapX(p.x_rel),yy=mapY(p[key]);i?x.lineTo(xx,yy):x.moveTo(xx,yy)});x.stroke()};draw('real','#63d4ff');draw('sim','#ffd34d');x.fillStyle='#b9c9dd';x.fillText(lk+' · X relative to inferred episode center (human UI only)',pad.l,h-6);
+  const c=el('realityChart');if(!c)return;const {x,w,h}=resizeCanvas(c);if(!w||!h)return;
+  x.clearRect(0,0,w,h);x.fillStyle='#080c12';x.fillRect(0,0,w,h);
+  const pad={l:34,r:10,t:12,b:20};x.strokeStyle='#1e2a3a';x.fillStyle='#8394ac';x.font='9px Segoe UI';
+  for(let k=0;k<=4;k++){const y=pad.t+(h-pad.t-pad.b)*k/4;x.beginPath();x.moveTo(pad.l,y);x.lineTo(w-pad.r,y);x.stroke();x.fillText((100-25*k)+'%',3,y+3)}
+  if(!reality?.fit?.locks){x.fillText('Ei REAL-fittiä vielä',pad.l+8,pad.t+18);return}
+  const chosen=el('realLock')?.value;let lk=(chosen&&chosen!=='Auto')?chosen:null;
+  if(!lk||!reality.fit.locks[lk]?.comparison?.length){lk=locks.find(n=>reality.fit.locks[n]?.comparison?.length)}
+  const pts=lk?reality.fit.locks[lk]?.comparison||[]:[];
+  if(!pts.length){x.fillText('Tarvitaan luotettavia REAL-probeja',pad.l+8,pad.t+18);return}
+  const minX=Math.min(...pts.map(p=>p.x_rel)),maxX=Math.max(...pts.map(p=>p.x_rel));
+  const mapX=v=>pad.l+(w-pad.l-pad.r)*(v-minX)/Math.max(.001,maxX-minX),mapY=v=>pad.t+(h-pad.t-pad.b)*(1-clamp(v,0,1));
+  const draw=(key,col)=>{x.strokeStyle=col;x.lineWidth=2;x.beginPath();pts.forEach((p,i)=>{const xx=mapX(p.x_rel),yy=mapY(p[key]);i?x.lineTo(xx,yy):x.moveTo(xx,yy)});x.stroke()};
+  draw('real','#5cc9f5');draw('sim','#ffcc4d');
+  x.fillStyle='#b9c9dd';x.fillText(lk+' · X suhteessa pääteltyyn keskikohtaan',pad.l,h-6);
 }
 async function pollReality(){
-  try{const r=await api('/api/reality/status');reality=r;const on=!!r.running||r.recorder==='recording';document.getElementById('realState').textContent=on?'RECORDING':'OFFLINE';document.getElementById('realState').style.color=on?'#43d17a':'#edf4ff';document.getElementById('realSamples').textContent=fmt(r.samples||0);document.getElementById('realEpisodes').textContent=fmt(r.episodes||0);document.getElementById('realMatch').textContent=pct(r.overall_match||r.fit?.overall_match||0);
-    const tb=document.getElementById('realityRows');tb.innerHTML='';for(const n of locks){const q=r.fit?.locks?.[n]||r.fit_locks?.[n]||{};const tr=document.createElement('tr');tr.innerHTML=`<td>${n}${q.enabled?' ✓':''}</td><td>${fmt(q.samples||0)}</td><td>${pct(q.match||0)}</td><td>${Number(q.turn_tau_scale||1).toFixed(2)}×</td><td>${Number(q.return_tau_scale||1).toFixed(2)}×</td><td>${Number(q.ramp_gain||1).toFixed(2)}×</td>`;tb.appendChild(tr)}
-    if(on){const d=r.detected_lock?`Detected ${r.detected_lock} (${pct(r.detected_lock_conf||0)}) · X ${r.last_x??'—'} · turn ${r.last_turn??'—'} · successScore ${r.success_score??'—'}`:'Waiting for SCUM lock UI…';document.getElementById('realityLog').textContent=d}else{try{const l=await fetch('/api/reality/log').then(x=>x.text());if(l.trim())document.getElementById('realityLog').textContent=l}catch(e){}}
+  try{const r=await api('/api/reality/status');reality=r;
+    const on=!!r.running||r.recorder==='recording';
+    el('realState').textContent=on?'RECORDING':'OFFLINE';el('realState').style.color=on?'#3fd07d':'#e9f0fa';
+    el('realSamples').textContent=fmt(r.samples||0);el('realEpisodes').textContent=fmt(r.episodes||0);
+    el('realMatch').textContent=pct(r.overall_match||r.fit?.overall_match||0);
+    const tb=el('realityRows');tb.innerHTML='';
+    for(const n of locks){const q=r.fit?.locks?.[n]||r.fit_locks?.[n]||{},tr=document.createElement('tr');
+      tr.innerHTML=`<td>${n}${q.enabled?' ✓':''}</td><td>${fmt(q.samples||0)}</td><td>${pct(q.match||0)}</td>
+        <td>${Number(q.turn_tau_scale||1).toFixed(2)}×</td><td>${Number(q.return_tau_scale||1).toFixed(2)}×</td><td>${Number(q.ramp_gain||1).toFixed(2)}×</td>`;
+      tb.appendChild(tr)}
+    if(on){el('realityLog').textContent=r.detected_lock
+      ? `Tunnistettu ${r.detected_lock} (${pct(r.detected_lock_conf||0)}) · X ${r.last_x??'—'} · turn ${r.last_turn??'—'} · successScore ${r.success_score??'—'}`
+      : 'Odotetaan SCUMin lockpick-UI:ta…';}
+    else{try{const l=await fetch('/api/reality/log').then(x=>x.text());if(l.trim())el('realityLog').textContent=l}catch(e){}}
     drawRealityChart();
   }catch(e){}
 }
 
-document.getElementById('playSpeed').oninput=e=>document.getElementById('playSpeedTxt').textContent=Number(e.target.value).toFixed(2).replace(/\.00$/,'')+'×';
-window.addEventListener('resize',()=>{drawChart();drawRealityChart();if(showcase)replayShowcase()});
+el('playSpeed').oninput=e=>el('playSpeedTxt').textContent=Number(e.target.value).toFixed(2).replace(/\.00$/,'')+'×';
+window.addEventListener('resize',()=>{drawChart();drawRealityChart();drawGeomPreview();if(showcase)replayShowcase()});
 document.addEventListener('change',e=>{if(e.target.id==='realLock')drawRealityChart()});
-initLocks();loadConfig();pollStatus();pollShow();loadProgress();refreshWipeStats();pollReality();
-setInterval(pollStatus,1000);setInterval(pollShow,1500);setInterval(loadProgress,5000);setInterval(refreshWipeStats,5000);setInterval(pollReality,1200);
+
+initLocks();loadConfig();pollStatus();pollShow();loadProgress();refreshWipeStats();pollReality();pollVision();pollLive();
+setInterval(pollStatus,1000);setInterval(pollShow,1500);setInterval(loadProgress,5000);
+setInterval(refreshWipeStats,7000);setInterval(pollReality,1500);setInterval(pollVision,4000);setInterval(pollLive,1000);
 </script>
 </body>
 </html>
