@@ -479,6 +479,9 @@ class LiveAgent:
                 "frame_ms": c.frame_ms, "frames": trace,
             })
 
+        if presses > 0 and best_turn_deg < 1.5:
+            print("  WARNING: the lock never visibly turned during this attempt. That is a vision problem, "
+                  "not a policy problem - check `freelearn_live.py --observe` before training more.")
         print(f"[{self.attempt:>4}] {lock:<8} {'SUCCESS' if success else ('ABORT' if aborted else 'fail   ')} "
               f"| {elapsed:4.2f}s | frames={frames:3d} presses={presses:2d} "
               f"| best turn={best_turn:.3f} ({best_turn_deg:.1f} deg) "

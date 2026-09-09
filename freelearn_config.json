@@ -121,16 +121,16 @@
   "vision": {
     "curriculum_attempts": 1500000,
     "enabled": true,
-    "move_gain_error": 0.12,
-    "move_noise": 0.003,
-    "obs_latency_frames_max": 2,
-    "stale_frame_prob": 0.06,
-    "turn_gain_error": 0.12,
-    "turn_noise": 0.01,
-    "turn_offset_error": 0.03,
-    "turn_quant": 0.012,
-    "x_bias": 0.006,
-    "x_noise": 0.004,
-    "x_quant": 0.004
+    "move_gain_error": 0.08,
+    "move_noise": 0.002,
+    "obs_latency_frames_max": 1,
+    "stale_frame_prob": 0.04,
+    "turn_gain_error": 0.06,
+    "turn_noise": 0.006,
+    "turn_offset_error": 0.02,
+    "turn_quant": 0.004,
+    "x_bias": 0.004,
+    "x_noise": 0.003,
+    "x_quant": 0.002
   }
 }
