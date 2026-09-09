@@ -56,7 +56,8 @@ BRIDGE_SAMPLES = BRIDGE_DIR / "samples.jsonl"
 
 EPISODE_FIELDS = [
     "time", "attempt", "lock", "result", "elapsed_sec", "frames", "presses",
-    "best_turn", "final_turn", "success_turn_deg", "mean_frame_ms", "overrun_frames",
+    "best_turn", "final_turn", "success_turn_deg", "mean_frame_ms", "mean_read_ms",
+    "overrun_frames",
 ]
 
 
@@ -335,10 +336,13 @@ class LiveAgent:
         deadline = c.time_limit_sec + float(self.args.grace_sec)
 
         while True:
+            # The frame clock starts before the decision: policy inference is part
+            # of the 25 ms budget, exactly like a simulator step.
+            frame_start = time.monotonic()
             if classic.emergency_or_pause(cfg):
                 aborted = True
                 break
-            elapsed = time.monotonic() - start
+            elapsed = frame_start - start
             if elapsed >= deadline:
                 break
 
@@ -381,7 +385,7 @@ class LiveAgent:
 
             # Sleep so that the measurement lands on the frame boundary.
             read_budget = min(0.6 * c.dt, self.frame_read_ms / 1000.0)
-            wait = c.dt - read_budget - (time.monotonic() - t0)
+            wait = c.dt - read_budget - (time.monotonic() - frame_start)
             if wait > 0:
                 time.sleep(wait)
 
@@ -410,9 +414,9 @@ class LiveAgent:
 
             obs.push(x_meas, turn, f_active, executed)
             frames += 1
-            frame_ms = (time.monotonic() - t0) * 1000.0
+            frame_ms = (time.monotonic() - frame_start) * 1000.0
             frame_times.append(frame_ms)
-            if frame_ms > c.frame_ms * 1.6:
+            if frame_ms > c.frame_ms * 1.25:
                 overruns += 1
             if self.args.trace:
                 trace.append({
@@ -422,6 +426,12 @@ class LiveAgent:
                     "executed": round(executed, 5), "ui": round(m.ui_conf, 3),
                     "frame_ms": round(frame_ms, 2),
                 })
+
+            # Hold the exact 25 ms cadence the policy was trained on: the read
+            # lands just before the boundary, the remainder is slept off here.
+            rest = c.dt - (time.monotonic() - frame_start)
+            if rest > 0:
+                time.sleep(rest)
 
             score, detected, _at = fast.success()
             if detected:
@@ -461,7 +471,7 @@ class LiveAgent:
             "elapsed_sec": round(elapsed, 3), "frames": frames, "presses": presses,
             "best_turn": round(best_turn, 4), "final_turn": round(turn, 4),
             "success_turn_deg": round(best_turn_deg, 2), "mean_frame_ms": round(mean_frame, 2),
-            "overrun_frames": overruns,
+            "mean_read_ms": round(self.frame_read_ms, 2), "overrun_frames": overruns,
         })
         if self.args.trace and trace:
             atomic_json(TRACE_PATH, {
@@ -472,7 +482,7 @@ class LiveAgent:
         print(f"[{self.attempt:>4}] {lock:<8} {'SUCCESS' if success else ('ABORT' if aborted else 'fail   ')} "
               f"| {elapsed:4.2f}s | frames={frames:3d} presses={presses:2d} "
               f"| best turn={best_turn:.3f} ({best_turn_deg:.1f} deg) "
-              f"| frame {mean_frame:4.1f} ms (over {overruns})")
+              f"| frame {mean_frame:4.1f} ms (read {self.frame_read_ms:4.1f}, over {overruns})")
         self.write_status(lock, success, elapsed, mean_frame, overruns)
         if aborted:
             return None
@@ -518,6 +528,7 @@ class LiveAgent:
             "last_result": "SUCCESS" if success else "FAIL",
             "last_elapsed_sec": round(elapsed, 3),
             "mean_frame_ms": round(mean_frame, 2),
+            "mean_read_ms": round(self.frame_read_ms, 2),
             "overrun_frames": overruns,
             "turn_calibration": self.turn_cal.data,
         })

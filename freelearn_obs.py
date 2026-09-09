@@ -222,6 +222,12 @@ class PolicyRunner:
         import torch  # local import so the vision/self-test paths stay light
         from freelearn_trainer import ActorCritic, policy as _policy
 
+        # A 90-input MLP is fastest single-threaded, and the live loop must not
+        # fight the OS scheduler for a 25 ms budget.
+        try:
+            torch.set_num_threads(1)
+        except Exception:
+            pass
         self._torch = torch
         self._policy = _policy
         self.c = contract
