@@ -119,18 +119,58 @@
   },
   "version": "0.19.0",
   "vision": {
+    "calibrated_at": "2026-09-09 01:50:44",
+    "calibrated_from": "rendered lock art measured with freelearn_vision",
+    "calibration_locks": {
+      "Basic": {
+        "turn_gain": 0.99628,
+        "turn_max_abs_error": 0.07098,
+        "turn_offset": -0.00012,
+        "turn_residual_std": 0.01606,
+        "x_bias": 6e-05,
+        "x_max_abs_error": 0.00298,
+        "x_residual_std": 0.00149
+      },
+      "Enforced": {
+        "turn_gain": 0.99476,
+        "turn_max_abs_error": 0.0519,
+        "turn_offset": 0.00316,
+        "turn_residual_std": 0.01318,
+        "x_bias": 0.0,
+        "x_max_abs_error": 0.00298,
+        "x_residual_std": 0.00127
+      },
+      "Medium": {
+        "turn_gain": 0.9949,
+        "turn_max_abs_error": 0.05098,
+        "turn_offset": 0.00311,
+        "turn_residual_std": 0.01286,
+        "x_bias": 4e-05,
+        "x_max_abs_error": 0.00301,
+        "x_residual_std": 0.00146
+      },
+      "Rusted": {
+        "turn_gain": 0.9945,
+        "turn_max_abs_error": 0.05451,
+        "turn_offset": 0.00276,
+        "turn_residual_std": 0.01337,
+        "x_bias": 7e-05,
+        "x_max_abs_error": 0.00299,
+        "x_residual_std": 0.00131
+      }
+    },
     "curriculum_attempts": 1500000,
     "enabled": true,
     "move_gain_error": 0.08,
     "move_noise": 0.002,
     "obs_latency_frames_max": 1,
     "stale_frame_prob": 0.04,
-    "turn_gain_error": 0.06,
-    "turn_noise": 0.006,
-    "turn_offset_error": 0.02,
-    "turn_quant": 0.004,
-    "x_bias": 0.004,
-    "x_noise": 0.003,
-    "x_quant": 0.002
+    "turn_gain_error": 0.0183,
+    "turn_noise": 0.0261,
+    "turn_offset_error": 0.0097,
+    "turn_quant": 0.0161,
+    "x_bias": 0.0021,
+    "x_noise": 0.0032,
+    "x_quant": 0.0015
   }
 }

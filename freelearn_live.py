@@ -233,7 +233,9 @@ class LiveAgent:
                 print("Auto-calibration failed. Open the lock minigame and retry.")
                 return False
             self.vision.cal.update(self.qmodel.calibration)
-        boot = self.turn_cal.bootstrap_from_refs()
+        self.fast_probe = None
+        boot = self.turn_cal.bootstrap_from_refs(
+            radius_ratio=float(self.vision.radius) / max(1.0, 2.0 * float(self.vision.half)))
         if boot:
             self.turn_cal.save()
             for lk, e in boot.items():

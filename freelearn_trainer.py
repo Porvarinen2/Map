@@ -191,6 +191,10 @@ class LockBatchEnv:
         self.pos_buf = np.zeros((self.n, self.max_latency + 2), np.float32)
         self.obs_turn_prev = np.zeros(self.n, np.float32)
         self.obs_pos_prev = np.zeros(self.n, np.float32)
+        # Optional pixel sensor (freelearn_visual_sim.VisualSensor). When set, the
+        # observed turn/X come from rendered lock art measured by the live reader
+        # instead of the fitted error model.
+        self.visual_sensor = None
         self.total_steps = 0
         self.reset(np.arange(self.n, dtype=np.int64), balanced=True)
 
@@ -297,14 +301,32 @@ class LockBatchEnv:
 
     def _observe(self) -> Tuple[np.ndarray, np.ndarray]:
         """True lock state -> what a live screen reader would report this frame."""
+        if self.visual_sensor is not None:
+            # Real measurement chain: render the lock, read it back. Gain,
+            # offset, quantization and noise are then whatever the reader really
+            # produces, so only latency and dropped frames are still simulated.
+            src_turn, src_pos = self.visual_sensor.measure(
+                self.lock_type, self.turn, self.pos, self.allowed_max)
+        else:
+            src_turn, src_pos = self.turn, self.pos
         self.turn_buf[:, 1:] = self.turn_buf[:, :-1]
         self.pos_buf[:, 1:] = self.pos_buf[:, :-1]
-        self.turn_buf[:, 0] = self.turn
-        self.pos_buf[:, 0] = self.pos
+        self.turn_buf[:, 0] = src_turn
+        self.pos_buf[:, 0] = src_pos
         idx = np.arange(self.n)
         t = self.turn_buf[idx, self.v_latency].copy()
         p = self.pos_buf[idx, self.v_latency].copy()
-        if self.vision_enabled:
+        if self.vision_enabled and self.visual_sensor is not None:
+            # Pixels already carry the reader's noise and quantization. What they
+            # cannot carry is the runtime calibration uncertainty of the rest
+            # angle and the full-turn span, so that part stays.
+            t = t * self.v_turn_gain + self.v_turn_offset
+            p = p + self.v_x_bias
+            stale = self.rng.random(self.n).astype(np.float32) < self.v_stale_p
+            if np.any(stale):
+                t = np.where(stale, self.obs_turn_prev, t)
+                p = np.where(stale, self.obs_pos_prev, p)
+        elif self.vision_enabled:
             t = t * self.v_turn_gain + self.v_turn_offset
             p = p + self.v_x_bias
             if np.any(self.v_turn_noise > 0):
@@ -943,6 +965,10 @@ def main():
     ap.add_argument("--envs",type=int,default=None)
     ap.add_argument("--showcase-every",type=int,default=None)
     ap.add_argument("--quick-test",action="store_true")
+    ap.add_argument("--visual",action="store_true",
+                    help="observe through rendered lock art measured by the live reader (slow; fine-tuning)")
+    ap.add_argument("--visual-quality",default="fast",choices=["fast","live"],
+                    help="'fast' = coarser sampling grid, 'live' = exact in-game sampling geometry")
     args=ap.parse_args()
 
     DATA.mkdir(exist_ok=True); CKPT.mkdir(exist_ok=True)
@@ -951,6 +977,10 @@ def main():
     if args.showcase_every: tc["showcase_every_attempts"]=max(1,int(args.showcase_every))
     if args.quick_test:
         tc["envs"]=256; tc["rollout_steps"]=16; tc["minibatch"]=4096; tc["ppo_epochs"]=1; args.minutes=0.03
+    if args.visual and args.envs is None:
+        # Rendering + reading every frame costs ~0.5 ms per env, so a huge batch
+        # only makes each PPO update slower to reach.
+        tc["envs"]=96
     seed=int(tc["seed"]); set_seeds(seed)
     try:
         torch.set_num_threads(max(1, os.cpu_count() or 1))
@@ -961,6 +991,12 @@ def main():
     model=ActorCritic(env.obs_dim).to(device)
     opt=torch.optim.Adam(model.parameters(),lr=float(tc["learning_rate"]),eps=1e-5)
     attempts,steps,best_score,resumed,vision_attempts=load_checkpoint(model,opt,cfg)
+    if args.visual:
+        from freelearn_visual_sim import VisualSensor
+        env.visual_sensor=VisualSensor(quality=args.visual_quality)
+        print(f"VISUAL SIM: every observation is rendered from refs/lock_types art and read back with the live "
+              f"reader ({args.visual_quality} sampling). Turn/X noise is whatever the reader really produces; "
+              f"only latency, dropped frames and rest/span calibration error are still modelled.")
     # Apply the curriculum strength before the first attempts are generated.
     env.vision_scale=vision_curriculum_scale(cfg,vision_attempts)
     if env.vision_enabled and vision_attempts==0 and best_score>0.0:
@@ -1097,7 +1133,8 @@ def main():
                     "config_hot_reload":True,
                     "vision_scale":round(float(env.vision_scale),4),
                     "vision_enabled":bool(env.vision_enabled),
-                    "vision_attempts":int(vision_attempts)
+                    "vision_attempts":int(vision_attempts),
+                    "visual_sim":bool(env.visual_sensor is not None)
                 }
                 atomic_json(TELEMETRY_PATH,tel); last_tel=now
     finally:
