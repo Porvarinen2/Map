@@ -126,10 +126,27 @@ class RadialSampler:
             return 0.0
         return float(np.clip(0.5 * (a - c) / den, -0.5, 0.5))
 
-    def keyway_angle(self, gray: np.ndarray) -> Tuple[float, float]:
+    @staticmethod
+    def _gather_gray(frame_bgr: np.ndarray, idx: np.ndarray) -> np.ndarray:
+        """Luma of the sampled points only.
+
+        Sampling first and converting afterwards keeps the per-frame cost tied to
+        the ~100k sampled points instead of the whole capture, so a 4K screen
+        costs the same as 1080p. Full-frame cvtColor/blur was 25 ms on a 4K crop.
+        """
+        px = frame_bgr.reshape(-1, 3)[idx].astype(np.float32)
+        return 0.114 * px[..., 0] + 0.587 * px[..., 1] + 0.299 * px[..., 2]
+
+    @staticmethod
+    def _gather_redness(frame_bgr: np.ndarray, idx: np.ndarray) -> np.ndarray:
+        px = frame_bgr.reshape(-1, 3)[idx].astype(np.float32)
+        b, g, r = px[..., 0], px[..., 1], px[..., 2]
+        chroma = np.maximum(np.maximum(r, g), b) - np.minimum(np.minimum(r, g), b)
+        return (r - 0.5 * (g + b)) + 0.07 * chroma
+
+    def keyway_angle(self, frame_bgr: np.ndarray) -> Tuple[float, float]:
         """Darkest line orientation across the lock face -> (angle_deg, darkness)."""
-        flat = gray.reshape(-1)
-        vals = flat[self.turn_idx].mean(axis=1)
+        vals = self._gather_gray(frame_bgr, self.turn_idx).mean(axis=1)
         i = int(np.argmin(vals))
         # A dark slot is a minimum, so refine on the inverted curve.
         off = self._refine(-vals, i, wrap=True)
@@ -137,21 +154,20 @@ class RadialSampler:
         darkness = float(np.clip((90.0 - float(vals[i])) / 90.0, 0.0, 1.0))
         return angle, darkness
 
-    def _pick_scores(self, flat: np.ndarray, center_idx: np.ndarray, side_idx: np.ndarray, n: int) -> np.ndarray:
-        center = flat[center_idx].reshape(n, self.n_center_off, self.n_pick_ts).mean(axis=1)
-        sides = flat[side_idx].reshape(n, self.n_side_off, self.n_pick_ts).mean(axis=1)
+    def _pick_scores(self, frame_bgr: np.ndarray, center_idx: np.ndarray, side_idx: np.ndarray, n: int) -> np.ndarray:
+        center = self._gather_redness(frame_bgr, center_idx).reshape(n, self.n_center_off, self.n_pick_ts).mean(axis=1)
+        sides = self._gather_redness(frame_bgr, side_idx).reshape(n, self.n_side_off, self.n_pick_ts).mean(axis=1)
         contrast = np.clip(center - sides, 0.0, None)
         return contrast.mean(axis=1) + 0.23 * center.mean(axis=1)
 
-    def pick_angle(self, redness: np.ndarray, fine: bool = True) -> Tuple[Optional[float], float]:
+    def pick_angle(self, frame_bgr: np.ndarray, fine: bool = True) -> Tuple[Optional[float], float]:
         """Reddish radial bar angle -> (angle_deg, score). Same score as the classic detector.
 
         The X target of the hardest locks is a fraction of a percent of the board,
         so the coarse 1 degree scan is followed by a 0.1 degree rescan around the
         winner. That second pass costs ~20 extra lines instead of 157.
         """
-        flat = redness.reshape(-1)
-        scores = self._pick_scores(flat, self.pick_center_idx, self.pick_side_idx, len(self.pick_degs))
+        scores = self._pick_scores(frame_bgr, self.pick_center_idx, self.pick_side_idx, len(self.pick_degs))
         i = int(np.argmax(scores))
         angle = float(self.pick_degs[i] + self._refine(scores, i, wrap=False))
         best = float(scores[i])
@@ -159,7 +175,7 @@ class RadialSampler:
             degs = np.arange(angle - 1.0, angle + 1.0001, 0.1, dtype=np.float32)
             cidx = self._indices(degs, self.pick_ts, self.pick_center_off, self.center)
             sidx = self._indices(degs, self.pick_ts, self.pick_side_off, self.center)
-            fs = self._pick_scores(flat, cidx, sidx, len(degs))
+            fs = self._pick_scores(frame_bgr, cidx, sidx, len(degs))
             j = int(np.argmax(fs))
             angle = float(degs[j] + 0.1 * self._refine(fs, j, wrap=False))
             best = float(fs[j])
@@ -180,10 +196,9 @@ def _measure_reference_angle(path: Path) -> Optional[float]:
     h, w = img.shape[:2]
     s = min(h, w)
     img = img[(h - s) // 2:(h - s) // 2 + s, (w - s) // 2:(w - s) // 2 + s]
-    gray = cv2.GaussianBlur(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY), (3, 3), 0).astype(np.float32)
     angles = []
     for rf in (0.42, 0.46, 0.50):
-        angles.append(RadialSampler(s, s * rf).keyway_angle(gray)[0])
+        angles.append(RadialSampler(s, s * rf).keyway_angle(img)[0])
     return _circular_mean_deg(angles)
 
 
@@ -271,7 +286,7 @@ class TurnCalibration:
 class SuccessWatcher(threading.Thread):
     """Runs the (expensive) SUCCESS template match off the control loop."""
 
-    def __init__(self, detect: Callable[[np.ndarray], Tuple[float, bool]], min_interval: float = 0.06):
+    def __init__(self, detect: Callable[[np.ndarray], Tuple[float, bool]], min_interval: float = 0.15):
         super().__init__(daemon=True)
         self.detect = detect
         self.min_interval = float(min_interval)
@@ -361,21 +376,14 @@ class FastLockVision:
     def read(self, need_pick: bool = True, want_success: bool = False) -> Measurement:
         frame = self.vision.grab()
         self.last_frame = frame
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        gray = cv2.GaussianBlur(gray, (3, 3), 0).astype(np.float32)
-        keyway_deg, darkness = self.sampler.keyway_angle(gray)
+        keyway_deg, darkness = self.sampler.keyway_angle(frame)
         turn, turn_deg = self.cal.turn(self.lock, keyway_deg)
 
         pick_raw = self.last_pick_raw
         pick_score = self.last_pick_score * 0.7
         pick_deg = None
         if need_pick:
-            f = frame.astype(np.float32)
-            b, g, r = f[:, :, 0], f[:, :, 1], f[:, :, 2]
-            mx = np.maximum(np.maximum(r, g), b)
-            mn = np.minimum(np.minimum(r, g), b)
-            redness = (r - 0.5 * (g + b)) + 0.07 * (mx - mn)
-            deg, score = self.sampler.pick_angle(redness)
+            deg, score = self.sampler.pick_angle(frame)
             if deg is not None and score > 2.0:
                 pick_deg = deg
                 pick_raw = float(math.cos(math.radians(deg)))
@@ -443,12 +451,8 @@ def vision_selftest(iterations: int = 60) -> int:
         key = float(rng.uniform(20.0, 160.0))
         pick = float(rng.uniform(20.0, 160.0))
         frame = synthetic_lock_frame(size, radius, key, pick)
-        gray = cv2.GaussianBlur(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), (3, 3), 0).astype(np.float32)
-        got_key, _dark = sampler.keyway_angle(gray)
-        f = frame.astype(np.float32)
-        b, g, r = f[:, :, 0], f[:, :, 1], f[:, :, 2]
-        redness = (r - 0.5 * (g + b)) + 0.07 * (np.maximum(np.maximum(r, g), b) - np.minimum(np.minimum(r, g), b))
-        got_pick, _score = sampler.pick_angle(redness)
+        got_key, _dark = sampler.keyway_angle(frame)
+        got_pick, _score = sampler.pick_angle(frame)
         ang_err.append(abs(angle_diff_deg(got_key, key)))
         pick_err.append(abs(angle_diff_deg(got_pick, pick)))
     ms = (time.perf_counter() - t0) * 1000.0 / max(1, iterations)

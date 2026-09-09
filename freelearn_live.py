@@ -56,8 +56,8 @@ BRIDGE_SAMPLES = BRIDGE_DIR / "samples.jsonl"
 
 EPISODE_FIELDS = [
     "time", "attempt", "lock", "result", "elapsed_sec", "frames", "presses",
-    "best_turn", "final_turn", "success_turn_deg", "mean_frame_ms", "mean_read_ms",
-    "overrun_frames",
+    "best_turn", "final_turn", "x_min", "x_max", "success_turn_deg", "mean_frame_ms",
+    "mean_read_ms", "overrun_frames",
 ]
 
 
@@ -325,6 +325,8 @@ class LiveAgent:
         turn = float(m.turn)
         best_turn = turn
         best_turn_deg = m.turn_deg
+        x_min = x_meas
+        x_max = x_meas
         frames = 0
         presses = 0
         overruns = 0
@@ -391,7 +393,7 @@ class LiveAgent:
 
             read_t0 = time.monotonic()
             need_pick = not f_active            # X cannot move while F is down
-            m = fast.read(need_pick=need_pick, want_success=(turn > 0.45 or f_active))
+            m = fast.read(need_pick=need_pick, want_success=turn > 0.60)
             self.frame_read_ms = 0.8 * self.frame_read_ms + 0.2 * (time.monotonic() - read_t0) * 1000.0
 
             if tap_pending:
@@ -405,6 +407,8 @@ class LiveAgent:
             # issue no mouse movement (TAP, HOLD, the release frame) are exactly
             # zero in the simulator, so they must be zero here too.
             executed = (x_meas - prev_x) if issued_move else 0.0
+            x_min = min(x_min, x_meas)
+            x_max = max(x_max, x_meas)
             turn = float(m.turn)
             best_turn = max(best_turn, turn)
             best_turn_deg = max(best_turn_deg, m.turn_deg)
@@ -458,18 +462,19 @@ class LiveAgent:
         self.probe_log.flush(force=True, turn=turn)
 
         elapsed = time.monotonic() - start
+        mean_frame = float(np.mean(frame_times)) if frame_times else 0.0
         if success:
             self.success_count += 1
             self.turn_cal.note_success(lock, best_turn_deg)
             self.probe_log.mark_success(lock, x_meas / max(c.physical_max, 1e-6), best_turn, 0.0)
         self.turn_cal.save()
 
-        mean_frame = float(np.mean(frame_times)) if frame_times else 0.0
         append_csv(EPISODES_CSV, EPISODE_FIELDS, {
             "time": time.strftime("%Y-%m-%d %H:%M:%S"), "attempt": self.attempt, "lock": lock,
             "result": "SUCCESS" if success else ("ABORTED" if aborted else "FAIL"),
             "elapsed_sec": round(elapsed, 3), "frames": frames, "presses": presses,
             "best_turn": round(best_turn, 4), "final_turn": round(turn, 4),
+            "x_min": round(x_min, 4), "x_max": round(x_max, 4),
             "success_turn_deg": round(best_turn_deg, 2), "mean_frame_ms": round(mean_frame, 2),
             "mean_read_ms": round(self.frame_read_ms, 2), "overrun_frames": overruns,
         })
@@ -479,12 +484,18 @@ class LiveAgent:
                 "frame_ms": c.frame_ms, "frames": trace,
             })
 
+        if mean_frame > c.frame_ms * 1.35:
+            print(f"  WARNING: the control loop ran at {mean_frame:.0f} ms per frame instead of {c.frame_ms} ms, "
+                  f"so the attempt only got {frames} decisions instead of ~{int(c.time_limit_sec*1000/c.frame_ms)}.")
+        if x_max - x_min < 0.15:
+            print(f"  WARNING: the pick only covered X {x_min:.2f}..{x_max:.2f}. Either the mouse gain is wrong "
+                  "(rerun FREELEARN_LIVE_CALIBRATE.bat) or the pick is not being detected.")
         if presses > 0 and best_turn_deg < 1.5:
             print("  WARNING: the lock never visibly turned during this attempt. That is a vision problem, "
                   "not a policy problem - check `freelearn_live.py --observe` before training more.")
         print(f"[{self.attempt:>4}] {lock:<8} {'SUCCESS' if success else ('ABORT' if aborted else 'fail   ')} "
               f"| {elapsed:4.2f}s | frames={frames:3d} presses={presses:2d} "
-              f"| best turn={best_turn:.3f} ({best_turn_deg:.1f} deg) "
+              f"| x {x_min:.2f}-{x_max:.2f} | best turn={best_turn:.3f} ({best_turn_deg:.1f} deg) "
               f"| frame {mean_frame:4.1f} ms (read {self.frame_read_ms:4.1f}, over {overruns})")
         self.write_status(lock, success, elapsed, mean_frame, overruns)
         if aborted:
@@ -659,7 +670,6 @@ def perception_selftest(rounds: int = 6, size: int = 520) -> Dict[str, float]:
     cannot open these, it cannot open SCUM locks either.
     """
     import math
-    import cv2
     from freelearn_trainer import LockBatchEnv
     from freelearn_vision import RadialSampler, TurnCalibration, synthetic_lock_frame
 
@@ -715,14 +725,9 @@ def perception_selftest(rounds: int = 6, size: int = 520) -> Dict[str, float]:
                 pick_deg = math.degrees(math.acos(float(np.clip(pick_raw, -1.0, 1.0))))
                 frame = synthetic_lock_frame(size, radius, keyway, pick_deg)
 
-                gray = cv2.GaussianBlur(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), (3, 3), 0).astype(np.float32)
-                m_turn, _dark = sampler.keyway_angle(gray)
+                m_turn, _dark = sampler.keyway_angle(frame)
                 meas_turn, _deg = cal.turn(lock, m_turn)
-                f = frame.astype(np.float32)
-                bch, gch, rch = f[:, :, 0], f[:, :, 1], f[:, :, 2]
-                redness = (rch - 0.5 * (gch + bch)) + 0.07 * (
-                    np.maximum(np.maximum(rch, gch), bch) - np.minimum(np.minimum(rch, gch), bch))
-                m_pick, _score = sampler.pick_angle(redness)
+                m_pick, _score = sampler.pick_angle(frame)
                 meas_raw = math.cos(math.radians(m_pick))
                 meas_x = float(np.clip((meas_raw - left_raw) / (right_raw - left_raw), 0.0, 1.0))
 
