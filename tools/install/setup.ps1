@@ -149,6 +149,31 @@ try {
   Write-Log "Voit asentaa sen kasin: https://github.com/UE4SS-RE/RE-UE4SS/releases" "WARN"
 }
 
+Write-Log "Asennetaan UE4SS-modit" "STEP"
+try {
+  $ue4ssModsDir = Join-Path $binariesDir "Mods"
+  New-Item -ItemType Directory -Path $ue4ssModsDir -Force | Out-Null
+  $luaSource = Join-Path $RepoPath "mod\ue4ss\LivingNPCDiscovery"
+  $luaTarget = Join-Path $ue4ssModsDir "LivingNPCDiscovery"
+  New-Item -ItemType Directory -Path $luaTarget -Force | Out-Null
+  Copy-Item -Path (Join-Path $luaSource "*") -Destination $luaTarget -Recurse -Force
+
+  # mods.txt ohjaa mitka modit UE4SS lataa; lisataan rivi vain kertaalleen.
+  $modsTxt = Join-Path $ue4ssModsDir "mods.txt"
+  if (-not (Test-Path $modsTxt)) { Set-Content -Path $modsTxt -Value "" -Encoding ASCII }
+  $modsTxtContent = Get-Content $modsTxt -Raw
+  if ($modsTxtContent -notmatch "LivingNPCDiscovery") {
+    Add-Content -Path $modsTxt -Value "LivingNPCDiscovery : 1"
+    Write-Log "mods.txt paivitetty"
+  } else {
+    Write-Log "mods.txt sisaltaa jo LivingNPCDiscovery"
+  }
+  Write-Log "Kartoitusmodi asennettu: $luaTarget"
+  Write-Log "Kaynnista serveri kerran ja katso: $binariesDir\LivingNPC_classes.txt"
+} catch {
+  Write-Log "UE4SS-modin asennus epaonnistui: $($_.Exception.Message)" "WARN"
+}
+
 Write-Log "Asennetaan repak (pak-pakkaaja)" "STEP"
 try {
   $repakZip = Join-Path $downloadDir "repak.zip"
@@ -230,6 +255,7 @@ Write-Host "VALMIS." -ForegroundColor Green
 Write-Host "  1. Kaynnista aivopalvelu: $startBrain"
 Write-Host "  2. Kaynnista SCUM-serveri ja tarkista UE4SS-loki: $binariesDir\UE4SS.log"
 Write-Host "  3. Pak-modi asennettu: $modsDir"
+Write-Host "  4. Luokkakartoitus serverin kaynnistyksen jalkeen: $binariesDir\LivingNPC_classes.txt"
 Write-Host ""
 Write-Host "Kayta vain privaatti/offline-serverilla." -ForegroundColor Yellow
 exit 0
