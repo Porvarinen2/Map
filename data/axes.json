@@ -1,0 +1,14 @@
+{
+  "aggression":   { "label": "Aggressio", "effects": { "combat.pushBias": { "add": 0.28 }, "combat.engageRangeMaxM": { "mul": 1.2 }, "social.hostilityBase": { "add": 0.3 }, "combat.retreatHealthPct": { "add": -0.12 }, "goals.hunt": { "mul": 2.0 }, "goals.ambush": { "mul": 1.5 } } },
+  "caution":      { "label": "Varovaisuus", "effects": { "combat.coverBias": { "add": 0.25 }, "movement.crouchBias": { "add": 0.22 }, "perception.scanDiscipline": { "add": 0.3 }, "risk.threshold": { "add": -0.22 }, "movement.roadBias": { "add": -0.18 }, "combat.retreatHealthPct": { "add": 0.15 } } },
+  "greed":        { "label": "Ahneus", "effects": { "goals.loot": { "mul": 1.7 }, "goals.hoard": { "mul": 2.2 }, "needs.carryTolerance": { "mul": 1.15 }, "goals.raid": { "mul": 1.5 }, "social.robberyChance": { "add": 0.2 } } },
+  "curiosity":    { "label": "Uteliaisuus", "effects": { "goals.explore": { "mul": 1.9 }, "goals.travel": { "mul": 1.35 }, "risk.bunkerAversion": { "add": -0.2 }, "mind.boredomRate": { "mul": 1.3 } } },
+  "sociability":  { "label": "Sosiaalisuus", "effects": { "social.chattiness": { "add": 0.35 }, "social.squadAffinity": { "add": 0.35 }, "goals.socialize": { "mul": 2.0 }, "goals.trade": { "mul": 1.5 }, "social.trustBase": { "add": 0.18 } } },
+  "loyalty":      { "label": "Lojaalius", "effects": { "social.betrayalChance": { "mul": 0.3 }, "social.squadAffinity": { "add": 0.2 }, "social.trustBase": { "add": 0.12 }, "combat.retreatHealthPct": { "add": -0.06 } } },
+  "discipline":   { "label": "Kurinalaisuus", "effects": { "combat.burstDiscipline": { "add": 0.3 }, "combat.recoilControl": { "add": 0.2 }, "movement.noiseLevel": { "mul": 0.82 }, "mind.planningHorizon": { "mul": 1.5 }, "combat.accuracyBase": { "add": 0.1 } } },
+  "impulsivity":  { "label": "Impulsiivisuus", "effects": { "combat.firstShotDelayMs": { "mul": 0.7 }, "perception.identifyTimeMs": { "mul": 0.7 }, "perception.falsePositiveChance": { "add": 0.1 }, "mind.planningHorizon": { "mul": 0.65 }, "combat.pushBias": { "add": 0.12 } } },
+  "honesty":      { "label": "Rehellisyys", "effects": { "social.honesty": { "add": 0.45 }, "social.betrayalChance": { "mul": 0.35 }, "social.robberyChance": { "mul": 0.45 }, "social.tradeAffinity": { "add": 0.15 } } },
+  "empathy":      { "label": "Empatia", "effects": { "social.mercyChance": { "add": 0.4 }, "combat.executeWounded": { "add": -0.3 }, "social.hostilityBase": { "add": -0.18 }, "goals.socialize": { "mul": 1.3 } } },
+  "vengefulness": { "label": "Kostonhalu", "effects": { "social.grudgeDecayDays": { "mul": 3.2 }, "goals.hunt": { "mul": 1.5 }, "goals.raid": { "mul": 1.6 }, "combat.executeWounded": { "add": 0.3 } } },
+  "ambition":     { "label": "Kunnianhimo", "effects": { "goals.gear": { "mul": 1.6 }, "goals.build": { "mul": 1.8 }, "goals.farm": { "mul": 1.4 }, "mind.planningHorizon": { "mul": 1.35 }, "mind.boredomRate": { "mul": 0.8 } } }
+}

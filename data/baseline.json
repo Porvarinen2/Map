@@ -1,0 +1,82 @@
+{
+  "params": {
+    "perception.visionRangeM":        { "value": 220,  "min": 40,  "max": 700 },
+    "perception.visionConeDeg":       { "value": 110,  "min": 60,  "max": 170 },
+    "perception.hearingRangeM":       { "value": 140,  "min": 20,  "max": 500 },
+    "perception.gunshotHearingM":     { "value": 900,  "min": 200, "max": 2500 },
+    "perception.reactionTimeMs":      { "value": 650,  "min": 140, "max": 2600 },
+    "perception.identifyTimeMs":      { "value": 900,  "min": 100, "max": 4000 },
+    "perception.nightVision":         { "value": 0.35, "min": 0.05, "max": 0.95 },
+    "perception.falsePositiveChance": { "value": 0.06, "min": 0,    "max": 0.8 },
+    "perception.scanDiscipline":      { "value": 0.45, "min": 0,    "max": 1 },
+
+    "combat.engageRangeMinM":     { "value": 0,    "min": 0,   "max": 400 },
+    "combat.engageRangeMaxM":     { "value": 180,  "min": 15,  "max": 900 },
+    "combat.accuracyBase":        { "value": 0.45, "min": 0.05, "max": 0.95 },
+    "combat.recoilControl":       { "value": 0.40, "min": 0.05, "max": 0.95 },
+    "combat.firstShotDelayMs":    { "value": 800,  "min": 120, "max": 4000 },
+    "combat.burstDiscipline":     { "value": 0.50, "min": 0.05, "max": 0.98 },
+    "combat.retreatHealthPct":    { "value": 0.45, "min": 0.05, "max": 0.9 },
+    "combat.suppressionTolerance":{ "value": 0.40, "min": 0.05, "max": 0.95 },
+    "combat.grenadeAffinity":     { "value": 0.15, "min": 0,    "max": 0.9 },
+    "combat.meleePreference":     { "value": 0.20, "min": 0,    "max": 0.95 },
+    "combat.coverBias":           { "value": 0.50, "min": 0.05, "max": 0.98 },
+    "combat.pushBias":            { "value": 0.35, "min": 0.02, "max": 0.98 },
+    "combat.executeWounded":      { "value": 0.35, "min": 0,    "max": 1 },
+
+    "movement.crouchBias":     { "value": 0.30, "min": 0,   "max": 0.95 },
+    "movement.roadBias":       { "value": 0.45, "min": 0.02, "max": 0.98 },
+    "movement.sprintBias":     { "value": 0.40, "min": 0.05, "max": 0.95 },
+    "movement.noiseLevel":     { "value": 1.00, "min": 0.35, "max": 2.2 },
+    "movement.travelSpeedMul": { "value": 1.00, "min": 0.55, "max": 1.4 },
+    "movement.waterAvoidance": { "value": 0.20, "min": 0,   "max": 1 },
+    "movement.vehicleAffinity":{ "value": 0.40, "min": 0,   "max": 1 },
+
+    "needs.hungerRate":    { "value": 1.0,  "min": 0.5, "max": 2.0 },
+    "needs.thirstRate":    { "value": 1.0,  "min": 0.5, "max": 2.0 },
+    "needs.fatigueRate":   { "value": 1.0,  "min": 0.5, "max": 2.0 },
+    "needs.healRate":      { "value": 1.0,  "min": 0.4, "max": 2.2 },
+    "needs.coldTolerance": { "value": 0.50, "min": 0.05, "max": 0.95 },
+    "needs.heatTolerance": { "value": 0.50, "min": 0.05, "max": 0.95 },
+    "needs.injuryResist":  { "value": 0.50, "min": 0.05, "max": 0.95 },
+    "needs.sicknessResist":{ "value": 0.50, "min": 0.05, "max": 0.95 },
+    "needs.carryTolerance":{ "value": 1.0,  "min": 0.5, "max": 1.8 },
+    "needs.sleepNeed":     { "value": 1.0,  "min": 0.4, "max": 1.8 },
+
+    "social.trustBase":     { "value": 0.35, "min": 0,   "max": 0.95 },
+    "social.hostilityBase": { "value": 0.40, "min": 0,   "max": 0.99 },
+    "social.betrayalChance":{ "value": 0.08, "min": 0,   "max": 0.9 },
+    "social.mercyChance":   { "value": 0.30, "min": 0,   "max": 0.95 },
+    "social.chattiness":    { "value": 0.40, "min": 0,   "max": 1 },
+    "social.robberyChance": { "value": 0.15, "min": 0,   "max": 0.95 },
+    "social.grudgeDecayDays":{ "value": 7,   "min": 0.5, "max": 90 },
+    "social.tradeAffinity": { "value": 0.30, "min": 0,   "max": 1 },
+    "social.squadAffinity": { "value": 0.40, "min": 0,   "max": 1 },
+    "social.honesty":       { "value": 0.50, "min": 0,   "max": 1 },
+
+    "risk.threshold":      { "value": 0.50, "min": 0.05, "max": 0.95 },
+    "risk.nightMul":       { "value": 1.00, "min": 0.4,  "max": 2.2 },
+    "risk.openFieldMul":   { "value": 1.00, "min": 0.4,  "max": 2.5 },
+    "risk.bunkerAversion": { "value": 0.20, "min": 0,    "max": 1 },
+    "risk.puppetAversion": { "value": 0.35, "min": 0,    "max": 1 },
+
+    "mind.stressGain":     { "value": 1.0,  "min": 0.4, "max": 2.2 },
+    "mind.stressDecay":    { "value": 1.0,  "min": 0.4, "max": 2.2 },
+    "mind.morale":         { "value": 0.60, "min": 0.1, "max": 1 },
+    "mind.planningHorizon":{ "value": 1.0,  "min": 0.4, "max": 2.4 },
+    "mind.boredomRate":    { "value": 1.0,  "min": 0.3, "max": 2.5 },
+    "mind.memoryDecay":    { "value": 1.0,  "min": 0.4, "max": 2.5 }
+  },
+  "goals": {
+    "survive": 1.0, "water": 1.0, "food": 1.0, "rest": 1.0, "heal": 1.0,
+    "loot": 1.0, "gear": 1.0, "hoard": 0.6, "build": 0.7, "farm": 0.4,
+    "hunt": 0.6, "ambush": 0.5, "raid": 0.4, "trade": 0.5, "socialize": 0.5,
+    "explore": 0.7, "travel": 0.8, "vehicle": 0.5, "fish": 0.3, "puppetClear": 0.4
+  },
+  "skills": [
+    "rifles", "handgun", "sniping", "melee", "archery", "heavyWeapons", "demolition",
+    "awareness", "camouflage", "stealth", "thievery", "endurance", "running",
+    "driving", "engineering", "medical", "cooking", "farming", "survival", "fishing"
+  ],
+  "traitBudget": 6
+}

@@ -1,0 +1,17 @@
+{
+  "name": "scum-living-npc",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Living NPC brain for SCUM dedicated servers - persona, trait and behaviour simulation core",
+  "type": "commonjs",
+  "scripts": {
+    "build": "./node_modules/.bin/tsc -p tsconfig.json",
+    "roll": "npm run build --silent && node dist/cli/roll.js",
+    "check": "./node_modules/.bin/tsc -p tsconfig.json --noEmit",
+    "verify": "npm run build --silent && node dist/cli/verify.js"
+  },
+  "devDependencies": {
+    "@types/node": "^26.5.1",
+    "typescript": "^7.0.2"
+  }
+}
