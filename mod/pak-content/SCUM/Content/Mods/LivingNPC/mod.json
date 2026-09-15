@@ -1,0 +1,7 @@
+{
+  "mod": "scum-living-npc",
+  "protocol": 1,
+  "brain": { "host": "127.0.0.1", "port": 7771, "reconnectMs": 2000 },
+  "population": { "target": 24, "minDistanceFromPlayerM": 900, "maxDistanceFromPlayerM": 4500 },
+  "tick": { "senseIntervalSec": 5, "farSenseIntervalSec": 30, "farDistanceM": 1200 }
+}

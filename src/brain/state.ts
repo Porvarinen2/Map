@@ -51,6 +51,8 @@ export interface AgentState {
   baseProgress: number;
   memory: Map<string, PoiMemory>;
   bannedPoi?: string;
+  /** Minute of day of the last sense message, used to advance needs in the live brain. */
+  lastMinute?: number;
   deaths: number;
   kills: number;
   log: string[];

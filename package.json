@@ -9,7 +9,9 @@
     "roll": "npm run build --silent && node dist/cli/roll.js",
     "check": "./node_modules/.bin/tsc -p tsconfig.json --noEmit",
     "verify": "npm run build --silent && node dist/cli/verify.js",
-    "sim": "npm run build --silent && node dist/cli/sim.js"
+    "sim": "npm run build --silent && node dist/cli/sim.js",
+    "brain": "npm run build --silent && node dist/cli/brain.js",
+    "brain-test": "npm run build --silent && node dist/cli/brainTest.js"
   },
   "devDependencies": {
     "@types/node": "^26.5.1",

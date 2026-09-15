@@ -52,7 +52,7 @@ export function tick(
   events: SimEvent[],
 ): void {
   const minuteOfDay = minute % 1440;
-  updateNeeds(state);
+  advanceNeeds(state, 1);
   state.timeSpent[state.activity] += 1;
 
   if (state.health <= 0) {
@@ -88,23 +88,30 @@ export function tick(
   startActivityHere(state, map, rng, minute, events, choice.goal, target);
 }
 
-function updateNeeds(state: AgentState): void {
+/**
+ * Advances the physiological clock by `minutes`. The headless sim calls this
+ * once per minute; the live brain service calls it with the gap between two
+ * sense messages, so an NPC that was not polled for an hour still gets hungry.
+ */
+export function advanceNeeds(state: AgentState, minutes: number): void {
+  if (minutes <= 0) return;
+  const m = Math.min(minutes, 720);
   const n = state.needs;
   const sleeping = state.activity === "sleep";
-  n.hunger = clamp(n.hunger + (sleeping ? 0.0004 : 0.0008) * p(state, "needs.hungerRate"), 0, 1.3);
-  n.thirst = clamp(n.thirst + (sleeping ? 0.0006 : 0.0012) * p(state, "needs.thirstRate"), 0, 1.3);
+  n.hunger = clamp(n.hunger + (sleeping ? 0.0004 : 0.0008) * p(state, "needs.hungerRate") * m, 0, 1.3);
+  n.thirst = clamp(n.thirst + (sleeping ? 0.0006 : 0.0012) * p(state, "needs.thirstRate") * m, 0, 1.3);
   n.fatigue = sleeping
-    ? clamp(n.fatigue - 0.0035, 0, 1)
-    : clamp(n.fatigue + 0.0007 * p(state, "needs.fatigueRate"), 0, 1);
-  n.stress = clamp(n.stress - 0.0015 * p(state, "mind.stressDecay"), 0, 1);
+    ? clamp(n.fatigue - 0.0035 * m, 0, 1)
+    : clamp(n.fatigue + 0.0007 * p(state, "needs.fatigueRate") * m, 0, 1);
+  n.stress = clamp(n.stress - 0.0015 * p(state, "mind.stressDecay") * m, 0, 1);
   n.boredom = sleeping
-    ? clamp(n.boredom - 0.002, 0, 1)
-    : clamp(n.boredom + 0.0004 * p(state, "mind.boredomRate"), 0, 1);
+    ? clamp(n.boredom - 0.002 * m, 0, 1)
+    : clamp(n.boredom + 0.0004 * p(state, "mind.boredomRate") * m, 0, 1);
 
-  if (state.bleeding) state.health = clamp(state.health - 0.0025, 0, 1);
-  if (n.hunger >= 1 || n.thirst >= 1) state.health = clamp(state.health - 0.0012, 0, 1);
+  if (state.bleeding) state.health = clamp(state.health - 0.0025 * m, 0, 1);
+  if (n.hunger >= 1 || n.thirst >= 1) state.health = clamp(state.health - 0.0012 * m, 0, 1);
   else if (state.health < 1 && !state.bleeding) {
-    state.health = clamp(state.health + 0.0005 * p(state, "needs.healRate"), 0, 1);
+    state.health = clamp(state.health + 0.0005 * p(state, "needs.healRate") * m, 0, 1);
   }
 }
 

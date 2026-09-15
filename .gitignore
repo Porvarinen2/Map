@@ -1,2 +1,7 @@
 node_modules/
 dist/
+build/
+tools/bin/
+scum-living-npc.config.json
+start-brain.bat
+tools/install/install.log
