@@ -1,0 +1,31 @@
+{
+  "islandSizeM": 12000,
+  "pois": [
+    { "id": "town_a", "label": "Pikkukaupunki (A2)", "type": "town", "x": 2100, "y": 1800, "lootTier": 2, "danger": 0.35, "water": true, "shelter": true },
+    { "id": "town_b", "label": "Kaupunki (C3)", "type": "town", "x": 4200, "y": 3100, "lootTier": 3, "danger": 0.5, "water": true, "shelter": true },
+    { "id": "town_c", "label": "Lähiö (D6)", "type": "town", "x": 5600, "y": 6400, "lootTier": 3, "danger": 0.55, "water": true, "shelter": true },
+    { "id": "village_a", "label": "Kylä (B1)", "type": "village", "x": 1500, "y": 900, "lootTier": 1, "danger": 0.2, "water": true, "shelter": true },
+    { "id": "village_b", "label": "Kylä (E4)", "type": "village", "x": 7300, "y": 4200, "lootTier": 1, "danger": 0.2, "water": true, "shelter": true },
+    { "id": "village_c", "label": "Kylä (G7)", "type": "village", "x": 9100, "y": 7600, "lootTier": 1, "danger": 0.25, "water": true, "shelter": true },
+    { "id": "farm_a", "label": "Maatila (B5)", "type": "farm", "x": 2400, "y": 5200, "lootTier": 1, "danger": 0.15, "water": true, "shelter": true, "farmable": true },
+    { "id": "farm_b", "label": "Maatila (F2)", "type": "farm", "x": 8200, "y": 2300, "lootTier": 1, "danger": 0.15, "water": true, "shelter": true, "farmable": true },
+    { "id": "mil_a", "label": "Sotilastukikohta (C1)", "type": "military", "x": 3900, "y": 1200, "lootTier": 5, "danger": 0.85, "water": false, "shelter": true },
+    { "id": "mil_b", "label": "Sotilastukikohta (F6)", "type": "military", "x": 8600, "y": 6100, "lootTier": 5, "danger": 0.9, "water": false, "shelter": true },
+    { "id": "bunker_a", "label": "Bunkkeri (D3)", "type": "bunker", "x": 5300, "y": 3400, "lootTier": 5, "danger": 0.95, "water": false, "shelter": true, "underground": true },
+    { "id": "bunker_b", "label": "Bunkkeri (G4)", "type": "bunker", "x": 9600, "y": 4500, "lootTier": 5, "danger": 0.95, "water": false, "shelter": true, "underground": true },
+    { "id": "police_a", "label": "Poliisiasema (C3)", "type": "police", "x": 4400, "y": 3300, "lootTier": 4, "danger": 0.6, "water": false, "shelter": true },
+    { "id": "hospital_a", "label": "Sairaala (D4)", "type": "hospital", "x": 5800, "y": 4600, "lootTier": 4, "danger": 0.65, "water": true, "shelter": true },
+    { "id": "gas_a", "label": "Huoltoasema (B3)", "type": "gas", "x": 2900, "y": 3600, "lootTier": 2, "danger": 0.3, "water": false, "shelter": true },
+    { "id": "gas_b", "label": "Huoltoasema (E7)", "type": "gas", "x": 7100, "y": 7900, "lootTier": 2, "danger": 0.3, "water": false, "shelter": true },
+    { "id": "warehouse_a", "label": "Varasto (E5)", "type": "warehouse", "x": 7600, "y": 5400, "lootTier": 3, "danger": 0.45, "water": false, "shelter": true },
+    { "id": "airfield_a", "label": "Lentokenttä (D2)", "type": "airfield", "x": 5900, "y": 2100, "lootTier": 4, "danger": 0.7, "water": false, "shelter": true },
+    { "id": "forest_a", "label": "Metsä (A5)", "type": "forest", "x": 1200, "y": 5600, "lootTier": 0, "danger": 0.1, "water": false, "shelter": false, "game": true },
+    { "id": "forest_b", "label": "Metsä (F8)", "type": "forest", "x": 8400, "y": 9200, "lootTier": 0, "danger": 0.12, "water": false, "shelter": false, "game": true },
+    { "id": "lake_a", "label": "Järvi (C5)", "type": "lake", "x": 4100, "y": 5700, "lootTier": 0, "danger": 0.12, "water": true, "shelter": false, "fish": true },
+    { "id": "river_a", "label": "Joki (B7)", "type": "river", "x": 2600, "y": 7800, "lootTier": 0, "danger": 0.1, "water": true, "shelter": false, "fish": true },
+    { "id": "coast_a", "label": "Rannikko (A8)", "type": "coast", "x": 1100, "y": 9400, "lootTier": 0, "danger": 0.12, "water": true, "shelter": false, "fish": true },
+    { "id": "trader_a", "label": "Kauppapaikka (C4)", "type": "trader", "x": 4700, "y": 4300, "lootTier": 0, "danger": 0.05, "water": true, "shelter": true, "trade": true },
+    { "id": "trader_b", "label": "Kauppapaikka (F5)", "type": "trader", "x": 8800, "y": 5200, "lootTier": 0, "danger": 0.05, "water": true, "shelter": true, "trade": true },
+    { "id": "ruins_a", "label": "Rauniot (E1)", "type": "ruins", "x": 7400, "y": 1400, "lootTier": 2, "danger": 0.4, "water": false, "shelter": true }
+  ]
+}

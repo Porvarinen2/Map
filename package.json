@@ -8,7 +8,8 @@
     "build": "./node_modules/.bin/tsc -p tsconfig.json",
     "roll": "npm run build --silent && node dist/cli/roll.js",
     "check": "./node_modules/.bin/tsc -p tsconfig.json --noEmit",
-    "verify": "npm run build --silent && node dist/cli/verify.js"
+    "verify": "npm run build --silent && node dist/cli/verify.js",
+    "sim": "npm run build --silent && node dist/cli/sim.js"
   },
   "devDependencies": {
     "@types/node": "^26.5.1",
