@@ -1,4 +1,4 @@
-SmartNPC 1.0.5 - SCUM living NPC world
+SmartNPC 1.0.6 - SCUM living NPC world
 ======================================
 
 ASENNUS
@@ -39,7 +39,9 @@ KARTTA
 UE4SS
   SmartNPC EI asenna UE4SS:aa itse. Vaara versio sammuttaa kaikki modit
   palvelimelta. Kayta SCUMille tarkoitettua UE4SS-buildia.
-  STATUS.bat kertoo jos UE4SS ei kaynnisty ollenkaan.
+  STATUS.bat kertoo jos UE4SS ei kaynnisty ollenkaan, ja jos sen lataaja-DLL
+  (dwmapi.dll tms. SCUMServer.exe:n vierella) puuttuu - ilman sita UE4SS ei
+  kaynnisty koskaan.
 
 ONGELMAT
   1. Aja  <SCUM Server>\SmartNPC\STATUS.bat

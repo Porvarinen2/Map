@@ -106,9 +106,27 @@ if (-not $KeepUE4SS) {
 
 $layout = Get-UE4SSLayout -Win64 $Win64
 
+# A UE4SS with no proxy DLL beside the game executable never gets loaded at all.
+if ($layout.HasUE4SS) {
+    $proxy = @(Get-UE4SSProxy -Win64 $Win64)
+    if ($proxy.Count -eq 0) {
+        Write-Host ''
+        Say 'NO UE4SS LOADER DLL FOUND next to SCUMServer.exe.' Red
+        Say 'UE4SS is loaded by a proxy DLL (dwmapi.dll and friends). Without one' Yellow
+        Say 'it never starts. Reinstall the UE4SS build made for SCUM - that puts' Yellow
+        Say 'the proxy back.' Yellow
+        Write-Host ''
+    }
+}
+
 # ------------------------------------------------------------ UE4SS health
-$health = Test-UE4SSHealth -Win64 $Win64
-if ($health.Fatal) {
+$health = Test-UE4SSHealth -Win64 $Win64 -NotBefore (Get-LoaderWriteTime -Layout $layout)
+if ($health.Stale) {
+    Write-Host ''
+    Say 'UE4SS has not run since the last change, so there is no verdict yet.' DarkGray
+    Say 'Restart the SCUM server, then run STATUS.bat.' DarkGray
+    Write-Host ''
+} elseif ($health.Fatal) {
     Write-Host ''
     Say 'UE4SS ITSELF IS FAILING:' Red
     Say ("  " + $health.Reason) Red
@@ -127,6 +145,13 @@ Write-Host ''
 foreach ($sub in @('state','output','logs','tools')) {
     $p = Join-Path $Root $sub
     if (-not (Test-Path -LiteralPath $p)) { New-Item -ItemType Directory -Path $p -Force | Out-Null }
+}
+
+# Drop loaders left in a Mods folder that no installed UE4SS reads any more.
+foreach ($dead in $layout.OtherRoots) {
+    if (Remove-LoaderFrom -ModsRoot $dead) {
+        Say ("removed a stale loader from " + $dead) DarkGray
+    }
 }
 
 $any = $false

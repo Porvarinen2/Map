@@ -201,6 +201,61 @@ Check 'Get-StrayRootUE4SS: two installs are flagged and matched by hash' {
     }
 }
 
+Check 'layout: the DLL decides which Mods folder is real' {
+    $w = Join-Path $tmp 'layout'
+    New-Item -ItemType Directory -Path (Join-Path $w 'ue4ss\Mods') -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $w 'Mods') -Force | Out-Null
+    'x' | Set-Content -LiteralPath (Join-Path $w 'ue4ss\UE4SS.dll') -NoNewline
+    $l = Get-UE4SSLayout -Win64 $w
+    if (@($l.ModsRoots).Count -ne 1) { throw "expected one live root, got $(@($l.ModsRoots).Count)" }
+    if (@($l.ModsRoots)[0] -notlike '*ue4ss*Mods') { throw 'wrong live root' }
+    if (@($l.OtherRoots).Count -ne 1) { throw 'the leftover Mods folder should be listed as dead' }
+    if ($l.Duplicate) { throw 'one DLL is not a duplicate' }
+
+    'x' | Set-Content -LiteralPath (Join-Path $w 'UE4SS.dll') -NoNewline
+    $l2 = Get-UE4SSLayout -Win64 $w
+    if (-not $l2.Duplicate) { throw 'two DLLs must read as a duplicate' }
+    if (@($l2.ModsRoots)[0] -like '*ue4ss*') { throw 'the root install is the one that loads' }
+}
+
+Check 'stale loaders are removed from a dead Mods folder' {
+    $w = Join-Path $tmp 'layout'
+    Remove-Item -LiteralPath (Join-Path $w 'UE4SS.dll') -Force
+    $dead = Join-Path $w 'Mods'
+    [void](Write-LoaderStub -ModsRoot $dead -ModHome $home_)
+    [void](Set-ModsTxtEntry -ModsRoot $dead)
+    if (-not (Remove-LoaderFrom -ModsRoot $dead)) { throw 'stub should have been removed' }
+    if (Test-Path -LiteralPath (Join-Path $dead 'SmartNPC')) { throw 'stub still there' }
+    $lines = @(Get-Content -LiteralPath (Join-Path $dead 'mods.txt'))
+    if ($lines -contains 'SmartNPC : 1') { throw 'mods.txt line still there' }
+}
+
+Check 'a UE4SS log older than the loader is reported as stale, not fatal' {
+    $w = Join-Path $tmp 'stale'
+    New-Item -ItemType Directory -Path (Join-Path $w 'ue4ss\Mods') -Force | Out-Null
+    'x' | Set-Content -LiteralPath (Join-Path $w 'ue4ss\UE4SS.dll') -NoNewline
+    'Fatal Error: PS scan timed out' | Set-Content -LiteralPath (Join-Path $w 'UE4SS.log')
+    (Get-Item -LiteralPath (Join-Path $w 'UE4SS.log')).LastWriteTime = (Get-Date).AddHours(-2)
+
+    $l = Get-UE4SSLayout -Win64 $w
+    [void](Write-LoaderStub -ModsRoot (Join-Path $w 'ue4ss\Mods') -ModHome $home_)
+    $t = Get-LoaderWriteTime -Layout $l
+    $h = Test-UE4SSHealth -Win64 $w -NotBefore $t
+    if (-not $h.Stale) { throw 'an old log must not be treated as a current verdict' }
+    if ($h.Fatal) { throw 'stale must not also be fatal' }
+
+    $h2 = Test-UE4SSHealth -Win64 $w
+    if (-not $h2.Fatal) { throw 'without a cutoff the same log is still a failure' }
+}
+
+Check 'a missing proxy DLL is detectable' {
+    $w = Join-Path $tmp 'proxy'
+    New-Item -ItemType Directory -Path $w -Force | Out-Null
+    if (@(Get-UE4SSProxy -Win64 $w).Count -ne 0) { throw 'no proxy expected yet' }
+    'x' | Set-Content -LiteralPath (Join-Path $w 'dwmapi.dll') -NoNewline
+    if (@(Get-UE4SSProxy -Win64 $w) -notcontains 'dwmapi.dll') { throw 'proxy not found' }
+}
+
 Check 'Get-Prop survives objects written by an older version' {
     $old = '{"product":"SmartNPC"}' | ConvertFrom-Json
     if ((Get-Prop $old 'modsTxtExisted' $true) -ne $true) { throw 'default not returned' }

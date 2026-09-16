@@ -47,9 +47,15 @@ Check 'UE4SS' $layout.HasUE4SS $(if ($layout.Dll) { $layout.Dll } else { "not fo
 
 # Whether UE4SS itself started is the first thing that matters: when its
 # pattern scan fails, no Lua mod on the server loads and nothing below applies.
-$health = Test-UE4SSHealth -Win64 $Win64
+$health = Test-UE4SSHealth -Win64 $Win64 -NotBefore (Get-LoaderWriteTime -Layout $layout)
 if ($health.Version) { Line 'UE4SS version' $health.Version }
-if ($health.Fatal) {
+$proxy = @(Get-UE4SSProxy -Win64 $Win64)
+Line 'UE4SS loader dll' $(if ($proxy.Count) { ($proxy -join ', ') } else { 'NONE - UE4SS can never start' }) `
+     $(if ($proxy.Count) { 'Green' } else { 'Red' })
+if ($health.Stale) {
+    Write-Host ''
+    Line 'UE4SS verdict' 'log predates the last change - restart the server, then run this again' Yellow
+} elseif ($health.Fatal) {
     Write-Host ''
     Write-Host '  ##############################################################' -ForegroundColor Red
     Write-Host '  UE4SS IS NOT STARTING. No mod on this server can load.' -ForegroundColor Red
@@ -62,11 +68,15 @@ if ($health.Fatal) {
 
 # Two UE4SS installs in one folder is the failure mode that kills every mod:
 # the one at the root wins, and on SCUM it is the wrong one.
-if ((Test-Path -LiteralPath (Join-Path $Win64 'UE4SS.dll') -PathType Leaf) -and
-    (Test-Path -LiteralPath (Join-Path $Win64 'ue4ss\UE4SS.dll') -PathType Leaf)) {
+if ($layout.Duplicate) {
     Write-Host ''
     Line 'UE4SS installs' 'TWO FOUND - the one at Win64 root is loading, not your ue4ss\ one' Red
     Line '' 'run REPAIR.bat to remove the duplicate' Yellow
+}
+foreach ($dead in $layout.OtherRoots) {
+    if (Test-Path -LiteralPath (Join-Path $dead 'SmartNPC') -PathType Container) {
+        Line 'stale loader' ("$dead - no UE4SS reads this; REPAIR.bat removes it") Yellow
+    }
 }
 
 Write-Host ''

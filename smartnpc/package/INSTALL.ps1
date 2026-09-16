@@ -163,9 +163,7 @@ if ($layout.HasUE4SS) {
 
 # Two UE4SS installs in one folder: the one at the root wins, and an earlier
 # SmartNPC is the usual reason a second one is there.
-if (-not $ue4ssInstalledByUs -and
-    (Test-Path -LiteralPath (Join-Path $Win64 'UE4SS.dll') -PathType Leaf) -and
-    (Test-Path -LiteralPath (Join-Path $Win64 'ue4ss\UE4SS.dll') -PathType Leaf)) {
+if (-not $ue4ssInstalledByUs -and $layout.Duplicate) {
     Write-Host ''
     Say 'WARNING:  two UE4SS installs found.' Red
     Say "          $Win64\UE4SS.dll is the one that loads," Yellow
@@ -178,6 +176,10 @@ if (-not $ue4ssInstalledByUs -and
 # UE4SS 2.x keeps mods in Win64\Mods, 3.x in Win64\ue4ss\Mods.  Install the
 # loader into every plausible root: a stub in the unused one is inert, while
 # guessing wrong means the mod never starts at all.
+foreach ($dead in $layout.OtherRoots) {
+    if (Remove-LoaderFrom -ModsRoot $dead) { Say ("loader:   removed a stale copy from $dead") DarkGray }
+}
+
 $loaderReports = @()
 foreach ($modsRoot in $layout.ModsRoots) {
     $stubPath = Write-LoaderStub -ModsRoot $modsRoot -ModHome $Dest

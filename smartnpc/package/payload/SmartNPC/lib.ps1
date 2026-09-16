@@ -60,34 +60,58 @@ function Find-ScumServer {
 function Get-UE4SSLayout {
     param([Parameter(Mandatory = $true)][string]$Win64)
 
-    $roots = @()
-
-    $modern = Join-Path $Win64 'ue4ss'
+    $modern     = Join-Path $Win64 'ue4ss'
     $modernMods = Join-Path $modern 'Mods'
     $legacyMods = Join-Path $Win64 'Mods'
 
     $modernDll = (Test-Path -LiteralPath (Join-Path $modern 'UE4SS.dll') -PathType Leaf)
     $legacyDll = (Test-Path -LiteralPath (Join-Path $Win64 'UE4SS.dll') -PathType Leaf)
 
-    # An existing Mods folder is the strongest signal: that is where the
-    # installed UE4SS actually keeps things.
-    if (Test-Path -LiteralPath $modernMods -PathType Container) { $roots += $modernMods }
-    if (Test-Path -LiteralPath $legacyMods -PathType Container) { $roots += $legacyMods }
-
-    if ($roots.Count -eq 0) {
-        if ($modernDll) { $roots += $modernMods }
-        elseif ($legacyDll) { $roots += $legacyMods }
-        else { $roots += $legacyMods }
+    # The DLL decides which Mods folder is real.  A leftover Mods folder from a
+    # UE4SS that is no longer installed must not receive a loader: that is how a
+    # stub ends up somewhere nothing ever reads it.
+    $roots = @()
+    $other = @()
+    if ($legacyDll -and $modernDll) {
+        # Two installs. The one at the root is what actually loads.
+        $roots += $legacyMods
+        $other += $modernMods
+    } elseif ($modernDll) {
+        $roots += $modernMods
+        if (Test-Path -LiteralPath $legacyMods -PathType Container) { $other += $legacyMods }
+    } elseif ($legacyDll) {
+        $roots += $legacyMods
+        if (Test-Path -LiteralPath $modernMods -PathType Container) { $other += $modernMods }
+    } else {
+        # No UE4SS yet: cover both conventions.
+        if (Test-Path -LiteralPath $modernMods -PathType Container) { $roots += $modernMods }
+        if (Test-Path -LiteralPath $legacyMods -PathType Container) { $roots += $legacyMods }
+        if ($roots.Count -eq 0) { $roots += $legacyMods }
     }
 
     [pscustomobject]@{
-        Win64     = $Win64
-        ModsRoots = @($roots | Select-Object -Unique)
-        Dll       = $(if ($legacyDll) { Join-Path $Win64 'UE4SS.dll' }
-                      elseif ($modernDll) { Join-Path $modern 'UE4SS.dll' }
-                      else { $null })
-        HasUE4SS  = ($legacyDll -or $modernDll)
+        Win64       = $Win64
+        ModsRoots   = @($roots | Select-Object -Unique)
+        OtherRoots  = @($other | Select-Object -Unique)
+        Dll         = $(if ($legacyDll) { Join-Path $Win64 'UE4SS.dll' }
+                        elseif ($modernDll) { Join-Path $modern 'UE4SS.dll' }
+                        else { $null })
+        HasUE4SS    = ($legacyDll -or $modernDll)
+        Duplicate   = ($legacyDll -and $modernDll)
     }
+}
+
+# UE4SS is loaded by a proxy DLL sitting next to the game executable.  Removing
+# a wrongly installed UE4SS can take that proxy with it, and then nothing loads
+# at all - with no error anywhere, because UE4SS never runs.
+function Get-UE4SSProxy {
+    param([Parameter(Mandatory = $true)][string]$Win64)
+    $names = @('dwmapi.dll','xinput1_3.dll','d3d11.dll','dinput8.dll','winmm.dll','version.dll','bink2w64.dll')
+    $found = @()
+    foreach ($n in $names) {
+        if (Test-Path -LiteralPath (Join-Path $Win64 $n) -PathType Leaf) { $found += $n }
+    }
+    return $found
 }
 
 # UE4SS writes its log next to the DLL in 2.x and inside ue4ss\ in 3.x.
@@ -376,9 +400,25 @@ function Remove-DownloadedUE4SS {
 # Read UE4SS's own log and decide whether UE4SS itself is healthy.  When its
 # pattern scan fails, no Lua mod loads and nothing about SmartNPC matters.
 function Test-UE4SSHealth {
-    param([Parameter(Mandatory = $true)][string]$Win64)
+    param(
+        [Parameter(Mandatory = $true)][string]$Win64,
+        # Anything logged before this moment predates the current setup and says
+        # nothing about it.  Callers pass the time they last wrote the loader.
+        [datetime]$NotBefore = [datetime]::MinValue
+    )
     $log = Get-UE4SSLogPath -Win64 $Win64
-    if (-not $log) { return [pscustomobject]@{ Log = $null; Fatal = $false; Reason = 'no UE4SS log yet'; Version = $null } }
+    if (-not $log) {
+        return [pscustomobject]@{ Log = $null; Fatal = $false; Stale = $false; Reason = 'no UE4SS log yet'; Version = $null }
+    }
+    $written = [datetime]::MinValue
+    try { $written = (Get-Item -LiteralPath $log).LastWriteTime } catch {}
+    if ($written -lt $NotBefore) {
+        return [pscustomobject]@{
+            Log = $log; Fatal = $false; Stale = $true
+            Reason = 'the UE4SS log is from before the last change - restart the server for a fresh verdict'
+            Version = $null
+        }
+    }
     $text = ''
     try { $text = Get-Content -LiteralPath $log -Raw -Encoding UTF8 -ErrorAction Stop } catch {}
     $version = $null
@@ -387,7 +427,7 @@ function Test-UE4SSHealth {
     if ($text -match 'PS scan timed out') { $fatal = $true; $reason = 'UE4SS pattern scan timed out - UE4SS never started, so no mod loaded' }
     elseif ($text -match 'Scan failed') { $fatal = $true; $reason = 'UE4SS pattern scan failed - UE4SS cannot attach to this game build' }
     elseif ($text -match 'Fatal Error') { $fatal = $true; $reason = 'UE4SS reported a fatal error' }
-    [pscustomobject]@{ Log = $log; Fatal = $fatal; Reason = $reason; Version = $version }
+    [pscustomobject]@{ Log = $log; Fatal = $fatal; Stale = $false; Reason = $reason; Version = $version }
 }
 
 <#
@@ -485,4 +525,35 @@ function Get-UE4SSReference {
         } catch { }
     }
     return $null
+}
+
+# Newest loader stub write time, used to tell a stale UE4SS verdict from a real one.
+function Get-LoaderWriteTime {
+    param([Parameter(Mandatory = $true)]$Layout)
+    $newest = [datetime]::MinValue
+    foreach ($r in @($Layout.ModsRoots) + @($Layout.OtherRoots)) {
+        $p = Join-Path $r 'SmartNPC\Scripts\main.lua'
+        if (Test-Path -LiteralPath $p -PathType Leaf) {
+            try {
+                $t = (Get-Item -LiteralPath $p).LastWriteTime
+                if ($t -gt $newest) { $newest = $t }
+            } catch {}
+        }
+    }
+    return $newest
+}
+
+# Remove the SmartNPC loader from a Mods folder that no UE4SS reads any more.
+function Remove-LoaderFrom {
+    param([Parameter(Mandatory = $true)][string]$ModsRoot)
+    $stub = Join-Path $ModsRoot 'SmartNPC'
+    $removed = $false
+    if (Test-Path -LiteralPath $stub -PathType Container) {
+        Remove-Item -LiteralPath $stub -Recurse -Force -ErrorAction SilentlyContinue
+        $removed = $true
+    }
+    if (Test-Path -LiteralPath (Join-Path $ModsRoot 'mods.txt') -PathType Leaf) {
+        [void](Set-ModsTxtEntry -ModsRoot $ModsRoot -Remove)
+    }
+    return $removed
 }
