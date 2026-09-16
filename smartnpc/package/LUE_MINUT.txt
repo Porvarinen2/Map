@@ -1,4 +1,4 @@
-SmartNPC 1.0.0 - SCUM living NPC world
+SmartNPC 1.0.1 - SCUM living NPC world
 ======================================
 
 ASENNUS
@@ -37,5 +37,9 @@ KARTTA
              H lampokartta, E tapahtumaloki, C kopioi teleport.
 
 ONGELMAT
-  Aja  <SCUM Server>\SmartNPC\STATUS.bat
-  Jos "npc classes found" jaa tyhjaksi, laheta logs\smartnpc.log.
+  1. Aja  <SCUM Server>\SmartNPC\STATUS.bat
+     Se kertoo onko lataaja rekisteroity siihen kansioon jota UE4SS oikeasti
+     lukee, ja mita UE4SS:n oma loki sanoo SmartNPC:sta.
+  2. Jos lataaja nayttaa FAIL, aja  SmartNPC\REPAIR.bat  ja kaynnista
+     palvelin uudelleen. REPAIR ei koske asetuksiin eika tilaan.
+  3. Jos "npc classes found" jaa tyhjaksi, laheta logs\smartnpc.log.

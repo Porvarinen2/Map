@@ -28,27 +28,13 @@ Write-Host ''
 Write-Host 'SmartNPC uninstaller' -ForegroundColor Cyan
 
 $Here = Split-Path -Parent $MyInvocation.MyCommand.Path
+$libCandidates = @((Join-Path $Here 'lib.ps1'), (Join-Path $Here 'payload\SmartNPC\lib.ps1'))
+foreach ($lib in $libCandidates) { if (Test-Path -LiteralPath $lib -PathType Leaf) { . $lib; break } }
 
 # The uninstaller is copied into the mod home, so it can find the server from
 # its own location; otherwise fall back to the usual search.
-$Server = $null
-if ($ServerPath) { $Server = $ServerPath }
-if (-not $Server) {
-    $maybe = Split-Path -Parent $Here
-    if (Test-Path -LiteralPath (Join-Path $maybe 'SCUM\Binaries\Win64\SCUMServer.exe') -PathType Leaf) { $Server = $maybe }
-}
-if (-not $Server) {
-    foreach ($c in @(
-        'F:\SteamLibrary\steamapps\common\SCUM Server',
-        'E:\SteamLibrary\steamapps\common\SCUM Server',
-        'D:\SteamLibrary\steamapps\common\SCUM Server',
-        'C:\Program Files (x86)\Steam\steamapps\common\SCUM Server',
-        'C:\Program Files\Steam\steamapps\common\SCUM Server')) {
-        if (Test-Path -LiteralPath (Join-Path $c 'SCUM\Binaries\Win64\SCUMServer.exe') -PathType Leaf) { $Server = $c; break }
-    }
-}
+$Server = Find-ScumServer -Hint $ServerPath -SelfDir $Here
 if (-not $Server) { throw 'SCUM Dedicated Server not found. Pass -ServerPath "<path>".' }
-$Server = (Resolve-Path -LiteralPath $Server).Path
 Say "server: $Server" Green
 
 if (Get-Process -Name SCUMServer -ErrorAction SilentlyContinue) {
@@ -56,9 +42,8 @@ if (Get-Process -Name SCUMServer -ErrorAction SilentlyContinue) {
 }
 
 $Win64 = Join-Path $Server 'SCUM\Binaries\Win64'
-$Mods  = Join-Path $Win64 'Mods'
 $Dest  = Join-Path $Server 'SmartNPC'
-$Stub  = Join-Path $Mods 'SmartNPC'
+$layout = Get-UE4SSLayout -Win64 $Win64
 
 $manifest = $null
 $mf = Join-Path $Dest 'install-manifest.json'
@@ -70,8 +55,8 @@ if (-not $Quiet) {
     Write-Host ''
     Say 'This removes:' Yellow
     Say "  $Dest"
-    Say "  $Stub"
-    Say '  the SmartNPC line in Mods\mods.txt'
+    foreach ($modsRoot in $layout.ModsRoots) { Say ("  " + (Join-Path $modsRoot 'SmartNPC')) }
+    Say '  the SmartNPC line in mods.txt'
     $a = Read-Host 'Continue? [y/N]'
     if ($a -notmatch '^[yYkK]') { Say 'Cancelled. Nothing changed.' ; exit 0 }
 }
@@ -87,21 +72,25 @@ if (-not $KeepBackup -and (Test-Path -LiteralPath $Dest)) {
     Say "config, state and logs saved to: $bk" DarkGray
 }
 
-# ------------------------------------------------------------------ mods.txt
-$modsTxt = Join-Path $Mods 'mods.txt'
-if (Test-Path -LiteralPath $modsTxt -PathType Leaf) {
-    $lines = @(Get-Content -LiteralPath $modsTxt -Encoding UTF8 | Where-Object { $_ -notmatch '^\s*SmartNPC\s*:' })
-    if ($manifest -and ($manifest.modsTxtExisted -eq $false) -and $lines.Count -eq 0) {
-        Remove-Item -LiteralPath $modsTxt -Force
-        Say 'mods.txt removed (SmartNPC created it)' DarkGray
-    } else {
-        [IO.File]::WriteAllLines($modsTxt, [string[]]$lines, (New-Object Text.UTF8Encoding($false)))
-        Say 'mods.txt: SmartNPC line removed' Green
+# --------------------------------------------------- loader in every mods root
+foreach ($modsRoot in $layout.ModsRoots) {
+    $stub = Join-Path $modsRoot 'SmartNPC'
+    if (Test-Path -LiteralPath $stub) {
+        Remove-Item -LiteralPath $stub -Recurse -Force -ErrorAction SilentlyContinue
+        Say "removed $stub" Green
+    }
+    $modsTxt = Join-Path $modsRoot 'mods.txt'
+    if (Test-Path -LiteralPath $modsTxt -PathType Leaf) {
+        [void](Set-ModsTxtEntry -ModsRoot $modsRoot -Remove)
+        $left = @(Get-Content -LiteralPath $modsTxt -Encoding UTF8 -ErrorAction SilentlyContinue)
+        if ($manifest -and ($manifest.modsTxtExisted -eq $false) -and $left.Count -eq 0) {
+            Remove-Item -LiteralPath $modsTxt -Force -ErrorAction SilentlyContinue
+            Say "removed $modsTxt (SmartNPC created it)" DarkGray
+        } else {
+            Say "mods.txt: SmartNPC line removed from $modsTxt" Green
+        }
     }
 }
-
-# ------------------------------------------------------------------- folders
-if (Test-Path -LiteralPath $Stub) { Remove-Item -LiteralPath $Stub -Recurse -Force; Say "removed $Stub" Green }
 
 if ($RemoveUE4SS -and $manifest -and $manifest.ue4ssInstalledBy -eq 'SmartNPC') {
     $ext = Join-Path $Dest 'tools\ue4ss\extracted'
