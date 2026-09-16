@@ -557,3 +557,25 @@ function Remove-LoaderFrom {
     }
     return $removed
 }
+
+<#
+    Some UE4SS packages keep a spare copy of the proxy DLL inside their own
+    folder.  When the proxy next to the game executable is missing, that copy is
+    the user's own file and is the safest thing to put back - far safer than
+    downloading a proxy from a release that may not match their UE4SS.
+#>
+function Find-SpareProxy {
+    param([Parameter(Mandatory = $true)][string]$Win64)
+    $names = @('dwmapi.dll','xinput1_3.dll','d3d11.dll','dinput8.dll','winmm.dll','version.dll','bink2w64.dll')
+    $out = @()
+    foreach ($dir in @((Join-Path $Win64 'ue4ss'), (Join-Path $Win64 'ue4ss\proxy'), (Join-Path $Win64 'ue4ss\bin'))) {
+        if (-not (Test-Path -LiteralPath $dir -PathType Container)) { continue }
+        foreach ($n in $names) {
+            $p = Join-Path $dir $n
+            if (Test-Path -LiteralPath $p -PathType Leaf) {
+                $out += [pscustomobject]@{ Name = $n; Source = $p; Target = (Join-Path $Win64 $n) }
+            }
+        }
+    }
+    return $out
+}

@@ -1,4 +1,4 @@
-SmartNPC 1.0.6 - SCUM living NPC world
+SmartNPC 1.0.7 - SCUM living NPC world
 ======================================
 
 ASENNUS

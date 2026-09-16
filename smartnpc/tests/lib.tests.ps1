@@ -256,6 +256,17 @@ Check 'a missing proxy DLL is detectable' {
     if (@(Get-UE4SSProxy -Win64 $w) -notcontains 'dwmapi.dll') { throw 'proxy not found' }
 }
 
+Check 'a spare proxy inside the ue4ss folder is found' {
+    $w = Join-Path $tmp 'spare'
+    New-Item -ItemType Directory -Path (Join-Path $w 'ue4ss') -Force | Out-Null
+    if (@(Find-SpareProxy -Win64 $w).Count -ne 0) { throw 'nothing to find yet' }
+    'proxy' | Set-Content -LiteralPath (Join-Path $w 'ue4ss\dwmapi.dll') -NoNewline
+    $sp = @(Find-SpareProxy -Win64 $w)
+    if ($sp.Count -ne 1) { throw "expected 1, got $($sp.Count)" }
+    if ($sp[0].Name -ne 'dwmapi.dll') { throw 'wrong name' }
+    if ($sp[0].Target -ne (Join-Path $w 'dwmapi.dll')) { throw 'target must be next to the exe' }
+}
+
 Check 'Get-Prop survives objects written by an older version' {
     $old = '{"product":"SmartNPC"}' | ConvertFrom-Json
     if ((Get-Prop $old 'modsTxtExisted' $true) -ne $true) { throw 'default not returned' }

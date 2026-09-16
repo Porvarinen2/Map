@@ -113,8 +113,30 @@ if ($layout.HasUE4SS) {
         Write-Host ''
         Say 'NO UE4SS LOADER DLL FOUND next to SCUMServer.exe.' Red
         Say 'UE4SS is loaded by a proxy DLL (dwmapi.dll and friends). Without one' Yellow
-        Say 'it never starts. Reinstall the UE4SS build made for SCUM - that puts' Yellow
-        Say 'the proxy back.' Yellow
+        Say 'it never starts.' Yellow
+
+        $spare = @(Find-SpareProxy -Win64 $Win64)
+        if ($spare.Count -gt 0) {
+            Write-Host ''
+            Say 'Your UE4SS folder contains a copy of one:' Green
+            foreach ($sp in $spare) { Say ("    " + $sp.Source) DarkGray }
+            $go = 'y'
+            if (-not $Quiet) { $go = Read-Host 'Copy it next to SCUMServer.exe? [Y/n]'; if (-not $go) { $go = 'y' } }
+            if ($go -match '^[yYkK]') {
+                foreach ($sp in $spare) {
+                    try {
+                        Copy-Item -LiteralPath $sp.Source -Destination $sp.Target -Force -ErrorAction Stop
+                        Say ("  restored " + $sp.Name) Green
+                    } catch {
+                        Say ("  could not copy " + $sp.Name + ": " + $_.Exception.Message) Red
+                    }
+                }
+            }
+        } else {
+            Say 'Reinstall the UE4SS build made for SCUM - that puts the proxy back.' Yellow
+            Say 'SmartNPC will not guess one for you: a proxy from the wrong UE4SS' Yellow
+            Say 'release loads the wrong DLL and takes every mod down with it.' Yellow
+        }
         Write-Host ''
     }
 }
