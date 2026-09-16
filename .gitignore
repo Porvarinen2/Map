@@ -1,0 +1,4 @@
+smartnpc/*.zip
+smartnpc/package/payload/SmartNPC/output/world.json
+smartnpc/package/payload/SmartNPC/state/squads.tsv
+smartnpc/package/payload/SmartNPC/logs/*.log

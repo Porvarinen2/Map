@@ -1,0 +1,137 @@
+-- ============================================================================
+-- SmartNPC configuration
+-- ----------------------------------------------------------------------------
+-- Edit this file and restart the server.  Every value has a safe default in
+-- lua/defaults.lua; anything you delete here falls back to that default.
+-- Distances are Unreal units (1 uu = 1 cm), so 10000 = 100 metres.
+-- ============================================================================
+
+return {
+
+    -- ---------------------------------------------------------------- general
+    Enabled                     = true,
+    StartupDelaySec             = 35,    -- let SCUM finish loading the level first
+    TickMs                      = 200,   -- scheduler resolution
+    MaxManagedNPCs              = 260,
+    DebugVerbose                = false,
+
+    -- ------------------------------------------------------------- population
+    -- SmartNPC always adopts armed NPCs the game spawns by itself.
+    -- SpawnOwnPopulation additionally keeps the world stocked with squads.
+    AdoptNativeNPCs             = true,
+    SpawnOwnPopulation          = true,
+    TargetSquadCount            = 26,    -- living squads across the whole island
+    SquadSizeMin                = 2,
+    SquadSizeMax                = 6,
+    SpawnMinPlayerDistanceUU    = 45000, -- never materialise anything a player could see
+    SpawnIntervalSec            = 12,    -- at most one spawn attempt per interval
+
+    -- Leave this out unless STATUS.bat reports "npc classes found: none yet".
+    -- SmartNPC probes a list of known armed-NPC classes; set this to override it.
+    -- NPCClassNames            = { "BP_Drifter_Lvl_3_C", "BP_Guard_Lvl_3_C" },
+    SquadLifetimeMinSec         = 5400,  -- squads retire and are replaced elsewhere
+    SquadLifetimeMaxSec         = 14400,
+
+    -- ------------------------------------------------------ movement (core)
+    -- These are the values that decide whether NPCs walk like people or twitch.
+    -- The golden rule: one MoveTo command per route node, never per tick.
+    MinCommandIntervalSec       = 1.6,   -- hard floor between two MoveTo calls
+    NodeArriveUU                = 700,   -- advance to the next node inside this
+    ChainTurnLimitDeg           = 55,    -- chain into the next leg below this turn
+    MoveAcceptanceUU            = 220,
+    GoalChangeReissueUU         = 3500,  -- only a real goal change re-commands
+    CommandMaxAgeSec            = 26,    -- safety re-issue if the engine went quiet
+    StallCheckSec               = 7.0,
+    StallProgressUU             = 220,
+    StallsBeforeReplan          = 3,
+    StallsBeforeUnstick         = 6,
+    UnstickMinPlayerDistanceUU  = 30000, -- never nudge a body a player can see
+
+    SuppressNativeBrain         = true,  -- stop SCUM's own AI fighting our path
+    BrainReassertSec            = 20,
+    RestoreBrainInCombat        = true,
+
+    -- gait speeds (uu/s).  SCUM humans walk ~170, jog ~400, sprint ~650.
+    SpeedWalk                   = 175,
+    SpeedJog                    = 390,
+    SpeedSprint                 = 620,
+    SpeedJitter                 = 0.08,  -- +/- per NPC so a squad is not a clone line
+
+    MoveAcceleration            = 950,
+    MoveBraking                 = 1300,
+    GroundFriction              = 8.0,
+    RotationRateYaw             = 260,   -- too low = wide overshooting arcs
+    UseRVOAvoidance             = true,
+    AvoidanceRadiusUU           = 420,
+
+    -- --------------------------------------------------------------- routing
+    RouteRoadCost               = 0.58,  -- < 1 makes squads prefer roads
+    RouteLandCost               = 1.00,
+    RouteHeuristicWeight        = 1.05,
+    RouteNodeBudget             = 26000,
+    RouteNodeSpacingUU          = 11000, -- ~110 m legs
+    RouteSmoothIterations       = 2,
+    RouteStringPullMaxSkip      = 6,
+    RouteDirectMaxUU            = 14000,
+    RouteReplanCooldownSec      = 6,
+
+    -- ------------------------------------------- virtual / physical handover
+    -- Hysteresis: a squad materialises well before a player can see it and
+    -- de-materialises only once clearly out of range.  Flapping across this
+    -- boundary is what makes NPCs appear to teleport and stutter.
+    MaterializeDistanceUU       = 32000, -- 320 m
+    VirtualizeDistanceUU        = 52000, -- 520 m
+    VirtualSpeedScale           = 1.00,
+    VirtualMaxStepSec           = 8,
+
+    -- ------------------------------------------------------------ activities
+    ActivityWeights = {
+        LOOT_RUN  = 26,
+        SCAVENGE  = 30,
+        HUNT      = 12,
+        PATROL    = 14,
+        CAMP      = 10,
+        AMBUSH    = 8,
+    },
+    TravelMinUU                 = 55000,
+    TravelMaxUU                 = 420000,
+    StopMinSec                  = 25,
+    StopMaxSec                  = 95,
+    StopsPerSiteMin             = 3,
+    StopsPerSiteMax             = 8,
+    CampMinSec                  = 180,
+    CampMaxSec                  = 620,
+    AmbushMinSec                = 240,
+    AmbushMaxSec                = 900,
+    PoiCooldownSec              = 2400,
+    ArriveSiteUU                = 9000,
+    ArriveStopUU                = 1400,
+
+    -- ------------------------------------------------------------- formation
+    FormationSpacingUU          = 380,
+    FormationLagUU              = 420,
+    FormationSpreadTravel       = 1.0,
+    FormationSpreadSearch       = 1.7,
+    SingleFileOnRoads           = false,
+
+    -- ---------------------------------------------------------------- combat
+    EnableCombat                = true,
+    PlayerDetectRadiusUU        = 11000,
+    CombatEngageRadiusUU        = 9000,
+    CombatBreakRadiusUU         = 26000,
+    RangedHoldDistanceUU        = 900,
+    MeleeCloseDistanceUU        = 220,
+    CombatRetargetSec           = 4,
+    RetreatHealthPct            = 32,
+    RetreatDistanceUU           = 22000,
+    HandBackToNativeAI          = true,   -- let SCUM's own combat AI shoot
+
+    -- ------------------------------------------------------------- telemetry
+    TelemetryIntervalSec        = 2.0,
+    TelemetryTrailPoints        = 90,
+    TelemetryEventCap           = 300,
+    TelemetryIncludePlayers     = true,
+
+    -- ------------------------------------------------------------ persistence
+    SaveStateIntervalSec        = 60,
+}

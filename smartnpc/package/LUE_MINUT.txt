@@ -1,0 +1,41 @@
+SmartNPC 1.0.0 - SCUM living NPC world
+======================================
+
+ASENNUS
+1. Sammuta SCUM-palvelin.
+2. Pura TAMA ZIP omaan kansioon. Ala aja mitaan zipin sisalta.
+3. Aja INSTALL.bat.
+   Jos palvelin ei ole F:\SteamLibrary\steamapps\common\SCUM Server,
+   veda palvelinkansio INSTALL.bat:n paalle tai aja:
+   INSTALL.bat "D:\polku\SCUM Server"
+   Jos UE4SS puuttuu, asennin tarjoutuu lataamaan sen.
+4. Kaynnista palvelin normaalisti.
+5. Aja  <SCUM Server>\SmartNPC\START_MAP.bat  -> kartta aukeaa selaimeen.
+
+KAIKKI MODIN TIEDOSTOT OVAT YHDESSA PAIKASSA
+  <SCUM Server>\SmartNPC\
+      smartnpc.config.lua   asetukset
+      lua\                  koodi
+      data\                 kartta- ja POI-data
+      web\                  selainkartta
+      output\               live-tila (world.json)
+      state\                ryhmien tila
+      logs\                 lokit
+      tools\                asentimen lataamat tyokalut
+
+Ainoa asia taman kansion ulkopuolella on UE4SS:n vaatima lataaja:
+  SCUM\Binaries\Win64\Mods\SmartNPC\   ja yksi rivi mods.txt:ssa.
+
+POISTO
+  <SCUM Server>\SmartNPC\UNINSTALL.bat      (palvelin sammutettuna)
+  Poistaa SmartNPC-kansion, lataajan ja mods.txt-rivin. Mitaan muuta ei koskita.
+
+KARTTA
+  Oikea klikkaus ryhman tai NPC:n paalla -> "Copy teleport command".
+  Aseta oma hahmonimesi kerran rattaasta (oikea ylakulma).
+  Nappaimet: F sovita, R reitit, T jaljet, P POIt, G ruudukko,
+             H lampokartta, E tapahtumaloki, C kopioi teleport.
+
+ONGELMAT
+  Aja  <SCUM Server>\SmartNPC\STATUS.bat
+  Jos "npc classes found" jaa tyhjaksi, laheta logs\smartnpc.log.
