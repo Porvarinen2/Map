@@ -161,12 +161,16 @@ if ($layout.HasUE4SS) {
     Say '  one silently disables every mod on the server.' Yellow
 }
 
-# If a previous SmartNPC version installed UE4SS on top of a working one, say so.
-$stray = @(Get-DownloadedUE4SSFiles -ModHome $Dest -Win64 $Win64)
-if ($stray.Count -gt 0 -and -not $ue4ssInstalledByUs) {
+# Two UE4SS installs in one folder: the one at the root wins, and an earlier
+# SmartNPC is the usual reason a second one is there.
+if (-not $ue4ssInstalledByUs -and
+    (Test-Path -LiteralPath (Join-Path $Win64 'UE4SS.dll') -PathType Leaf) -and
+    (Test-Path -LiteralPath (Join-Path $Win64 'ue4ss\UE4SS.dll') -PathType Leaf)) {
     Write-Host ''
-    Say "NOTE:     an earlier SmartNPC version installed UE4SS into $Win64." Yellow
-    Say '          If mods stopped loading, run REPAIR.bat to remove it again.' Yellow
+    Say 'WARNING:  two UE4SS installs found.' Red
+    Say "          $Win64\UE4SS.dll is the one that loads," Yellow
+    Say "          not $Win64\ue4ss\UE4SS.dll." Yellow
+    Say '          Run REPAIR.bat after this to remove the duplicate.' Yellow
     Write-Host ''
 }
 

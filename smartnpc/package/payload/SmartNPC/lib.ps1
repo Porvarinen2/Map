@@ -389,3 +389,100 @@ function Test-UE4SSHealth {
     elseif ($text -match 'Fatal Error') { $fatal = $true; $reason = 'UE4SS reported a fatal error' }
     [pscustomobject]@{ Log = $log; Fatal = $fatal; Reason = $reason; Version = $version }
 }
+
+<#
+    Two UE4SS installs in one game folder.
+
+    The build made for SCUM lives in Win64\ue4ss\.  A generic UE4SS unpacked at
+    Win64 root brings its own proxy DLL, which wins, and then fails SCUM's
+    pattern scan - taking every mod on the server down with it.
+
+    Earlier SmartNPC versions deleted the whole mod folder on upgrade, so the
+    record of what they extracted is usually gone.  This rebuilds that record by
+    fetching the same UE4SS release and comparing hashes, so removal stays
+    exact: a file is deleted only when it is byte-for-byte the stock release.
+#>
+function Get-StrayRootUE4SS {
+    param(
+        [Parameter(Mandatory = $true)][string]$Win64,
+        [string]$ModHome = '',
+        [string]$Version = ''
+    )
+    $rootDll = Join-Path $Win64 'UE4SS.dll'
+    $nestedDll = Join-Path $Win64 'ue4ss\UE4SS.dll'
+    $result = [pscustomobject]@{
+        Duplicate = $false
+        Reference = $null
+        Files     = @()
+        Note      = ''
+    }
+    if (-not (Test-Path -LiteralPath $rootDll -PathType Leaf)) { $result.Note = 'no UE4SS at Win64 root'; return $result }
+    if (-not (Test-Path -LiteralPath $nestedDll -PathType Leaf)) { $result.Note = 'only one UE4SS present'; return $result }
+    $result.Duplicate = $true
+
+    # reference copy: what SmartNPC extracted, or the same release re-fetched
+    $reference = $null
+    if ($ModHome) {
+        $p = Join-Path $ModHome 'tools\ue4ss\extracted'
+        if (Test-Path -LiteralPath $p -PathType Container) { $reference = $p }
+    }
+    if (-not $reference -and $ModHome) {
+        $reference = Get-UE4SSReference -ModHome $ModHome -Version $Version
+    }
+    if (-not $reference) { $result.Note = 'no reference copy available'; return $result }
+    $result.Reference = $reference
+
+    $refRoot = (Resolve-Path -LiteralPath $reference).Path.TrimEnd('\','/')
+    $files = @()
+    foreach ($f in (Get-ChildItem -LiteralPath $reference -Recurse -File -Force)) {
+        $rel = $f.FullName.Substring($refRoot.Length).TrimStart('\','/')
+        $target = Join-Path $Win64 $rel
+        if (-not (Test-Path -LiteralPath $target -PathType Leaf)) { continue }
+        $same = $false
+        try {
+            $same = ((Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256).Hash -eq
+                     (Get-FileHash -LiteralPath $target   -Algorithm SHA256).Hash)
+        } catch {}
+        $files += [pscustomobject]@{ Relative = $rel; Path = $target; Unchanged = $same }
+    }
+    $result.Files = $files
+    return $result
+}
+
+# Download the stock UE4SS release matching $Version (or the latest) and return
+# the extracted folder, so removal can be hash-exact.
+function Get-UE4SSReference {
+    param(
+        [Parameter(Mandatory = $true)][string]$ModHome,
+        [string]$Version = ''
+    )
+    $dir = Join-Path $ModHome 'tools\ue4ss\reference'
+    $marker = Join-Path $dir '.version'
+    if ((Test-Path -LiteralPath $dir -PathType Container) -and (Test-Path -LiteralPath $marker -PathType Leaf)) {
+        $have = (Get-Content -LiteralPath $marker -Raw -ErrorAction SilentlyContinue).Trim()
+        if (-not $Version -or $have -eq $Version) { return $dir }
+    }
+    try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
+
+    $urls = @()
+    if ($Version) {
+        $v = $Version -replace '^v', '' -replace '\s.*$', ''
+        $urls += "https://github.com/UE4SS-RE/RE-UE4SS/releases/download/v$v/UE4SS_v$v.zip"
+    }
+    $urls += 'https://github.com/UE4SS-RE/RE-UE4SS/releases/latest/download/UE4SS_v3.0.1.zip'
+
+    New-Item -ItemType Directory -Path (Split-Path -Parent $dir) -Force | Out-Null
+    $zip = Join-Path (Split-Path -Parent $dir) 'reference.zip'
+    foreach ($u in $urls) {
+        try {
+            Invoke-WebRequest -Uri $u -OutFile $zip -UseBasicParsing -TimeoutSec 180 -ErrorAction Stop
+            Add-Type -AssemblyName System.IO.Compression.FileSystem
+            if (Test-Path -LiteralPath $dir) { Remove-Item -LiteralPath $dir -Recurse -Force }
+            [IO.Compression.ZipFile]::ExtractToDirectory($zip, $dir)
+            Set-Content -LiteralPath $marker -Value $Version -Encoding UTF8
+            Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
+            return $dir
+        } catch { }
+    }
+    return $null
+}

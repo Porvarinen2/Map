@@ -169,6 +169,38 @@ Check 'Sync-ModFiles clears a directory sitting where a file belongs' {
     }
 }
 
+Check 'Get-StrayRootUE4SS: single install is not a duplicate' {
+    $w = Join-Path $tmp 'single'
+    New-Item -ItemType Directory -Path (Join-Path $w 'ue4ss') -Force | Out-Null
+    'x' | Set-Content -LiteralPath (Join-Path $w 'ue4ss\UE4SS.dll') -NoNewline
+    $r = Get-StrayRootUE4SS -Win64 $w
+    if ($r.Duplicate) { throw 'one install must not be flagged' }
+    if (@($r.Files).Count -ne 0) { throw 'no files expected' }
+}
+
+Check 'Get-StrayRootUE4SS: two installs are flagged and matched by hash' {
+    $w = Join-Path $tmp 'dupe'
+    $mh = Join-Path $tmp 'dupehome'
+    New-Item -ItemType Directory -Path (Join-Path $w 'ue4ss') -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $mh 'tools\ue4ss\extracted\Mods') -Force | Out-Null
+    'scum-build'  | Set-Content -LiteralPath (Join-Path $w 'ue4ss\UE4SS.dll') -NoNewline
+    'stock'       | Set-Content -LiteralPath (Join-Path $w 'UE4SS.dll') -NoNewline
+    'stock'       | Set-Content -LiteralPath (Join-Path $w 'dwmapi.dll') -NoNewline
+    'user edited' | Set-Content -LiteralPath (Join-Path $w 'UE4SS-settings.ini') -NoNewline
+    foreach ($n in @('UE4SS.dll','dwmapi.dll','UE4SS-settings.ini')) {
+        'stock' | Set-Content -LiteralPath (Join-Path $mh "tools\ue4ss\extracted\$n") -NoNewline
+    }
+    $r = Get-StrayRootUE4SS -Win64 $w -ModHome $mh
+    if (-not $r.Duplicate) { throw 'duplicate not detected' }
+    $removable = @($r.Files | Where-Object { $_.Unchanged })
+    if ($removable.Count -ne 2) { throw "expected 2 removable, got $($removable.Count)" }
+    if (@($r.Files | Where-Object { -not $_.Unchanged }).Count -ne 1) { throw 'edited file must be kept' }
+    $sep = [IO.Path]::DirectorySeparatorChar
+    if ($r.Files | Where-Object { $_.Path -like ("*" + $sep + "ue4ss" + $sep + "*") }) {
+        throw 'must never touch anything inside the ue4ss folder'
+    }
+}
+
 Check 'Get-Prop survives objects written by an older version' {
     $old = '{"product":"SmartNPC"}' | ConvertFrom-Json
     if ((Get-Prop $old 'modsTxtExisted' $true) -ne $true) { throw 'default not returned' }

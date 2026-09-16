@@ -39,32 +39,66 @@ if ($running) {
 
 $Win64 = Join-Path $Server 'SCUM\Binaries\Win64'
 
-# ---------------------------------------------------- UE4SS installed by us
-# An earlier SmartNPC installed UE4SS when it did not find Win64\UE4SS.dll.
-# On a server whose UE4SS lives in Win64\ue4ss\ that dropped a second, generic
-# UE4SS - proxy DLL included - at Win64 root, where it takes over loading and
-# then fails on SCUM's build, which stops every mod on the server.
+# ------------------------------------------------ a second UE4SS at the root
+# The UE4SS made for SCUM lives in Win64\ue4ss\.  An earlier SmartNPC could
+# unpack a generic UE4SS at Win64 root; its proxy DLL then wins and fails SCUM's
+# pattern scan, which stops every mod on the server.
+$health0 = Test-UE4SSHealth -Win64 $Win64
 if (-not $KeepUE4SS) {
-    $stray = @(Get-DownloadedUE4SSFiles -ModHome $Root -Win64 $Win64)
-    $removable = @($stray | Where-Object { $_.Unchanged })
-    if ($removable.Count -gt 0) {
+    $stray = Get-StrayRootUE4SS -Win64 $Win64 -ModHome $Root -Version $health0.Version
+    if ($stray.Duplicate) {
         Write-Host ''
-        Say 'An earlier SmartNPC version installed UE4SS into the server:' Yellow
-        foreach ($f in ($removable | Select-Object -First 12)) { Say ("    " + $f.Relative) DarkGray }
-        if ($removable.Count -gt 12) { Say ("    ... and " + ($removable.Count - 12) + " more") DarkGray }
+        Say 'TWO UE4SS INSTALLS FOUND:' Yellow
+        Say ("  in use  " + (Join-Path $Win64 'UE4SS.dll') + "   <- generic build, added by an earlier SmartNPC") Yellow
+        Say ("  unused  " + (Join-Path $Win64 'ue4ss\UE4SS.dll') + "   <- your SCUM build") Yellow
         Write-Host ''
-        $go = 'y'
-        if (-not $Quiet) { $go = Read-Host 'Remove these files again? [Y/n]'; if (-not $go) { $go = 'y' } }
-        if ($go -match '^[yYkK]') {
-            $res = Remove-DownloadedUE4SS -ModHome $Root -Win64 $Win64
-            Say ("Removed " + $res.Removed + " of " + $res.Total + " files.") Green
-            if ($res.Kept.Count -gt 0) {
-                Say 'Left in place because they were modified after installation:' DarkYellow
-                foreach ($k in ($res.Kept | Select-Object -First 8)) { Say ("    " + $k) DarkGray }
+
+        if (-not $stray.Reference) {
+            Say 'Could not fetch a reference copy to compare against, so nothing was' Red
+            Say 'deleted automatically. Remove these from' Red
+            Say ("  " + $Win64) Red
+            foreach ($n in @('UE4SS.dll','UE4SS-settings.ini','dwmapi.dll','Changelog.md','README.md')) {
+                if (Test-Path -LiteralPath (Join-Path $Win64 $n) -PathType Leaf) { Say ("    " + $n) DarkGray }
             }
-            Write-Host ''
-            Say 'Now reinstall the UE4SS build made for SCUM (it also restores the' Yellow
-            Say 'proxy DLL), then run this repair again.' Yellow
+            Say 'then reinstall the UE4SS build made for SCUM.' Yellow
+        } else {
+            $removable = @($stray.Files | Where-Object { $_.Unchanged })
+            if ($removable.Count -eq 0) {
+                Say 'The files at the root do not match the stock release, so they were' Yellow
+                Say 'left alone. Remove them by hand if you know they are not yours.' Yellow
+            } else {
+                Say 'These are byte-for-byte the stock release and can be removed:' Gray
+                foreach ($f in ($removable | Select-Object -First 12)) { Say ("    " + $f.Relative) DarkGray }
+                if ($removable.Count -gt 12) { Say ("    ... and " + ($removable.Count - 12) + " more") DarkGray }
+                Write-Host ''
+                $go = 'y'
+                if (-not $Quiet) { $go = Read-Host 'Remove them? [Y/n]'; if (-not $go) { $go = 'y' } }
+                if ($go -match '^[yYkK]') {
+                    $removed = 0; $kept = @()
+                    foreach ($f in $removable) {
+                        try { Remove-Item -LiteralPath $f.Path -Force -ErrorAction Stop; $removed++ }
+                        catch { $kept += $f.Relative }
+                    }
+                    foreach ($pass in 1..3) {
+                        foreach ($d in (Get-ChildItem -LiteralPath $Win64 -Recurse -Directory -Force -ErrorAction SilentlyContinue |
+                                        Sort-Object { $_.FullName.Length } -Descending)) {
+                            if ($d.Name -eq 'ue4ss') { continue }
+                            if (-not (Get-ChildItem -LiteralPath $d.FullName -Force -ErrorAction SilentlyContinue)) {
+                                Remove-Item -LiteralPath $d.FullName -Force -ErrorAction SilentlyContinue
+                            }
+                        }
+                    }
+                    Say ("Removed " + $removed + " of " + $removable.Count + " files.") Green
+                    if ($kept.Count -gt 0) {
+                        Say 'Could not remove (close the server and retry):' DarkYellow
+                        foreach ($k in ($kept | Select-Object -First 8)) { Say ("    " + $k) DarkGray }
+                    }
+                    Write-Host ''
+                    Say 'IMPORTANT: that generic UE4SS overwrote the proxy DLL your SCUM' Yellow
+                    Say 'UE4SS needs. Reinstall the UE4SS build made for SCUM now, then' Yellow
+                    Say 'run REPAIR.bat again.' Yellow
+                }
+            }
         }
         Write-Host ''
     }

@@ -60,10 +60,13 @@ if ($health.Fatal) {
     Write-Host '  ##############################################################' -ForegroundColor Red
 }
 
-$stray = @(Get-DownloadedUE4SSFiles -ModHome $Root -Win64 $Win64)
-if (@($stray | Where-Object { $_.Unchanged }).Count -gt 0) {
+# Two UE4SS installs in one folder is the failure mode that kills every mod:
+# the one at the root wins, and on SCUM it is the wrong one.
+if ((Test-Path -LiteralPath (Join-Path $Win64 'UE4SS.dll') -PathType Leaf) -and
+    (Test-Path -LiteralPath (Join-Path $Win64 'ue4ss\UE4SS.dll') -PathType Leaf)) {
     Write-Host ''
-    Line 'UE4SS origin' 'installed by an earlier SmartNPC - run REPAIR.bat to remove it' Yellow
+    Line 'UE4SS installs' 'TWO FOUND - the one at Win64 root is loading, not your ue4ss\ one' Red
+    Line '' 'run REPAIR.bat to remove the duplicate' Yellow
 }
 
 Write-Host ''
