@@ -18,7 +18,7 @@ do
 end
 
 SMARTNPC = {
-    VERSION    = "1.0.2",
+    VERSION    = "1.0.3",
     ROOT       = ROOT,
     SEP        = SEP,
     DIR_LUA    = ROOT .. SEP .. "lua",

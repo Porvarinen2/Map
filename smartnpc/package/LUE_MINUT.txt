@@ -1,4 +1,4 @@
-SmartNPC 1.0.2 - SCUM living NPC world
+SmartNPC 1.0.3 - SCUM living NPC world
 ======================================
 
 ASENNUS
@@ -8,7 +8,7 @@ ASENNUS
    Jos palvelin ei ole F:\SteamLibrary\steamapps\common\SCUM Server,
    veda palvelinkansio INSTALL.bat:n paalle tai aja:
    INSTALL.bat "D:\polku\SCUM Server"
-   Jos UE4SS puuttuu, asennin tarjoutuu lataamaan sen.
+   UE4SS pitaa olla jo asennettuna; asennin ei lataa sita (ks. alla).
 4. Kaynnista palvelin normaalisti.
 5. Aja  <SCUM Server>\SmartNPC\START_MAP.bat  -> kartta aukeaa selaimeen.
 
@@ -36,10 +36,17 @@ KARTTA
   Nappaimet: F sovita, R reitit, T jaljet, P POIt, G ruudukko,
              H lampokartta, E tapahtumaloki, C kopioi teleport.
 
+UE4SS
+  SmartNPC EI asenna UE4SS:aa itse. Vaara versio sammuttaa kaikki modit
+  palvelimelta. Kayta SCUMille tarkoitettua UE4SS-buildia.
+  STATUS.bat kertoo jos UE4SS ei kaynnisty ollenkaan.
+
 ONGELMAT
   1. Aja  <SCUM Server>\SmartNPC\STATUS.bat
      Se kertoo onko lataaja rekisteroity siihen kansioon jota UE4SS oikeasti
      lukee, ja mita UE4SS:n oma loki sanoo SmartNPC:sta.
   2. Jos lataaja nayttaa FAIL, aja  SmartNPC\REPAIR.bat  ja kaynnista
      palvelin uudelleen. REPAIR ei koske asetuksiin eika tilaan.
-  3. Jos "npc classes found" jaa tyhjaksi, laheta logs\smartnpc.log.
+  3. Jos STATUS sanoo "UE4SS IS NOT STARTING", vika ei ole SmartNPC:ssa:
+     silloin yksikaan modi ei lataudu. Asenna SCUMille sopiva UE4SS.
+  4. Jos "npc classes found" jaa tyhjaksi, laheta logs\smartnpc.log.

@@ -15,7 +15,7 @@
 param(
     [string]$ServerPath = '',
     [switch]$ResetConfig,
-    [switch]$SkipUE4SS,
+    [switch]$InstallUE4SS,
     [switch]$Quiet
 )
 
@@ -116,56 +116,58 @@ if ($keepConfig) {
 }
 
 # ------------------------------------------------------------------- UE4SS
+# SmartNPC does NOT install UE4SS on its own any more.  Earlier versions did,
+# and on a server whose UE4SS lives in Win64\ue4ss\ that put a second, generic
+# UE4SS (and its dwmapi.dll proxy) at Win64 root, where it took over loading and
+# then failed on SCUM's build - killing every mod on the server.
 $layout = Get-UE4SSLayout -Win64 $Win64
 $ue4ssInstalledByUs = $false
-if ($layout.HasUE4SS) {
-    Say "UE4SS:    already installed ($($layout.Dll))" Green
-} elseif ($SkipUE4SS) {
-    Say 'UE4SS:    MISSING (skipped on request) - SmartNPC will not load' Yellow
-} else {
-    Say 'UE4SS:    not found. SmartNPC needs it to run.' Yellow
-    $answer = 'y'
-    if (-not $Quiet) {
-        $answer = Read-Host 'Download and install UE4SS now into SmartNPC\tools and the server? [Y/n]'
-        if (-not $answer) { $answer = 'y' }
-    }
-    if ($answer -match '^[yYkK]') {
-        $toolDir = Join-Path $Dest 'tools\ue4ss'
-        New-Item -ItemType Directory -Path $toolDir -Force | Out-Null
-        $zip = Join-Path $toolDir 'ue4ss.zip'
-        $url = $null
-        try {
-            $rel = Invoke-RestMethod -Uri 'https://api.github.com/repos/UE4SS-RE/RE-UE4SS/releases/latest' `
-                                     -Headers @{ 'User-Agent' = 'SmartNPC-Installer' } -TimeoutSec 30
-            $asset = $rel.assets | Where-Object { $_.name -match '^UE4SS_v[\d\.]+\.zip$' } | Select-Object -First 1
-            if (-not $asset) { $asset = $rel.assets | Where-Object { $_.name -match '\.zip$' -and $_.name -notmatch 'dev|pdb|Debug' } | Select-Object -First 1 }
-            if ($asset) { $url = $asset.browser_download_url }
-        } catch {
-            Say "  release lookup failed: $($_.Exception.Message)" DarkYellow
-        }
-        if (-not $url) { $url = 'https://github.com/UE4SS-RE/RE-UE4SS/releases/latest/download/UE4SS_v3.0.1.zip' }
 
-        try {
-            Say "  downloading $url" DarkGray
-            Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing -TimeoutSec 180
-            Add-Type -AssemblyName System.IO.Compression.FileSystem
-            $ext = Join-Path $toolDir 'extracted'
-            if (Test-Path -LiteralPath $ext) { Remove-Item -LiteralPath $ext -Recurse -Force }
-            [IO.Compression.ZipFile]::ExtractToDirectory($zip, $ext)
-            foreach ($item in (Get-ChildItem -LiteralPath $ext -Force)) {
-                Copy-Item -LiteralPath $item.FullName -Destination $Win64 -Recurse -Force
-            }
-            $ue4ssInstalledByUs = $true
-            $layout = Get-UE4SSLayout -Win64 $Win64   # the download decides the layout
-            Say '  UE4SS installed into the server.' Green
-        } catch {
-            Say "  UE4SS download failed: $($_.Exception.Message)" Red
-            Say '  Install UE4SS manually from https://github.com/UE4SS-RE/RE-UE4SS/releases' Yellow
-            Say "  (extract it into $Win64), then run INSTALL.bat again." Yellow
+if ($layout.HasUE4SS) {
+    Say "UE4SS:    found ($($layout.Dll))" Green
+} elseif ($InstallUE4SS) {
+    Say 'UE4SS:    not found; downloading because -InstallUE4SS was given.' Yellow
+    $toolDir = Join-Path $Dest 'tools\ue4ss'
+    New-Item -ItemType Directory -Path $toolDir -Force | Out-Null
+    $zip = Join-Path $toolDir 'ue4ss.zip'
+    $url = 'https://github.com/UE4SS-RE/RE-UE4SS/releases/latest/download/UE4SS_v3.0.1.zip'
+    try {
+        $rel = Invoke-RestMethod -Uri 'https://api.github.com/repos/UE4SS-RE/RE-UE4SS/releases/latest' `
+                                 -Headers @{ 'User-Agent' = 'SmartNPC-Installer' } -TimeoutSec 30
+        $asset = $rel.assets | Where-Object { $_.name -match '^UE4SS_v[\d\.]+\.zip$' } | Select-Object -First 1
+        if ($asset) { $url = $asset.browser_download_url }
+    } catch {}
+    try {
+        Say "  downloading $url" DarkGray
+        Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing -TimeoutSec 180
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $ext = Join-Path $toolDir 'extracted'
+        if (Test-Path -LiteralPath $ext) { Remove-Item -LiteralPath $ext -Recurse -Force }
+        [IO.Compression.ZipFile]::ExtractToDirectory($zip, $ext)
+        foreach ($item in (Get-ChildItem -LiteralPath $ext -Force)) {
+            Copy-Item -LiteralPath $item.FullName -Destination $Win64 -Recurse -Force
         }
-    } else {
-        Say '  Skipped. Install UE4SS yourself before starting the server.' Yellow
+        $ue4ssInstalledByUs = $true
+        $layout = Get-UE4SSLayout -Win64 $Win64
+        Say '  UE4SS installed. If the server now logs a UE4SS scan failure, run' Green
+        Say '  REPAIR.bat: it removes exactly these files again.' Green
+    } catch {
+        Say "  UE4SS download failed: $($_.Exception.Message)" Red
     }
+} else {
+    Say 'UE4SS:    NOT FOUND - SmartNPC cannot run without it.' Red
+    Say '  Install the UE4SS build made for SCUM, then run INSTALL.bat again.' Yellow
+    Say '  SmartNPC deliberately does not pick a UE4SS version for you: the wrong' Yellow
+    Say '  one silently disables every mod on the server.' Yellow
+}
+
+# If a previous SmartNPC version installed UE4SS on top of a working one, say so.
+$stray = @(Get-DownloadedUE4SSFiles -ModHome $Dest -Win64 $Win64)
+if ($stray.Count -gt 0 -and -not $ue4ssInstalledByUs) {
+    Write-Host ''
+    Say "NOTE:     an earlier SmartNPC version installed UE4SS into $Win64." Yellow
+    Say '          If mods stopped loading, run REPAIR.bat to remove it again.' Yellow
+    Write-Host ''
 }
 
 # ------------------------------------------------------------ UE4SS loader
@@ -176,6 +178,7 @@ $loaderReports = @()
 foreach ($modsRoot in $layout.ModsRoots) {
     $stubPath = Write-LoaderStub -ModsRoot $modsRoot -ModHome $Dest
     $m = Set-ModsTxtEntry -ModsRoot $modsRoot
+    Set-EnabledTxt -ModsRoot $modsRoot -Wanted (-not $m.Ok)
     $check = Test-SmartNPCLoader -ModsRoot $modsRoot -ModHome $Dest
     $loaderReports += $check
     if ($check.StubOk -and $check.Listed) {

@@ -109,10 +109,28 @@ end
 "@
     $enc = New-Object Text.UTF8Encoding($false)
     [IO.File]::WriteAllText((Join-Path $stub 'Scripts\main.lua'), $lua, $enc)
-    # UE4SS 3.x enables a mod by the presence of this file; 2.x uses mods.txt.
-    # Writing both makes the mod load whichever version is installed.
-    [IO.File]::WriteAllText((Join-Path $stub 'enabled.txt'), '', $enc)
     return $stub
+}
+
+<#
+    mods.txt is the documented way to enable a mod and it carries the load
+    order.  enabled.txt is only a fallback: on some builds its presence makes
+    UE4SS ignore mods.txt entirely, so it is written only when the mods.txt
+    entry could not be verified, and removed again once mods.txt works.
+#>
+function Set-EnabledTxt {
+    param(
+        [Parameter(Mandatory = $true)][string]$ModsRoot,
+        [Parameter(Mandatory = $true)][bool]$Wanted
+    )
+    $path = Join-Path $ModsRoot 'SmartNPC\enabled.txt'
+    if ($Wanted) {
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+            [IO.File]::WriteAllText($path, '', (New-Object Text.UTF8Encoding($false)))
+        }
+    } elseif (Test-Path -LiteralPath $path -PathType Leaf) {
+        Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+    }
 }
 
 function Set-ModsTxtEntry {
@@ -191,7 +209,7 @@ function Get-MapServerProcess {
             }
         }
     } catch {}
-    return @($out)
+    return ,@($out)
 }
 
 function Stop-MapServer {
@@ -276,4 +294,83 @@ function Sync-ModFiles {
     }
 
     [pscustomobject]@{ Copied = $copied; Failed = @($failed) }
+}
+
+<#
+    SmartNPC 1.0.0 and 1.0.1 could download UE4SS when they did not find
+    Win64\UE4SS.dll.  On a SCUM server whose UE4SS lives in Win64\ue4ss\ that
+    check was wrong: the download landed a second, generic UE4SS (including its
+    dwmapi.dll proxy) at Win64 root, where it takes over loading and then dies
+    on SCUM's build - after which no Lua mod loads at all.
+
+    This undoes exactly that, and only that: a file is removed only when it is
+    byte-for-byte the copy SmartNPC extracted, so anything the user has since
+    replaced or edited is left alone.
+#>
+function Get-DownloadedUE4SSFiles {
+    param(
+        [Parameter(Mandatory = $true)][string]$ModHome,
+        [Parameter(Mandatory = $true)][string]$Win64
+    )
+    $extracted = Join-Path $ModHome 'tools\ue4ss\extracted'
+    if (-not (Test-Path -LiteralPath $extracted -PathType Container)) { return ,@() }
+
+    $root = (Resolve-Path -LiteralPath $extracted).Path.TrimEnd('\','/')
+    $out = @()
+    foreach ($f in (Get-ChildItem -LiteralPath $extracted -Recurse -File -Force)) {
+        $rel = $f.FullName.Substring($root.Length).TrimStart('\','/')
+        $target = Join-Path $Win64 $rel
+        if (-not (Test-Path -LiteralPath $target -PathType Leaf)) { continue }
+        $same = $false
+        try {
+            $a = Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256
+            $b = Get-FileHash -LiteralPath $target -Algorithm SHA256
+            $same = ($a.Hash -eq $b.Hash)
+        } catch {}
+        $out += [pscustomobject]@{ Relative = $rel; Path = $target; Unchanged = $same }
+    }
+    return ,@($out)
+}
+
+function Remove-DownloadedUE4SS {
+    param(
+        [Parameter(Mandatory = $true)][string]$ModHome,
+        [Parameter(Mandatory = $true)][string]$Win64
+    )
+    $files = Get-DownloadedUE4SSFiles -ModHome $ModHome -Win64 $Win64
+    $removed = 0; $kept = @()
+    foreach ($f in $files) {
+        if ($f.Unchanged) {
+            try { Remove-Item -LiteralPath $f.Path -Force -ErrorAction Stop; $removed++ } catch { $kept += $f.Relative }
+        } else {
+            $kept += $f.Relative
+        }
+    }
+    # prune directories the download created and that are now empty
+    for ($pass = 0; $pass -lt 4; $pass++) {
+        foreach ($d in (Get-ChildItem -LiteralPath $Win64 -Recurse -Directory -Force -ErrorAction SilentlyContinue |
+                        Sort-Object { $_.FullName.Length } -Descending)) {
+            if (-not (Get-ChildItem -LiteralPath $d.FullName -Force -ErrorAction SilentlyContinue)) {
+                Remove-Item -LiteralPath $d.FullName -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+    [pscustomobject]@{ Removed = $removed; Kept = @($kept); Total = $files.Count }
+}
+
+# Read UE4SS's own log and decide whether UE4SS itself is healthy.  When its
+# pattern scan fails, no Lua mod loads and nothing about SmartNPC matters.
+function Test-UE4SSHealth {
+    param([Parameter(Mandatory = $true)][string]$Win64)
+    $log = Get-UE4SSLogPath -Win64 $Win64
+    if (-not $log) { return [pscustomobject]@{ Log = $null; Fatal = $false; Reason = 'no UE4SS log yet'; Version = $null } }
+    $text = ''
+    try { $text = Get-Content -LiteralPath $log -Raw -Encoding UTF8 -ErrorAction Stop } catch {}
+    $version = $null
+    if ($text -match 'UE4SS\s*-\s*(v[\d\.]+[^\r\n#]*)') { $version = $Matches[1].Trim() }
+    $fatal = $false; $reason = 'looks healthy'
+    if ($text -match 'PS scan timed out') { $fatal = $true; $reason = 'UE4SS pattern scan timed out - UE4SS never started, so no mod loaded' }
+    elseif ($text -match 'Scan failed') { $fatal = $true; $reason = 'UE4SS pattern scan failed - UE4SS cannot attach to this game build' }
+    elseif ($text -match 'Fatal Error') { $fatal = $true; $reason = 'UE4SS reported a fatal error' }
+    [pscustomobject]@{ Log = $log; Fatal = $fatal; Reason = $reason; Version = $version }
 }

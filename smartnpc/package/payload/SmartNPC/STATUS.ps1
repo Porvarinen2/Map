@@ -45,6 +45,27 @@ Line 'SCUMServer.exe' $(if ($running) { 'running' } else { 'not running' }) $(if
 $layout = Get-UE4SSLayout -Win64 $Win64
 Check 'UE4SS' $layout.HasUE4SS $(if ($layout.Dll) { $layout.Dll } else { "not found under $Win64" })
 
+# Whether UE4SS itself started is the first thing that matters: when its
+# pattern scan fails, no Lua mod on the server loads and nothing below applies.
+$health = Test-UE4SSHealth -Win64 $Win64
+if ($health.Version) { Line 'UE4SS version' $health.Version }
+if ($health.Fatal) {
+    Write-Host ''
+    Write-Host '  ##############################################################' -ForegroundColor Red
+    Write-Host '  UE4SS IS NOT STARTING. No mod on this server can load.' -ForegroundColor Red
+    Write-Host ("  " + $health.Reason) -ForegroundColor Red
+    Write-Host '  This is not a SmartNPC problem: Keybinds, BPModLoader and every' -ForegroundColor Yellow
+    Write-Host '  other mod are dead too. Install the UE4SS build made for this' -ForegroundColor Yellow
+    Write-Host '  SCUM version, then run REPAIR.bat.' -ForegroundColor Yellow
+    Write-Host '  ##############################################################' -ForegroundColor Red
+}
+
+$stray = @(Get-DownloadedUE4SSFiles -ModHome $Root -Win64 $Win64)
+if (@($stray | Where-Object { $_.Unchanged }).Count -gt 0) {
+    Write-Host ''
+    Line 'UE4SS origin' 'installed by an earlier SmartNPC - run REPAIR.bat to remove it' Yellow
+}
+
 Write-Host ''
 Write-Host '  loader registration' -ForegroundColor DarkCyan
 $loaderOk = $false
