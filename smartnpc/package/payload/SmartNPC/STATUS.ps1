@@ -126,28 +126,32 @@ if (Test-Path -LiteralPath $world -PathType Leaf) {
     Line 'telemetry age' ("{0:N1} s" -f $age) $(if ($age -lt 10) { 'Green' } elseif ($age -lt 60) { 'Yellow' } else { 'Red' })
     try {
         $j = Get-Content -LiteralPath $world -Raw -Encoding UTF8 | ConvertFrom-Json
-        if ($j.PSObject.Properties['stats'] -and $j.stats) {
-            Line 'squads'   $j.stats.squads
-            Line 'npcs'     $j.stats.npcs
-            Line 'physical / virtual' ("{0} / {1}" -f $j.stats.physical, $j.stats.virtual)
-            Line 'players'  $j.stats.players
-            Line 'npcs moving' $j.stats.moving
-            Line 'move commands' $j.stats.commands
-            Line 'stall recoveries' $j.stats.stalls
-            if ($j.stats.PSObject.Properties['classes'] -and $j.stats.classes) {
+        $st = Get-Prop $j 'stats'
+        if ($st) {
+            Line 'squads'   (Get-Prop $st 'squads' 0)
+            Line 'npcs'     (Get-Prop $st 'npcs' 0)
+            Line 'physical / virtual' ("{0} / {1}" -f (Get-Prop $st 'physical' 0), (Get-Prop $st 'virtual' 0))
+            Line 'players'  (Get-Prop $st 'players' 0)
+            Line 'npcs moving' (Get-Prop $st 'moving' 0)
+            Line 'move commands' (Get-Prop $st 'commands' 0)
+            Line 'stall recoveries' (Get-Prop $st 'stalls' 0)
+            $classes = Get-Prop $st 'classes'
+            if ($classes) {
                 $hits2 = @()
-                foreach ($p in $j.stats.classes.PSObject.Properties) {
+                foreach ($p in $classes.PSObject.Properties) {
                     if ($p.Value -gt 0) { $hits2 += ("{0}={1}" -f $p.Name, $p.Value) }
                 }
                 Line 'npc classes found' $(if ($hits2.Count) { ($hits2 -join ', ') } else { 'none yet' }) `
                      $(if ($hits2.Count) { 'Green' } else { 'Yellow' })
             }
         }
-        if ($j.PSObject.Properties['events'] -and $j.events) {
+        $events = @(Get-Prop $j 'events' @())
+        if ($events.Count -gt 0) {
             Write-Host ''
             Write-Host '  recent world events' -ForegroundColor DarkCyan
-            $j.events | Select-Object -Last 10 | ForEach-Object {
-                Write-Host ("    {0}  {1,-14} {2,-10} {3}" -f $_.t, $_.kind, $_.who, $_.what) -ForegroundColor DarkGray
+            $events | Select-Object -Last 10 | ForEach-Object {
+                Write-Host ("    {0}  {1,-14} {2,-10} {3}" -f (Get-Prop $_ 't'), (Get-Prop $_ 'kind'),
+                            (Get-Prop $_ 'who'), (Get-Prop $_ 'what')) -ForegroundColor DarkGray
             }
         }
     } catch {

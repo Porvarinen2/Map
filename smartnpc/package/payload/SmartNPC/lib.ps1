@@ -2,6 +2,21 @@
 # Shared helpers for INSTALL / REPAIR / UNINSTALL / STATUS.
 # Dot-sourced; defines functions only.
 
+<#
+    Reads a property that may not exist.  Under Set-StrictMode, touching a
+    missing property throws, and both the install manifest and the telemetry
+    snapshot are files written by an older version whose shape we cannot assume.
+#>
+function Get-Prop {
+    param($Object, [string]$Name, $Default = $null)
+    if ($null -eq $Object) { return $Default }
+    try {
+        $p = $Object.PSObject.Properties[$Name]
+        if ($null -eq $p -or $null -eq $p.Value) { return $Default }
+        return $p.Value
+    } catch { return $Default }
+}
+
 function Find-ScumServer {
     param([string]$Hint = '', [string]$SelfDir = '')
 
@@ -209,12 +224,12 @@ function Get-MapServerProcess {
             }
         }
     } catch {}
-    return ,@($out)
+    return $out
 }
 
 function Stop-MapServer {
     param([string]$ModHome = '')
-    $procs = Get-MapServerProcess -ModHome $ModHome
+    $procs = @(Get-MapServerProcess -ModHome $ModHome)
     $stopped = 0
     foreach ($p in $procs) {
         try { Stop-Process -Id $p.ProcessId -Force -ErrorAction Stop; $stopped++ } catch {}
@@ -313,7 +328,7 @@ function Get-DownloadedUE4SSFiles {
         [Parameter(Mandatory = $true)][string]$Win64
     )
     $extracted = Join-Path $ModHome 'tools\ue4ss\extracted'
-    if (-not (Test-Path -LiteralPath $extracted -PathType Container)) { return ,@() }
+    if (-not (Test-Path -LiteralPath $extracted -PathType Container)) { return @() }
 
     $root = (Resolve-Path -LiteralPath $extracted).Path.TrimEnd('\','/')
     $out = @()
@@ -329,7 +344,7 @@ function Get-DownloadedUE4SSFiles {
         } catch {}
         $out += [pscustomobject]@{ Relative = $rel; Path = $target; Unchanged = $same }
     }
-    return ,@($out)
+    return $out
 }
 
 function Remove-DownloadedUE4SS {
@@ -337,7 +352,7 @@ function Remove-DownloadedUE4SS {
         [Parameter(Mandatory = $true)][string]$ModHome,
         [Parameter(Mandatory = $true)][string]$Win64
     )
-    $files = Get-DownloadedUE4SSFiles -ModHome $ModHome -Win64 $Win64
+    $files = @(Get-DownloadedUE4SSFiles -ModHome $ModHome -Win64 $Win64)
     $removed = 0; $kept = @()
     foreach ($f in $files) {
         if ($f.Unchanged) {

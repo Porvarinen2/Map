@@ -41,12 +41,13 @@ if (Get-Process -Name SCUMServer -ErrorAction SilentlyContinue) {
     throw 'SCUMServer.exe is running. Stop the server first - nothing has been changed.'
 }
 
-$stopped = Stop-MapServer -ModHome $Dest
-if ($stopped -gt 0) { Say "closed $stopped running map server window(s)" DarkGray }
 
 $Win64 = Join-Path $Server 'SCUM\Binaries\Win64'
 $Dest  = Join-Path $Server 'SmartNPC'
 $layout = Get-UE4SSLayout -Win64 $Win64
+
+$stopped = Stop-MapServer -ModHome $Dest
+if ($stopped -gt 0) { Say "closed $stopped running map server window(s)" DarkGray }
 
 $manifest = $null
 $mf = Join-Path $Dest 'install-manifest.json'
@@ -86,7 +87,7 @@ foreach ($modsRoot in $layout.ModsRoots) {
     if (Test-Path -LiteralPath $modsTxt -PathType Leaf) {
         [void](Set-ModsTxtEntry -ModsRoot $modsRoot -Remove)
         $left = @(Get-Content -LiteralPath $modsTxt -Encoding UTF8 -ErrorAction SilentlyContinue)
-        if ($manifest -and ($manifest.modsTxtExisted -eq $false) -and $left.Count -eq 0) {
+        if ((Get-Prop $manifest 'modsTxtExisted' $true) -eq $false -and $left.Count -eq 0) {
             Remove-Item -LiteralPath $modsTxt -Force -ErrorAction SilentlyContinue
             Say "removed $modsTxt (SmartNPC created it)" DarkGray
         } else {
@@ -95,7 +96,7 @@ foreach ($modsRoot in $layout.ModsRoots) {
     }
 }
 
-if ($RemoveUE4SS -and $manifest -and $manifest.ue4ssInstalledBy -eq 'SmartNPC') {
+if ($RemoveUE4SS -and (Get-Prop $manifest 'ue4ssInstalledBy') -eq 'SmartNPC') {
     $ext = Join-Path $Dest 'tools\ue4ss\extracted'
     if (Test-Path -LiteralPath $ext -PathType Container) {
         foreach ($item in (Get-ChildItem -LiteralPath $ext -Force)) {
