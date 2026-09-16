@@ -1,10 +1,10 @@
-SmartNPC 1.0.1 - SCUM living NPC world
+SmartNPC 1.0.2 - SCUM living NPC world
 ======================================
 
 ASENNUS
 1. Sammuta SCUM-palvelin.
 2. Pura TAMA ZIP omaan kansioon. Ala aja mitaan zipin sisalta.
-3. Aja INSTALL.bat.
+3. Sulje karttaikkuna jos se on auki. Aja INSTALL.bat.
    Jos palvelin ei ole F:\SteamLibrary\steamapps\common\SCUM Server,
    veda palvelinkansio INSTALL.bat:n paalle tai aja:
    INSTALL.bat "D:\polku\SCUM Server"

@@ -12,6 +12,9 @@ $ErrorActionPreference = 'Stop'
 try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false) } catch {}
 
 $Root      = Split-Path -Parent $MyInvocation.MyCommand.Path
+# Never keep the mod folder as the working directory: that alone is enough to
+# make Windows refuse to replace it during an update.
+try { Set-Location -LiteralPath ([IO.Path]::GetTempPath()) } catch {}
 $WebRoot   = Join-Path $Root 'web'
 $OutputDir = Join-Path $Root 'output'
 $LogFile   = Join-Path $Root 'logs\map_server.log'

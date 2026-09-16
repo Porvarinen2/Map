@@ -172,3 +172,108 @@ function Test-SmartNPCLoader {
         ModsTxt    = $modsTxt
     }
 }
+
+<#
+    A running SmartNPC map server keeps a PowerShell process alive whose working
+    directory is the mod folder, which locks the folder against deletion.  Find
+    those processes by command line so the installer can close them instead of
+    failing with "used by another process".
+#>
+function Get-MapServerProcess {
+    param([string]$ModHome = '')
+    $out = @()
+    try {
+        $procs = Get-CimInstance Win32_Process -ErrorAction Stop |
+                 Where-Object { $_.Name -in @('powershell.exe','pwsh.exe') -and $_.CommandLine }
+        foreach ($p in $procs) {
+            if ($p.CommandLine -match 'START_MAP\.ps1') {
+                if (-not $ModHome -or $p.CommandLine -like ("*" + $ModHome + "*")) { $out += $p }
+            }
+        }
+    } catch {}
+    return @($out)
+}
+
+function Stop-MapServer {
+    param([string]$ModHome = '')
+    $procs = Get-MapServerProcess -ModHome $ModHome
+    $stopped = 0
+    foreach ($p in $procs) {
+        try { Stop-Process -Id $p.ProcessId -Force -ErrorAction Stop; $stopped++ } catch {}
+    }
+    if ($stopped -gt 0) { Start-Sleep -Milliseconds 700 }
+    return $stopped
+}
+
+<#
+    Update the mod in place instead of deleting and re-creating the folder.
+
+    Deleting the folder fails whenever anything holds a handle on it - an open
+    Explorer window, a map server, a text editor - and the old installer then
+    aborted having already made a backup.  Copying file by file only needs the
+    individual files to be writable, and never touches state, output, logs or
+    tools.
+#>
+function Sync-ModFiles {
+    param(
+        [Parameter(Mandatory = $true)][string]$Source,
+        [Parameter(Mandatory = $true)][string]$Dest,
+        [string[]]$CodeDirs = @('lua','data','web'),
+        # The user's folders. Nothing in them is ever read from the package or
+        # written over, even if a package accidentally ships something there.
+        [string[]]$UserDirs = @('state','output','logs','tools')
+    )
+    $failed = @()
+    $copied = 0
+
+    New-Item -ItemType Directory -Path $Dest -Force | Out-Null
+    foreach ($d in $UserDirs) {
+        New-Item -ItemType Directory -Path (Join-Path $Dest $d) -Force | Out-Null
+    }
+
+    $srcRoot = (Resolve-Path -LiteralPath $Source).Path.TrimEnd('\','/')
+    $files = Get-ChildItem -LiteralPath $Source -Recurse -File -Force
+    $wanted = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+
+    foreach ($f in $files) {
+        $rel = $f.FullName.Substring($srcRoot.Length).TrimStart('\','/')
+        $top = ($rel -split '[\\/]')[0]
+        if ($UserDirs -contains $top) { continue }
+        [void]$wanted.Add($rel)
+        $target = Join-Path $Dest $rel
+        $targetDir = Split-Path -Parent $target
+        if (-not (Test-Path -LiteralPath $targetDir)) {
+            New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
+        }
+        try {
+            # A stale directory sitting where a file belongs would silently turn
+            # into a copy *inside* it, leaving a broken install that reports
+            # success. Clear it first.
+            if (Test-Path -LiteralPath $target -PathType Container) {
+                Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction Stop
+            }
+            Copy-Item -LiteralPath $f.FullName -Destination $target -Force -ErrorAction Stop
+            if (-not (Test-Path -LiteralPath $target -PathType Leaf)) { throw 'file not present after copy' }
+            $copied++
+        } catch {
+            $failed += $rel
+        }
+    }
+
+    # Remove code files this version no longer ships, so an upgrade cannot leave
+    # a stale module behind.  Only inside the code folders: state, output, logs
+    # and tools are the user's and are never enumerated here.
+    foreach ($dir in $CodeDirs) {
+        $d = Join-Path $Dest $dir
+        if (-not (Test-Path -LiteralPath $d -PathType Container)) { continue }
+        $dRootLen = ((Resolve-Path -LiteralPath $Dest).Path.TrimEnd('\','/')).Length
+        foreach ($existing in (Get-ChildItem -LiteralPath $d -Recurse -File -Force)) {
+            $rel = $existing.FullName.Substring($dRootLen).TrimStart('\','/')
+            if (-not $wanted.Contains($rel)) {
+                Remove-Item -LiteralPath $existing.FullName -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+
+    [pscustomobject]@{ Copied = $copied; Failed = @($failed) }
+}

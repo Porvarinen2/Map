@@ -41,6 +41,9 @@ if (Get-Process -Name SCUMServer -ErrorAction SilentlyContinue) {
     throw 'SCUMServer.exe is running. Stop the server first - nothing has been changed.'
 }
 
+$stopped = Stop-MapServer -ModHome $Dest
+if ($stopped -gt 0) { Say "closed $stopped running map server window(s)" DarkGray }
+
 $Win64 = Join-Path $Server 'SCUM\Binaries\Win64'
 $Dest  = Join-Path $Server 'SmartNPC'
 $layout = Get-UE4SSLayout -Win64 $Win64

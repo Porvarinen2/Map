@@ -63,31 +63,49 @@ $Dest  = Join-Path $Server 'SmartNPC'
 
 Say "mod home: $Dest" Green
 
+# ----------------------------------------------- close anything holding files
+$stopped = Stop-MapServer -ModHome $Dest
+if ($stopped -gt 0) { Say "map:      closed $stopped running map server window(s)" DarkGray }
+
 # ------------------------------------------------------------------- backup
 $Backup = $null
 if (Test-Path -LiteralPath $Dest) {
     $Backup = Join-Path $Server ('SmartNPC_Backups\' + (Get-Date -Format 'yyyyMMdd_HHmmss'))
-    New-Item -ItemType Directory -Path $Backup -Force | Out-Null
-    Copy-Item -LiteralPath $Dest -Destination (Join-Path $Backup 'SmartNPC') -Recurse -Force
-    Say "backup:   $Backup" DarkGray
+    try {
+        New-Item -ItemType Directory -Path $Backup -Force | Out-Null
+        Copy-Item -LiteralPath $Dest -Destination (Join-Path $Backup 'SmartNPC') -Recurse -Force -ErrorAction Stop
+        Say "backup:   $Backup" DarkGray
+    } catch {
+        Say "backup:   partial ($($_.Exception.Message))" DarkYellow
+    }
 }
 
-# keep the user's config and squad state across an upgrade
+# keep the user's config across an upgrade (state, output, logs and tools are
+# never touched by the file sync at all)
 $keepConfig = $null
-$keepState  = $null
 if (-not $ResetConfig) {
     $cfg = Join-Path $Dest 'smartnpc.config.lua'
-    if (Test-Path -LiteralPath $cfg -PathType Leaf) { $keepConfig = Get-Content -LiteralPath $cfg -Raw -Encoding UTF8 }
-    $st = Join-Path $Dest 'state'
-    if (Test-Path -LiteralPath $st -PathType Container) {
-        $keepState = Join-Path ([IO.Path]::GetTempPath()) ('smartnpc_state_' + [guid]::NewGuid().ToString('N'))
-        Copy-Item -LiteralPath $st -Destination $keepState -Recurse -Force
+    if (Test-Path -LiteralPath $cfg -PathType Leaf) {
+        try { $keepConfig = Get-Content -LiteralPath $cfg -Raw -Encoding UTF8 } catch {}
     }
 }
 
 # ------------------------------------------------------------------- install
-if (Test-Path -LiteralPath $Dest) { Remove-Item -LiteralPath $Dest -Recurse -Force }
-Copy-Item -LiteralPath $Payload -Destination $Dest -Recurse -Force
+# Files are replaced one by one rather than by deleting the folder: an open
+# Explorer window, an editor or a leftover map server locks the directory, and
+# a failed delete used to abort the whole install.
+$sync = Sync-ModFiles -Source $Payload -Dest $Dest
+if ($sync.Failed.Count -gt 0) {
+    Write-Host ''
+    Say 'These files are locked by another program and were NOT updated:' Red
+    foreach ($f in $sync.Failed) { Say "  $f" Red }
+    Write-Host ''
+    Say 'Close any SmartNPC map server window, editor or Explorer window open in' Yellow
+    Say "$Dest and run INSTALL.bat again." Yellow
+    throw 'Install incomplete: some files could not be replaced.'
+}
+Say "files:    $($sync.Copied) written" Green
+
 foreach ($sub in @('state','output','logs','tools')) {
     $p = Join-Path $Dest $sub
     if (-not (Test-Path -LiteralPath $p)) { New-Item -ItemType Directory -Path $p -Force | Out-Null }
@@ -95,11 +113,6 @@ foreach ($sub in @('state','output','logs','tools')) {
 if ($keepConfig) {
     [IO.File]::WriteAllText((Join-Path $Dest 'smartnpc.config.lua'), $keepConfig, (New-Object Text.UTF8Encoding($false)))
     Say 'config:   kept your existing smartnpc.config.lua' DarkGray
-}
-if ($keepState) {
-    Copy-Item -Path (Join-Path $keepState '*') -Destination (Join-Path $Dest 'state') -Recurse -Force
-    Remove-Item -LiteralPath $keepState -Recurse -Force
-    Say 'state:    kept your existing squad state' DarkGray
 }
 
 # ------------------------------------------------------------------- UE4SS
