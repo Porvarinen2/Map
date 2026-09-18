@@ -4,6 +4,7 @@ const fs=require('fs');
 const path=require('path');
 const {parseEventLine}=require('../src/bridge/protocol');
 const {WorldDirector}=require('../src/director/worldDirector');
+const {legacyDirector}=require('./helpers/legacyDirector');
 
 const root=path.resolve(__dirname,'..','..');
 function read(rel){return fs.readFileSync(path.join(root,rel),'utf8');}
@@ -18,7 +19,7 @@ test('IPC payload cannot overwrite reserved event type or timestamp',()=>{
 });
 
 test('failed MOVE command result requests navigation recovery instead of disabling the global movement capability',()=>{
-  const d=new WorldDirector({featureFlags:{groups:false}});
+  const d=legacyDirector({featureFlags:{groups:false}});
   d.ingest({type:'NPC_SEEN',npcId:'runtime-1',body:'BP_Drifter_Lvl_1',x:0,y:0,z:0,at:1});
   const n=d.world.npcs['runtime-1'];
   n.navigation={movementCommanded:true,pathFailed:false,recoveryRequested:null,lastTarget:{x:1000,y:0,z:0},lastRepathAt:1};
@@ -48,8 +49,12 @@ test('UE4SS capability clock follows wall time rather than synthetic call-count 
 
 test('new bridge session invalidates stale persisted runtime capabilities before accepting fresh probe results',()=>{
   const world={version:5,time:0,npcs:{},groups:{},zombies:{},players:{},events:[],capabilities:{movement:{ok:true},brain_stop:{ok:true},bridge_scheduler:{ok:true},full_takeover_ready:{ok:true}},meta:{seed:'x'},_groupSeq:0,_npcSeq:0};
-  const d=new WorldDirector({world});
+  const d=legacyDirector({world});
   d.ingest({type:'BRIDGE_STARTED',version:'0.1.5-audit9fix',at:100});
   assert.deepEqual(d.world.capabilities,{});
+  // audit25: a fresh bridge session has not failed anything yet, so untested
+  // capabilities report PENDING rather than a misleading DEGRADED.
+  assert.equal(d.healthSnapshot().scumAdapter.status,'PENDING');
+  d.ingest({type:'CAPABILITY',name:'brain_stop',ok:false,detail:'not found',at:101});
   assert.equal(d.healthSnapshot().scumAdapter.status,'DEGRADED');
 });

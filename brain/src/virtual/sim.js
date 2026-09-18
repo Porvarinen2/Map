@@ -1,6 +1,6 @@
 'use strict';
 const DEFAULT_FULL_DISTANCE_CM=20000;
-const DEFAULT_LIGHT_DISTANCE_CM=75000;
+const DEFAULT_LIGHT_DISTANCE_CM=70000;
 const DEFAULT_VIRTUAL_SPEED_CM_PER_SEC=130;
 function dist(a,b){const dx=(b.x||0)-(a.x||0),dy=(b.y||0)-(a.y||0),dz=(b.z||0)-(a.z||0);return Math.sqrt(dx*dx+dy*dy+dz*dz);}
 function simulationLod(nearestPlayerDistance,{full=DEFAULT_FULL_DISTANCE_CM,light=DEFAULT_LIGHT_DISTANCE_CM}={}){if(nearestPlayerDistance<=full)return'FULL';if(nearestPlayerDistance<=light)return'LIGHT';return'VIRTUAL';}

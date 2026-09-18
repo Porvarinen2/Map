@@ -188,15 +188,38 @@ test('diagnostics enumerates UE4SS log paths safely and captures bounded state s
  assert.match(s,/scum-state\.log/);
 });
 
-test('package bundles a tiled 14k map pyramid for zoomable high-resolution viewing',()=>{
+test('bundled map manifest describes exactly the tile pyramid that ships',()=>{
  const manifest=JSON.parse(read('web/public/map/manifest.json'));
+ const cfg=JSON.parse(read('brain/config/default.json'));
  assert.equal(manifest.tileSize,512);
- assert.equal(manifest.maxZoom,5);
- assert.equal(manifest.imageWidth,14481);
- assert.equal(manifest.imageHeight,14481);
- assert.equal(manifest.levels['5'].cols,29);
- assert.equal(manifest.levels['5'].rows,29);
- assert.ok(fs.existsSync(path.join(root,'web/public/map/tiles/5/28_28.jpg')));
+ const zooms=Object.keys(manifest.levels).map(Number).sort((a,b)=>a-b);
+ assert.ok(zooms.length>=4,'map must ship a usable zoom pyramid');
+ assert.equal(manifest.maxZoom,zooms[zooms.length-1]);
+ assert.equal(manifest.minZoom,zooms[0]);
+ // Every advertised level must exist on disk: a declared but missing level renders
+ // as an empty map instead of a detailed one.
+ for(const z of zooms){
+  const level=manifest.levels[String(z)];
+  assert.ok(fs.existsSync(path.join(root,`web/public/map/tiles/${z}/0_0.jpg`)),`missing first tile of level ${z}`);
+  assert.ok(fs.existsSync(path.join(root,`web/public/map/tiles/${z}/${level.cols-1}_${level.rows-1}.jpg`)),`missing last tile of level ${z}`);
+ }
+ const deepest=manifest.levels[String(manifest.maxZoom)];
+ assert.ok(deepest.width>=4000,'deepest bundled level must still be high resolution');
+ assert.equal(manifest.imageWidth,deepest.width);
+ // The served map config must advertise the same pyramid as the manifest.
+ assert.equal(cfg.map.tiles.maxZoom,manifest.maxZoom);
+ assert.deepEqual(Object.keys(cfg.map.tiles.levels).map(Number).sort((a,b)=>a-b),zooms);
+});
+
+test('map manifest can be rebuilt from the tiles actually present',()=>{
+ const {scanLevels}=require('../tools/buildMapManifest');
+ const manifest=JSON.parse(read('web/public/map/manifest.json'));
+ const present=scanLevels();
+ assert.deepEqual(Object.keys(present).map(Number).sort((a,b)=>a-b),Object.keys(manifest.levels).map(Number).sort((a,b)=>a-b));
+ for(const [z,level] of Object.entries(present)){
+  assert.equal(manifest.levels[z].cols,level.cols);
+  assert.equal(manifest.levels[z].rows,level.rows);
+ }
 });
 
 test('map viewer exposes zoom controls, drag pan and health detail text',()=>{

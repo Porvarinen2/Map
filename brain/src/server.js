@@ -1,6 +1,8 @@
 'use strict';
 const http=require('http'); const fs=require('fs'); const path=require('path');
 const {WorldDirector}=require('./director/worldDirector'); const {loadWorld,saveWorld}=require('./persistence/worldStore'); const {parseEventLine,formatCommand}=require('./bridge/protocol');
+const {CommandBroker}=require('./bridge/commandBroker');
+const {validatePopulationConfig}=require('./director/worldPopulation');
 function finiteNumber(v,name){const n=Number(v);if(!Number.isFinite(n))throw new TypeError(`${name} must be a finite number`);return n;}
 function buildTeleportCommand(pos,player=''){const x=finiteNumber(pos.x,'x'),y=finiteNumber(pos.y,'y'),z=finiteNumber(pos.z,'z');return `#Teleport ${x} ${y} ${z}${player?` ${String(player).trim()}`:''}`;}
 function sendJson(res,status,obj){const body=JSON.stringify(obj);res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store'});res.end(body);}
@@ -20,16 +22,63 @@ class StateSnapshotReader{
  poll(onEvent){if(!this.file||!fs.existsSync(this.file))return;const st=fs.statSync(this.file);if(st.mtimeMs===this.lastMtimeMs)return;const text=fs.readFileSync(this.file,'utf8');if(!text.endsWith('\n'))return;this.lastMtimeMs=st.mtimeMs;for(const line of text.split(/\r?\n/)){if(!line.trim())continue;const e=parseEventLine(line);if(e)onEvent(e);}}
 }
 class CommandSnapshotWriter{
- constructor(file,{initialSeq=Date.now()*1000}={}){this.file=file;this.seq=initialSeq;this.latest=new Map();fs.mkdirSync(path.dirname(file),{recursive:true});this._write();}
- _write(){const lines=[...this.latest.values()].sort((a,b)=>a.seq-b.seq).map(formatCommand);const tmp=this.file+'.tmp';fs.writeFileSync(tmp,lines.length?lines.join('\n')+'\n':'');try{fs.renameSync(tmp,this.file);}catch(err){if(!['EEXIST','EPERM','EACCES'].includes(err.code))throw err;fs.rmSync(this.file,{force:true});fs.renameSync(tmp,this.file);}}
- submit(cmd){if(!cmd||!cmd.type)throw new TypeError('command type required');const key=cmd.npcId||`__${cmd.type}`;const record={...cmd,seq:Number.isSafeInteger(cmd.seq)?cmd.seq:++this.seq};this.latest.set(key,record);this._write();return record.seq;}
- remove(npcId){if(this.latest.delete(npcId))this._write();}
- prune(activeIds){const active=new Set(activeIds||[]);let changed=false;for(const key of [...this.latest.keys()]){if(key.startsWith('__'))continue;if(!active.has(key)){this.latest.delete(key);changed=true;}}if(changed)this._write();}
+ constructor(file,{initialSeq=Date.now()*1000}={}){this.file=file;this.broker=new CommandBroker({initialSeq});fs.mkdirSync(path.dirname(file),{recursive:true});this._write();}
+ get seq(){return this.broker.seq;}
+ _write(){const lines=this.broker.snapshotRecords().map(formatCommand);const tmp=this.file+'.tmp';fs.writeFileSync(tmp,lines.length?lines.join('\n')+'\n':'');try{fs.renameSync(tmp,this.file);}catch(err){if(!['EEXIST','EPERM','EACCES'].includes(err.code))throw err;fs.rmSync(this.file,{force:true});fs.renameSync(tmp,this.file);}}
+ submit(cmd){const seq=this.broker.submit(cmd);this._write();return seq;}
+ ack(result){if(this.broker.ack(result))this._write();}
+ remove(entityId){if(this.broker.removeByEntityId(entityId))this._write();}
+ prune(activeIds){if(this.broker.pruneByEntityIds(activeIds))this._write();}
+ records(){return this.broker.snapshotRecords();}
 }
 function deepMerge(base,override){if(!override||typeof override!=='object'||Array.isArray(override))return base;const out={...base};for(const [k,v] of Object.entries(override)){if(v&&typeof v==='object'&&!Array.isArray(v)&&base?.[k]&&typeof base[k]==='object'&&!Array.isArray(base[k]))out[k]=deepMerge(base[k],v);else out[k]=v;}return out;}
 function readJsonFile(file){let text=fs.readFileSync(file,'utf8');if(text.charCodeAt(0)===0xFEFF)text=text.slice(1);return JSON.parse(text);}
-function loadConfig(){const p=process.env.TESLES_NPC_CONFIG||path.join(__dirname,'..','config','default.json');let base=readJsonFile(p);const userPath=process.env.TESLES_NPC_USER_CONFIG||path.join(path.dirname(p),'user.json');if(fs.existsSync(userPath)){const user=readJsonFile(userPath);base=deepMerge(base,user);}const cfgDir=path.dirname(p);for(const k of ['eventsFile','commandsFile','offsetFile','stateFile'])if(base.ipc?.[k]&&!path.isAbsolute(base.ipc[k]))base.ipc[k]=path.resolve(cfgDir,base.ipc[k]);return base;}
+function loadConfig(){const p=process.env.TESLES_NPC_CONFIG||path.join(__dirname,'..','config','default.json');let base=readJsonFile(p);
+ const populationCandidates=[process.env.TESLES_NPC_POPULATION,path.join(path.dirname(p),'population.json'),path.join(__dirname,'..','config','population.json')].filter(Boolean);
+ const populationDefaultsPath=populationCandidates.find(f=>fs.existsSync(f));
+ if(populationDefaultsPath)base.population={...readJsonFile(populationDefaultsPath),...(base.population||{})};
+ const userPath=process.env.TESLES_NPC_USER_CONFIG||path.join(path.dirname(p),'user.json');if(fs.existsSync(userPath)){const user=readJsonFile(userPath);base=deepMerge(base,user);}const cfgDir=path.dirname(p);for(const k of ['eventsFile','commandsFile','offsetFile','stateFile'])if(base.ipc?.[k]&&!path.isAbsolute(base.ipc[k]))base.ipc[k]=path.resolve(cfgDir,base.ipc[k]);
+ validatePopulationConfig(base.population||{},base.map||{});
+ return base;}
 function physicalControlReady(cfg,director){const mode=cfg.features?.takeoverMode;const modeReady=(mode==='full'||mode==='auto')&&director.world.capabilities?.full_takeover_ready?.ok===true;return cfg.features?.takeoverRequested===true&&modeReady&&director.world.capabilities?.bridge_scheduler?.ok===true&&director.world.capabilities?.brain_stop?.ok===true&&director.world.capabilities?.movement?.ok===true;}
-function startMain(){const cfg=loadConfig();const stateFile=process.env.TESLES_NPC_WORLD||path.resolve(__dirname,'..','..','runtime','world.json');const prior=loadWorld(stateFile);const director=new WorldDirector({seed:cfg.world.seed,world:prior,featureFlags:cfg.features,simulation:cfg.simulation,population:cfg.population});const reader=new FileIpcReader(cfg.ipc.eventsFile,cfg.ipc.offsetFile);const stateReader=new StateSnapshotReader(cfg.ipc.stateFile);const commandWriter=new CommandSnapshotWriter(cfg.ipc.commandsFile);const tick=()=>{reader.poll(e=>director.ingest(e));stateReader.poll(e=>director.ingest(e));director.tick(cfg.world.tickMs/1000);const activeRuntimeIds=Object.values(director.world.npcs).filter(n=>n.alive&&n.materialized&&n.runtimeId).map(n=>n.runtimeId);commandWriter.prune(activeRuntimeIds);if(physicalControlReady(cfg,director)){for(const n of Object.values(director.world.npcs)){if(n.aiIntent&&n.materialized){commandWriter.submit(n.aiIntent);n.aiIntent=null;}}}else{for(const n of Object.values(director.world.npcs))n.aiIntent=null;}};setInterval(tick,cfg.world.tickMs).unref();setInterval(()=>saveWorld(stateFile,director.world),cfg.world.autosaveSeconds*1000).unref();process.on('SIGINT',()=>{saveWorld(stateFile,director.world);process.exit(0)});process.on('SIGTERM',()=>{saveWorld(stateFile,director.world);process.exit(0)});const publicDir=path.resolve(__dirname,'..','..','web','public');const server=createHttpServer({director,publicDir,mapConfig:cfg.map});server.listen(cfg.server.port,cfg.server.host,()=>console.log(`[TeslesNPC] Brain+Map http://${cfg.server.host}:${cfg.server.port}`));return{director,server};}
+function startMain(){
+ const cfg=loadConfig();
+ const stateFile=process.env.TESLES_NPC_WORLD||path.resolve(__dirname,'..','..','runtime','world.json');
+ const prior=loadWorld(stateFile);
+ const director=new WorldDirector({seed:cfg.world.seed,world:prior,featureFlags:cfg.features,simulation:cfg.simulation,population:cfg.population,materialization:cfg.materialization,map:cfg.map});
+ // The persistent world exists before anything physical does: bootstrap and persist
+ // the population before the first tick and before the map/API is reachable.
+ const bootstrap=director.bootstrapPopulation({map:cfg.map,populationConfig:cfg.population});
+ if(bootstrap.changed)saveWorld(stateFile,director.world);
+ const reader=new FileIpcReader(cfg.ipc.eventsFile,cfg.ipc.offsetFile);
+ const stateReader=new StateSnapshotReader(cfg.ipc.stateFile);
+ const commandWriter=new CommandSnapshotWriter(cfg.ipc.commandsFile);
+ director.bus.on('COMMAND_RESULT',e=>{if(e&&e.commandKey)commandWriter.ack({seq:e.seq,commandKey:e.commandKey});});
+ const tick=()=>{
+  reader.poll(e=>director.ingest(e));
+  stateReader.poll(e=>director.ingest(e));
+  director.tick(cfg.world.tickMs/1000);
+  const npcs=Object.values(director.world.npcs);
+  const activeIds=[
+   ...npcs.filter(n=>n.alive&&n.materialized&&n.runtimeId).map(n=>n.runtimeId),
+   ...npcs.filter(n=>n.alive&&['SPAWNING','CAPTURING','MATERIALIZED'].includes(n.materializationState)).map(n=>n.npcId)
+  ];
+  for(const cmd of director.drainCommands())commandWriter.submit(cmd);
+  commandWriter.prune(activeIds);
+  if(physicalControlReady(cfg,director)){
+   for(const n of npcs){if(n.aiIntent&&n.materialized){commandWriter.submit(n.aiIntent);n.aiIntent=null;}}
+  }else{
+   for(const n of npcs)n.aiIntent=null;
+  }
+ };
+ setInterval(tick,cfg.world.tickMs).unref();
+ setInterval(()=>saveWorld(stateFile,director.world),cfg.world.autosaveSeconds*1000).unref();
+ process.on('SIGINT',()=>{saveWorld(stateFile,director.world);process.exit(0)});
+ process.on('SIGTERM',()=>{saveWorld(stateFile,director.world);process.exit(0)});
+ const publicDir=path.resolve(__dirname,'..','..','web','public');
+ const server=createHttpServer({director,publicDir,mapConfig:cfg.map});
+ server.listen(cfg.server.port,cfg.server.host,()=>console.log(`[TeslesNPC] Brain+Map http://${cfg.server.host}:${cfg.server.port} (${Object.keys(director.world.npcs).length} persistent NPCs)`));
+ return{director,server,commandWriter,bootstrap};
+}
 if(require.main===module)startMain();
-module.exports={buildTeleportCommand,createHttpServer,FileIpcReader,StateSnapshotReader,CommandSnapshotWriter,deepMerge,loadConfig,startMain,physicalControlReady,safeStaticFile};
+module.exports={CommandBroker,buildTeleportCommand,createHttpServer,FileIpcReader,StateSnapshotReader,CommandSnapshotWriter,deepMerge,loadConfig,startMain,physicalControlReady,safeStaticFile};

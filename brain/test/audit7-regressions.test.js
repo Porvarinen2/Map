@@ -5,6 +5,7 @@ const os=require('os');
 const path=require('path');
 const {parseEventLine}=require('../src/bridge/protocol');
 const {WorldDirector}=require('../src/director/worldDirector');
+const {legacyDirector}=require('./helpers/legacyDirector');
 const {FileIpcReader}=require('../src/server');
 
 const root=path.resolve(__dirname,'..','..');
@@ -18,7 +19,7 @@ test('malformed percent encoding in IPC payload cannot crash event parsing',()=>
 });
 
 test('invalid NPC damage payload cannot poison persistent health with NaN',()=>{
-  const d=new WorldDirector({featureFlags:{groups:false}});
+  const d=legacyDirector({featureFlags:{groups:false}});
   d.ingest({type:'NPC_SEEN',npcId:'runtime-1',body:'BP_Drifter_Lvl_1',x:0,y:0,z:0,at:1});
   const n=d.world.npcs['runtime-1'];
   const before=n.health;
@@ -30,7 +31,7 @@ test('invalid NPC damage payload cannot poison persistent health with NaN',()=>{
 
 
 test('relative SCUM damage fractions compose multiplicatively without cumulative over-damage drift',()=>{
-  const d=new WorldDirector({featureFlags:{groups:false}});
+  const d=legacyDirector({featureFlags:{groups:false}});
   d.ingest({type:'NPC_SEEN',npcId:'runtime-hp',body:'BP_Drifter_Lvl_1',x:0,y:0,z:0,at:1});
   const n=d.world.npcs['runtime-hp'];
   d.ingest({type:'NPC_DAMAGE',npcId:'runtime-hp',damageFraction:0.10,at:2}); // 100 -> 90
@@ -38,7 +39,7 @@ test('relative SCUM damage fractions compose multiplicatively without cumulative
   assert.ok(Math.abs(n.health-0.8)<1e-9,`expected 0.8, got ${n.health}`);
 });
 test('failed STOP result re-arms a bounded stop retry instead of forgetting a still-moving NPC',()=>{
-  const d=new WorldDirector({featureFlags:{groups:false}});
+  const d=legacyDirector({featureFlags:{groups:false}});
   d.ingest({type:'NPC_SEEN',npcId:'runtime-1',body:'BP_Drifter_Lvl_1',x:0,y:0,z:0,at:1});
   const n=d.world.npcs['runtime-1'];
   n.navigation={movementCommanded:false,lastTarget:null};

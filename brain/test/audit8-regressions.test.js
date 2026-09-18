@@ -1,6 +1,7 @@
 'use strict';
 const test=require('node:test');
 const assert=require('node:assert/strict');
+const {legacyDirector}=require('./helpers/legacyDirector');
 const fs=require('fs');
 const path=require('path');
 const root=path.resolve(__dirname,'..','..');
@@ -39,9 +40,10 @@ test('a newly spawned NPC that cannot be taken over fail-closes and releases exi
 test('non-finite IPC timestamps and coordinates cannot poison persistent world state',()=>{
   const {parseEventLine}=require('../src/bridge/protocol');
   const {WorldDirector}=require('../src/director/worldDirector');
+const {legacyDirector}=require('./helpers/legacyDirector');
   const parsed=parseEventLine('Infinity|NPC_SEEN|npcId=bad|body=BP_Guard_Lvl_1|x=Infinity|y=0|z=0');
   assert.ok(Number.isFinite(parsed.at),'event timestamp must be finite');
-  const d=new WorldDirector({featureFlags:{groups:false}});
+  const d=legacyDirector({featureFlags:{groups:false}});
   d.ingest(parsed);
   assert.equal(d.world.npcs.bad,undefined,'invalid position must not create a poisoned NPC');
   d.ingest({type:'NPC_SEEN',npcId:'good',body:'BP_Guard_Lvl_1',x:1,y:2,z:3,at:Date.now()});
@@ -75,7 +77,7 @@ test('saving after recovery never overwrites a valid backup with a corrupt prima
 
 test('bridge restart invalidates stale materialized actor bindings before fresh discovery',()=>{
   const {WorldDirector}=require('../src/director/worldDirector');
-  const d=new WorldDirector({featureFlags:{groups:false}});
+  const d=legacyDirector({featureFlags:{groups:false}});
   d.ingest({type:'NPC_SEEN',npcId:'runtime-old',body:'BP_Guard_Lvl_1',x:1,y:2,z:3,at:1});
   const n=d._resolveByRuntime('runtime-old');
   assert.ok(n&&n.materialized);

@@ -32,9 +32,9 @@
       "enabled": true,
       "tileSize": 512,
       "minZoom": 0,
-      "maxZoom": 5,
-      "imageWidth": 14481,
-      "imageHeight": 14481,
+      "maxZoom": 4,
+      "imageWidth": 7241,
+      "imageHeight": 7241,
       "format": "jpg",
       "pathTemplate": "map/tiles/{z}/{x}_{y}.jpg",
       "levels": {
@@ -67,12 +67,6 @@
           "height": 7241,
           "cols": 15,
           "rows": 15
-        },
-        "5": {
-          "width": 14481,
-          "height": 14481,
-          "cols": 29,
-          "rows": 29
         }
       }
     }
@@ -95,13 +89,14 @@
   },
   "simulation": {
     "fullDistanceCm": 20000,
-    "lightDistanceCm": 75000,
+    "lightDistanceCm": 70000,
     "virtualSpeedCmPerSec": 130,
     "playerStaleMs": 15000,
     "zombieStaleMs": 45000,
     "groupCombatIntervalSeconds": 10,
     "groupHistoryLimit": 200,
-    "compactSnapshot": true
+    "compactSnapshot": true,
+    "materializationTimeoutMs": 15000
   },
   "population": {
     "maxNpc": 100,
@@ -109,6 +104,36 @@
     "ignoreUnmanagedAboveCap": true,
     "roamEnabled": true,
     "roamIntervalSeconds": 45,
-    "roamRadiusCm": 35000
+    "roamRadiusCm": 35000,
+    "initialNpcCount": 100,
+    "replenishDead": false,
+    "edgeMarginCm": 50000,
+    "groupMemberSpreadCm": 3000,
+    "bootstrapGeneratorVersion": 1,
+    "adoptUnmanagedNpc": false,
+    "groupClassWeights": {
+      "survivor_group": 22,
+      "scavengers": 14,
+      "hunters": 10,
+      "bandit_crew": 14,
+      "militia_cell": 10,
+      "police_patrol": 8,
+      "ex_military": 7,
+      "radiation_team": 3,
+      "bunker_team": 3,
+      "elite_unit": 1,
+      "duo": 4,
+      "solo": 4
+    }
+  },
+  "materialization": {
+    "dematerializeGraceMs": 5000,
+    "spawnRetryMs": 10000,
+    "spawnBackoffMaxMs": 120000,
+    "maxMaterializePerTick": 2,
+    "maxDematerializePerTick": 5,
+    "spawnCommandTimeoutMs": 15000,
+    "captureCommandTimeoutMs": 15000,
+    "maxSpawnAttemptsBeforeBlock": 0
   }
 }

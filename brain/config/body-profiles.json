@@ -1,0 +1,50 @@
+{
+  "families": {
+    "DRIFTER": {
+      "classPatterns": ["BP_Drifter_Lvl_"],
+      "knownClasses": {
+        "1": "BP_Drifter_Lvl_1",
+        "2": "BP_Drifter_Lvl_2",
+        "3": "BP_Drifter_Lvl_3",
+        "4": "BP_Drifter_Lvl_4",
+        "5": "BP_Drifter_Lvl_5"
+      }
+    },
+    "GUARD": {
+      "classPatterns": ["BP_Guard_Lvl_"],
+      "knownClasses": {
+        "1": "BP_Guard_Lvl_1",
+        "2": "BP_Guard_Lvl_2",
+        "3": "BP_Guard_Lvl_3",
+        "4": "BP_Guard_Lvl_4",
+        "5": "BP_Guard_Lvl_5"
+      }
+    },
+    "RADIATION": {
+      "classPatterns": ["Radiation"],
+      "knownClasses": {},
+      "requiresRuntimeDiscovery": true
+    },
+    "BUNKER": {
+      "classPatterns": ["AbandonedBunker", "Bunker"],
+      "knownClasses": {},
+      "requiresRuntimeDiscovery": true
+    }
+  },
+  "archetypeFamily": {
+    "civilian": "DRIFTER",
+    "scavenger": "DRIFTER",
+    "survivor": "DRIFTER",
+    "hunter": "DRIFTER",
+    "bandit": "DRIFTER",
+    "police": "GUARD",
+    "security": "GUARD",
+    "militia": "GUARD",
+    "ex_military": "GUARD",
+    "veteran": "GUARD",
+    "elite": "GUARD",
+    "radiation_specialist": "RADIATION",
+    "bunker_specialist": "BUNKER"
+  },
+  "fallbackFamily": "DRIFTER"
+}

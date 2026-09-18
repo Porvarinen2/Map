@@ -3,6 +3,7 @@ const assert=require('node:assert/strict');
 const fs=require('fs');
 const path=require('path');
 const {WorldDirector}=require('../src/director/worldDirector');
+const {legacyDirector}=require('./helpers/legacyDirector');
 const {physicalControlReady}=require('../src/server');
 const root=path.resolve(__dirname,'..','..');
 const read=rel=>fs.readFileSync(path.join(root,rel),'utf8');
@@ -51,7 +52,7 @@ test('server stop script targets configured executable path only',()=>{
 });
 
 test('unstable identity never spatially rebinds to a nearby persistent NPC',()=>{
-  const d=new WorldDirector({population:{roamEnabled:false}});
+  const d=legacyDirector({population:{roamEnabled:false}});
   d.ingest({type:'NPC_SEEN',npcId:'runtime-a',body:'BP_Guard_Lvl_1',x:0,y:0,z:0});
   const first=Object.values(d.world.npcs)[0];
   d.ingest({type:'NPC_GONE',npcId:'runtime-a'});

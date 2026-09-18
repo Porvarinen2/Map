@@ -1,0 +1,22 @@
+{
+  "initialNpcCount": 100,
+  "replenishDead": false,
+  "edgeMarginCm": 50000,
+  "groupMemberSpreadCm": 3000,
+  "bootstrapGeneratorVersion": 1,
+  "adoptUnmanagedNpc": false,
+  "groupClassWeights": {
+    "survivor_group": 22,
+    "scavengers": 14,
+    "hunters": 10,
+    "bandit_crew": 14,
+    "militia_cell": 10,
+    "police_patrol": 8,
+    "ex_military": 7,
+    "radiation_team": 3,
+    "bunker_team": 3,
+    "elite_unit": 1,
+    "duo": 4,
+    "solo": 4
+  }
+}

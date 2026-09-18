@@ -1,17 +1,41 @@
 {
   "tileSize": 512,
   "minZoom": 0,
-  "maxZoom": 5,
-  "imageWidth": 14481,
-  "imageHeight": 14481,
+  "maxZoom": 4,
+  "imageWidth": 7241,
+  "imageHeight": 7241,
   "format": "jpg",
   "levels": {
-    "0": {"width": 453, "height": 453, "cols": 1, "rows": 1},
-    "1": {"width": 906, "height": 906, "cols": 2, "rows": 2},
-    "2": {"width": 1811, "height": 1811, "cols": 4, "rows": 4},
-    "3": {"width": 3621, "height": 3621, "cols": 8, "rows": 8},
-    "4": {"width": 7241, "height": 7241, "cols": 15, "rows": 15},
-    "5": {"width": 14481, "height": 14481, "cols": 29, "rows": 29}
+    "0": {
+      "width": 453,
+      "height": 453,
+      "cols": 1,
+      "rows": 1
+    },
+    "1": {
+      "width": 906,
+      "height": 906,
+      "cols": 2,
+      "rows": 2
+    },
+    "2": {
+      "width": 1811,
+      "height": 1811,
+      "cols": 4,
+      "rows": 4
+    },
+    "3": {
+      "width": 3621,
+      "height": 3621,
+      "cols": 8,
+      "rows": 8
+    },
+    "4": {
+      "width": 7241,
+      "height": 7241,
+      "cols": 15,
+      "rows": 15
+    }
   },
   "pathTemplate": "map/tiles/{z}/{x}_{y}.jpg"
 }
