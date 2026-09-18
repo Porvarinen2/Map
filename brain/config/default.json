@@ -1,0 +1,114 @@
+{
+  "server": {
+    "host": "127.0.0.1",
+    "port": 17381
+  },
+  "world": {
+    "seed": "tesles-scum-world",
+    "autosaveSeconds": 15,
+    "tickMs": 500
+  },
+  "map": {
+    "minX": -750000,
+    "maxX": 750000,
+    "minY": -750000,
+    "maxY": 750000,
+    "defaultZ": 30000,
+    "rows": [
+      "D",
+      "C",
+      "B",
+      "A",
+      "Z"
+    ],
+    "columns": [
+      "4",
+      "3",
+      "2",
+      "1",
+      "0"
+    ],
+    "tiles": {
+      "enabled": true,
+      "tileSize": 512,
+      "minZoom": 0,
+      "maxZoom": 5,
+      "imageWidth": 14481,
+      "imageHeight": 14481,
+      "format": "jpg",
+      "pathTemplate": "map/tiles/{z}/{x}_{y}.jpg",
+      "levels": {
+        "0": {
+          "width": 453,
+          "height": 453,
+          "cols": 1,
+          "rows": 1
+        },
+        "1": {
+          "width": 906,
+          "height": 906,
+          "cols": 2,
+          "rows": 2
+        },
+        "2": {
+          "width": 1811,
+          "height": 1811,
+          "cols": 4,
+          "rows": 4
+        },
+        "3": {
+          "width": 3621,
+          "height": 3621,
+          "cols": 8,
+          "rows": 8
+        },
+        "4": {
+          "width": 7241,
+          "height": 7241,
+          "cols": 15,
+          "rows": 15
+        },
+        "5": {
+          "width": 14481,
+          "height": 14481,
+          "cols": 29,
+          "rows": 29
+        }
+      }
+    }
+  },
+  "ipc": {
+    "eventsFile": "../../runtime/scum-events.log",
+    "commandsFile": "../../runtime/scum-commands.log",
+    "offsetFile": "../../runtime/ipc-offset.json",
+    "stateFile": "../../runtime/scum-state.log"
+  },
+  "features": {
+    "traits": true,
+    "stress": true,
+    "groups": true,
+    "zombies": true,
+    "virtualSimulation": true,
+    "utilityAI": true,
+    "takeoverRequested": true,
+    "takeoverMode": "auto"
+  },
+  "simulation": {
+    "fullDistanceCm": 20000,
+    "lightDistanceCm": 75000,
+    "virtualSpeedCmPerSec": 130,
+    "playerStaleMs": 15000,
+    "zombieStaleMs": 45000,
+    "groupCombatIntervalSeconds": 10,
+    "groupHistoryLimit": 200,
+    "compactSnapshot": true
+  },
+  "population": {
+    "maxNpc": 100,
+    "hardMaxNpc": 250,
+    "ignoreUnmanagedAboveCap": true,
+    "roamEnabled": true,
+    "roamIntervalSeconds": 45,
+    "roamRadiusCm": 35000
+  }
+}

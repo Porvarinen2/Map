@@ -1,0 +1,182 @@
+0.1.5-audit24fix — 2026-09-17
+- Fixed Windows PowerShell 5.1 parser failure in ScumStop_NoBattlEye.ps1 caused by placing a colon immediately after an unbraced interpolated variable (for example, $managedPid:).
+- PowerShell interprets $name: as a scoped/drive-qualified variable reference, so both affected stop-status messages now delimit the PID variable explicitly before the colon.
+- Added audit21 regression coverage that scans the SCUM stop helper for this exact interpolation/parser hazard so it cannot silently return in later installer revisions.
+
+0.1.5-audit20fix — 2026-09-17
+- Fixed a false-negative SCUM startup failure where SCUMServer.exe was visibly running and streaming logs, but the installer still threw "did not remain running".
+- Root cause: audit19 started SCUM correctly, then discarded the trusted Start-Process object/PID and re-identified the process through Win32_Process.ExecutablePath. That property can be unavailable even while the process is alive, making exact-path CIM matching report a false negative.
+- SCUM startup now uses an explicit PID handshake: the launcher verifies the child is alive, writes runtime\scum-server.pid, and the installer validates/stabilizes that exact PID with Get-Process instead of requiring CIM ExecutablePath visibility.
+- SCUM stop now prefers the managed PID file, so update/uninstall can stop the exact process launched by Tesles even when CIM cannot expose ExecutablePath. Exact-path CIM matching remains only as a fallback for older/manual starts.
+- For an older/manual start with no PID file, if Windows hides ExecutablePath and exactly one SCUMServer.exe exists, stop/detection safely fall back to that unique PID; multiple ambiguous SCUM processes fail closed instead of killing an arbitrary server.
+- Added audit20 regression coverage for PID-based startup verification and managed-PID shutdown.
+
+0.1.5-audit19fix — 2026-09-17
+- Replaced SCUM startup's cmd.exe START line with a dedicated PowerShell launcher using Start-Process.
+- SCUMServer.exe now starts with SCUM\Binaries\Win64 as its explicit WorkingDirectory, matching the canonical dedicated-server startup pattern instead of inheriting the mod installer's working directory.
+- Startup helper validates the configured executable, preserves -log -MaxPlayers=64 -nobattleye, and fails visibly if SCUMServer.exe exits during the first two seconds, including the process exit code.
+- Installer SCUM startup verification now polls the exact configured SCUMServer.exe for up to 15 seconds and requires it to remain present across a stabilization check instead of relying on one CIM snapshot after a fixed two-second sleep.
+- Added audit19 regression coverage for working-directory correctness, immediate-exit detection, and bounded startup verification.
+
+0.1.5-audit18fix — 2026-09-17
+- Reworked the brain startup path after audit17 could still hang at "Starting Tesles NPC Brain + map viewer..." on Windows.
+- Removed cmd.exe START-based long-lived brain detachment from the installer path. A short-lived Node launcher now spawns server.js detached with its stdout/stderr appended to runtime\brain.log, writes runtime\brain.pid, unrefs the child, and exits immediately.
+- Installer now starts that detached launcher directly with the exact Node executable already validated/bootstraped by Ensure-Node, eliminating an extra batch/cmd process layer from the critical startup path.
+- Installer Stop-Brain now terminates only this package's exact brain\src\server.js process directly instead of recursively entering StopTeslesNPCBrain.bat during install/update.
+- Manual StopTeslesNPCBrain.ps1 now also clears runtime\brain.pid after terminating the exact package brain process.
+- Installer and uninstaller batch wrappers now use System.Diagnostics.Process.WaitForExit(timeout) on the direct cmd.exe wrapper, with a 30-second hard timeout, so a broken batch can fail diagnostically instead of freezing installation forever.
+- Brain health timeout errors now include a bounded tail of runtime\brain.log when available, so an immediate Node crash is visible in the installer error itself.
+- Added audit18 regression coverage for detached launch, direct installer startup, direct brain stop, and bounded batch execution.
+
+0.1.5-audit17fix — 2026-09-17
+- Fixed installer/uninstaller deadlock when launching long-lived child processes from batch wrappers. Windows PowerShell Start-Process -Wait waits for the full descendant process tree, so once the Node brain stayed healthy the installer waited forever on its launcher.
+- Invoke-Batch now invokes cmd.exe directly and checks only the wrapper cmd exit code, allowing the detached Node/SCUM child process to remain running while installation continues.
+- Added audit17 regression coverage for both install and uninstall batch runners.
+
+0.1.5-audit16fix — 2026-09-17
+- Fixed Windows PowerShell 5.1 UTF-8 BOM incompatibility that made the Node brain crash while parsing installer-generated installed.json, causing a misleading 15-second health timeout.
+- Brain config loading now tolerates an initial UTF-8 BOM in both installed.json and user.json for backward compatibility with files created by older installers/editors.
+- Installer now writes Node-owned installed.json/user.json as UTF-8 without BOM, fixing the root cause at the producer as well as hardening the consumer.
+- Added audit16 regressions reproducing the exact BOM parse failure and guarding no-BOM installer output.
+
+0.1.5-audit15fix — 2026-09-17
+- Fixed Windows PowerShell 5.1 installer crash caused by assigning to the built-in automatic $Host variable while resolving the brain/map endpoint.
+- Renamed the installer endpoint variable to $listenHost and kept a separate $probeHost for wildcard bind addresses.
+- Fixed the same latent $Host collision in diagnostics snapshot URL resolution.
+- Added audit15 regression coverage preventing future writes to PowerShell automatic $Host in installer/diagnostics.
+
+0.1.5-audit14fix — 2026-09-17
+- Fixed UE4SS archive extraction falsely rejecting normal directory entries such as `ue4ss/` as path traversal.
+- Root cause: PowerShell does not use backslash as a string escape, so `'\\'` created two backslashes; the containment prefix therefore could never match normal Windows paths.
+- Safe extractor now uses `[IO.Path]::DirectorySeparatorChar` instead of hand-written backslash literals.
+- Rooted archive paths are checked before any leading separator manipulation; legitimate relative directory entries remain accepted while traversal/absolute paths remain blocked.
+- Added audit14 regression coverage for separator handling and rooted-path validation.
+
+0.1.5-audit13fix — 2026-09-17
+- Replaced fragile inline PowerShell in ScumStop_NoBattlEye.bat with a dedicated ScumStop_NoBattlEye.ps1 helper, eliminating cmd.exe caret/pipe/quote parsing from SCUM process matching.
+- SCUM stop now canonicalizes the configured SCUMServer.exe path, stops only the matching process, waits up to 10 seconds, and verifies it actually exited.
+- Replaced inline PowerShell in StopTeslesNPCBrain.bat with a dedicated helper to remove the same parser-risk pattern before it can fail later in installation/update flows.
+- Updated regression coverage so legacy tests verify behavior in the PowerShell helpers instead of assuming process logic lives inline in batch files.
+
+0.1.5-audit12fix
+- Installer now validates and logs the exact SCUMServer.exe path and distinguishes an already-stopped server from a missing executable.
+- Hardened UE4SS extraction/copy path to avoid the ue4ss\LICENSE Copy-Item failure and validate the staged runtime before install.
+- Failed installs only restart SCUM when it was actually running before the installer stopped it.
+
+0.1.5-audit11fix - 2026-09-17
+- Fixed UE4SS bootstrap copy failures by replacing blind recursive Copy-Item with directory-first, file-by-file copying that skips reparse/non-file entries and always creates destination parents.
+- UE4SS download now retries transient failures and verifies the required runtime payload (dwmapi.dll, UE4SS.dll, settings, Mods) before continuing.
+- Added automatic pinned portable Node.js 18.20.8 bootstrap with official SHA-256 verification when a suitable system Node is unavailable; no winget dependency is required.
+- Brain launcher falls back to the installer-managed portable Node runtime.
+
+0.1.5-audit10fix — 2026-09-17
+- Fixed install.bat passing a quoted %~dp0 path ending in backslash to PowerShell, which could leave a literal trailing quote in -SourceRoot and make Resolve-Path throw "Polussa on merkkejä, jotka eivät kelpaa."
+- install.bat and RunDiagnostics.bat now pass %~dp0. so quoted root arguments never terminate immediately after a backslash.
+- Install.ps1 and CollectDiagnostics.ps1 defensively trim accidental wrapping quote characters before canonicalizing root paths.
+- Added audit10 regression coverage for the package-root quoting failure.
+
+0.1.5-audit9fix — 2026-09-17
+- Brain takeover now requires StopLogic plus a successful BrainComponent:IsRunning() read proving the brain is actually stopped.
+- The takeover watchdog now fail-closes if IsRunning itself cannot be inspected, instead of treating an unknown brain state as safe.
+- NPC discovery no longer invents (0,0,0) when K2_GetActorLocation is temporarily unavailable; Node registration is deferred until a real position is readable.
+- UE4SS deadlines now use wall-clock time instead of Lua os.clock CPU time, so probe/restore/debounce windows follow real elapsed time under low CPU load.
+- Added audit9 regression coverage for all of the above.
+
+0.1.5-audit8fix — 2026-09-17
+- Full takeover activation is now atomic across live NPCs: readiness is published only after every brain stop succeeds.
+- Partial takeover activation now rolls back already-stopped NPC brains instead of leaving a mixed vanilla/Tesles state.
+- Unsuppressed vanilla-brain reclaim now releases the remaining taken-over NPCs back to vanilla control instead of globally disabling commands while leaving their brains stopped.
+- A newly spawned NPC that cannot be taken over now fail-closes the whole takeover session and releases existing takeovers safely.
+- IPC timestamps and runtime positions reject non-finite values so Infinity/corrupt telemetry cannot poison world state or persistence.
+- World persistence now keeps a last-valid world.json.bak, falls back to it when the primary save is corrupt, and refuses to overwrite a valid backup with a corrupt primary.
+- BRIDGE_STARTED now invalidates stale runtime actor/materialization bindings and movement state so a UE4SS restart cannot leave ghost physical NPCs or stale runtime IDs active.
+- Added audit8 regression coverage for all findings above.
+
+0.1.5-audit7fix — 2026-09-17
+- IPC parsing now tolerates malformed percent-encoding instead of letting one bad payload throw URIError and abort event ingestion.
+- NPC damage ingestion rejects non-finite/malformed values and composes SCUM's relative damage fractions multiplicatively, preventing persistent health drift/NaN corruption.
+- Failed STOP commands are now observable and retried with a bounded delay instead of silently clearing movement state.
+- File IPC now tracks file identity and drains unread rotated scum-events.log.1 records before switching to the replacement log, preventing event loss at rotation boundaries.
+- UE4SS refuses physical MOVE/STOP commands for actors whose vanilla brain was not actually taken over, preventing stale commands from fighting SCUM AI.
+- Brain-reclaim watchdog now verifies StopLogic with IsRunning and fails closed if SCUM reclaims control instead of assuming pcall success means takeover succeeded.
+- BRIDGE_STARTED is emitted before fresh adapter capability publication so the Node session reset cannot erase the new session's capability results.
+- Installer process checks now target the exact configured SCUMServer.exe and this package's exact brain\src\server.js instead of accepting/killing unrelated matching processes.
+- Installer, compatibility checks, browser launch and diagnostics now honor the effective configured brain host/port rather than hardcoding 127.0.0.1:17381.
+- Shared UE4SS-settings.ini uninstall baseline is refreshed when the user changed shared settings after a previous Tesles install, preventing uninstall from restoring an ancient copy over user edits.
+- Uninstaller treats malformed optional mods.json as non-fatal and keeps mods.txt authoritative, so cleanup/restart is not aborted by unrelated JSON damage.
+- Brain stop BAT now resolves and targets this package's own server.js path, preventing another Tesles installation from being killed.
+- Corrected README identity documentation: unstable actor identities are session-scoped and are never spatially rebound.
+- Added audit7 regression coverage for every finding above.
+
+0.1.5-audit6fix — 2026-09-17
+- Fixed IPC reserved-field corruption: COMMAND_RESULT payloads can no longer overwrite the event type/timestamp, so movement results actually reach the director.
+- Failed runtime MoveTo requests now request per-NPC navigation recovery/repath instead of globally revoking the proven movement capability and deadlocking physical control.
+- Runtime MOVE/STOP results now use commandType and STOP failures are observable even when the controller is unavailable.
+- Replaced the UE4SS millisecond clock that advanced roughly per function call with a sub-second monotonic Windows runtime clock anchored to epoch time; probe timeouts, gunshot debounce and state snapshot cadence now track real elapsed time.
+- BRIDGE_STARTED invalidates stale persisted runtime capabilities so a fresh SCUM/UE4SS bridge session must prove its own takeover capabilities.
+- Added audit6 regression coverage for the findings above.
+
+0.1.5-audit5fix — 2026-09-17
+- Full takeover is now capability-gated: explicit full mode performs reversible brain/movement validation before persistent takeover is activated.
+- Capability probe releases/retries across NPCs after failed movement attempts instead of locking onto the first actor forever.
+- MoveToLocation return values are validated; pcall success alone is no longer treated as a successful navigation request.
+- UE4SS mod activation always writes Mods\mods.txt; mods.json is only synchronized when it already exists.
+- SCUM stop script terminates only the SCUMServer.exe whose ExecutablePath matches the configured ServerRoot.
+- Removed spatial nearest-NPC fallback for unstable identities; only verified stable reflected IDs can rebind persistent NPC identities.
+- Added 5 MiB event-log rotation to prevent unbounded scum-events.log growth.
+- Added audit5 regression coverage for all findings above.
+
+0.1.4-audit4fix
+- Fixed succession delay bypass, population-cap refill, retreat completion, config persistence, takeover-mode drift, installer server-root handling, stable-key collisions, and movement-probe timeout flow.
+- Added persistent user.json overrides.
+
+TESLES NPC OVERHAUL — CHANGELOG
+
+0.1.0-probe — 2026-09-17
+- Modular persistent NPC entity model with deterministic individual traits and skills.
+- Data-driven trait, archetype and group-class registries.
+- 1–5 NPC groups, group levels 1–5, individual skill tiers 1–5.
+- Group classes: Solo, Duo, Hunters, Scavengers, Police Patrol, Ex-Military, Radiation Team, Bunker Team, Bandit Crew, Survivor Group, Militia Cell, Elite Unit.
+- Leadership scoring, leader-death morale/cohesion shock, delayed succession and persistent trauma effects.
+- Stress, panic bands, trauma, memory and individual relationships.
+- Zombie pressure affects stress, morale, flee/fight/avoid decisions and virtual world simulation.
+- Group-vs-group diplomacy and virtual combat.
+- FULL/LIGHT/VIRTUAL simulation architecture and off-screen virtual movement.
+- Utility AI, action inertia, tactical destination generation and navigation repath policy.
+- UE4SS SCUM capability bridge with guarded NPC discovery, controller/brain probe, movement probe, health/death discovery, zombie/player telemetry, gunshot/death hook discovery and brain-reclaim watchdog.
+- First install defaults to a one-NPC reversible capability probe instead of blindly suppressing every vanilla AI actor.
+- Live browser NPC map with per-NPC traits, skills, stress, trauma, group stats and right-click #Teleport command copying.
+- Automated installer/uninstaller, Node.js bootstrap, UE4SS bootstrap, backup, process stop/start and health validation.
+- Diagnostic bundle generator for the first live SCUM validation pass.
+
+
+0.1.3-worldfix — 2026-09-17
+- Fixed canonical persistence: groups serialize member IDs and rehydrate references to world.npcs.
+- Update installs preserve runtime/world.json and runtime diagnostics.
+- Replaced high-frequency append-only position telemetry with bounded state snapshots.
+- Fixed stress feature flag leaks, hostile proximity auto-grouping, elite group classification,
+  zombie flee direction, stale flee/combat targets, trauma decay and relationship evolution.
+- Capability probe now moves toward an offset target and verifies real progress before success.
+- Vanilla brain restore is verified with IsRunning().
+- UE4SS 3.x engine version override now uses [EngineVersionOverride] MajorVersion/MinorVersion.
+- Installer patches only required shared UE4SS settings, preserves existing mod lists, pins its audited
+  UE4SS build, and rolls back package/UE4SS/mod-list changes on install failure.
+- Uninstaller removes only TeslesNPCOverhaul from UE4SS mod lists/folder and leaves shared dependencies.
+- Game-thread helper no longer falls back to unsafe off-thread UObject manipulation.
+- Map background teleport clearly uses an approximate Z derived from nearest live entity/fallback.
+- Command IPC is now a bounded latest-command snapshot with sequence de-duplication; stale movement commands are removable and STOP is emitted when a physical movement goal disappears.
+- Movement commands now serialize flat SCUM world coordinates expected by the UE4SS bridge.
+- Probe restore retries failed restoration and falls back to RestartLogic() instead of abandoning an NPC with its vanilla brain stopped.
+- Diagnostics safely discovers both legacy/current UE4SS log locations and includes bounded state telemetry.
+
+
+0.1.3-worldfix
+- Added configurable 100-NPC default population cap with 250 hard safety ceiling.
+- Wired stuck detection/recovery into runtime navigation.
+- Added auto capability-gated full AI takeover.
+- Added stable-key/runtime-id separation for persistent NPC matching.
+- Fixed diplomacy refresh on group-class changes and dead-member group capacity.
+- Added virtual retreat, autonomous roaming, zombie combat consequences and leader injury shock.
+- Trauma now applies temporary modifiers without mutating base personality.
+- Added compact map snapshot endpoint and per-NPC detail endpoint.
+- Bounded group history and improved UE4SS compatibility/install/uninstall validation.

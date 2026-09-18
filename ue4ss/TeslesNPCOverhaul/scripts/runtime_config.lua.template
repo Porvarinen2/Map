@@ -1,0 +1,17 @@
+return {
+  event_file = [[__EVENT_FILE__]],
+  command_file = [[__COMMAND_FILE__]],
+  state_file = [[__STATE_FILE__]],
+  probe_file = [[__PROBE_FILE__]],
+  takeover_requested = __TAKEOVER_REQUESTED__,
+  takeover_mode = "__TAKEOVER_MODE__", -- auto | probe | full | observe
+  probe_restore_ms = 9000,
+  scan_delay_ms = 6000,
+  tick_ms = 500,
+  command_poll_ms = 150,
+  state_snapshot_ms = 1000,
+  event_max_bytes = 5242880,
+  npc_patterns = {"BP_Guard_Lvl_", "BP_Drifter_Lvl_"},
+  zombie_patterns = {"Puppet", "Zombie", "BP_Zombie", "BP_Puppet"},
+  player_patterns = {"Prisoner", "PlayerCharacter", "SCUMPlayer", "BP_Player"}
+}

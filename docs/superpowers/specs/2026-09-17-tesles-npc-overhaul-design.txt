@@ -1,0 +1,1048 @@
+TESLES NPC OVERHAUL — DESIGN SPECIFICATION v1.0
+Date: 2026-09-17
+Target: SCUM Dedicated Server
+Canonical server root: F:\SteamLibrary\steamapps\common\SCUM Server
+
+STATUS
+- Architecture approved conversationally by user.
+- This document is the written design gate before implementation.
+- Implementation must not begin until this written spec is explicitly approved.
+
+============================================================
+1. PRODUCT GOAL
+============================================================
+Build a modular server-side NPC overhaul for SCUM that makes the world feel persistent, dynamic, and alive while remaining maintainable across SCUM updates.
+
+Core design principle:
+    SCUM NPC BODY + TESLES NPC BRAIN
+
+SCUM/UE retains low-level facilities where practical:
+- Actor/Pawn representation
+- CharacterMovement
+- NavMesh / path following
+- animations
+- weapons/damage/inventory where usable
+- replication
+
+Tesles owns high-level cognition and world simulation:
+- personality/traits
+- stress and morale
+- memory and trauma
+- skills and experience
+- relationships
+- group leadership
+- group-vs-group behavior
+- zombie-world interaction
+- utility decisions
+- movement intents and navigation policy
+- virtual/off-screen simulation
+- persistence
+- telemetry/map viewer
+
+No subsystem may directly reach into unrelated subsystem internals. Stable interfaces/events are mandatory.
+
+============================================================
+2. IMPLEMENTATION PHILOSOPHY
+============================================================
+Priority order:
+1) correctness
+2) observability/debuggability
+3) modularity
+4) server stability
+5) performance
+6) behavior richness
+7) visual polish
+
+No large feature will be built on an unverified SCUM/UE assumption.
+Every SCUM-facing capability must first be proven against the current server build.
+
+A failed capability check must degrade cleanly or stop installation/runtime with a precise diagnostic. Silent partial failure is not acceptable.
+
+============================================================
+3. TOP-LEVEL MODULES
+============================================================
+TeslesNPCOverhaul/
+  Core/
+    EntityRegistry
+    EventBus
+    Scheduler
+    FeatureFlags
+    HealthRegistry
+  Traits/
+    TraitRegistry
+    TraitGenerator
+    TraitModifiers
+  Skills/
+    SkillRegistry
+    SkillProgression
+  Stress/
+    StressModel
+    MoraleModel
+    PanicModel
+  Memory/
+    EpisodicMemory
+    ThreatMemory
+    LocationMemory
+  Trauma/
+    TraumaRegistry
+    TraumaAcquisition
+    TraumaDecayOrPersistence
+  Relationships/
+    IndividualRelations
+    GroupRelations
+    FactionRelations
+  Groups/
+    GroupEntity
+    GroupClassRegistry
+    Leadership
+    Succession
+    Cohesion
+    GroupOrders
+  Perception/
+    SCUMPerceptionAdapter
+    StimulusNormalizer
+  UtilityAI/
+    Considerations
+    Actions
+    Scoring
+    ActionInertia
+  Navigation/
+    NavigationCoordinator
+    PathRequestManager
+    RepathPolicy
+    TargetPrediction
+    FinalApproach
+    StuckDetector
+    StuckRecovery
+    NavigationDiagnostics
+  Combat/
+    CombatIntent
+    TacticalPositioning
+    WeaponUseAdapter
+    AccuracyModifiers
+  Zombies/
+    ZombieThreatModel
+    ZombiePressureField
+    GroupZombieResponse
+    VirtualZombieInteraction
+  VirtualSimulation/
+    SimulationLOD
+    VirtualMovement
+    VirtualCombat
+    Materialization
+    Dematerialization
+  Director/
+    NPCDirector
+    SpawnPolicy
+    WorldPopulation
+    SimulationBudget
+  Persistence/
+    WorldSave
+    Migrations
+    Recovery
+  Telemetry/
+    SnapshotPublisher
+    EventStream
+  WebMap/
+    API
+    WebSocket
+    Frontend
+    CoordinateTransform
+    TeleportCommandBuilder
+  SCUMAdapter/
+    VersionCompatibility
+    NPCDiscovery
+    ControllerAdapter
+    BrainAdapter
+    MovementAdapter
+    WeaponAdapter
+    SpawnAdapter
+    DamageDeathAdapter
+    PlayerAdapter
+  Installer/
+    install.bat
+    uninstall.bat
+    manifest
+    dependency bootstrap
+    backup/rollback
+
+============================================================
+4. CAPABILITY PROBE — HARD QUALITY GATE
+============================================================
+Before production AI is built, a probe must prove all critical SCUM integration assumptions.
+
+Required checks:
+A. Discover active NPC classes and known blueprint families.
+B. Discover NPC AIController and BrainComponent ownership.
+C. Stop/neutralize SCUM decision AI for a test NPC.
+D. Verify SCUM does not immediately reclaim the brain, or detect/suppress reclaim.
+E. Issue movement intent through the retained UE/SCUM movement stack.
+F. Read movement/path state.
+G. Detect target/perception events or obtain a usable perception source.
+H. Trigger/observe weapon use or identify the callable weapon interface.
+I. Observe damage, injury and death.
+J. Spawn a Tesles-managed NPC.
+K. Despawn it safely.
+L. Recreate/materialize it while preserving Tesles identity/state.
+M. Verify server remains stable across repeated takeover cycles.
+
+Acceptance rule:
+The full overhaul does not proceed until the minimum takeover path is green:
+    SCUM brain neutralized
+    + Tesles movement works
+    + combat primitives remain usable
+    + replication remains valid
+    + SCUM does not unpredictably reclaim behavior
+
+============================================================
+5. NPC IDENTITY MODEL
+============================================================
+An NPC is primarily a persistent TeslesNPCEntity, not an Unreal Actor.
+
+Minimum persistent identity:
+- npc_id
+- creation seed
+- body profile
+- archetype
+- skill tier
+- traits
+- skills
+- experience
+- stress/morale state
+- trauma modifiers
+- memories
+- relationships
+- group membership
+- current world activity
+- virtual position
+- current destination
+- health/injury summary
+
+The Unreal Actor is a materialized physical representation of this entity.
+
+============================================================
+6. SCUM BODY PROFILE
+============================================================
+SCUM body/blueprint class is kept separate from intelligence/personality.
+
+Known user-provided example families include blueprint names such as:
+- BP_Drifter_Lvl_1 .. Lvl_5 variants
+- BP_Guard_Lvl_1 .. Lvl_5 variants
+- Radiation variants
+- AbandonedBunker variants
+
+The SCUM blueprint level must not directly define Tesles intelligence.
+
+BodyProfile responsibilities:
+- blueprint class
+- environment variant
+- physical/loadout compatibility
+- SCUM-side limits discovered at runtime
+
+============================================================
+7. NPC SKILL TIERS
+============================================================
+Tesles Skill Tier: 1–5
+
+Tier 1 — Untrained
+- poor aim
+- poor cover use
+- high stress sensitivity
+- weak tactical movement
+- poor threat prioritization
+
+Tier 2 — Experienced civilian
+- basic combat competence
+- better navigation/awareness
+- archetype-specific strengths
+
+Tier 3 — Trained
+- police/security/militia level
+- competent cover use
+- coordinated retreat/pursuit
+- better stress resistance
+
+Tier 4 — Veteran
+- ex-military/veteran behavior
+- good tactical movement
+- strong discipline
+- strong target prioritization
+- good stress resistance
+
+Tier 5 — Elite
+- rare
+- high coordination and weapon handling
+- high discipline and awareness
+- still human: stress, wounds, surprise and numerical disadvantage remain meaningful
+
+Skill Tier and BodyProfile may correlate but are not required to match 1:1.
+
+============================================================
+8. NPC ARCHETYPES
+============================================================
+Initial archetype registry:
+- Civilian
+- Scavenger
+- Survivor
+- Hunter
+- Bandit
+- Police
+- Security
+- Militia
+- ExMilitary
+- Veteran
+- RadiationSpecialist
+- BunkerSpecialist
+- Elite
+
+Archetypes define probability distributions and biases, not cloned fixed stats.
+
+Example:
+ExMilitary biases toward high discipline, stress resistance, tactical movement and leadership potential, but individual variance remains substantial.
+
+============================================================
+9. TRAIT SYSTEM
+============================================================
+Traits are permanent or slowly changing personality dimensions.
+They never directly execute movement/combat commands.
+They modify utility scores, stress response, social behavior and learning.
+
+Initial trait registry:
+- Aggression
+- Courage
+- Fearfulness
+- Discipline
+- Patience
+- Impulsiveness
+- Curiosity
+- Paranoia
+- Awareness
+- Cautiousness
+- Sociability
+- Loyalty
+- Empathy
+- Selfishness
+- Leadership
+- Obedience
+- Independence
+- Greed
+- Resourcefulness
+- RiskTolerance
+- Persistence
+- Vindictiveness
+- Mercy
+- Territoriality
+- Protectiveness
+- CombatConfidence
+- WeaponConfidence
+- StealthPreference
+- ExplorationDrive
+- HomeAttachment
+- SurvivalInstinct
+
+Trait architecture:
+- TraitDefinition registry
+- per-NPC TraitSet keyed by trait ID
+- no hardcoded field required in NPC entity for each trait
+
+New traits must be addable through registry/config plus only the consumers that intentionally use the trait.
+Navigation must not need editing merely because a new personality trait exists.
+
+============================================================
+10. SKILL SYSTEM
+============================================================
+Skills are separate from personality.
+
+Initial skills:
+- Rifle
+- Pistol
+- Shotgun
+- Melee
+- TacticalMovement
+- CoverUsage
+- Navigation
+- Awareness
+- Stealth
+- Leadership
+- FirstAid
+- Survival
+
+A brave NPC may still be a poor marksman; a skilled marksman may still be fearful.
+
+============================================================
+11. STRESS, MORALE AND PANIC
+============================================================
+Stress is dynamic 0–100 state, not a trait.
+
+Stress sources include:
+- nearby gunfire
+- explosions
+- near misses
+- taking damage
+- low health
+- leader injury/death
+- friend/group member death
+- zombie density/proximity
+- being surrounded
+- enemy numerical superiority
+- prolonged combat
+- isolation
+- darkness/environment as appropriate
+
+Stress effects include:
+- aim degradation where technically possible
+- longer aim stabilization
+- lower decision confidence
+- higher threat sensitivity
+- altered attack/retreat/cover utility
+- panic behaviors at extreme values
+
+Stress response is individually modified by:
+- Fearfulness
+- Courage
+- Discipline
+- combat experience
+- trauma
+- current leader influence
+
+Suggested states:
+0–20 Calm
+20–40 Alert
+40–60 Stressed
+60–80 High Stress
+80–100 Panic
+
+Panic reactions are individual:
+- flee
+- freeze
+- suppressive/blind fire where supported
+- hide
+- surrender if implemented/supported
+- abandon formation
+- reckless aggression
+
+============================================================
+12. MEMORY AND TRAUMA
+============================================================
+Memory is structured, lightweight state.
+
+Examples:
+- last enemy position
+- last gunshot position
+- dangerous locations
+- safe locations
+- known NPCs/groups
+- friend deaths
+- leader death
+- zombie swarm encounter
+- ambush survived
+
+Trauma is not simply a permanent trait overwrite.
+It is a persistent or slowly decaying modifier produced by significant events.
+
+Initial trauma examples:
+- Hypervigilance
+- ZombieTrauma
+- CombatAversion
+- LossAnxiety
+- LeaderLossTrauma
+- SurvivorGuilt
+- VengefulResponse
+
+Example:
+NPC witnesses close friend die nearby -> acute stress spike -> probability of persistent trauma based on relationship strength, event severity, courage, prior experience and current stress.
+
+============================================================
+13. GROUP MODEL
+============================================================
+Group size: 1–5 NPCs.
+
+Group Tier: 1–5.
+Group Tier describes intended overall encounter capability, not a requirement that every member has the same individual skill tier.
+
+Group persistent state:
+- group_id
+- group class
+- group tier
+- members
+- leader
+- cohesion
+- morale
+- leadership quality
+- current task/order
+- territory/home area if any
+- group memories
+- group-to-group relationships
+- current combat power
+
+============================================================
+14. GROUP CLASSES
+============================================================
+Initial GroupClass registry:
+- Solo
+- Duo
+- Hunters
+- Scavengers
+- Survivors
+- Bandits
+- PolicePatrol
+- SecurityTeam
+- MilitiaGroup
+- ExMilitarySquad
+- RadiationTeam
+- BunkerTeam
+- VeteranTeam
+- EliteTeam
+
+Group classes define:
+- allowed member count range 1–5
+- archetype weight distributions
+- skill tier distributions
+- body profile preferences
+- group tactics capability
+- typical goals/biomes/areas
+- leader selection biases
+
+Group classes must be data-driven enough that adding a future class such as Cultists does not require navigation changes.
+
+============================================================
+15. LEADERSHIP AND SUCCESSION
+============================================================
+Every multi-member group has a leader. Solo member is self-leader.
+
+Leadership suitability uses:
+- Leadership trait/skill
+- Courage
+- Discipline
+- Charisma/social influence equivalent
+- experience
+- loyalty/trust
+- group standing
+- current stress/injury
+
+Leader affects:
+- group confidence
+- cohesion
+- tactical coordination
+- panic propagation/resistance
+- high-level group order
+
+Leader injury may trigger:
+- protect leader
+- retreat with leader
+- temporary command degradation
+- succession if incapacitated
+
+Leader death flow:
+1. LeaderKilled event
+2. acute group shock
+3. each member computes personal reaction
+4. group enters temporary leaderless state
+5. succession candidates scored
+6. new leader selected
+7. old leader death effects continue decaying independently
+8. persistent trauma may remain for some members
+
+New leader selection must not instantly erase morale shock.
+
+============================================================
+16. RELATIONSHIPS AND GROUP-TO-GROUP DIPLOMACY
+============================================================
+Individual relationships are separate from group/faction relations.
+
+Group relation states:
+- Friendly
+- Neutral
+- Suspicious
+- Hostile
+- BloodFeud
+
+Relation changes may result from:
+- territorial conflict
+- theft/resource conflict
+- attacks
+- casualties
+- leader deaths
+- repeated encounters
+- faction affinity
+
+Groups must be able to fight each other without player involvement.
+
+High-level encounter options:
+- Ignore
+- Observe
+- Avoid
+- Warn
+- Ambush
+- Attack
+- Defend
+- Flank
+- Retreat
+- Pursue
+
+============================================================
+17. ZOMBIES AS WORLD ACTORS / PRESSURE
+============================================================
+Zombies must materially affect NPC life and group decisions rather than only being combat targets near players.
+
+Zombie system has two modes:
+
+A. FULL simulation near players
+- real SCUM zombie actors where available
+- NPC perception detects them
+- zombie count/distance raises stress
+- groups choose attack/avoid/retreat/hold position based on threat
+- casualties and wounds feed memory/trauma/leadership systems
+
+B. VIRTUAL zombie pressure away from players
+- world represented by regional ZombiePressureField
+- pressure derives from known/spawned zombie density proxies, region type, recent encounters and configured world rules
+- virtual NPC/group travel through high-pressure areas has higher risk, slower movement and possible simulated encounters
+
+Zombie consequences:
+- stress increase proportional to density/proximity and individual fear/experience
+- route avoidance for cautious groups
+- aggressive/experienced groups may clear a path
+- ammunition/resource consumption in virtual encounters
+- injury/death risk
+- leader loss possibility
+- trauma acquisition
+- group morale/cohesion effects
+- danger memory attached to location
+
+Examples:
+1 zombie -> low threat for competent group
+5 zombies -> alert/caution
+20 zombies -> severe group-level threat, depending on group quality, loadout and terrain
+
+ExMilitary/Police/Veteran groups are generally less stress-sensitive but not immune.
+Untrained civilians can panic rapidly.
+
+Zombie events must publish standardized events to EventBus; Zombies module must not directly mutate unrelated module internals.
+
+============================================================
+18. UTILITY AI
+============================================================
+Traits never directly dictate action.
+
+Inputs:
+- traits
+- skills
+- stress/morale
+- health
+- memories
+- relationships
+- group order
+- local threats
+- zombie pressure
+- leader state
+- resources
+
+Candidate actions include:
+- Idle
+- Roam
+- Travel
+- Investigate
+- Observe
+- TakeCover
+- Attack
+- Suppress
+- Flank
+- Pursue
+- Retreat
+- Flee
+- Hide
+- HelpFriend
+- ProtectLeader
+- Regroup
+- Loot
+- AvoidArea
+
+Action inertia/hysteresis required.
+A new action should normally need a meaningful score advantage or current-action failure condition before replacing the current action.
+This prevents attack/retreat/attack oscillation.
+
+============================================================
+19. NAVIGATION ARCHITECTURE
+============================================================
+Utility AI outputs intent only.
+Navigation is the exclusive owner of movement execution.
+
+Example intent:
+- Pursue target X
+- preferred range 25m
+- tactical mode flank
+- urgency 0.82
+
+Navigation components:
+- NavigationCoordinator
+- PathRequestManager
+- RepathPolicy
+- TargetPrediction
+- FinalApproach
+- StuckDetector
+- StuckRecovery
+- PathSmoothing
+- NavigationDiagnostics
+
+Anti-zigzag rules:
+- no MoveTo spam every frame
+- target displacement threshold
+- minimum repath interval
+- route age threshold
+- explicit LOS/path-state triggers
+- final-approach policy near target
+- measurable progress/stuck detection
+
+Navigation bugs should be repairable inside Navigation without editing Traits/Stress/Group systems.
+
+============================================================
+20. SIMULATION LOD
+============================================================
+Three simulation levels:
+
+FULL
+- player nearby
+- real Unreal Actor
+- normal movement/navigation/combat/perception
+
+LIGHT
+- intermediate distance
+- Actor may exist
+- reduced AI/perception/decision update rates
+
+VIRTUAL
+- no nearby player
+- no expensive Actor simulation required
+- entity retains position, destination, traits, stress, group, health and activity
+- travel and encounters resolved at coarse intervals
+
+Materialization:
+Virtual entity -> SCUM Actor while preserving Tesles state.
+
+Dematerialization:
+SCUM Actor state captured -> Actor safely removed -> Tesles virtual entity continues.
+
+All transitions must be observable and recoverable.
+
+============================================================
+21. VIRTUAL COMBAT
+============================================================
+Off-screen NPC-vs-NPC and NPC-vs-zombie fights are resolved incrementally, not instant coin flips.
+
+Inputs may include:
+- effective combat power
+- member skills
+- weapons/loadout abstraction
+- health
+- morale
+- stress
+- leadership
+- cohesion
+- terrain advantage
+- surprise
+- zombie pressure/count estimate
+
+Possible outputs per simulation interval:
+- wounds
+- death
+- ammo/resource consumption
+- retreat
+- pursuit
+- leader death
+- stress changes
+- trauma
+- relation changes
+
+When players approach, virtual outcomes become the source of truth for materialized world state.
+
+============================================================
+22. SCUM MAP / AI VIEWER
+============================================================
+Local web application served from the mod stack.
+
+Map requirements:
+- every Tesles NPC displayed as an individual marker
+- FULL/LIGHT/VIRTUAL visually distinguishable
+- current movement visible
+- destination/path visible when selected/debug enabled
+- groups visually inspectable
+- combat/engagement indicators
+
+NPC click panel:
+- NPC ID/name if generated
+- BodyProfile / SCUM blueprint
+- Archetype
+- Skill Tier
+- Group / Group Class / role
+- leader status
+- traits
+- skills
+- stress
+- morale
+- health/injury summary
+- trauma
+- current action
+- utility scores (debug mode)
+- target
+- destination
+- navigation diagnostics
+- simulation LOD
+- experience
+- notable recent memories
+
+Group click panel:
+- Group ID/Class/Tier
+- members
+- leader
+- cohesion
+- morale
+- combat power
+- current order
+- relationship/active enemy
+- casualties
+- leaderless/succession state
+
+Right-click map action:
+- context menu -> "Copy teleport command"
+- map coordinate transformed into SCUM world coordinate
+- exact admin teleport syntax must be runtime/config verified before being exposed
+- command copied to clipboard
+
+No guessed command syntax may be shipped as final behavior.
+
+============================================================
+23. TELEMETRY AND DEBUGGING
+============================================================
+Every important decision must be explainable.
+
+Per-NPC diagnostics may include:
+- current state/action
+- target
+- distance
+- utility scores
+- current destination
+- path age
+- repath count
+- last repath reason
+- velocity
+- progress
+- stuck timer
+- LOS
+- target-position delta
+- brain takeover state
+- simulation LOD
+
+Subsystem health example:
+- SCUMAdapter OK
+- Traits OK
+- Stress OK
+- Navigation OK
+- Virtualization DEGRADED
+- Telemetry OK
+
+============================================================
+24. EVENT BUS CONTRACT
+============================================================
+Cross-system changes are event-driven where practical.
+
+Example standardized events:
+- NPCSpawned
+- NPCTakeoverComplete
+- GunshotDetected
+- ZombieThreatChanged
+- NPCDamaged
+- NPCDied
+- GroupMemberDied
+- LeaderInjured
+- LeaderKilled
+- GroupEncounterStarted
+- GroupEncounterEnded
+- Materialized
+- Dematerialized
+
+Example:
+LeaderKilled event is consumed independently by:
+- Stress
+- Morale
+- Trauma
+- Relationships
+- GroupLeadership
+- UtilityAI
+
+Leadership code must not directly manipulate all those systems.
+
+============================================================
+25. PERFORMANCE SCHEDULING
+============================================================
+Decision rates are owned by Tesles scheduler.
+
+Indicative design targets, configurable after profiling:
+- FULL combat decision updates: several Hz, not every render frame
+- FULL idle decisions: lower rate
+- LIGHT: substantially reduced rate
+- VIRTUAL: seconds to tens of seconds depending on activity
+
+Movement interpolation/path following may continue at engine-required rates while high-level cognition runs slower.
+
+============================================================
+26. PERSISTENCE
+============================================================
+Persist at minimum:
+- NPC identities
+- traits
+- skills/experience
+- stress where meaningful
+- trauma
+- relationships
+- group membership
+- group leadership
+- group relations
+- memories with retention policy
+- virtual positions/destinations
+- injuries/health abstraction
+
+Save format must include schema version and migration support.
+A corrupt save must not silently destroy the world; create backup and recover/fail visibly.
+
+============================================================
+27. INSTALLATION / REMOVAL
+============================================================
+Primary managed location:
+F:\SteamLibrary\steamapps\common\SCUM Server\TeslesMods\TeslesNPCOverhaul\
+
+install.bat workflow:
+1. verify expected server root
+2. stop SCUM server using canonical stop behavior
+3. verify process actually stopped
+4. backup files that will be changed
+5. bootstrap required dependencies/tools
+6. install/update runtime components
+7. deploy Tesles mod files
+8. write install manifest with exact installed files/hashes/versions
+9. run validation/capability preflight
+10. if failure -> rollback + diagnostic
+11. start SCUM server using canonical start behavior
+12. verify SCUMServer.exe started
+13. print locations of logs/viewer
+
+Canonical user-provided start behavior includes:
+SCUMServer.exe -log -MaxPlayers=64 -nobattleye
+
+uninstall.bat:
+- stop server
+- read manifest
+- remove only Tesles-owned files
+- restore backed-up replaced files when applicable
+- leave unrelated mods/files untouched
+- restart server unless configured otherwise
+
+============================================================
+28. FEATURE FLAGS
+============================================================
+Major systems independently switchable where technically possible:
+- Takeover
+- Traits
+- Stress
+- Memory
+- Trauma
+- Relationships
+- GroupAI
+- ZombieInfluence
+- CustomNavigation
+- VirtualSimulation
+- Telemetry
+- WebMap
+
+Failure isolation is mandatory.
+
+============================================================
+29. TEST STRATEGY
+============================================================
+A. Pure logic tests without SCUM
+- trait generation
+- utility scoring
+- stress calculation
+- leadership succession
+- trauma probability/decay
+- group composition generation
+- virtual movement/combat
+
+B. SCUM integration probe tests
+- reflection/class discovery
+- brain takeover
+- movement
+- weapon/damage/death hooks
+- spawn/despawn/materialization
+
+C. scenario tests
+- untrained group vs zombies
+- ex-military group vs zombies
+- group vs group
+- leader death mid-fight
+- succession while retreating
+- trauma after nearby friend death
+- player leaves render range during fight
+- virtual fight -> player approaches -> materialization consistency
+
+D. soak tests
+- repeated server restarts
+- many virtual NPCs
+- repeated materialize/dematerialize
+- long-running telemetry
+
+============================================================
+30. INITIAL DELIVERY MILESTONES
+============================================================
+M0 — Installer/diagnostic skeleton
+M1 — AI Takeover Capability Probe
+M2 — Minimal Tesles brain + stable movement
+M3 — Navigation robustness
+M4 — Persistent NPC entity + traits/skills/stress
+M5 — Groups + leadership/succession
+M6 — Relationships + NPC-vs-NPC combat
+M7 — Zombie world influence
+M8 — FULL/LIGHT/VIRTUAL simulation
+M9 — Web map + live telemetry + teleport command copy
+M10 — persistence hardening + installer/uninstaller productionization
+M11 — balancing/performance/soak testing
+
+No later milestone should conceal a failure in an earlier foundational milestone.
+
+============================================================
+31. DEFINITION OF DONE FOR FIRST PRODUCTION RELEASE
+============================================================
+The first production release is not "done" merely because NPCs move.
+It must satisfy:
+- SCUM decision AI takeover is stable on supported build
+- movement no longer exhibits known MoveTo spam/zigzag architecture
+- individual traits/skills/stress materially influence behavior
+- 1–5 member groups with Group Tier 1–5 work
+- leaders and succession work
+- leader injury/death affects group and individuals
+- persistent trauma can result from severe events
+- groups can encounter/fight other groups
+- zombies affect NPC/group decisions and off-screen world simulation
+- FULL/LIGHT/VIRTUAL transitions preserve state
+- map viewer shows every Tesles NPC individually
+- NPC details show traits/stress/stats
+- map right-click can copy verified teleport command
+- installer can cleanly install/update/rollback/remove
+- all major systems have diagnostics and feature flags
+- persistent state survives server restart
+
+============================================================
+32. ARCHITECTURAL NON-NEGOTIABLES
+============================================================
+1. No trait directly commands movement/combat.
+2. Navigation has a single movement-command owner.
+3. SCUM-specific details remain behind SCUMAdapter.
+4. Unreal Actor is not the persistent NPC identity.
+5. Cross-module side effects use stable interfaces/events.
+6. Config/balance values are not scattered through code.
+7. Every major subsystem has diagnostics.
+8. Install/uninstall never blindly deletes user/server files.
+9. A SCUM update may break the adapter, but should not require rewriting the core AI.
+10. Correctness and observability beat feature count.
+
+END OF SPECIFICATION

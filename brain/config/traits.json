@@ -1,0 +1,154 @@
+{
+  "aggression": {
+    "mean": 0.5,
+    "spread": 0.35
+  },
+  "courage": {
+    "mean": 0.5,
+    "spread": 0.35
+  },
+  "fearfulness": {
+    "mean": 0.5,
+    "spread": 0.35
+  },
+  "discipline": {
+    "mean": 0.45,
+    "spread": 0.35
+  },
+  "patience": {
+    "mean": 0.5,
+    "spread": 0.35
+  },
+  "impulsiveness": {
+    "mean": 0.5,
+    "spread": 0.35
+  },
+  "curiosity": {
+    "mean": 0.5,
+    "spread": 0.35
+  },
+  "paranoia": {
+    "mean": 0.4,
+    "spread": 0.35
+  },
+  "awareness": {
+    "mean": 0.5,
+    "spread": 0.3
+  },
+  "cautiousness": {
+    "mean": 0.5,
+    "spread": 0.3
+  },
+  "sociability": {
+    "mean": 0.5,
+    "spread": 0.35
+  },
+  "loyalty": {
+    "mean": 0.5,
+    "spread": 0.35
+  },
+  "empathy": {
+    "mean": 0.5,
+    "spread": 0.35
+  },
+  "selfishness": {
+    "mean": 0.45,
+    "spread": 0.35
+  },
+  "leadership": {
+    "mean": 0.35,
+    "spread": 0.35
+  },
+  "obedience": {
+    "mean": 0.5,
+    "spread": 0.35
+  },
+  "independence": {
+    "mean": 0.5,
+    "spread": 0.35
+  },
+  "greed": {
+    "mean": 0.45,
+    "spread": 0.35
+  },
+  "resourcefulness": {
+    "mean": 0.5,
+    "spread": 0.3
+  },
+  "riskTolerance": {
+    "mean": 0.5,
+    "spread": 0.35
+  },
+  "persistence": {
+    "mean": 0.5,
+    "spread": 0.3
+  },
+  "vindictiveness": {
+    "mean": 0.4,
+    "spread": 0.35
+  },
+  "mercy": {
+    "mean": 0.5,
+    "spread": 0.35
+  },
+  "territoriality": {
+    "mean": 0.45,
+    "spread": 0.35
+  },
+  "protectiveness": {
+    "mean": 0.5,
+    "spread": 0.35
+  },
+  "combatConfidence": {
+    "mean": 0.4,
+    "spread": 0.35
+  },
+  "weaponConfidence": {
+    "mean": 0.4,
+    "spread": 0.35
+  },
+  "stealthPreference": {
+    "mean": 0.5,
+    "spread": 0.35
+  },
+  "explorationDrive": {
+    "mean": 0.5,
+    "spread": 0.35
+  },
+  "homeAttachment": {
+    "mean": 0.45,
+    "spread": 0.35
+  },
+  "survivalInstinct": {
+    "mean": 0.65,
+    "spread": 0.25
+  },
+  "stressResistance": {
+    "mean": 0.45,
+    "spread": 0.35
+  },
+  "decisionConfidence": {
+    "mean": 0.45,
+    "spread": 0.35
+  },
+  "adaptability": {
+    "mean": 0.5,
+    "spread": 0.3
+  },
+  "painTolerance": {
+    "mean": 0.5,
+    "spread": 0.3
+  },
+  "teamwork": {
+    "mean": 0.5,
+    "spread": 0.35
+  },
+  "recklessness": {
+    "mean": 0.35,
+    "spread": 0.35
+  },
+  "composure": {
+    "mean": 0.45,
+    "spread": 0.35
+  }
+}

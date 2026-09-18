@@ -1,0 +1,12 @@
+{
+  "name": "TeslesNPCOverhaul",
+  "version": "0.1.5-audit24fix",
+  "ownedPaths": [
+    "TeslesMods\\TeslesNPCOverhaul",
+    "<detected UE4SS root>\\Mods\\TeslesNPCOverhaul"
+  ],
+  "sharedDependenciesNotRemoved": [
+    "UE4SS shared installation under SCUM\\Binaries\\Win64",
+    "Node.js runtime"
+  ]
+}

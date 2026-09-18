@@ -1,0 +1,6 @@
+'use strict';
+const {createRng}=require('../core/prng');
+function normalize(dx,dy){const m=Math.hypot(dx,dy)||1;return{x:dx/m,y:dy/m};}
+function formationOffset(npcId,role='member',skillTier=1){const rng=createRng(`formation|${npcId}|${role}|${skillTier}`);const spread=skillTier>=4?900:skillTier>=3?650:350;const side=rng()<.5?-1:1;const depth=(role==='leader'?-0.35:(rng()-.5))*spread;const lateral=(role==='leader'?0.2:(.35+rng()*.65))*spread*side;return{x:Math.round(depth),y:Math.round(lateral)};}
+function tacticalDestination(npc,target,action,{groupId=''}={}){const pos=npc.position||{x:0,y:0,z:0};const dir=normalize(target.x-pos.x,target.y-pos.y);const perp={x:-dir.y,y:dir.x};const skill=npc.skills?.tacticalMovement??.3;const off=formationOffset(npc.npcId,npc.role,npc.skillTier||1);let x=target.x+dir.x*off.x+perp.x*off.y,y=target.y+dir.y*off.x+perp.y*off.y,z=target.z??pos.z??0;if(action==='FLANK'&&skill>.35){const rng=createRng(`flank|${groupId}|${npc.npcId}`);const side=rng()<.5?-1:1;const lateral=(1200+skill*2400)*side;const standOff=900+skill*700;x=target.x-dir.x*standOff+perp.x*lateral;y=target.y-dir.y*standOff+perp.y*lateral;}else if(action==='ATTACK'&&skill<.2){x=target.x-dir.x*150;y=target.y-dir.y*150;}return{x,y,z};}
+module.exports={tacticalDestination,formationOffset};

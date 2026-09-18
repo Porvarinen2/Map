@@ -1,0 +1,6 @@
+'use strict';
+const {createRng}=require('../core/prng');
+function extractLevel(body){const m=String(body||'').match(/Lvl_(\d)/i);return Math.max(1,Math.min(5,Number(m?.[1]||2)));}
+function classifyObservedNpc(body,npcId,seed){const b=String(body||'');const lvl=extractLevel(b);if(/Radiation/i.test(b))return{archetype:'radiation_specialist',skillTier:Math.max(2,lvl)};if(/AbandonedBunker|Bunker/i.test(b))return{archetype:'bunker_specialist',skillTier:Math.max(3,lvl)};const rng=createRng(`${seed}|${npcId}|classify`);let pool;if(/Guard/i.test(b)){pool=lvl>=5?['elite','ex_military','veteran']:lvl===4?['ex_military','veteran','police']:lvl===3?['police','security','militia','ex_military']:['security','police','militia','survivor'];}else{pool=lvl>=5?['veteran','ex_military','hunter','bandit']:lvl===4?['veteran','hunter','bandit','militia']:lvl===3?['hunter','bandit','survivor','militia']:lvl===2?['scavenger','survivor','hunter','bandit']:['civilian','scavenger','survivor'];}
+ const archetype=pool[Math.floor(rng()*pool.length)%pool.length];const jitter=rng()<.22?-1:rng()>.82?1:0;return{archetype,skillTier:Math.max(1,Math.min(5,lvl+jitter))};}
+module.exports={extractLevel,classifyObservedNpc};

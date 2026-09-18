@@ -1,0 +1,14 @@
+{
+  "name": "tesles-npc-overhaul-brain",
+  "version": "0.1.5-audit24fix",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "start": "node src/server.js",
+    "smoke": "node tools/smoke.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

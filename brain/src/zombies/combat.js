@@ -1,0 +1,6 @@
+'use strict';
+const {createRng,clamp}=require('../core/prng');
+const {applyStressEvent}=require('../state/stress');
+const {maybeAcquireTrauma}=require('../state/trauma');
+function resolveVirtualZombieCombat(group,pressure,{seed='zombies',at=Date.now(),stressEnabled=true}={}){const alive=group.members.filter(n=>n.alive!==false);if(!alive.length||pressure<=0)return{injured:[],killed:[]};const rng=createRng(`${seed}|${group.groupId}|${Math.floor(at/10000)}`);const power=Math.max(.2,group.combatPower||alive.length*.5),danger=Math.min(.85,pressure/(power*8+1));const injured=[],killed=[];group.resources=group.resources||{ammo:120};group.resources.ammo=Math.max(0,(group.resources.ammo||0)-Math.max(1,Math.round(pressure*1.5)));for(const n of alive){if(rng()<danger*.18){const sev=.2+rng()*.55;n.health=clamp((n.health??1)-sev);n.injuries=n.injuries||[];n.injuries.push({type:'zombie_wound',severity:sev,at});injured.push(n.npcId);if(stressEnabled)applyStressEvent(n,{type:'wound',intensity:.7+sev,at});if(n.health<=.08){n.health=.01;n.pendingDeath=true;killed.push(n.npcId);}else if(sev>.5&&stressEnabled)maybeAcquireTrauma(n,{type:'near_death',severity:sev,at,seed:`z:${n.npcId}:${at}`});}}group.history.push({type:'zombie_combat',pressure,injured:[...injured],killed:[...killed],at});return{injured,killed};}
+module.exports={resolveVirtualZombieCombat};

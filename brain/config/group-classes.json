@@ -1,0 +1,121 @@
+{
+  "solo": {
+    "minSize": 1,
+    "maxSize": 1,
+    "archetypes": [
+      "survivor",
+      "hunter",
+      "scavenger",
+      "veteran"
+    ],
+    "tactics": "individual"
+  },
+  "duo": {
+    "minSize": 2,
+    "maxSize": 2,
+    "archetypes": [
+      "survivor",
+      "hunter",
+      "police",
+      "ex_military"
+    ],
+    "tactics": "paired"
+  },
+  "hunters": {
+    "minSize": 2,
+    "maxSize": 4,
+    "archetypes": [
+      "hunter",
+      "survivor"
+    ],
+    "tactics": "patient"
+  },
+  "scavengers": {
+    "minSize": 2,
+    "maxSize": 5,
+    "archetypes": [
+      "scavenger",
+      "survivor",
+      "bandit"
+    ],
+    "tactics": "opportunistic"
+  },
+  "police_patrol": {
+    "minSize": 2,
+    "maxSize": 4,
+    "archetypes": [
+      "police",
+      "security"
+    ],
+    "tactics": "disciplined"
+  },
+  "ex_military": {
+    "minSize": 3,
+    "maxSize": 5,
+    "archetypes": [
+      "ex_military",
+      "veteran",
+      "bunker_specialist"
+    ],
+    "tactics": "military"
+  },
+  "radiation_team": {
+    "minSize": 2,
+    "maxSize": 5,
+    "archetypes": [
+      "radiation_specialist",
+      "security",
+      "ex_military"
+    ],
+    "tactics": "hazard"
+  },
+  "bunker_team": {
+    "minSize": 2,
+    "maxSize": 5,
+    "archetypes": [
+      "bunker_specialist",
+      "ex_military",
+      "security"
+    ],
+    "tactics": "cqb"
+  },
+  "bandit_crew": {
+    "minSize": 2,
+    "maxSize": 5,
+    "archetypes": [
+      "bandit",
+      "scavenger"
+    ],
+    "tactics": "aggressive"
+  },
+  "survivor_group": {
+    "minSize": 2,
+    "maxSize": 5,
+    "archetypes": [
+      "survivor",
+      "civilian",
+      "scavenger",
+      "hunter"
+    ],
+    "tactics": "mixed"
+  },
+  "militia_cell": {
+    "minSize": 2,
+    "maxSize": 5,
+    "archetypes": [
+      "militia",
+      "survivor",
+      "veteran"
+    ],
+    "tactics": "defensive"
+  },
+  "elite_unit": {
+    "minSize": 3,
+    "maxSize": 5,
+    "archetypes": [
+      "elite",
+      "ex_military"
+    ],
+    "tactics": "elite"
+  }
+}

@@ -1,0 +1,247 @@
+{
+  "civilian": {
+    "tier": [
+      1,
+      2
+    ],
+    "traits": {
+      "discipline": -0.18,
+      "stressResistance": -0.18,
+      "combatConfidence": -0.2,
+      "teamwork": -0.08
+    },
+    "skills": {
+      "rifle": -0.22,
+      "tacticalMovement": -0.28,
+      "coverUsage": -0.25,
+      "survival": -0.05
+    }
+  },
+  "scavenger": {
+    "tier": [
+      1,
+      3
+    ],
+    "traits": {
+      "greed": 0.22,
+      "curiosity": 0.18,
+      "resourcefulness": 0.18,
+      "cautiousness": 0.06
+    },
+    "skills": {
+      "survival": 0.12,
+      "navigation": 0.05
+    }
+  },
+  "survivor": {
+    "tier": [
+      1,
+      4
+    ],
+    "traits": {
+      "resourcefulness": 0.2,
+      "survivalInstinct": 0.15,
+      "adaptability": 0.15
+    },
+    "skills": {
+      "survival": 0.2,
+      "navigation": 0.12,
+      "firstAid": 0.05
+    }
+  },
+  "hunter": {
+    "tier": [
+      2,
+      4
+    ],
+    "traits": {
+      "patience": 0.18,
+      "awareness": 0.2,
+      "cautiousness": 0.12,
+      "stealthPreference": 0.18,
+      "stressResistance": 0.06
+    },
+    "skills": {
+      "rifle": 0.18,
+      "awareness": 0.2,
+      "stealth": 0.2,
+      "navigation": 0.18,
+      "survival": 0.15
+    }
+  },
+  "bandit": {
+    "tier": [
+      1,
+      4
+    ],
+    "traits": {
+      "aggression": 0.24,
+      "greed": 0.2,
+      "mercy": -0.18,
+      "riskTolerance": 0.14,
+      "territoriality": 0.1
+    },
+    "skills": {
+      "pistol": 0.08,
+      "rifle": 0.08,
+      "melee": 0.1
+    }
+  },
+  "police": {
+    "tier": [
+      2,
+      4
+    ],
+    "traits": {
+      "discipline": 0.22,
+      "teamwork": 0.18,
+      "courage": 0.1,
+      "stressResistance": 0.12,
+      "leadership": 0.06
+    },
+    "skills": {
+      "pistol": 0.2,
+      "rifle": 0.08,
+      "tacticalMovement": 0.16,
+      "coverUsage": 0.16,
+      "leadership": 0.08
+    }
+  },
+  "security": {
+    "tier": [
+      2,
+      4
+    ],
+    "traits": {
+      "discipline": 0.16,
+      "territoriality": 0.16,
+      "cautiousness": 0.12,
+      "stressResistance": 0.08
+    },
+    "skills": {
+      "pistol": 0.14,
+      "coverUsage": 0.12,
+      "awareness": 0.1
+    }
+  },
+  "militia": {
+    "tier": [
+      2,
+      4
+    ],
+    "traits": {
+      "aggression": 0.1,
+      "teamwork": 0.08,
+      "territoriality": 0.12
+    },
+    "skills": {
+      "rifle": 0.12,
+      "tacticalMovement": 0.08,
+      "coverUsage": 0.08
+    }
+  },
+  "ex_military": {
+    "tier": [
+      3,
+      5
+    ],
+    "traits": {
+      "discipline": 0.3,
+      "courage": 0.2,
+      "stressResistance": 0.3,
+      "teamwork": 0.25,
+      "composure": 0.25,
+      "leadership": 0.15,
+      "decisionConfidence": 0.18
+    },
+    "skills": {
+      "rifle": 0.25,
+      "pistol": 0.15,
+      "tacticalMovement": 0.32,
+      "coverUsage": 0.3,
+      "navigation": 0.18,
+      "leadership": 0.18,
+      "firstAid": 0.1
+    }
+  },
+  "veteran": {
+    "tier": [
+      3,
+      5
+    ],
+    "traits": {
+      "stressResistance": 0.28,
+      "combatConfidence": 0.24,
+      "composure": 0.26,
+      "awareness": 0.16,
+      "persistence": 0.12
+    },
+    "skills": {
+      "rifle": 0.2,
+      "tacticalMovement": 0.22,
+      "coverUsage": 0.22,
+      "awareness": 0.18
+    }
+  },
+  "radiation_specialist": {
+    "tier": [
+      2,
+      5
+    ],
+    "traits": {
+      "cautiousness": 0.22,
+      "discipline": 0.12,
+      "resourcefulness": 0.14,
+      "stressResistance": 0.12
+    },
+    "skills": {
+      "survival": 0.22,
+      "navigation": 0.14,
+      "firstAid": 0.08
+    }
+  },
+  "bunker_specialist": {
+    "tier": [
+      3,
+      5
+    ],
+    "traits": {
+      "discipline": 0.2,
+      "cautiousness": 0.2,
+      "awareness": 0.18,
+      "stressResistance": 0.16
+    },
+    "skills": {
+      "pistol": 0.12,
+      "shotgun": 0.16,
+      "tacticalMovement": 0.24,
+      "coverUsage": 0.2,
+      "awareness": 0.2
+    }
+  },
+  "elite": {
+    "tier": [
+      5,
+      5
+    ],
+    "traits": {
+      "discipline": 0.36,
+      "courage": 0.28,
+      "stressResistance": 0.38,
+      "teamwork": 0.32,
+      "composure": 0.34,
+      "decisionConfidence": 0.28,
+      "awareness": 0.24
+    },
+    "skills": {
+      "rifle": 0.34,
+      "pistol": 0.28,
+      "tacticalMovement": 0.38,
+      "coverUsage": 0.36,
+      "navigation": 0.22,
+      "awareness": 0.3,
+      "leadership": 0.24,
+      "firstAid": 0.12
+    }
+  }
+}

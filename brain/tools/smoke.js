@@ -1,0 +1,14 @@
+'use strict';
+const {WorldDirector}=require('../src/director/worldDirector');
+const d=new WorldDirector({seed:'smoke'});
+const now=Date.now();
+d.ingest({type:'NPC_SEEN',npcId:'smoke-guard-1',body:'BP_Guard_Lvl_4',x:0,y:0,z:25000,at:now});
+d.ingest({type:'NPC_SEEN',npcId:'smoke-guard-2',body:'BP_Guard_Lvl_3',x:150,y:0,z:25000,at:now});
+d.ingest({type:'ZOMBIE_SEEN',zombieId:'smoke-zombie-1',x:250,y:50,z:25000,at:now});
+d.tick(1);
+const s=d.snapshot();
+if(s.npcs.length!==2) throw new Error('NPC smoke count failed');
+if(s.groups.length!==1) throw new Error('Group smoke count failed');
+if(!s.groups[0].leaderId) throw new Error('Leadership smoke failed');
+if(!(s.groups[0].zombiePressure>0)) throw new Error('Zombie pressure smoke failed');
+console.log(JSON.stringify({ok:true,npcs:s.npcs.length,groups:s.groups.length,leader:s.groups[0].leaderId,zombiePressure:s.groups[0].zombiePressure},null,2));
