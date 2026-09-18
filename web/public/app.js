@@ -233,7 +233,13 @@ function drawMarkers(){
     const radius=n.role==='leader'?7:5;
     ctx.fillStyle=n.simulationLod==='FULL'?'#f2f2f2':n.simulationLod==='LIGHT'?'#85c7ff':'#d8a5ff';
     ctx.beginPath();ctx.arc(p.x,p.y,radius,0,Math.PI*2);ctx.fill();
-    if(n.role==='leader'){ctx.strokeStyle='#ffd166';ctx.lineWidth=2;ctx.stroke();}
+    // A persistent NPC is always drawn. The ring tells whether a physical SCUM actor
+    // currently exists for it, or whether one is being created or captured right now.
+    if(n.materialized){ctx.strokeStyle='#8bcf8b';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(p.x,p.y,radius+2.5,0,Math.PI*2);ctx.stroke();}
+    else if(['SPAWN_QUEUED','SPAWNING'].includes(n.materializationState)){ctx.strokeStyle='#ffd166';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(p.x,p.y,radius+2.5,0,Math.PI*2);ctx.stroke();}
+    else if(['DESPAWN_GRACE','DESPAWN_QUEUED','CAPTURING'].includes(n.materializationState)){ctx.strokeStyle='#7fb6ff';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(p.x,p.y,radius+2.5,0,Math.PI*2);ctx.stroke();}
+    else if(n.spawnBlockedReason){ctx.strokeStyle='#ff6b6b';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(p.x,p.y,radius+2.5,0,Math.PI*2);ctx.stroke();}
+    if(n.role==='leader'){ctx.strokeStyle='#ffd166';ctx.lineWidth=2;ctx.beginPath();ctx.arc(p.x,p.y,radius,0,Math.PI*2);ctx.stroke();}
     if(n.destination){
       const d=worldToScreen(n.destination.x,n.destination.y);
       ctx.strokeStyle='#ffffff33';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(d.x,d.y);ctx.stroke();
@@ -268,7 +274,9 @@ function renderDetails(n){
   const trauma=(n.traumas||[]).map(t=>`<span class="tag">${esc(t.type)} ${pct(t.severity)}%</span>`).join('')||'<span class="muted">none</span>';
   const traits=Object.entries(n.traits||{}).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div class="row"><span>${esc(k)}</span><b>${pct(v)}</b></div>`).join('');
   const skills=Object.entries(n.skills||{}).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div class="row"><span>${esc(k)}</span><b>${pct(v)}</b></div>`).join('');
-  panel.innerHTML=`<h2>${esc(n.npcId)}</h2><div class="card"><div class="row"><span>Body</span><b>${esc(n.bodyProfile)}</b></div><div class="row"><span>Archetype</span><b>${esc(n.archetype)}</b></div><div class="row"><span>Skill tier</span><b>${n.skillTier}</b></div><div class="row"><span>LOD</span><b>${esc(n.simulationLod)}</b></div><div class="row"><span>Group</span><b>${esc(n.groupId||'solo')}</b></div><div class="row"><span>Role</span><b>${esc(n.role)}</b></div><div class="row"><span>Stress</span><b>${pct(n.stress)}%</b></div><div class="bar"><i style="width:${pct(n.stress)}%"></i></div><div class="row"><span>Morale</span><b>${pct(n.morale)}%</b></div><div class="row"><span>Activity</span><b>${esc(n.activity)}</b></div><div class="row"><span>Position</span><b>${Math.round(n.position.x)}, ${Math.round(n.position.y)}, ${Math.round(n.position.z)}</b></div></div>${g?`<div class="card"><h3>Group ${esc(g.groupId)}</h3><div class="row"><span>Class</span><b>${esc(g.classId)}</b></div><div class="row"><span>Level</span><b>${g.level}</b></div><div class="row"><span>Leader</span><b>${esc(g.leaderId||'LEADERLESS')}</b></div><div class="row"><span>Cohesion</span><b>${pct(g.cohesion)}%</b></div><div class="row"><span>Morale</span><b>${pct(g.morale)}%</b></div><div class="row"><span>Combat power</span><b>${g.combatPower}</b></div><div class="row"><span>Leader shock</span><b>${pct(g.effects?.leaderDeathShock)}%</b></div></div>`:''}<div class="card"><h3>Trauma</h3>${trauma}</div><div class="card"><h3>Traits</h3>${traits}</div><div class="card"><h3>Skills</h3>${skills}</div>`;
+  const lodRow=`<div class="row"><span>LOD</span><b>${esc(n.simulationLod)}${n.desiredSimulationLod&&n.desiredSimulationLod!==n.simulationLod?` &rarr; ${esc(n.desiredSimulationLod)}`:''}</b></div>`;
+  const physical=`<div class="card"><h3>Physical state</h3><div class="row"><span>Persistent ID</span><b>${esc(n.npcId)}</b></div><div class="row"><span>Origin</span><b>${esc(n.origin||'unknown')}</b></div><div class="row"><span>Materialization</span><b>${esc(n.materializationState||'VIRTUAL')}</b></div><div class="row"><span>Physical actor</span><b>${n.materialized?esc(n.runtimeId||'yes'):'none (virtual)'}</b></div><div class="row"><span>Body intent</span><b>${esc(n.bodyFamily||'?')} lvl ${esc(n.bodyLevel??'?')}</b></div><div class="row"><span>Resolved class</span><b>${esc(n.bodyProfile||'not resolved yet')}</b></div>${n.spawnBlockedReason?`<div class="detail">${esc(n.spawnBlockedReason)}</div>`:''}${n.hasEverMaterialized?'':'<div class="detail">has never had a physical body yet</div>'}</div>`;
+  panel.innerHTML=`<h2>${esc(n.npcId)}</h2>${physical}<div class="card"><div class="row"><span>Body</span><b>${esc(n.bodyProfile||n.bodyFamily||'unresolved')}</b></div><div class="row"><span>Archetype</span><b>${esc(n.archetype)}</b></div><div class="row"><span>Skill tier</span><b>${n.skillTier}</b></div>${lodRow}<div class="row"><span>Group</span><b>${esc(n.groupId||'solo')}</b></div><div class="row"><span>Role</span><b>${esc(n.role)}</b></div><div class="row"><span>Stress</span><b>${pct(n.stress)}%</b></div><div class="bar"><i style="width:${pct(n.stress)}%"></i></div><div class="row"><span>Morale</span><b>${pct(n.morale)}%</b></div><div class="row"><span>Activity</span><b>${esc(n.activity)}</b></div><div class="row"><span>Position</span><b>${Math.round(n.position.x)}, ${Math.round(n.position.y)}, ${Math.round(n.position.z)}</b></div></div>${g?`<div class="card"><h3>Group ${esc(g.groupId)}</h3><div class="row"><span>Class</span><b>${esc(g.classId)}</b></div><div class="row"><span>Level</span><b>${g.level}</b></div><div class="row"><span>Leader</span><b>${esc(g.leaderId||'LEADERLESS')}</b></div><div class="row"><span>Members</span><b>${g.aliveMemberCount??(g.members?.length??'?')} alive / ${g.memberCount??(g.members?.length??'?')}</b></div><div class="row"><span>Physical</span><b>${g.materializedMemberCount??0}</b></div><div class="row"><span>Task</span><b>${esc(g.currentTask||'idle')}</b></div><div class="row"><span>Cohesion</span><b>${pct(g.cohesion)}%</b></div><div class="row"><span>Morale</span><b>${pct(g.morale)}%</b></div><div class="row"><span>Combat power</span><b>${g.combatPower}</b></div><div class="row"><span>Leader shock</span><b>${pct(g.effects?.leaderDeathShock)}%</b></div></div>`:''}<div class="card"><h3>Trauma</h3>${trauma}</div><div class="card"><h3>Traits</h3>${traits}</div><div class="card"><h3>Skills</h3>${skills}</div>`;
 }
 
 function renderHealth(){
@@ -383,7 +391,10 @@ async function refresh(){
     ensureViewInitialized();
     conn.textContent='live';
     conn.style.color='#8bcf8b';
-    stats.textContent=`NPC ${s.npcs.filter(n=>n.alive).length} · Groups ${s.groups.length} · Zombies ${s.zombies.length} · Zoom ${view.zoom}`;
+    const pop=s.population||{};
+    const queue=pop.queue||{};
+    const pending=(queue.queuedMaterialize||0)+(queue.queuedDematerialize||0);
+    stats.textContent=`NPC ${s.npcs.filter(n=>n.alive).length}${pop.dead?` (+${pop.dead} dead)`:''} · Groups ${s.groups.length} · Physical ${pop.materialized??0}${pending?` · Queue ${pending}`:''} · Zombies ${s.zombies.length} · Zoom ${view.zoom}`;
     renderHealth();
     if(selected)loadDetails(selected);
     draw();

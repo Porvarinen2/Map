@@ -57,6 +57,39 @@ actual Z coordinate is used. On empty map space the configurable default Z is us
 The exact command itself is current SCUM admin syntax; map coordinate bounds/default Z
 remain configurable in brain\config\default.json.
 
+PERSISTENT WORLD AND 700 M VIRTUALIZATION (audit25)
+---------------------------------------------------
+Tesles owns the NPC population. A new world generates 100 persistent NPCs and their
+1-5 member squads deterministically from the world seed, before the map viewer opens
+and without requiring a single SCUM NPC to exist. Everything that defines an NPC lives
+in the Tesles entity; the SCUM actor is only its materialized body.
+
+  FULL     nearest player <= 200 m   physical actor, full AI
+  LIGHT    200 m - 700 m             physical actor, reduced update rate
+  VIRTUAL  beyond 700 m              no actor; the entity keeps living virtually
+
+When a player comes within 700 m the entity materializes as a SCUM NPC bound to the same
+persistent id. When the player stays beyond 700 m for 5 seconds, the bridge captures the
+actor's final position and health FIRST and destroys it only afterwards. The same NPC
+rematerializes later with the same identity, squad, psychology and injuries.
+
+Deaths are permanent. A killed NPC stays dead across dematerialization and restarts, and
+the population is not silently refilled.
+
+If the SCUM build cannot provide a safe spawn/destroy primitive, nothing is faked: the
+persistent world, squads, AI, persistence and the map viewer keep running virtually and
+the physical capabilities report PENDING or DEGRADED with the exact reason.
+
+HEALTH STATUS VOCABULARY
+------------------------
+  PENDING   capability has not been exercisable yet (no player, no actor, no bridge)
+  OK        proven live during this bridge session
+  DEGRADED  attempted and failed; the virtual world continues
+  FAILED    a required subsystem cannot safely continue
+
+A fresh server with zero players therefore shows worldPopulation/persistence/brain OK and
+the SCUM physical rows PENDING. That is correct, not an error.
+
 IMPORTANT QUALITY GATE
 ----------------------
 SCUM is closed-source and its internal NPC combat/spawn functions are not a stable public API.

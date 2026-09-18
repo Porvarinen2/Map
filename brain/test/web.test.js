@@ -60,3 +60,43 @@ test('HTTP map-config exposes bundled tile pyramid metadata', async()=>{
  assert.equal(body.tiles.levels['5'].cols,29);
  await new Promise(r=>server.close(r));
 });
+
+test('the map snapshot carries persistent squad telemetry for a fully virtual world', async()=>{
+ const cfg=require('../config/default.json');
+ const d=new WorldDirector({seed:'tesles-scum-world',map:cfg.map,population:cfg.population,materialization:cfg.materialization});
+ d.bootstrapPopulation({map:cfg.map,populationConfig:{...cfg.population,initialNpcCount:100},now:1700000000000});
+ const server=createHttpServer({director:d,publicDir:null,mapConfig:cfg.map});
+ await new Promise(r=>server.listen(0,'127.0.0.1',r)); const port=server.address().port;
+ const body=await fetch(`http://127.0.0.1:${port}/api/map-snapshot`).then(r=>r.json());
+ assert.equal(body.npcs.length,100,'every persistent NPC must be visible with no bridge at all');
+ assert.ok(body.groups.length>=20);
+ assert.equal(body.population.materialized,0);
+ assert.equal(body.population.meta.initialized,true);
+ for(const n of body.npcs){
+  assert.equal(n.runtimeId,null,'a marker must not need a runtime actor to exist');
+  assert.equal(n.materializationState,'VIRTUAL');
+  assert.ok('desiredSimulationLod' in n);
+  assert.ok('materialized' in n);
+ }
+ for(const g of body.groups){
+  assert.ok(g.memberCount>=1&&g.memberCount<=5);
+  assert.equal(g.materializedMemberCount,0);
+ }
+ const details=await fetch(`http://127.0.0.1:${port}/api/npc/${body.npcs[0].npcId}`).then(r=>r.json());
+ assert.equal(details.npc.origin,'TESLES_GENERATED');
+ assert.ok(details.group);
+ await new Promise(r=>server.close(r));
+});
+
+test('the viewer renders persistent identity, LOD intent and materialization state',()=>{
+ const fs=require('fs'); const path=require('path');
+ const js=fs.readFileSync(path.resolve(__dirname,'..','..','web','public','app.js'),'utf8');
+ const css=fs.readFileSync(path.resolve(__dirname,'..','..','web','public','styles.css'),'utf8');
+ assert.match(js,/Persistent ID/);
+ assert.match(js,/materializationState/);
+ assert.match(js,/desiredSimulationLod/);
+ assert.match(js,/spawnBlockedReason/);
+ assert.match(js,/Physical \$\{pop\.materialized/);
+ assert.match(js,/materializedMemberCount/);
+ assert.match(css,/health-pending/);
+});
