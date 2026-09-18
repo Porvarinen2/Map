@@ -3,6 +3,8 @@ return {
   command_file = [[__COMMAND_FILE__]],
   state_file = [[__STATE_FILE__]],
   probe_file = [[__PROBE_FILE__]],
+  compat_profile_file = [[__COMPAT_PROFILE_FILE__]],
+  scum_build = "__SCUM_BUILD__",
   takeover_requested = __TAKEOVER_REQUESTED__,
   takeover_mode = "__TAKEOVER_MODE__", -- auto | probe | full | observe
   probe_restore_ms = 9000,
@@ -12,6 +14,28 @@ return {
   state_snapshot_ms = 1000,
   event_max_bytes = 5242880,
   npc_patterns = {"BP_Guard_Lvl_", "BP_Drifter_Lvl_"},
+  adopt_unmanaged = __ADOPT_UNMANAGED__,
+  -- Body families the brain may ask for. Only classes that actually exist in the
+  -- running build are ever reported back and spawned.
+  body_family_patterns = {
+    DRIFTER = {"BP_Drifter_Lvl_"},
+    GUARD = {"BP_Guard_Lvl_"},
+    RADIATION = {"Radiation"},
+    BUNKER = {"AbandonedBunker"}
+  },
+  class_search_roots = {"/Game/Blueprints/Characters/NPC/", "/Game/Blueprints/AI/"},
+  spawn_collision_handling = 2, -- AdjustIfPossibleButAlwaysSpawn
+  spawn_function_candidates = {},
+  spawn_probe_enabled = false,
+  spawn_probe_cycles = 10,
+  spawn_probe_family = "DRIFTER",
+  spawn_probe_location = nil,
+  weapon_property_candidates = {"CurrentWeapon", "EquippedWeapon", "Weapon", "ActiveWeapon"},
+  weapon_aim_candidates = {},
+  weapon_fire_start_candidates = {},
+  weapon_fire_stop_candidates = {},
+  weapon_reload_candidates = {},
+  compat_flush_ms = 15000,
   zombie_patterns = {"Puppet", "Zombie", "BP_Zombie", "BP_Puppet"},
   player_patterns = {"Prisoner", "PlayerCharacter", "SCUMPlayer", "BP_Player"}
 }

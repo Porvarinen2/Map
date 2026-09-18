@@ -42,7 +42,7 @@ function buildWeaponCommands(npc,{
     commands.push({
       type:'AIM',persistentNpcId:npc.npcId,npcId:runtimeId,
       x:Number(target.x),y:Number(target.y),z:Number(target.z||0),
-      accuracyMultiplier:Number.isFinite(Number(accuracyMultiplier))?Number(accuracyMultiplier):(Number(npc.desiredAccuracyMultiplier)||1),
+      accuracyMultiplier:accuracyMultiplier!=null&&Number.isFinite(Number(accuracyMultiplier))?Number(accuracyMultiplier):(Number(npc.desiredAccuracyMultiplier)||1),
       suppress:action==='SUPPRESS'?'true':'false',
       issuedAt:now
     });

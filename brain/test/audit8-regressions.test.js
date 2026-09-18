@@ -33,7 +33,7 @@ test('unsuppressed vanilla brain reclaim releases other taken-over NPCs instead 
 test('a newly spawned NPC that cannot be taken over fail-closes and releases existing takeovers',()=>{
   const lua=read('ue4ss/TeslesNPCOverhaul/scripts/modules/scum_adapter.lua');
   const reg=lua.slice(lua.indexOf('function M.register_actor'),lua.indexOf('function M.scan_existing'));
-  assert.match(reg,/if full_mode_active then/);
+  assert.match(reg,/if full_mode_active/);
   assert.match(reg,/release_all_takeovers\(/);
 });
 

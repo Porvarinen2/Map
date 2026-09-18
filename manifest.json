@@ -1,6 +1,6 @@
 {
   "name": "TeslesNPCOverhaul",
-  "version": "0.1.5-audit24fix",
+  "version": "0.1.5-audit25fix",
   "ownedPaths": [
     "TeslesMods\\TeslesNPCOverhaul",
     "<detected UE4SS root>\\Mods\\TeslesNPCOverhaul"

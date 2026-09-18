@@ -2,12 +2,12 @@ local util = require("modules.util")
 local M = {}
 local event_file, command_file, state_file = nil, nil, nil
 local event_max_bytes = 5242880
-local last_command_seq = 0
+local last_seq_by_key = {}
 
 function M.configure(cfg)
   event_file, command_file, state_file = cfg.event_file, cfg.command_file, cfg.state_file
   event_max_bytes = tonumber(cfg.event_max_bytes) or 5242880
-  last_command_seq = 0
+  last_seq_by_key = {}
   local f = io.open(event_file, "a"); if f then f:close() end
   local c = io.open(command_file, "a"); if c then c:close() end
 end
@@ -61,25 +61,28 @@ local function parse_line(line)
 end
 
 -- command_file is a bounded latest-command snapshot, not an append-only log.
--- The Node brain rewrites it atomically. Sequence de-duplication avoids MoveTo spam,
--- while a SCUM/UE4SS restart can safely replay the latest desired command once.
+-- The Node brain rewrites it atomically. De-duplication is per command key, not per
+-- global sequence: a SPAWN for one NPC and a MOVE for another are independent pieces
+-- of work, and an older key must still execute when a newer key is written first.
+-- A SCUM/UE4SS restart clears the table and safely replays the latest desired state.
 function M.poll(callback)
   if not command_file then return end
   local f=io.open(command_file,"rb"); if not f then return end
   local text=f:read("*a") or "";f:close()
   if text=="" or not string.match(text,"\n$") then return end
-  local max_seq=last_command_seq
   for line in string.gmatch(text,"([^\r\n]+)") do
     if line~="" then
       local cmd=parse_line(line)
       local seq=tonumber(cmd.seq) or 0
-      if seq>last_command_seq then
+      local key=cmd.commandKey
+      if key==nil or key=="" then key=tostring(cmd.type)..":"..tostring(cmd.npcId or cmd.persistentNpcId or "") end
+      local last=last_seq_by_key[key] or 0
+      if seq>last then
+        last_seq_by_key[key]=seq
         callback(cmd)
-        if seq>max_seq then max_seq=seq end
       end
     end
   end
-  last_command_seq=max_seq
 end
 
 return M

@@ -33,7 +33,7 @@ test('failed MOVE command result requests navigation recovery instead of disabli
 
 test('runtime MOVE command handling does not rewrite the global movement capability',()=>{
   const lua=read('ue4ss/TeslesNPCOverhaul/scripts/modules/scum_adapter.lua');
-  const start=lua.indexOf('function M.handle_command');
+  const start=lua.indexOf('local function result(cmd');
   const end=lua.indexOf('function M.configure',start);
   const block=lua.slice(start,end);
   assert.doesNotMatch(block,/probe\.cap\("movement"/);

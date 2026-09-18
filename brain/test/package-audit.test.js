@@ -107,7 +107,7 @@ test('high-frequency position telemetry uses state snapshots rather than append 
 
 test('package metadata consistently reports current version',()=>{
  const version=read('VERSION').trim();
- assert.equal(version,'0.1.5-audit24fix');
+ assert.equal(version,'0.1.5-audit25fix');
  const manifest=JSON.parse(read('manifest.json'));
  assert.equal(manifest.version,version);
  const pkg=JSON.parse(read('brain/package.json'));
@@ -139,9 +139,9 @@ test('probe allows enough time to observe movement before restoring vanilla brai
 
 test('package docs and Node metadata do not advertise superseded probe behavior',()=>{
  const pkg=JSON.parse(read('brain/package.json'));
- assert.equal(pkg.version,'0.1.5-audit24fix');
+ assert.equal(pkg.version,'0.1.5-audit25fix');
  const readme=read('README.txt');
- assert.match(readme,/0\.1\.5-audit24fix/);
+ assert.match(readme,/0\.1\.5-audit25fix/);
  assert.doesNotMatch(readme,/harmless current-position MoveToLocation probe/i);
 });
 
@@ -157,7 +157,8 @@ test('command IPC is a bounded latest-command snapshot and Lua de-duplicates by 
  const ipc=read('ue4ss/TeslesNPCOverhaul/scripts/modules/ipc.lua');
  assert.match(server,/class CommandSnapshotWriter/);
  assert.doesNotMatch(server,/appendFileSync\(file,formatCommand/);
- assert.match(ipc,/last_command_seq/);
+ // audit25: de-duplication is per command key so independent work never starves.
+ assert.match(ipc,/last_seq_by_key/);
  assert.doesNotMatch(ipc,/local event_file, command_file, state_file, offset/);
 });
 

@@ -398,16 +398,39 @@ function Enable-UE4SSMod([string]$modsDir,[string]$name){
   return $txt
 }
 function Escape-LuaLong([string]$s){ return $s -replace '\]\]','] ]' }
-function Write-RuntimeConfig([string]$template,[string]$out,[string]$eventFile,[string]$commandFile,[string]$stateFile,[string]$probeFile,[bool]$takeoverRequested,[string]$takeoverMode){
+function Write-RuntimeConfig([string]$template,[string]$out,[string]$eventFile,[string]$commandFile,[string]$stateFile,[string]$probeFile,[string]$compatProfileFile,[bool]$takeoverRequested,[string]$takeoverMode,[bool]$adoptUnmanaged,[string]$scumBuild){
   if($takeoverMode -notin @('auto','probe','full','observe')){ throw "Invalid takeover mode: $takeoverMode" }
   $t=Get-Content -LiteralPath $template -Raw
   $t=$t.Replace('__EVENT_FILE__',(Escape-LuaLong $eventFile)).
         Replace('__COMMAND_FILE__',(Escape-LuaLong $commandFile)).
         Replace('__STATE_FILE__',(Escape-LuaLong $stateFile)).
         Replace('__PROBE_FILE__',(Escape-LuaLong $probeFile)).
+        Replace('__COMPAT_PROFILE_FILE__',(Escape-LuaLong $compatProfileFile)).
         Replace('__TAKEOVER_REQUESTED__',($(if($takeoverRequested){'true'}else{'false'}))).
-        Replace('__TAKEOVER_MODE__',$takeoverMode)
+        Replace('__TAKEOVER_MODE__',$takeoverMode).
+        Replace('__ADOPT_UNMANAGED__',($(if($adoptUnmanaged){'true'}else{'false'}))).
+        Replace('__SCUM_BUILD__',$scumBuild)
   Set-Content -LiteralPath $out -Value $t -Encoding UTF8
+}
+function Assert-PackageComplete([string]$dest){
+  # Fail before touching the server if the package is missing a runtime component.
+  $required=@(
+    'brain\config\default.json','brain\config\population.json','brain\config\body-profiles.json',
+    'brain\src\director\worldPopulation.js','brain\src\virtual\materializationCoordinator.js',
+    'brain\src\bridge\commandBroker.js','brain\src\director\spawnPolicy.js',
+    'ue4ss\TeslesNPCOverhaul\scripts\modules\spawn_adapter.lua',
+    'ue4ss\TeslesNPCOverhaul\scripts\modules\weapon_adapter.lua',
+    'ue4ss\TeslesNPCOverhaul\scripts\modules\compat_profile.lua'
+  )
+  $missing=@($required | Where-Object { -not (Test-Path -LiteralPath (Join-Path $dest $_)) })
+  if($missing.Count -gt 0){ throw "Incomplete TeslesNPCOverhaul package; missing: $($missing -join ', ')" }
+}
+function Get-ScumBuild([string]$ServerRoot){
+  $exe=Join-Path $ServerRoot 'SCUM\Binaries\Win64\SCUMServer.exe'
+  if(Test-Path -LiteralPath $exe){
+    try{ return [string](Get-Item -LiteralPath $exe).VersionInfo.ProductVersion }catch{ return 'unknown' }
+  }
+  return 'unknown'
 }
 function Get-BrainEndpoint([string]$modRoot){
   $installed=Get-Content -LiteralPath (Join-Path $modRoot 'brain\config\installed.json') -Raw | ConvertFrom-Json
@@ -547,7 +570,11 @@ try{
     Copy-Tree $SourceRoot $dest
   }
 
+  Assert-PackageComplete $dest
+
   if($backup -and (Test-Path -LiteralPath (Join-Path $backup 'runtime'))){
+    # world.json carries persistent NPC identities, squads and deaths: it is restored,
+    # never overwritten. Schema migration happens at runtime, not by deleting the save.
     Say 'Restoring persistent runtime/world data from previous installation.'
     Copy-Tree (Join-Path $backup 'runtime') (Join-Path $dest 'runtime')
   }
@@ -596,6 +623,7 @@ try{
   $commandFile=Join-Path $runtime 'scum-commands.log'
   $stateFile=Join-Path $runtime 'scum-state.log'
   $probeFile=Join-Path $runtime 'probe-report.log'
+  $compatProfileFile=Join-Path $runtime 'compat-profile.json'
   foreach($f in @($eventFile,$commandFile,$stateFile,$probeFile)){
     if(-not(Test-Path -LiteralPath $f)){ New-Item -ItemType File -Path $f -Force | Out-Null }
   }
@@ -610,7 +638,8 @@ try{
   if(Test-Path -LiteralPath $userCfg){ $userCfgObj=Get-Content -LiteralPath $userCfg -Raw | ConvertFrom-Json }
   $takeoverRequested=if($userCfgObj.features -and $null -ne $userCfgObj.features.takeoverRequested){ [bool]$userCfgObj.features.takeoverRequested } else { [bool]$defaultCfg.features.takeoverRequested }
   $takeoverMode=if($userCfgObj.features -and $userCfgObj.features.takeoverMode){ [string]$userCfgObj.features.takeoverMode } else { [string]$defaultCfg.features.takeoverMode }
-  Write-RuntimeConfig (Join-Path $ueMod 'scripts\runtime_config.lua.template') (Join-Path $ueMod 'scripts\runtime_config.lua') $eventFile $commandFile $stateFile $probeFile $takeoverRequested $takeoverMode
+  $adoptUnmanaged=if($userCfgObj.population -and $null -ne $userCfgObj.population.adoptUnmanagedNpc){ [bool]$userCfgObj.population.adoptUnmanagedNpc } else { [bool]$defaultCfg.population.adoptUnmanagedNpc }
+  Write-RuntimeConfig (Join-Path $ueMod 'scripts\runtime_config.lua.template') (Join-Path $ueMod 'scripts\runtime_config.lua') $eventFile $commandFile $stateFile $probeFile $compatProfileFile $takeoverRequested $takeoverMode $adoptUnmanaged (Get-ScumBuild $ServerRoot)
   Set-Content -LiteralPath (Join-Path $runtime 'installed-server-root.txt') -Value $ServerRoot -Encoding UTF8
 
   $brainEndpoint=Start-Brain $dest $nodeExe

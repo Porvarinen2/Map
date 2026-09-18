@@ -268,7 +268,21 @@ class WorldDirector{
       if(n.alive===false)continue;
       if([mat.STATES.SPAWNING,mat.STATES.MATERIALIZED].includes(n.materializationState)&&n.groupId)materializingGroupIds.push(n.groupId);
       const intent=mat.evaluateMaterialization(n,{desiredLod:n.desiredSimulationLod||'VIRTUAL',now,...this.materialization});
-      if(intent){intent.nearestPlayerDistance=Number.isFinite(n.nearestPlayerDistanceCm)?n.nearestPlayerDistanceCm:Number.POSITIVE_INFINITY;intents.push(intent);}
+      if(!intent)continue;
+      if(intent.type==='SPAWN'){
+        // Resolve the body before budgeting: an entity that has no verified SCUM
+        // class in this build must not consume a spawn slot from one that does.
+        const resolved=resolveBodyProfile(n,this.classCatalog);
+        if(!resolved.ok){
+          n.spawnBlockedReason=resolved.reason;
+          n.materializationState=mat.STATES.VIRTUAL;
+          this._logMaterialization({type:'spawn_blocked',persistentNpcId:n.npcId,reason:resolved.reason,at:now});
+          continue;
+        }
+        intent.npcClass=resolved.className;
+      }
+      intent.nearestPlayerDistance=Number.isFinite(n.nearestPlayerDistanceCm)?n.nearestPlayerDistanceCm:Number.POSITIVE_INFINITY;
+      intents.push(intent);
     }
     const work=selectMaterializationWork(intents,{
       maxMaterializePerTick:this.materialization.maxMaterializePerTick,
@@ -279,13 +293,6 @@ class WorldDirector{
     for(const intent of work.materialize){
       const npc=this.world.npcs[intent.persistentNpcId];
       if(!npc)continue;
-      const resolved=resolveBodyProfile(npc,this.classCatalog);
-      if(!resolved.ok){
-        npc.spawnBlockedReason=resolved.reason;
-        npc.materializationState=mat.STATES.VIRTUAL;
-        this._logMaterialization({type:'spawn_blocked',persistentNpcId:npc.npcId,reason:resolved.reason,at:now});
-        continue;
-      }
       // A failed attempt never moves the persistent entity; only the spawn probe
       // position walks the candidate ring, and only within a tight radius once the
       // entity has physically existed before.
@@ -293,12 +300,12 @@ class WorldDirector{
       const candidate=placementCandidate(npc.position,maxOffsets?Math.min(npc.spawnAttempts||0,maxOffsets-1):(npc.spawnAttempts||0));
       const generation=mat.markSpawnDispatched(npc,{now});
       this.pendingCommands.push({
-        type:'SPAWN',persistentNpcId:npc.npcId,npcClass:resolved.className,
+        type:'SPAWN',persistentNpcId:npc.npcId,npcClass:intent.npcClass,
         bodyFamily:npc.bodyFamily||'',bodyLevel:npc.bodyLevel||'',
         x:candidate.x,y:candidate.y,z:candidate.z,
         generation,attempt:npc.spawnAttempts,issuedAt:now
       });
-      this._logMaterialization({type:'spawn_requested',persistentNpcId:npc.npcId,npcClass:resolved.className,attempt:npc.spawnAttempts,at:now});
+      this._logMaterialization({type:'spawn_requested',persistentNpcId:npc.npcId,npcClass:intent.npcClass,attempt:npc.spawnAttempts,at:now});
     }
     for(const intent of work.dematerialize){
       const npc=this.world.npcs[intent.persistentNpcId];

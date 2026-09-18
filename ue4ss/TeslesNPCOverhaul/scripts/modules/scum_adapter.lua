@@ -1,4 +1,7 @@
 local util=require("modules.util")
+local spawn_adapter=require("modules.spawn_adapter")
+local weapon_adapter=require("modules.weapon_adapter")
+local compat=require("modules.compat_profile")
 local M={actors={},actor_by_id={},zombies={},players={}}
 local cfg,ipc,probe=nil,nil,nil
 local health_prop_by_class={}
@@ -78,7 +81,7 @@ local function hook_event(kind,context,path)
   if kind=="GUNSHOT" then
     local key=full.."|"..path;local now=util.now_ms();if last_gunshot_by_source[key] and now-last_gunshot_by_source[key]<1000 then return end;last_gunshot_by_source[key]=now
     local loc=util.safe_location(owner);if loc then ipc.emit("GUNSHOT",{sourceId=full,x=loc.x,y=loc.y,z=loc.z,intensity=1,functionName=path}) end
-  elseif kind=="DEATH" and rec and not rec.dead then rec.dead=true;ipc.emit("NPC_DEATH",{npcId=full,functionName=path});probe.cap("death_detection",true,"hook:"..path) end
+  elseif kind=="DEATH" and rec and not rec.dead then rec.dead=true;ipc.emit("NPC_DEATH",{npcId=full,persistentNpcId=rec.persistentNpcId or "",functionName=path});probe.cap("death_detection",true,"hook:"..path) end
 end
 local function move_request_accepted(res)
   if res==nil then return false,"nil result" end
@@ -124,7 +127,7 @@ local function retry_probe_if_needed(now)
   if not cfg.takeover_requested or cfg.takeover_mode=="observe" then return end
   local best=nil;local bestAt=math.huge
   for _,rec in pairs(M.actors) do
-    if not rec.dead and util.safe_valid(rec.actor) and util.safe_valid(rec.controller) and util.safe_valid(rec.brain) then
+    if takeover_candidate(rec) and util.safe_valid(rec.actor) and util.safe_valid(rec.controller) and util.safe_valid(rec.brain) then
       local last=tonumber(rec.last_probe_at) or 0
       if last<bestAt then best=rec;bestAt=last end
     end
@@ -161,10 +164,17 @@ local function release_all_takeovers(reason)
   probe.cap("brain_restore",all_restored,all_restored and "all taken-over NPC brains released" or table.concat(failures,"; "))
   return all_restored
 end
+local function takeover_candidate(rec)
+  -- Production takeover is bound to actors Tesles materialized itself. Unmanaged
+  -- vanilla NPCs keep their own brain unless the server explicitly opts in.
+  if not rec or rec.dead then return false end
+  if cfg.adopt_unmanaged==true then return true end
+  return rec.tesles_owned==true
+end
 local function activate_full_takeover()
   if full_mode_active then return true end
   for id,rec in pairs(M.actors) do
-    if not rec.dead then
+    if takeover_candidate(rec) then
       local stopped,detail=stop_brain(rec,"Tesles full takeover activation")
       if not stopped then
         release_all_takeovers("activation rollback: failed to stop brain for "..id)
@@ -186,11 +196,14 @@ function M.register_actor(actor)
   local id=full;if M.actors[id] then return end
   probe.set_event_handler(hook_event)
   local loc=util.safe_location(actor)
-  M.actors[id]={actor=actor,id=id,stableKey=stable_key(actor,cls,loc),body=cls,controller=nil,brain=nil,last_loc=loc,taken_over=false,dead=false,last_health=nil,seen_emitted=false}
+  -- Tesles-owned actors are the materialized body of an existing persistent entity.
+  -- They are never allowed to be discovered as a new, unmanaged NPC.
+  local persistentNpcId=spawn_adapter.owned_persistent_id(id) or spawn_adapter.read_tesles_id(actor)
+  M.actors[id]={actor=actor,id=id,persistentNpcId=persistentNpcId,tesles_owned=persistentNpcId~=nil,stableKey=stable_key(actor,cls,loc),body=cls,controller=nil,brain=nil,last_loc=loc,taken_over=false,dead=false,last_health=nil,seen_emitted=false}
   M.actor_by_id[id]=M.actors[id]
   probe.dump_class(actor,"NPC",true);probe.inspect_weapon_members(actor)
   if loc then
-    ipc.emit("NPC_SEEN",{npcId=id,stableKey=M.actors[id].stableKey,body=cls,x=loc.x,y=loc.y,z=loc.z})
+    ipc.emit("NPC_SEEN",{npcId=id,persistentNpcId=M.actors[id].persistentNpcId or "",stableKey=M.actors[id].stableKey,body=cls,x=loc.x,y=loc.y,z=loc.z})
     M.actors[id].seen_emitted=true
     probe.cap("location_read",true,"K2_GetActorLocation")
   else
@@ -204,12 +217,12 @@ function M.register_actor(actor)
   if not b then probe.cap("brain_stop",false,"BrainComponent not found");return end
   probe.dump_class(b,"BRAIN")
   if not cfg.takeover_requested or cfg.takeover_mode=="observe" then return end
-  if full_mode_active then
+  if full_mode_active and takeover_candidate(M.actors[id]) then
     local ok,detail=stop_brain(M.actors[id],"Tesles full takeover")
     if not ok then release_all_takeovers("new NPC takeover failed for "..id);probe.cap("brain_stop",false,detail) else probe.cap("brain_stop",true,detail) end
     return
   end
-  if probe_npc_id==nil and not movement_verified then start_capability_probe(M.actors[id]) end
+  if probe_npc_id==nil and not movement_verified and takeover_candidate(M.actors[id]) then start_capability_probe(M.actors[id]) end
 end
 function M.scan_existing()
   ForEachUObject(function(o)local ok,isPawn=pcall(function() return o:IsA("/Script/Engine.Pawn") end);if ok and isPawn then M.register_actor(o) end end)
@@ -241,15 +254,15 @@ function M.tick()
       if loc then
         rec.last_loc=loc
         if not rec.seen_emitted then
-          ipc.emit("NPC_SEEN",{npcId=id,stableKey=rec.stableKey,body=rec.body,x=loc.x,y=loc.y,z=loc.z})
+          ipc.emit("NPC_SEEN",{npcId=id,persistentNpcId=rec.persistentNpcId or "",stableKey=rec.stableKey,body=rec.body,x=loc.x,y=loc.y,z=loc.z})
           rec.seen_emitted=true
           probe.cap("location_read",true,"K2_GetActorLocation recovered after deferred discovery")
         end
       end
       local hpName,hp=health_property_for(rec.actor)
       if hpName and type(hp)=="number" then
-        if rec.last_health and hp<rec.last_health and hp>0 and not rec.dead then ipc.emit("NPC_DAMAGE",{npcId=id,health=hp,previousHealth=rec.last_health,damageFraction=math.min(1,math.max(0,(rec.last_health-hp)/math.max(math.abs(rec.last_health),1))),property=hpName}) end
-        if rec.last_health and rec.last_health>0 and hp<=0 and not rec.dead then rec.dead=true;ipc.emit("NPC_DEATH",{npcId=id,health=hp,property=hpName});probe.cap("death_detection",true,"numeric health crossed zero: "..hpName) end
+        if rec.last_health and hp<rec.last_health and hp>0 and not rec.dead then ipc.emit("NPC_DAMAGE",{npcId=id,persistentNpcId=rec.persistentNpcId or "",health=hp,previousHealth=rec.last_health,damageFraction=math.min(1,math.max(0,(rec.last_health-hp)/math.max(math.abs(rec.last_health),1))),property=hpName}) end
+        if rec.last_health and rec.last_health>0 and hp<=0 and not rec.dead then rec.dead=true;ipc.emit("NPC_DEATH",{npcId=id,persistentNpcId=rec.persistentNpcId or "",health=hp,property=hpName});probe.cap("death_detection",true,"numeric health crossed zero: "..hpName) end
         rec.last_health=hp
       end
       if rec.taken_over and util.safe_valid(rec.brain) and not rec.dead then
@@ -283,11 +296,12 @@ function M.tick()
   end
   local now=util.now_ms();retry_probe_if_needed(now);if now-last_state_snapshot_at>=(tonumber(cfg.state_snapshot_ms) or 1000) then
     local records={}
-    for id,rec in pairs(M.actors) do if util.safe_valid(rec.actor) then local loc=util.safe_location(rec.actor);if loc then table.insert(records,{type="NPC_POSITION",fields={npcId=id,x=loc.x,y=loc.y,z=loc.z}}) end end end
+    for id,rec in pairs(M.actors) do if util.safe_valid(rec.actor) then local loc=util.safe_location(rec.actor);if loc then table.insert(records,{type="NPC_POSITION",fields={npcId=id,persistentNpcId=rec.persistentNpcId or "",x=loc.x,y=loc.y,z=loc.z}}) end end end
     for id,rec in pairs(M.zombies) do if not util.safe_valid(rec.actor) then M.zombies[id]=nil else local loc=util.safe_location(rec.actor);if loc then table.insert(records,{type="ZOMBIE_SEEN",fields={zombieId=id,x=loc.x,y=loc.y,z=loc.z}}) end end end
     for id,rec in pairs(M.players) do if not util.safe_valid(rec.actor) then M.players[id]=nil else local loc=util.safe_location(rec.actor);if loc then table.insert(records,{type="PLAYER_SEEN",fields={playerId=id,x=loc.x,y=loc.y,z=loc.z}}) end end end
     ipc.write_state(records);last_state_snapshot_at=now
   end
+  spawn_adapter.tick()
 end
 local function move(rec,cmd)
   if not rec or not util.safe_valid(rec.controller) then return false,"no controller" end
@@ -298,6 +312,19 @@ local function move(rec,cmd)
   if not accepted then return false,"MoveToLocation returned "..detail end
   return true,detail
 end
+local function result(cmd,ok,detail,extra)
+  local fields={seq=cmd.seq or 0,commandKey=cmd.commandKey or "",commandType=cmd.type,npcId=cmd.npcId or "",persistentNpcId=cmd.persistentNpcId or "",ok=ok and "true" or "false",detail=tostring(detail or "")}
+  for k,v in pairs(extra or {}) do fields[k]=v end
+  ipc.emit("COMMAND_RESULT",fields)
+end
+local function owned_record(cmd)
+  local persistentNpcId=cmd.persistentNpcId
+  local record=persistentNpcId and spawn_adapter.actor_by_persistent_id[persistentNpcId] or nil
+  if not record then return nil end
+  local rec=M.actor_by_id[record.runtimeId or ""]
+  if rec then return rec end
+  return {id=record.runtimeId,actor=record.actor,controller=controller_of(record.actor),persistentNpcId=persistentNpcId,tesles_owned=true}
+end
 function M.handle_command(cmd)
   local rec=M.actor_by_id[cmd.npcId or ""]
   local blocked = rec and not rec.taken_over
@@ -305,7 +332,7 @@ function M.handle_command(cmd)
     local ok,detail
     if blocked then ok,detail=false,"brain not taken over for this actor"
     else ok,detail=move(rec,cmd) end
-    ipc.emit("COMMAND_RESULT",{seq=cmd.seq or 0,commandType="MOVE",npcId=cmd.npcId or "",ok=ok and "true" or "false",detail=detail,accuracyMultiplier=cmd.accuracyMultiplier or ""})
+    result(cmd,ok,detail,{accuracyMultiplier=cmd.accuracyMultiplier or ""})
   elseif cmd.type=="STOP" then
     local ok,detail=false,"no controller"
     if blocked then detail="brain not taken over for this actor"
@@ -313,8 +340,60 @@ function M.handle_command(cmd)
       local callOk,err=pcall(function() rec.controller:StopMovement() end)
       ok=callOk;detail=tostring(err or "")
     end
-    ipc.emit("COMMAND_RESULT",{seq=cmd.seq or 0,commandType="STOP",npcId=cmd.npcId or "",ok=ok and "true" or "false",detail=detail})
+    result(cmd,ok,detail)
+  elseif cmd.type=="SPAWN" then
+    local ok,detail=spawn_adapter.spawn(cmd)
+    result(cmd,ok,detail)
+  elseif cmd.type=="CAPTURE_AND_DESPAWN" then
+    -- Stop shooting and moving before the body is read and removed.
+    local owned=owned_record(cmd)
+    if owned then
+      weapon_adapter.release(owned)
+      if util.safe_valid(owned.controller) then pcall(function() owned.controller:StopMovement() end) end
+    end
+    local ok,detail=spawn_adapter.capture_and_despawn(cmd)
+    result(cmd,ok,detail)
+  elseif cmd.type=="FORCE_DESTROY" then
+    local owned=owned_record(cmd)
+    if owned then weapon_adapter.release(owned) end
+    local ok,detail=spawn_adapter.force_destroy(cmd.runtimeId or (owned and owned.id))
+    result(cmd,ok,detail)
+  elseif cmd.type=="AIM" or cmd.type=="FIRE_START" or cmd.type=="FIRE_STOP" or cmd.type=="RELOAD" then
+    local owned=owned_record(cmd) or rec
+    local ok,detail=false,"no Tesles-owned actor for this command"
+    if owned and (owned.tesles_owned or cfg.adopt_unmanaged==true) then ok,detail=weapon_adapter.handle(owned,cmd) end
+    result(cmd,ok,detail)
+  else
+    result(cmd,false,"unsupported command type "..tostring(cmd.type))
   end
 end
-function M.configure(c,i,p) cfg,ipc,probe=c,i,p;if cfg.takeover_mode=="auto" then probe.cap("weapon_use",false,"build-specific weapon command primitive not yet verified; auto takeover stays in safe probe mode") elseif cfg.takeover_mode=="full" then full_mode_active=false;probe.cap("full_takeover_ready",false,"full mode armed; waiting for reversible brain + movement capability probe") end end
+function M.configure(c,i,p)
+  cfg,ipc,probe=c,i,p
+  compat.configure(c,i)
+  spawn_adapter.configure(c,i,p,function(actor) local _,hp=health_property_for(actor); return hp end)
+  weapon_adapter.configure(c,i,p)
+  spawn_adapter.on_actor_spawned=function(actor,persistentNpcId,runtimeId,className)
+    -- Bind immediately so the freshly spawned body can never be discovered as a new NPC.
+    M.actors[runtimeId]={actor=actor,id=runtimeId,persistentNpcId=persistentNpcId,tesles_owned=true,stableKey=nil,body=className,controller=nil,brain=nil,last_loc=util.safe_location(actor),taken_over=false,dead=false,last_health=nil,seen_emitted=true}
+    M.actor_by_id[runtimeId]=M.actors[runtimeId]
+    local controller=controller_of(actor)
+    M.actors[runtimeId].controller=controller
+    if controller then probe.cap("controller_read",true,util.safe_class_name(controller)) end
+    local brain=brain_of(controller)
+    M.actors[runtimeId].brain=brain
+    if brain and cfg.takeover_requested and cfg.takeover_mode~="observe" then
+      local stopped,detail=stop_brain(M.actors[runtimeId],"Tesles takeover of materialized NPC")
+      probe.cap("brain_stop",stopped,detail)
+      if stopped then probe.cap("full_takeover_ready",true,"vanilla decision AI stopped on a Tesles-owned actor") end
+    end
+  end
+  spawn_adapter.on_before_destroy=function(actor,persistentNpcId)
+    local runtimeId=util.safe_full_name(actor)
+    weapon_adapter.forget(runtimeId)
+    M.actors[runtimeId]=nil
+    M.actor_by_id[runtimeId]=nil
+  end
+  if cfg.takeover_mode=="auto" then probe.cap("weapon_use",false,"build-specific weapon command primitive not yet verified; auto takeover stays in safe probe mode")
+  elseif cfg.takeover_mode=="full" then full_mode_active=false;probe.cap("full_takeover_ready",false,"full mode armed; waiting for reversible brain + movement capability probe") end
+end
 return M

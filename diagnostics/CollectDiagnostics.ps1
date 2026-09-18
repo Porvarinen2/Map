@@ -23,8 +23,38 @@ Copy-Tail (Join-Path $runtime 'scum-events.log') 'scum-events-tail.log' 5000
 Copy-Tail (Join-Path $runtime 'scum-commands.log') 'scum-commands-tail.log' 5000
 Copy-Tail (Join-Path $runtime 'scum-state.log') 'scum-state.log' 10000
 Copy-Tail (Join-Path $runtime 'brain.log') 'brain-tail.log' 5000
+if(Test-Path (Join-Path $runtime 'compat-profile.json')){Copy-Item (Join-Path $runtime 'compat-profile.json') (Join-Path $tmp 'compat-profile.json') -Force}
 if(Test-Path (Join-Path $runtime 'world.json')){Copy-Item (Join-Path $runtime 'world.json') (Join-Path $tmp 'world.json') -Force}
-try{$snapshotUri=Get-BrainSnapshotUri $PackageRoot;Invoke-RestMethod -Uri $snapshotUri -TimeoutSec 5|ConvertTo-Json -Depth 30|Set-Content (Join-Path $tmp 'api-snapshot.json') -Encoding UTF8}catch{Set-Content (Join-Path $tmp 'api-error.txt') $_.Exception.Message}
+try{
+  $snapshotUri=Get-BrainSnapshotUri $PackageRoot
+  $snapshot=Invoke-RestMethod -Uri $snapshotUri -TimeoutSec 5
+  $snapshot|ConvertTo-Json -Depth 30|Set-Content (Join-Path $tmp 'api-snapshot.json') -Encoding UTF8
+  # Persistent world population, materialization queue and physical capability detail:
+  # the summary an operator needs before reading any raw log.
+  $alive=@($snapshot.npcs|Where-Object{$_.alive})
+  $summary=[ordered]@{
+    version=$snapshot.version
+    populationMeta=$snapshot.populationMeta
+    persistentNpcs=@($snapshot.npcs).Count
+    aliveNpcs=$alive.Count
+    deadNpcs=(@($snapshot.npcs).Count - $alive.Count)
+    groups=@($snapshot.groups).Count
+    materializedNpcs=@($alive|Where-Object{$_.materialized}).Count
+    countsByLod=$snapshot.materialization.countsByLod
+    countsByState=$snapshot.materialization.countsByState
+    materializationQueue=$snapshot.materialization.queue
+    roundtripProven=$snapshot.materialization.roundtripProven
+    classCatalog=$snapshot.materialization.classCatalog
+    capabilities=$snapshot.capabilities
+    health=$snapshot.health
+  }
+  $summary|ConvertTo-Json -Depth 30|Set-Content (Join-Path $tmp 'population-summary.json') -Encoding UTF8
+  $snapshot.materialization.log|ConvertTo-Json -Depth 20|Set-Content (Join-Path $tmp 'materialization-events.json') -Encoding UTF8
+}catch{Set-Content (Join-Path $tmp 'api-error.txt') $_.Exception.Message}
+try{
+  $commandsPath=Join-Path $runtime 'scum-commands.log'
+  if(Test-Path $commandsPath){Get-Content -LiteralPath $commandsPath|Set-Content -LiteralPath (Join-Path $tmp 'pending-commands.log') -Encoding UTF8}
+}catch{}
 $serverRootFile=Join-Path $runtime 'installed-server-root.txt'
 if(Test-Path $serverRootFile){$serverRoot=(Get-Content $serverRootFile -Raw).Trim();$win64=Join-Path $serverRoot 'SCUM\Binaries\Win64';$logs=@((Join-Path $win64 'UE4SS.log'),(Join-Path $win64 'ue4ss\UE4SS.log'));foreach($l in $logs){if(Test-Path $l){Copy-Tail $l 'UE4SS-tail.log' 5000;break}}}
 Get-CimInstance Win32_Process -ErrorAction SilentlyContinue|Where-Object{$_.Name -in @('SCUMServer.exe','node.exe')}|Select-Object Name,ProcessId,ExecutablePath,CommandLine|Format-List|Out-String|Set-Content (Join-Path $tmp 'processes.txt') -Encoding UTF8
