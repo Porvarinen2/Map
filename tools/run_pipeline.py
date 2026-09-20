@@ -91,12 +91,24 @@ class Runner:
             if self.missing("DumpWorld tai SCUMin polku"):
                 return
         cmd = [exe, "--paks", paks, "--out", str(REPO / "dump"),
+               "--game", self.s.get("paths", "game", "GAME_UE4_27"),
                "--meshes", str(REPO / "assets" / "meshes"),
                "--landscape-textures", str(REPO / "assets" / "landscape")]
         aes = self.s.get("paths", "aes")
         if aes:
             cmd += ["--aes", aes]
         self.run(*cmd)
+
+        # Vaara UE-versio on yleisin syy tyhjalle purulle, eika se nay virheena:
+        # paketit vain jaavat mounttaamatta ja tulos on tyhja kansio.
+        comps = REPO / "dump" / "landscape" / "components.json"
+        if not self.args.check and not comps.exists():
+            raise SystemExit(
+                "Purku ei tuottanut landscape-dataa.\n"
+                "Yleisin syy on vaara UE-versio config/settings.ini:ssa.\n"
+                f"  nyt: game = {self.s.get('paths', 'game', 'GAME_UE4_27')}\n"
+                "  kokeile: GAME_UE4_26, GAME_UE4_25, GAME_UE5_1\n"
+                "Toinen mahdollinen syy on vaara tai puuttuva AES-avain.")
 
     def landscape(self) -> None:
         self.script("pipeline/01_landscape/heightmap.py",

@@ -281,9 +281,10 @@ def ensure(interactive: bool = True) -> Settings:
     find_blender(s, interactive)
 
     if not s.get("paths", "aes"):
-        say("  SCUMin pakettien AES-avain (jos ne on salattu).")
-        say("  Kokeile ensin tyhjana - kaikki pelit eivat salaa paketteja.")
+        say("  SCUMin pakettien AES-avain.")
         s.set("paths", "aes", ask("    AES-avain (0x...)", "", interactive))
+    if not s.get("paths", "game"):
+        s.set("paths", "game", "GAME_UE4_27")
 
     for key, default in (("output_px", "32768"), ("tile_grid", "16"),
                          ("engine", "cycles"), ("samples", "256")):
