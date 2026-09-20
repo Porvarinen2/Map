@@ -222,6 +222,20 @@ def estimate(settings: bootstrap.Settings) -> None:
           "(RTX 3070, 256 naytetta)\n")
 
 
+def dumpworld_is_stale(settings: bootstrap.Settings) -> bool:
+    """Onko kaannetty DumpWorld vanhempi kuin sen lahdekoodi.
+
+    Paivitetyn zipin jalkeen vanha .exe on yha paikallaan, ja --skip-bootstrap
+    ohittaisi kaannoksen. Vanha binaari ei tunne uusia lippuja ja tekisi vaarin -
+    pahimmillaan koko purun uudestaan turhaan.
+    """
+    exe = settings.get("paths", "dumpworld")
+    src = REPO / "pipeline" / "00_extract" / "DumpWorld" / "Program.cs"
+    if not exe or not Path(exe).exists() or not src.exists():
+        return False
+    return src.stat().st_mtime > Path(exe).stat().st_mtime
+
+
 def serve(settings: bootstrap.Settings) -> None:
     web = REPO / "out" / "web"
     if not (web / "map.json").exists():
@@ -273,6 +287,11 @@ def main() -> int:
         child = subprocess.run([str(venv_py), str(Path(__file__).resolve()),
                                 *sys.argv[1:], "--skip-bootstrap"])
         return child.returncode
+
+    if not args.check and dumpworld_is_stale(settings):
+        print("\nDumpWorldin lahdekoodi on uudempi kuin kaannetty binaari.")
+        print("Aja RUN_ALL.bat (ilman --skip-bootstrap), jotta se kaannetaan uudelleen.")
+        return 1
 
     estimate(settings)
 
