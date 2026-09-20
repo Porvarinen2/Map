@@ -40,14 +40,18 @@ def truth(vx: np.ndarray, vy: np.ndarray) -> np.ndarray:
     return (32768 + (a * 9000 + b * 6000)).astype(np.uint16)
 
 
-def write_tex(dst: Path, name: str, rgba: np.ndarray) -> None:
-    rgba.astype(np.uint8).tofile(dst / f"{name}.raw")
+ORDERS = {"PF_R8G8B8A8": [0, 1, 2, 3], "PF_B8G8R8A8": [2, 1, 0, 3]}
+
+
+def write_tex(dst: Path, name: str, rgba: np.ndarray, pixfmt: str) -> None:
+    """Kirjoita tekstuuri purun omassa muodossa: raakana + formaatti metadataan."""
+    rgba[:, :, ORDERS[pixfmt]].astype(np.uint8).tofile(dst / f"{name}.raw")
     (dst / f"{name}.json").write_text(json.dumps(
-        {"width": rgba.shape[1], "height": rgba.shape[0],
-         "format": "RGBA8", "source": name}))
+        {"Width": rgba.shape[1], "Height": rgba.shape[0],
+         "PixelFormat": pixfmt, "Source": name}))
 
 
-def build_dump(root: Path) -> np.ndarray:
+def build_dump(root: Path, pixfmt: str = "PF_B8G8R8A8") -> np.ndarray:
     for sub in ("textures", "actors", "foliage", "landscape"):
         (root / sub).mkdir(parents=True, exist_ok=True)
 
@@ -80,8 +84,8 @@ def build_dump(root: Path) -> np.ndarray:
                     wt[sl][..., 0] = np.clip(255 - (h.astype(np.int32) - 24000) // 40, 0, 255)
                     wt[sl][..., 1] = 255 - wt[sl][..., 0]
 
-            write_tex(root / "textures", name, tex)
-            write_tex(root / "textures", name + "_W", wt)
+            write_tex(root / "textures", name, tex, pixfmt)
+            write_tex(root / "textures", name + "_W", wt, pixfmt)
             comps.append({
                 "Level": "Test", "SectionBaseX": cx * CSQ, "SectionBaseY": cy * CSQ,
                 "ComponentSizeQuads": CSQ, "SubsectionSizeQuads": SSQ, "NumSubsections": NSUB,
@@ -116,6 +120,24 @@ def build_dump(root: Path) -> np.ndarray:
         {"Mesh": "/Game/Test/SM_Tree.SM_Tree", "Count": n, "File": "Test_0.f32",
          "ComponentLoc": [0, 0, 0], "ComponentRot": [0, 0, 0],
          "ComponentScale": [1, 1, 1]}]))
+
+    # Landscape-materiaali ja sen varitekstuurit, jotta guess_layers.py:n
+    # nimiperusteinen yhdistaminen ja raaka->PNG-muunnos tulevat testatuiksi.
+    land = root.parent / "assets" / "landscape"
+    land.mkdir(parents=True, exist_ok=True)
+    for tex_name, tint in (("T_Lowland_D", 60), ("T_Highland_D", 180)):
+        px = np.full((8, 8, 4), tint, dtype=np.uint8)
+        px[..., 3] = 255
+        write_tex(land, tex_name, px, pixfmt)
+    (root / "landscape" / "material.json").write_text(json.dumps({
+        "Material": "/Game/Test/M_Landscape.M_Landscape",
+        "Textures": [
+            {"Parameter": "Lowland Diffuse", "Texture": "/Game/T_Lowland_D", "File": "T_Lowland_D"},
+            {"Parameter": "Highland Diffuse", "Texture": "/Game/T_Highland_D", "File": "T_Highland_D"},
+            {"Parameter": "Lowland Normal", "Texture": "/Game/T_Lowland_N", "File": "T_Lowland_N"},
+        ],
+        "Scalars": [{"Parameter": "Lowland Tiling", "Value": 6.0}],
+    }))
 
     return expected
 
@@ -153,7 +175,32 @@ def main() -> int:
         print(f"  korkeusero: max {diff.max()}, keskiarvo {diff.mean():.4f}")
         assert diff.max() == 0, "atlaksen kokoaminen on pielessa"
 
+        # Sama toisella kanavajarjestyksella. Jos purku antaa RGBA:ta eika BGRA:ta,
+        # korkeuden on tultava silti bittitarkasti samaksi - muuten koko maasto
+        # olisi hiljaa vaarin.
+        alt = tmp / "alt"
+        alt_expected = build_dump(alt / "dump", "PF_R8G8B8A8")
+        alt_env = {**env, "SCUM_DUMP": str(alt / "dump"),
+                   "SCUM_WORK": str(alt / "work"), "SCUM_CONFIG": str(alt / "config")}
+        (alt / "config").mkdir(parents=True, exist_ok=True)
+        run("pipeline/01_landscape/heightmap.py", "--output-px", "1024",
+            "--tile-grid", "4", env=alt_env)
+        alt_got = np.load(alt / "work" / "heightmap.npy")
+        assert np.array_equal(alt_got, alt_expected), "RGBA-jarjestys tulkitaan vaarin"
+        print("  molemmat kanavajarjestykset (BGRA/RGBA) rekonstruoituvat bittitarkasti")
+
         run("pipeline/01_landscape/weightmaps.py", env=env)
+
+        land_dir = dump.parent / "assets" / "landscape"
+        run("pipeline/01_landscape/guess_layers.py", "--texture-dir", str(land_dir),
+            "--out", str(conf / "layers.json"), "--force", env=env)
+        layers_cfg = json.loads((conf / "layers.json").read_text())
+        assert "Lowland" in layers_cfg and "Highland" in layers_cfg, layers_cfg
+        assert layers_cfg["Lowland"]["texture"].endswith("T_Lowland_D.png"), layers_cfg["Lowland"]
+        assert layers_cfg["Lowland"]["tiling_m"] == 6.0, layers_cfg["Lowland"]
+        assert (land_dir / "T_Lowland_D.png").exists(), "raaka -> PNG muunnos puuttuu"
+        print("  layer-tekstuurit yhdistetty nimien perusteella, tiilitys materiaalista")
+
         run("pipeline/01_landscape/ground_albedo.py", "--hillshade", "0.4", env=env)
 
         tiles = sorted((work / "ground").glob("*.png"))

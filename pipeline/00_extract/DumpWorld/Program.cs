@@ -1,41 +1,40 @@
 // Vaihe A: purkaa SCUMin .pak-tiedostoista kaiken sen datan jota kartanteko tarvitsee -
-// mukaan lukien meshit, joten FModelia ei tarvita lainkaan eika putkessa ole yhtaan
-// kasin tehtavaa valivaihetta.
-//
-// Miksi oma tyokalu eika FModel:
-//   1) Landscapen heightmap/weightmap-tekstuurit on saatava ulos BITTITARKKOINA.
-//      FModelin normaali PNG-vienti ajaa ne sRGB-muunnoksen lapi, jolloin 16-bittinen
-//      korkeus (R*256+G) korruptoituu eika maasto tule ikina oikein.
-//   2) Kasvillisuuden PerInstanceSMData on binaaridataa jota JSON-vienti ei anna.
-//   3) Kymmenettuhannet actorit halutaan tiiviina taulukkona, ei GB:n JSON-vuorena.
-//   4) Meshien vienti osataan tehda samalla ajolla vain niille mesheille jotka
-//      oikeasti esiintyvat kartalla - ei koko pelin sisallolle.
+// mukaan lukien meshit, joten FModelia ei tarvita eika putkessa ole yhtaan kasin
+// tehtavaa valivaihetta.
 //
 // Kaytto:
-//   dotnet run -c Release -- --paks "C:\...\SCUM\Content\Paks" --aes 0x<avain>
-//                            --out ..\..\..\dump --meshes ..\..\..\assets\meshes
+//   DumpWorld --paks "C:\...\SCUM\Content\Paks" --aes 0x<avain> --out dump
+//             --meshes assets\meshes --landscape-textures assets\landscape
 //
-// HUOM CUE4Parse-API elaa: uudemmissa versioissa provider.Initialize() on Mount(),
-// ja DefaultFileProvider-konstruktorista on poistunut isCaseInsensitive-parametri.
-// Jos kaannos kaatuu naihin, korjaa nama kaksi kohtaa - muu koodi on vakaata.
+// Suunnittelun kaksi periaatetta:
+//
+//   1) Tekstuurit kirjoitetaan RAAKANA ja kanavajarjestys kerrotaan metadatassa.
+//      Landscapen korkeus on 16-bittinen luku kahdessa varikanavassa; jos kanavat
+//      tulkitaan vaarin, maasto nayttaa taysin uskottavalta mutta on vaara. Siksi
+//      talla puolella ei arvata mitaan eika enkoodata PNG:ksi - Python lukee
+//      formaatin sivutiedostosta ja normalisoi sen itse.
+//
+//   2) Ei yhtaan NuGet-riippuvuutta. CUE4Parse kayttaa keskitettya paketinhallintaa
+//      eksakteilla versiopinneilla, joten omat pinnit vain aiheuttaisivat
+//      versioristiriitoja. JSON hoituu System.Text.Jsonilla joka tulee runtimessa.
 
 using System.Text;
+using System.Text.Json;
 using CUE4Parse.Encryption.Aes;
-using CUE4Parse.UE4.Assets.Exports.Material;
-using CUE4Parse.UE4.Assets.Exports.StaticMesh;
-using CUE4Parse_Conversion;
-using CUE4Parse_Conversion.Meshes;
 using CUE4Parse.FileProvider;
 using CUE4Parse.UE4.Assets.Exports;
 using CUE4Parse.UE4.Assets.Exports.Component.StaticMesh;
+using CUE4Parse.UE4.Assets.Exports.Material;
+using CUE4Parse.UE4.Assets.Exports.StaticMesh;
 using CUE4Parse.UE4.Assets.Exports.Texture;
 using CUE4Parse.UE4.Assets.Objects;
 using CUE4Parse.UE4.Objects.Core.Math;
 using CUE4Parse.UE4.Objects.Core.Misc;
 using CUE4Parse.UE4.Objects.UObject;
 using CUE4Parse.UE4.Versions;
-using Newtonsoft.Json;
-using SkiaSharp;
+using CUE4Parse_Conversion;
+using CUE4Parse_Conversion.Options;
+using CUE4Parse_Conversion.Textures;
 
 namespace DumpWorld;
 
@@ -44,23 +43,27 @@ internal static class Program
     private static string _out = "dump";
     private static readonly HashSet<string> DumpedTextures = new();
     private static readonly HashSet<string> NeededMeshes = new();
-    private static FPackageIndex _landscapeMaterial;
+    private static FPackageIndex? _landscapeMaterial;
+
+    private static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
 
     private static int Main(string[] args)
     {
-        string paks = Arg(args, "--paks");
-        string aes = Arg(args, "--aes") ?? "";
+        var paks = Arg(args, "--paks");
+        var aes = Arg(args, "--aes") ?? "";
         _out = Arg(args, "--out") ?? "dump";
-        string gameName = Arg(args, "--game") ?? "GAME_UE4_27";
-        string filter = Arg(args, "--filter");     // esim. "Maps/" jos halutaan rajata
-        string meshDir = Arg(args, "--meshes");    // jos annettu, meshit viedaan glTF:na
-        string landDir = Arg(args, "--landscape-textures");
+        var gameName = Arg(args, "--game") ?? "GAME_UE4_27";
+        var filter = Arg(args, "--filter");
+        var meshDir = Arg(args, "--meshes");
+        var landDir = Arg(args, "--landscape-textures");
+        var exportMaterials = !args.Contains("--no-materials");
 
         if (paks == null)
         {
             Console.Error.WriteLine(
                 "Kaytto: --paks <polku> [--aes 0x..] [--out dump] [--game GAME_UE4_27]\n"
-                + "        [--filter Maps/] [--meshes <dir>] [--landscape-textures <dir>]");
+                + "        [--filter Maps/] [--meshes <dir>] [--landscape-textures <dir>]\n"
+                + "        [--no-materials]");
             return 1;
         }
 
@@ -70,16 +73,16 @@ internal static class Program
             return 1;
         }
 
-        Directory.CreateDirectory(_out);
         foreach (var sub in new[] { "textures", "actors", "foliage", "landscape" })
             Directory.CreateDirectory(Path.Combine(_out, sub));
 
         Console.WriteLine($"Avataan {paks} ({game})...");
-        var provider = new DefaultFileProvider(paks, SearchOption.AllDirectories, false,
-            new VersionContainer(game));
-        provider.Initialize();                                   // uusi API: provider.Mount()
+        var provider = new DefaultFileProvider(paks, SearchOption.AllDirectories,
+            new VersionContainer(game), StringComparer.OrdinalIgnoreCase);
+        provider.Initialize();
+        provider.Mount();                                  // salaamattomat paketit
         if (!string.IsNullOrWhiteSpace(aes))
-            provider.SubmitKey(new FGuid(), new FAesKey(aes));
+            provider.SubmitKey(new FGuid(), new FAesKey(aes));   // salatut paketit
         provider.LoadVirtualPaths();
 
         var maps = provider.Files.Keys
@@ -87,11 +90,18 @@ internal static class Program
             .Where(k => filter == null || k.Contains(filter, StringComparison.OrdinalIgnoreCase))
             .OrderBy(k => k)
             .ToList();
-        Console.WriteLine($"{maps.Count} umap-pakettia kasiteltavana.");
+        Console.WriteLine($"{provider.Files.Count} tiedostoa mountattu, {maps.Count} umap-pakettia.");
+        if (maps.Count == 0)
+        {
+            Console.Error.WriteLine(
+                "Yhtaan umap-pakettia ei loytynyt. Yleisimmat syyt ovat vaara --game "
+                + "tai vaara/puuttuva AES-avain.");
+            return 2;
+        }
 
         var landscape = new List<LandscapeComponentRec>();
         var landscapeActors = new List<ActorTransformRec>();
-        int done = 0;
+        var done = 0;
 
         foreach (var map in maps)
         {
@@ -99,7 +109,7 @@ internal static class Program
             List<UObject> exports;
             try
             {
-                exports = provider.LoadAllObjects(map).ToList();
+                exports = provider.LoadPackage(map).GetExports().ToList();
             }
             catch (Exception e)
             {
@@ -115,17 +125,17 @@ internal static class Program
                 switch (export.ExportType)
                 {
                     case "LandscapeComponent":
-                        landscape.Add(ReadLandscapeComponent(export, provider, levelName));
-                        break;
+                        landscape.Add(ReadLandscapeComponent(export, levelName));
+                        continue;
 
                     case "Landscape":
                     case "LandscapeStreamingProxy":
                         landscapeActors.Add(ReadActorTransform(export, levelName));
                         _landscapeMaterial ??= export.GetOrDefault<FPackageIndex>("LandscapeMaterial");
-                        break;
+                        continue;
                 }
 
-                // Kasvillisuus ennen tavallisia meshkomponentteja: HISM peria SMC:n.
+                // Kasvillisuus ennen tavallisia meshkomponentteja: HISM perii SMC:n.
                 if (export is UInstancedStaticMeshComponent ism)
                 {
                     var rec = ReadFoliage(ism, levelName, foliage.Count);
@@ -133,9 +143,9 @@ internal static class Program
                     continue;
                 }
 
-                if (export.ExportType is "StaticMeshComponent" or "StaticMeshComponent0")
+                if (export is UStaticMeshComponent smc)
                 {
-                    var rec = ReadStaticMesh(export);
+                    var rec = ReadStaticMesh(smc);
                     if (rec != null) statics.Add(rec);
                 }
             }
@@ -150,7 +160,6 @@ internal static class Program
 
         WriteJson(Path.Combine(_out, "landscape", "components.json"), landscape);
         WriteJson(Path.Combine(_out, "landscape", "actors.json"), landscapeActors);
-
         File.WriteAllLines(Path.Combine(_out, "meshes_needed.txt"), NeededMeshes.OrderBy(x => x));
 
         DumpLandscapeMaterial(landDir);
@@ -159,16 +168,21 @@ internal static class Program
                           + $"{DumpedTextures.Count} tekstuuria, {NeededMeshes.Count} uniikkia meshia.");
 
         if (meshDir != null)
-            ExportMeshes(provider, meshDir);
+            ExportMeshes(provider, meshDir, exportMaterials).GetAwaiter().GetResult();
 
         return 0;
     }
 
     // ---------------------------------------------------------------- landscape
 
-    private static LandscapeComponentRec ReadLandscapeComponent(UObject c, DefaultFileProvider p, string level)
+    private static LandscapeComponentRec ReadLandscapeComponent(UObject c, string level)
     {
-        var rec = new LandscapeComponentRec
+        var hsb = c.GetOrDefault("HeightmapScaleBias", new FVector4(0, 0, 0, 0));
+        var wsb = c.GetOrDefault("WeightmapScaleBias", new FVector4(0, 0, 0, 0));
+        var wtex = c.GetOrDefault<FPackageIndex[]>("WeightmapTextures") ?? [];
+        var allocs = c.GetOrDefault<FStructFallback[]>("WeightmapLayerAllocations") ?? [];
+
+        return new LandscapeComponentRec
         {
             Level = level,
             SectionBaseX = c.GetOrDefault("SectionBaseX", 0),
@@ -176,70 +190,146 @@ internal static class Program
             ComponentSizeQuads = c.GetOrDefault("ComponentSizeQuads", 63),
             SubsectionSizeQuads = c.GetOrDefault("SubsectionSizeQuads", 63),
             NumSubsections = c.GetOrDefault("NumSubsections", 1),
+            Heightmap = DumpTexture(c.GetOrDefault<FPackageIndex>("HeightmapTexture")),
+            HeightmapScaleBias = [hsb.X, hsb.Y, hsb.Z, hsb.W],
+            WeightmapScaleBias = [wsb.X, wsb.Y, wsb.Z, wsb.W],
+            WeightmapTextures = wtex.Select(DumpTexture).ToArray(),
+            Layers = allocs.Select(a => new LayerAllocRec
+            {
+                Name = ShortName(a.GetOrDefault<FPackageIndex>("LayerInfo")),
+                TextureIndex = a.GetOrDefault("WeightmapTextureIndex", (byte)0),
+                Channel = a.GetOrDefault("WeightmapTextureChannel", (byte)0),
+            }).ToArray(),
         };
-
-        var hsb = c.GetOrDefault("HeightmapScaleBias", new FVector4(0, 0, 0, 0));
-        rec.HeightmapScaleBias = new[] { hsb.X, hsb.Y, hsb.Z, hsb.W };
-        rec.Heightmap = DumpTexture(c.GetOrDefault<FPackageIndex>("HeightmapTexture"));
-
-        var wsb = c.GetOrDefault("WeightmapScaleBias", new FVector4(0, 0, 0, 0));
-        rec.WeightmapScaleBias = new[] { wsb.X, wsb.Y, wsb.Z, wsb.W };
-
-        var wtex = c.GetOrDefault<FPackageIndex[]>("WeightmapTextures") ?? Array.Empty<FPackageIndex>();
-        rec.WeightmapTextures = wtex.Select(DumpTexture).ToArray();
-
-        var allocs = c.GetOrDefault<FStructFallback[]>("WeightmapLayerAllocations")
-                     ?? Array.Empty<FStructFallback>();
-        rec.Layers = allocs.Select(a => new LayerAllocRec
-        {
-            Name = ShortName(a.GetOrDefault<FPackageIndex>("LayerInfo")),
-            TextureIndex = a.GetOrDefault("WeightmapTextureIndex", (byte)0),
-            Channel = a.GetOrDefault("WeightmapTextureChannel", (byte)0),
-        }).ToArray();
-
-        return rec;
     }
 
-    /// Kirjoittaa tekstuurin RAAKANA RGBA8:na. Ei PNG:ta, ei sRGB:ta, ei pakkausta -
-    /// tama on koko heightmap-purun ydin.
-    private static string DumpTexture(FPackageIndex idx)
+    /// Kirjoittaa tekstuurin purettuna mutta pakkaamattomana, ja kertoo mika
+    /// pikseliformaatti se on. Tama on koko heightmap-purun ydin: Python paattelee
+    /// kanavajarjestyksen metadatasta eika arvaa sita.
+    private static string? DumpTexture(FPackageIndex? idx)
     {
         if (idx == null || idx.IsNull) return null;
         var tex = idx.Load<UTexture2D>();
         if (tex == null) return null;
 
         var key = Sanitize(tex.GetPathName());
-        if (DumpedTextures.Contains(key)) return key;
+        if (!DumpedTextures.Add(key)) return key;
 
-        SKBitmap bmp;
-        try { bmp = tex.Decode(); }
-        catch (Exception e) { Console.Error.WriteLine($"  tekstuuri {key}: {e.Message}"); return null; }
-        if (bmp == null) return null;
-
-        using (bmp)
-        using (var rgba = bmp.ColorType == SKColorType.Rgba8888 ? bmp.Copy() : bmp.Copy(SKColorType.Rgba8888))
+        try
         {
-            File.WriteAllBytes(Path.Combine(_out, "textures", key + ".raw"), rgba.Bytes);
-            WriteJson(Path.Combine(_out, "textures", key + ".json"), new
+            var bitmap = tex.Decode();
+            if (bitmap == null)
             {
-                width = rgba.Width,
-                height = rgba.Height,
-                format = "RGBA8",
-                source = tex.GetPathName(),
+                DumpedTextures.Remove(key);
+                return null;
+            }
+
+            File.WriteAllBytes(Path.Combine(_out, "textures", key + ".raw"), bitmap.Data);
+            WriteJson(Path.Combine(_out, "textures", key + ".json"), new TextureMetaRec
+            {
+                Width = bitmap.Width,
+                Height = bitmap.Height,
+                PixelFormat = bitmap.PixelFormat.ToString(),
+                Source = tex.GetPathName(),
+            });
+            return key;
+        }
+        catch (Exception e)
+        {
+            Console.Error.WriteLine($"  tekstuuri {key}: {e.Message}");
+            DumpedTextures.Remove(key);
+            return null;
+        }
+    }
+
+    /// Landscape-materiaalin tekstuuriparametrit ja skalaarit. Naiden avulla
+    /// guess_layers.py yhdistaa layer-nimen oikeaan maa-aineksen tekstuuriin.
+    private static void DumpLandscapeMaterial(string? textureDir)
+    {
+        if (_landscapeMaterial == null || _landscapeMaterial.IsNull)
+        {
+            Console.WriteLine("Landscape-materiaalia ei loytynyt - layer-varit arvataan nimista.");
+            return;
+        }
+
+        var mat = _landscapeMaterial.Load<UMaterialInterface>();
+        if (mat == null) return;
+
+        var textures = new List<MaterialTextureRec>();
+        foreach (var tp in mat.GetOrDefault<FStructFallback[]>("TextureParameterValues") ?? [])
+        {
+            var texIdx = tp.GetOrDefault<FPackageIndex>("ParameterValue");
+            var texPath = texIdx?.ResolvedObject?.GetPathName();
+            if (texPath == null) continue;
+
+            textures.Add(new MaterialTextureRec
+            {
+                Parameter = ParameterName(tp),
+                Texture = texPath,
+                File = textureDir != null ? DumpMaterialTexture(texIdx!, textureDir) : null,
             });
         }
 
-        DumpedTextures.Add(key);
-        return key;
+        var scalars = (mat.GetOrDefault<FStructFallback[]>("ScalarParameterValues") ?? [])
+            .Select(sp => new MaterialScalarRec
+            {
+                Parameter = ParameterName(sp),
+                Value = sp.GetOrDefault("ParameterValue", 0f),
+            }).ToArray();
+
+        WriteJson(Path.Combine(_out, "landscape", "material.json"), new MaterialRec
+        {
+            Material = mat.GetPathName(),
+            Textures = textures.ToArray(),
+            Scalars = scalars,
+        });
+        Console.WriteLine($"Landscape-materiaali: {textures.Count} tekstuuria, {scalars.Length} skalaaria.");
     }
+
+    /// Maa-aineksen varitekstuuri omaan kansioonsa, samassa raakamuodossa.
+    /// Python muuntaa nama PNG:ksi - taalla ei enkoodata mitaan.
+    private static string? DumpMaterialTexture(FPackageIndex idx, string dir)
+    {
+        try
+        {
+            var tex = idx.Load<UTexture2D>();
+            if (tex == null) return null;
+            Directory.CreateDirectory(dir);
+
+            var name = Sanitize(tex.Name);
+            var raw = Path.Combine(dir, name + ".raw");
+            if (File.Exists(raw)) return name;
+
+            var bitmap = tex.Decode();
+            if (bitmap == null) return null;
+
+            File.WriteAllBytes(raw, bitmap.Data);
+            WriteJson(Path.Combine(dir, name + ".json"), new TextureMetaRec
+            {
+                Width = bitmap.Width,
+                Height = bitmap.Height,
+                PixelFormat = bitmap.PixelFormat.ToString(),
+                Source = tex.GetPathName(),
+            });
+            return name;
+        }
+        catch (Exception e)
+        {
+            Console.Error.WriteLine($"  landscape-tekstuuri: {e.Message}");
+            return null;
+        }
+    }
+
+    private static string ParameterName(FStructFallback p) =>
+        p.GetOrDefault<FStructFallback>("ParameterInfo")?.GetOrDefault<FName>("Name").Text
+        ?? p.GetOrDefault<FName>("ParameterName").Text
+        ?? "?";
 
     // ---------------------------------------------------------------- actorit
 
-    private static StaticActorRec ReadStaticMesh(UObject c)
+    private static StaticActorRec? ReadStaticMesh(UStaticMeshComponent c)
     {
-        var meshIdx = c.GetOrDefault<FPackageIndex>("StaticMesh");
-        if (meshIdx == null || meshIdx.IsNull) return null;
-        var mesh = meshIdx.ResolvedObject?.GetPathName();
+        var mesh = c.GetOrDefault<FPackageIndex>("StaticMesh")?.ResolvedObject?.GetPathName();
         if (mesh == null) return null;
         NeededMeshes.Add(mesh);
 
@@ -247,37 +337,33 @@ internal static class Program
         return new StaticActorRec
         {
             Mesh = mesh,
-            Loc = new[] { loc.X, loc.Y, loc.Z },
-            Rot = new[] { rot.Pitch, rot.Yaw, rot.Roll },
-            Scale = new[] { scale.X, scale.Y, scale.Z },
+            Loc = [loc.X, loc.Y, loc.Z],
+            Rot = [rot.Pitch, rot.Yaw, rot.Roll],
+            Scale = [scale.X, scale.Y, scale.Z],
         };
     }
 
-    private static FoliageGroupRec ReadFoliage(UInstancedStaticMeshComponent ism, string level, int slot)
+    private static FoliageGroupRec? ReadFoliage(UInstancedStaticMeshComponent ism, string level, int slot)
     {
         var data = ism.PerInstanceSMData;
         if (data == null || data.Length == 0) return null;
 
-        var meshIdx = ism.GetOrDefault<FPackageIndex>("StaticMesh");
-        var mesh = meshIdx?.ResolvedObject?.GetPathName();
+        var mesh = ism.GetOrDefault<FPackageIndex>("StaticMesh")?.ResolvedObject?.GetPathName();
         if (mesh == null) return null;
         NeededMeshes.Add(mesh);
 
-        // 9 floattia per instanssi: sijainti, rotaatio, skaala. Binaarina koska
-        // naita on miljoonia - JSON olisi kymmenia gigatavuja ja tuntien parsinta.
+        // 9 floattia per instanssi binaarina. Naita on miljoonia: JSONina sama data
+        // olisi kymmenia gigatavuja ja tuntien parsinta.
         var file = $"{level}_{slot}.f32";
-        using (var fs = File.Create(Path.Combine(_out, "foliage", file)))
-        using (var bw = new BinaryWriter(fs))
+        using (var bw = new BinaryWriter(File.Create(Path.Combine(_out, "foliage", file))))
         {
             foreach (var inst in data)
             {
-                var m = inst.TransformData;
-                var o = m.GetOrigin();
-                var r = m.Rotator();
-                var s = m.GetScaleVector();
-                bw.Write(o.X); bw.Write(o.Y); bw.Write(o.Z);
+                var t = inst.TransformData;
+                var r = t.Rotation.Rotator();
+                bw.Write(t.Translation.X); bw.Write(t.Translation.Y); bw.Write(t.Translation.Z);
                 bw.Write(r.Pitch); bw.Write(r.Yaw); bw.Write(r.Roll);
-                bw.Write(s.X); bw.Write(s.Y); bw.Write(s.Z);
+                bw.Write(t.Scale3D.X); bw.Write(t.Scale3D.Y); bw.Write(t.Scale3D.Z);
             }
         }
 
@@ -288,15 +374,15 @@ internal static class Program
             Count = data.Length,
             File = file,
             // Instanssit ovat komponentin paikallisessa avaruudessa - Python lisaa taman.
-            ComponentLoc = new[] { loc.X, loc.Y, loc.Z },
-            ComponentRot = new[] { rot.Pitch, rot.Yaw, rot.Roll },
-            ComponentScale = new[] { scale.X, scale.Y, scale.Z },
+            ComponentLoc = [loc.X, loc.Y, loc.Z],
+            ComponentRot = [rot.Pitch, rot.Yaw, rot.Roll],
+            ComponentScale = [scale.X, scale.Y, scale.Z],
         };
     }
 
-    /// Kerää komponentin maailmatransformin kulkemalla AttachParent-ketju juureen.
-    /// Cookatussa datassa actorin juurikomponentin relative == world, mutta kiinnitetyt
-    /// alikomponentit (esim. rakennusten osat) tarvitsevat taman summauksen.
+    /// Komponentin maailmatransform AttachParent-ketjua pitkin. Cookatussa datassa
+    /// actorin juurikomponentin relative == world, mutta kiinnitetyt alikomponentit
+    /// (rakennusten osat) tarvitsevat taman summauksen.
     private static (FVector, FRotator, FVector) WorldTransform(UObject c)
     {
         var loc = c.GetOrDefault("RelativeLocation", FVector.ZeroVector);
@@ -304,7 +390,7 @@ internal static class Program
         var scale = c.GetOrDefault("RelativeScale3D", FVector.OneVector);
 
         var parentIdx = c.GetOrDefault<FPackageIndex>("AttachParent");
-        int guard = 0;
+        var guard = 0;
         while (parentIdx is { IsNull: false } && guard++ < 16)
         {
             var parent = parentIdx.Load();
@@ -323,157 +409,92 @@ internal static class Program
 
     private static ActorTransformRec ReadActorTransform(UObject a, string level)
     {
-        var root = a.GetOrDefault<FPackageIndex>("RootComponent")?.Load();
-        var src = root ?? a;
+        var src = a.GetOrDefault<FPackageIndex>("RootComponent")?.Load() ?? a;
         var loc = src.GetOrDefault("RelativeLocation", FVector.ZeroVector);
         var scale = src.GetOrDefault("RelativeScale3D", FVector.OneVector);
         return new ActorTransformRec
         {
             Level = level,
             Name = a.Name,
-            Loc = new[] { loc.X, loc.Y, loc.Z },
-            Scale = new[] { scale.X, scale.Y, scale.Z },
+            Loc = [loc.X, loc.Y, loc.Z],
+            Scale = [scale.X, scale.Y, scale.Z],
         };
     }
 
-
     // ---------------------------------------------------------------- meshien vienti
 
-    /// Vie kartalla esiintyvat meshit glTF:na. Vain nama - koko pelin sisallon vienti
-    /// olisi kymmenia gigatavuja ja tunteja, ja 99 % siita ei nay ylhaalta koskaan.
-    private static void ExportMeshes(DefaultFileProvider provider, string dir)
+    /// Vie vain ne meshit jotka oikeasti esiintyvat kartalla. Koko pelin sisallon
+    /// vienti olisi kymmenia gigatavuja, eika 99 % siita nay ylhaalta koskaan.
+    private static async Task ExportMeshes(DefaultFileProvider provider, string dir, bool materials)
     {
         Directory.CreateDirectory(dir);
-        var options = new ExporterOptions
+        var options = new ExportOptions(
+            meshFormat: EMeshFormat.Gltf2,          // binaari .glb
+            exportMaterials: materials,
+            exportMorphTargets: false);
+
+        var todo = new List<UStaticMesh>();
+        var names = NeededMeshes.OrderBy(x => x).ToList();
+        int ok = 0, skip = 0, fail = 0;
+        Console.WriteLine($"Viedaan {names.Count} meshia -> {dir}");
+
+        // Vienti eraissa: kaikkien kymmenientuhansien meshien pitaminen muistissa
+        // yhta aikaa ei mahdu, ja eraittain ajettuna keskeytynyt ajo jatkuu helposti.
+        const int batch = 250;
+        foreach (var chunk in names.Chunk(batch))
         {
-            MeshFormat = EMeshFormat.Gltf2,
-            LodFormat = ELodFormat.FirstLod,     // LOD0 riittaa: kamera on ortokamera
-            ExportMaterials = true,
-            Platform = ETexturePlatform.DesktopMobile,
-        };
-
-        int ok = 0, fail = 0, skip = 0;
-        var todo = NeededMeshes.OrderBy(x => x).ToList();
-        Console.WriteLine($"Viedaan {todo.Count} meshia -> {dir}");
-
-        foreach (var (path, i) in todo.Select((p, i) => (p, i)))
-        {
-            // Jatkettavuus: jo viedyt ohitetaan, jotta keskeytynyt ajo ei ala alusta.
-            var rel = path.Split('.')[0].TrimStart('/');
-            if (File.Exists(Path.Combine(dir, rel + ".gltf")))
+            todo.Clear();
+            foreach (var path in chunk)
             {
-                skip++;
-                continue;
+                // Jo viedyt ohitetaan, jotta keskeytynyt ajo ei ala alusta.
+                if (File.Exists(Path.Combine(dir, ExportRelativePath(path) + ".glb")))
+                {
+                    skip++;
+                    continue;
+                }
+                try
+                {
+                    var mesh = provider.LoadPackageObject<UStaticMesh>(path.Split('.')[0]);
+                    if (mesh != null) todo.Add(mesh);
+                    else fail++;
+                }
+                catch (Exception e)
+                {
+                    if (fail < 10) Console.Error.WriteLine($"  {path}: {e.Message}");
+                    fail++;
+                }
             }
 
-            try
-            {
-                var mesh = provider.LoadObject<UStaticMesh>(path.Split('.')[0]);
-                if (mesh == null) { fail++; continue; }
+            if (todo.Count == 0) continue;
 
-                var exporter = new MeshExporter(mesh, options);
-                if (exporter.TryWriteToDir(new DirectoryInfo(dir), out _, out _)) ok++;
-                else fail++;
-            }
-            catch (Exception e)                                       // puuttuva mesh ei
-            {                                                         // kaada koko ajoa
-                if (fail < 10) Console.Error.WriteLine($"  {rel}: {e.Message}");
-                fail++;
-            }
+            var session = new ExportSession();
+            foreach (var mesh in todo) session.Add(mesh);
+            var results = await session.RunAsync(dir, options).ConfigureAwait(false);
 
-            if ((i + 1) % 250 == 0)
-                Console.WriteLine($"  {i + 1}/{todo.Count} (ok {ok}, ohitettu {skip}, virhe {fail})");
+            ok += results.Count(r => r.Success);
+            fail += results.Count(r => !r.Success);
+            Console.WriteLine($"  {ok + skip + fail}/{names.Count} (ok {ok}, oli jo {skip}, virhe {fail})");
         }
 
         Console.WriteLine($"Meshit valmiit: {ok} vietu, {skip} oli jo, {fail} epaonnistui.");
     }
 
-    // ---------------------------------------------------------------- landscape-materiaali
-
-    /// Kirjoittaa landscape-materiaalin tekstuuriparametrit ja vie tekstuurit PNG:na.
-    /// Naiden avulla guess_layers.py osaa yhdistaa layer-nimen oikeaan maa-aineksen
-    /// tekstuuriin, jolloin kartan varit tulevat pelista eivatka varivareista.
-    private static void DumpLandscapeMaterial(string textureDir)
+    /// '/Game/Foo/SM_Bar.SM_Bar' -> 'Game/Foo/SM_Bar' (sama polku jonne vienti kirjoittaa).
+    private static string ExportRelativePath(string objectPath)
     {
-        if (_landscapeMaterial == null || _landscapeMaterial.IsNull)
-        {
-            Console.WriteLine("Landscape-materiaalia ei loytynyt - layer-varit arvataan nimista.");
-            return;
-        }
-
-        var mat = _landscapeMaterial.Load<UMaterialInterface>();
-        if (mat == null) return;
-
-        var entries = new List<object>();
-        var textures = mat.GetOrDefault<FStructFallback[]>("TextureParameterValues")
-                       ?? Array.Empty<FStructFallback>();
-
-        foreach (var tp in textures)
-        {
-            var info = tp.GetOrDefault<FStructFallback>("ParameterInfo");
-            var name = info?.GetOrDefault<FName>("Name").Text ?? "?";
-            var texIdx = tp.GetOrDefault<FPackageIndex>("ParameterValue");
-            var texPath = texIdx?.ResolvedObject?.GetPathName();
-            if (texPath == null) continue;
-
-            string file = null;
-            if (textureDir != null)
-                file = ExportTexturePng(texIdx, textureDir);
-
-            entries.Add(new { parameter = name, texture = texPath, file });
-        }
-
-        var scalars = mat.GetOrDefault<FStructFallback[]>("ScalarParameterValues")
-                      ?? Array.Empty<FStructFallback>();
-        var tiling = scalars.Select(sp => new
-        {
-            parameter = sp.GetOrDefault<FStructFallback>("ParameterInfo")
-                          ?.GetOrDefault<FName>("Name").Text ?? "?",
-            value = sp.GetOrDefault("ParameterValue", 0f),
-        }).ToArray();
-
-        WriteJson(Path.Combine(_out, "landscape", "material.json"), new
-        {
-            material = mat.GetPathName(),
-            textures = entries,
-            scalars = tiling,
-        });
-        Console.WriteLine($"Landscape-materiaali: {entries.Count} tekstuuria, {tiling.Length} skalaaria.");
-    }
-
-    private static string ExportTexturePng(FPackageIndex idx, string dir)
-    {
-        try
-        {
-            var tex = idx.Load<UTexture2D>();
-            if (tex == null) return null;
-            Directory.CreateDirectory(dir);
-            var name = Sanitize(tex.Name) + ".png";
-            var path = Path.Combine(dir, name);
-            if (File.Exists(path)) return name;
-
-            using var bmp = tex.Decode();
-            if (bmp == null) return null;
-            using var data = bmp.Encode(SKEncodedImageFormat.Png, 100);
-            File.WriteAllBytes(path, data.ToArray());
-            return name;
-        }
-        catch (Exception e)                                           // noqa
-        {
-            Console.Error.WriteLine($"  landscape-tekstuuri: {e.Message}");
-            return null;
-        }
+        var p = objectPath.Split('.')[0].TrimStart('/');
+        return p.Replace('/', Path.DirectorySeparatorChar);
     }
 
     // ---------------------------------------------------------------- apurit
 
-    private static string Arg(string[] a, string name)
+    private static string? Arg(string[] a, string name)
     {
         var i = Array.IndexOf(a, name);
         return i >= 0 && i + 1 < a.Length ? a[i + 1] : null;
     }
 
-    private static string ShortName(FPackageIndex idx) =>
+    private static string ShortName(FPackageIndex? idx) =>
         idx == null || idx.IsNull ? "None" : idx.ResolvedObject?.Name.Text ?? "None";
 
     private static string Sanitize(string path)
@@ -485,44 +506,83 @@ internal static class Program
     }
 
     private static void WriteJson(string path, object o) =>
-        File.WriteAllText(path, JsonConvert.SerializeObject(o, Formatting.Indented));
+        File.WriteAllText(path, JsonSerializer.Serialize(o, Json));
 
     // ---------------------------------------------------------------- tietueet
 
     private sealed class LandscapeComponentRec
     {
-        public string Level;
-        public int SectionBaseX, SectionBaseY;
-        public int ComponentSizeQuads, SubsectionSizeQuads, NumSubsections;
-        public string Heightmap;
-        public float[] HeightmapScaleBias;
-        public string[] WeightmapTextures;
-        public float[] WeightmapScaleBias;
-        public LayerAllocRec[] Layers;
+        public string Level { get; set; } = "";
+        public int SectionBaseX { get; set; }
+        public int SectionBaseY { get; set; }
+        public int ComponentSizeQuads { get; set; }
+        public int SubsectionSizeQuads { get; set; }
+        public int NumSubsections { get; set; }
+        public string? Heightmap { get; set; }
+        public float[] HeightmapScaleBias { get; set; } = [];
+        public string?[] WeightmapTextures { get; set; } = [];
+        public float[] WeightmapScaleBias { get; set; } = [];
+        public LayerAllocRec[] Layers { get; set; } = [];
     }
 
     private sealed class LayerAllocRec
     {
-        public string Name;
-        public byte TextureIndex, Channel;
+        public string Name { get; set; } = "";
+        public byte TextureIndex { get; set; }
+        public byte Channel { get; set; }
+    }
+
+    private sealed class TextureMetaRec
+    {
+        public int Width { get; set; }
+        public int Height { get; set; }
+        public string PixelFormat { get; set; } = "";
+        public string Source { get; set; } = "";
     }
 
     private sealed class StaticActorRec
     {
-        public string Mesh;
-        public float[] Loc, Rot, Scale;
+        public string Mesh { get; set; } = "";
+        public float[] Loc { get; set; } = [];
+        public float[] Rot { get; set; } = [];
+        public float[] Scale { get; set; } = [];
     }
 
     private sealed class FoliageGroupRec
     {
-        public string Mesh, File;
-        public int Count;
-        public float[] ComponentLoc, ComponentRot, ComponentScale;
+        public string Mesh { get; set; } = "";
+        public string File { get; set; } = "";
+        public int Count { get; set; }
+        public float[] ComponentLoc { get; set; } = [];
+        public float[] ComponentRot { get; set; } = [];
+        public float[] ComponentScale { get; set; } = [];
     }
 
     private sealed class ActorTransformRec
     {
-        public string Level, Name;
-        public float[] Loc, Scale;
+        public string Level { get; set; } = "";
+        public string Name { get; set; } = "";
+        public float[] Loc { get; set; } = [];
+        public float[] Scale { get; set; } = [];
+    }
+
+    private sealed class MaterialRec
+    {
+        public string Material { get; set; } = "";
+        public MaterialTextureRec[] Textures { get; set; } = [];
+        public MaterialScalarRec[] Scalars { get; set; } = [];
+    }
+
+    private sealed class MaterialTextureRec
+    {
+        public string Parameter { get; set; } = "";
+        public string Texture { get; set; } = "";
+        public string? File { get; set; }
+    }
+
+    private sealed class MaterialScalarRec
+    {
+        public string Parameter { get; set; } = "";
+        public float Value { get; set; }
     }
 }

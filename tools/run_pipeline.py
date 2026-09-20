@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -242,13 +241,21 @@ def main() -> int:
         settings = bootstrap.Settings()
     else:
         settings = bootstrap.ensure(interactive=not args.yes)
+        if not settings.get("paths", "dumpworld"):
+            print("\nDumpWorldia ei saatu kaannettya - purkua ei voi ajaa.")
+            print("Korjaa yllaolevat virheet ja aja RUN_ALL_resume.bat uudelleen.")
+            return 1
 
     # Vaiheet ajetaan venvin Pythonilla; jos siella ei olla, kaynnistetaan uudelleen.
+    # HUOM: os.execv ei lainaa argumentteja Windowsissa, joten valilyonnit polussa
+    # ("C:\Program Files\...") hajottaisivat komennon. subprocess hoitaa lainauksen,
+    # ja paluukoodi kulkee myos .bat-tiedostolle asti.
     venv_py = bootstrap.venv_python()
     if venv_py.exists() and not bootstrap.in_venv() and not args.check:
         print(f"\nSiirrytaan virtuaaliymparistoon {venv_py}")
-        os.execv(str(venv_py), [str(venv_py), str(Path(__file__).resolve()),
+        child = subprocess.run([str(venv_py), str(Path(__file__).resolve()),
                                 *sys.argv[1:], "--skip-bootstrap"])
+        return child.returncode
 
     estimate(settings)
 

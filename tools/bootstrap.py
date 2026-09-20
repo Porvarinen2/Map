@@ -23,13 +23,19 @@ SETTINGS = REPO / "config" / "settings.ini"
 VENV = REPO / ".venv"
 CUE4PARSE = REPO / "tools" / "CUE4Parse"
 CUE4PARSE_URL = "https://github.com/FabianFG/CUE4Parse"
+# Pinnattu kommitti. CUE4Parsen master muuttaa API:aan jatkuvasti, ja tata vasten
+# DumpWorld on kaannetty ja testattu - ilman pinnia kaannos voi hajota milla hetkella
+# hyvansa ilman etta taalla on muutettu mitaan.
+CUE4PARSE_COMMIT = "cfff57a0483501e0fa555dff5bf542748afe0bab"
+# CUE4Parse kohdistaa net10.0:aan, joten vanhempi SDK ei kelpaa.
+DOTNET_MIN_MAJOR = 10
 
 IS_WIN = os.name == "nt"
 PY_DEPS = ["numpy", "pillow"]
 PY_DEPS_OPTIONAL = ["pyvips[binary]"]      # libvips mukana; ilman tata PIL-varareitti
 
 TOOLS = {
-    "dotnet": ("Microsoft.DotNet.SDK.8", "https://dotnet.microsoft.com/download"),
+    "dotnet": ("Microsoft.DotNet.SDK.10", "https://dotnet.microsoft.com/download"),
     "git": ("Git.Git", "https://git-scm.com/downloads"),
 }
 
@@ -88,19 +94,40 @@ def which(name: str) -> str | None:
     return shutil.which(name)
 
 
+def dotnet_major() -> int:
+    """Suurin asennettu .NET SDK -paaversio, 0 jos dotnetia ei ole."""
+    if not which("dotnet"):
+        return 0
+    try:
+        out = subprocess.run(["dotnet", "--list-sdks"], capture_output=True, text=True)
+        return max((int(line.split(".")[0]) for line in out.stdout.splitlines()
+                    if line[:1].isdigit()), default=0)
+    except Exception:                                             # noqa: BLE001
+        return 0
+
+
 def require_tools(interactive: bool) -> list[str]:
     """Tarkista tyokalut ja tarjoa winget-asennusta puuttuville."""
     missing = []
     for tool, (winget_id, url) in TOOLS.items():
-        if which(tool):
+        if tool == "dotnet":
+            have = dotnet_major()
+            if have >= DOTNET_MIN_MAJOR:
+                continue
+            say(f"  .NET SDK {DOTNET_MIN_MAJOR} puuttuu"
+                + (f" (asennettuna {have})" if have else ""))
+        elif which(tool):
             continue
-        say(f"  puuttuu: {tool}")
+        else:
+            say(f"  puuttuu: {tool}")
+
         if IS_WIN and which("winget") and confirm(
                 f"    asennetaanko nyt komennolla 'winget install {winget_id}'?",
                 interactive):
             subprocess.run(["winget", "install", "-e", "--id", winget_id,
                             "--accept-package-agreements", "--accept-source-agreements"])
-            if which(tool):
+            ok = dotnet_major() >= DOTNET_MIN_MAJOR if tool == "dotnet" else bool(which(tool))
+            if ok:
                 say(f"    {tool} asennettu")
                 continue
             say("    asennus ei nakynyt viela PATHissa - kaynnista ikkuna uudelleen")
@@ -203,6 +230,10 @@ def ensure_venv() -> Path:
     if not py.exists():
         say("  luodaan .venv")
         subprocess.run([sys.executable, "-m", "venv", str(VENV)], check=True)
+    # Vanha pip ei osaa kaikkia nykyisia wheel-muotoja, ja venviin tulee usein
+    # se versio joka sattui olemaan Pythonin mukana vuosia sitten.
+    subprocess.run([str(py), "-m", "pip", "install", "--quiet", "--upgrade", "pip"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return py
 
 
@@ -215,8 +246,14 @@ def pip_install(py: Path, packages: list[str], optional: bool = False) -> bool:
 
 
 def in_venv() -> bool:
+    """Ollaanko jo taman repon virtuaaliymparistossa.
+
+    Vertailu tehdaan sys.prefixilla eika tulkin polulla: Linuxissa venvin python on
+    symlinkki perustulkkiin, jolloin polkujen vertailu luulisi aina olevansa venvissa
+    eika vaihtoa tapahtuisi koskaan.
+    """
     try:
-        return Path(sys.executable).resolve() == venv_python().resolve()
+        return Path(sys.prefix).resolve() == VENV.resolve()
     except OSError:
         return False
 
@@ -229,25 +266,50 @@ def ensure_cue4parse(interactive: bool) -> bool:
     if not which("git"):
         say("  git puuttuu - CUE4Parsea ei voi hakea")
         return False
+
     say(f"  kloonataan CUE4Parse -> {CUE4PARSE}")
     CUE4PARSE.parent.mkdir(parents=True, exist_ok=True)
-    r = subprocess.run(["git", "clone", "--recursive", "--depth", "1",
-                        CUE4PARSE_URL, str(CUE4PARSE)])
-    return r.returncode == 0
+
+    # EI --recursive. Submodulit ovat vain natiivikirjastoja varten, ja niiden
+    # ketju (ACL -> sjson-cpp -> catch2) ylittaa Windowsin polkurajan pitkan
+    # kansiopolun alla - juuri se kaatoi ensimmaisen ajon.
+    r = subprocess.run(["git", "-c", "core.longpaths=true", "clone",
+                        "--filter=blob:none", CUE4PARSE_URL, str(CUE4PARSE)])
+    if r.returncode:
+        return False
+
+    r = subprocess.run(["git", "checkout", "--quiet", CUE4PARSE_COMMIT], cwd=CUE4PARSE)
+    if r.returncode:
+        say(f"  VAROITUS: kommittia {CUE4PARSE_COMMIT[:10]} ei loytynyt, "
+            "kaytetaan masteria (API on voinut muuttua)")
+    return True
 
 
 def build_dumpworld() -> Path | None:
     proj = REPO / "pipeline" / "00_extract" / "DumpWorld"
-    if not which("dotnet"):
-        say("  dotnet puuttuu - DumpWorldia ei voi kaantaa")
+    if dotnet_major() < DOTNET_MIN_MAJOR:
+        say(f"  .NET SDK {DOTNET_MIN_MAJOR} puuttuu - DumpWorldia ei voi kaantaa")
         return None
+
     say("  kaannetaan DumpWorld (ensimmainen kerta kestaa muutaman minuutin)")
-    r = subprocess.run(["dotnet", "build", "-c", "Release", "--nologo"], cwd=proj)
+    # CUE4PARSE_SKIP_NATIVE globaalina propertyna valittyy myos viitattuihin
+    # projekteihin, jolloin CMake-vaihe jaa pois kokonaan.
+    r = subprocess.run(
+        ["dotnet", "build", "-c", "Release", "--nologo",
+         "-p:CUE4PARSE_SKIP_NATIVE=true"],
+        cwd=proj, capture_output=True, text=True)
+
     if r.returncode:
-        say("  kaannos epaonnistui. Yleisin syy on CUE4Parsen API-muutos:")
-        say("    korjaa provider.Initialize() -> provider.Mount() tiedostossa Program.cs")
+        say("  kaannos epaonnistui:")
+        errors = [ln for ln in r.stdout.splitlines() if ": error " in ln]
+        for line in (errors or r.stdout.splitlines())[-12:]:
+            say(f"    {line.strip()}")
         return None
-    exe = next(iter(sorted(proj.glob("bin/Release/net*/DumpWorld*"))), None)
+
+    exe = next((p for p in sorted(proj.glob("bin/Release/net*/DumpWorld*"))
+                if p.suffix in ("", ".exe")), None)
+    if exe:
+        say(f"  kaannetty: {exe.name}")
     return exe
 
 
@@ -275,6 +337,8 @@ def ensure(interactive: bool = True) -> Settings:
     exe = build_dumpworld()
     if exe:
         s.set("paths", "dumpworld", str(exe))
+    else:
+        s.set("paths", "dumpworld", "")
 
     say("[5/5] pelin ja Blenderin polut")
     find_scum_paks(s, interactive)

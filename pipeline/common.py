@@ -141,13 +141,44 @@ class World:
         return path
 
 
+# Purku kirjoittaa tekstuurit sellaisenaan ja kertoo formaatin metadatassa.
+# Kanavajarjestysta ei arvata: vaara arvaus tuottaisi maaston joka nayttaa
+# uskottavalta mutta on vaara, eika sita huomaisi mistaan.
+_CHANNEL_ORDER = {
+    "PF_R8G8B8A8": (0, 1, 2, 3),
+    "PF_B8G8R8A8": (2, 1, 0, 3),
+    "PF_A8R8G8B8": (1, 2, 3, 0),
+    "RGBA8": (0, 1, 2, 3),          # vanha dumppiformaatti
+}
+
+
 def load_raw_rgba(stem: Path):
-    """Lataa vaiheen A dumppaaman .raw-tekstuurin (RGBA8) -> numpy (h, w, 4)."""
+    """Lataa vaiheen A dumppaaman .raw-tekstuurin -> (numpy (h, w, 4) RGBA, meta).
+
+    Palautettu meta on normalisoitu pieniksi kirjaimiksi, jotta kutsujien ei tarvitse
+    valittaa siita kirjoittiko sen System.Text.Json vai jokin vanhempi versio.
+    """
     import numpy as np
 
-    meta = json.loads(Path(str(stem) + ".json").read_text())
+    raw_meta = json.loads(Path(str(stem) + ".json").read_text())
+    meta = {k[:1].lower() + k[1:]: v for k, v in raw_meta.items()}
+    fmt = meta.get("pixelFormat") or meta.get("pixel_format") or meta.get("format", "")
+    order = _CHANNEL_ORDER.get(fmt)
+    if order is None:
+        raise SystemExit(
+            f"{stem}: tuntematon pikseliformaatti {fmt!r}.\n"
+            f"Tuetut: {', '.join(sorted(_CHANNEL_ORDER))}.\n"
+            "Tekstuuria ei tulkita arvaamalla - lisaa formaatti common.py:n "
+            "_CHANNEL_ORDER-tauluun kun tiedat sen kanavajarjestyksen.")
+
+    h, w = meta["height"], meta["width"]
     buf = np.fromfile(str(stem) + ".raw", dtype=np.uint8)
-    return buf.reshape(meta["height"], meta["width"], 4), meta
+    expected = h * w * 4
+    if buf.size != expected:
+        raise SystemExit(f"{stem}: {buf.size} tavua, odotettiin {expected} ({w}x{h}x4)")
+
+    img = buf.reshape(h, w, 4)
+    return (img if order == (0, 1, 2, 3) else img[:, :, order]), meta
 
 
 def ensure_dirs(*paths: Path) -> None:
