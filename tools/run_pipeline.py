@@ -150,8 +150,25 @@ class Runner:
         print("    maasto on jarkeva")
 
     def layers(self) -> None:
+        land = REPO / "assets" / "landscape"
+
+        # Hae maa-ainesten varitekstuurit koko pakista nimen perusteella. Kevyt tila
+        # joka ei kayta umapeja lapi, eli tama ei toista 16 minuutin purkua.
+        exe = self.s.get("paths", "dumpworld")
+        paks = self.s.get("paths", "paks")
+        if exe and paks:
+            cmd = [exe, "--paks", paks, "--out", str(REPO / "dump"),
+                   "--game", self.s.get("paths", "game", "GAME_UE4_27"),
+                   "--landscape-textures", str(land), "--layer-textures-only"]
+            aes = self.s.get("paths", "aes")
+            if aes:
+                cmd += ["--aes", aes]
+            self.run(*cmd)
+        elif not self.args.check:
+            print("    DumpWorld puuttuu - layer-varit jaavat arvauksen varaan")
+
         self.script("pipeline/01_landscape/guess_layers.py",
-                    "--texture-dir", str(REPO / "assets" / "landscape"))
+                    "--texture-dir", str(land), "--force")
 
     def ground(self) -> None:
         # Blenderin syote ilman varjostusta: valo tulee renderissa auringosta.

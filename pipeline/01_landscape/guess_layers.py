@@ -24,6 +24,11 @@ REJECT_HINTS = ("_n", "_nrm", "normal", "_orm", "_rma", "_mask", "_ao", "_r_", "
                 "height", "_disp", "_spec", "_mt", "metal")
 
 DEFAULT_TILING_M = 4.0
+# Sama haarukka kuin ground_albedo.py:ssa. Materiaaleissa on paljon skalaareja joiden
+# nimessa on "Scale" mutta jotka eivat ole tiilityksia; ilman rajausta sellainen
+# paatyy layers.jsoniin ja rajahtaa vasta baken muistinvarauksessa.
+TILING_MIN_M = 0.25
+TILING_MAX_M = 512.0
 
 
 def tokens(name: str) -> set[str]:
@@ -72,7 +77,10 @@ def guess_tiling(layer: str, scalars: list[dict]) -> tuple[float, str | None]:
         v = float(s.get("value", 0) or 0)
         if v <= 0:
             continue
-        best, best_name = (v if v > 1.0 else 1.0 / v), name
+        candidate = v if v > 1.0 else 1.0 / v
+        if not (TILING_MIN_M <= candidate <= TILING_MAX_M):
+            continue                      # ei tiilitys vaan jokin muu parametri
+        best, best_name = candidate, name
         break
     return (best or DEFAULT_TILING_M), best_name
 
@@ -117,6 +125,15 @@ def main() -> int:
         return 0
 
     layers = list(json.loads((WORK / "weightmaps" / "layers.json").read_text()))
+
+    # Ensisijainen lahde: purun nimihaku koko pakista. Materiaalin omat parametrit
+    # kattavat vain murto-osan layereista, koska tekstuurit ovat materiaali-
+    # funktioiden sisalla.
+    direct_path = DUMP / "landscape" / "layer_textures.json"
+    direct = json.loads(direct_path.read_text()) if direct_path.exists() else {}
+    if direct:
+        print(f"  {len(direct)} layeria sai tekstuurin purun nimihausta")
+
     mat_path = DUMP / "landscape" / "material.json"
     mat = json.loads(mat_path.read_text()) if mat_path.exists() else {}
     # System.Text.Json kirjoittaa avaimet PascalCasena; tuetaan molempia,
@@ -142,22 +159,29 @@ def main() -> int:
 
     matched = 0
     for layer in sorted(layers):
-        best, best_score = None, 0.0
-        for t in tex_entries:
-            s = max(score(layer, t["parameter"]), score(layer, t["file"]))
-            if s > best_score:
-                best, best_score = t, s
-
         tiling, tiling_src = guess_tiling(layer, scalars)
         spec: dict = {"tiling_m": round(tiling, 3)}
 
-        if best and best_score >= 0.34:
-            spec["texture"] = str(tex_dir / (best["file"] + ".png")).replace("\\", "/")
-            spec["_guess"] = {"parameter": best["parameter"], "score": round(best_score, 2)}
+        if layer in direct:
+            spec["texture"] = str(tex_dir / (direct[layer] + ".png")).replace("\\", "/")
+            spec["_guess"] = {"source": "pak-nimihaku"}
             matched += 1
-            note = f"-> {best['file']} ({best_score:.2f})"
+            note = f"-> {direct[layer]}"
         else:
-            note = "-> ei tekstuuriosumaa, kaytetaan varivaria"
+            best, best_score = None, 0.0
+            for t in tex_entries:
+                sc = max(score(layer, t["parameter"]), score(layer, t["file"]))
+                if sc > best_score:
+                    best, best_score = t, sc
+
+            if best and best_score >= 0.34:
+                spec["texture"] = str(tex_dir / (best["file"] + ".png")).replace("\\", "/")
+                spec["_guess"] = {"parameter": best["parameter"],
+                                  "score": round(best_score, 2)}
+                matched += 1
+                note = f"-> {best['file']} ({best_score:.2f})"
+            else:
+                note = "-> ei tekstuuriosumaa, kaytetaan varivaria"
         if tiling_src:
             spec["_guess"] = {**spec.get("_guess", {}), "tiling_from": tiling_src}
 
@@ -165,6 +189,11 @@ def main() -> int:
         print(f"  {layer:<28} {note}")
 
     out.parent.mkdir(parents=True, exist_ok=True)
+    if out.exists():
+        # Kasin viilattu tiedosto ei saa kadota uudelleenajossa jaljettomiin.
+        backup = out.with_suffix(".json.bak")
+        backup.write_text(out.read_text())
+        print(f"  edellinen versio talteen: {backup.name}")
     out.write_text(json.dumps(result, indent=2, ensure_ascii=False))
     print(f"\n{matched}/{len(layers)} layeria sai tekstuurin -> {out}")
     if matched < len(layers):

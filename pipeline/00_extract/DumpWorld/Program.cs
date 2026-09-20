@@ -57,13 +57,14 @@ internal static class Program
         var meshDir = Arg(args, "--meshes");
         var landDir = Arg(args, "--landscape-textures");
         var exportMaterials = !args.Contains("--no-materials");
+        var layerTexturesOnly = args.Contains("--layer-textures-only");
 
         if (paks == null)
         {
             Console.Error.WriteLine(
                 "Kaytto: --paks <polku> [--aes 0x..] [--out dump] [--game GAME_UE4_27]\n"
                 + "        [--filter Maps/] [--meshes <dir>] [--landscape-textures <dir>]\n"
-                + "        [--no-materials]");
+                + "        [--no-materials] [--layer-textures-only]");
             return 1;
         }
 
@@ -84,6 +85,11 @@ internal static class Program
         if (!string.IsNullOrWhiteSpace(aes))
             provider.SubmitKey(new FGuid(), new FAesKey(aes));   // salatut paketit
         provider.LoadVirtualPaths();
+
+        // Kevyt tila: etsii vain maa-ainesten varitekstuurit valmiin purun pohjalta.
+        // Ajaa minuutissa, joten varien korjaaminen ei vaadi koko purun toistamista.
+        if (layerTexturesOnly)
+            return FindLayerTextures(provider, landDir ?? "assets/landscape");
 
         var maps = provider.Files.Keys
             .Where(k => k.EndsWith(".umap", StringComparison.OrdinalIgnoreCase))
@@ -434,8 +440,16 @@ internal static class Program
             exportMorphTargets: false);
 
         var todo = new List<UStaticMesh>();
-        var names = NeededMeshes.OrderBy(x => x).ToList();
-        int ok = 0, skip = 0, fail = 0;
+        // HLOD-paketit ovat yhdistettyja kaukokuvaproxyja joilla ei ole omaa
+        // UStaticMesh-exporttia. Niiden yrittaminen tuottaa vain virheita.
+        var names = NeededMeshes
+            .Where(n => !n.Contains("/HLOD/", StringComparison.OrdinalIgnoreCase)
+                        && !n.Contains("_HLOD", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(x => x).ToList();
+        var skippedHlod = NeededMeshes.Count - names.Count;
+        if (skippedHlod > 0)
+            Console.WriteLine($"  ohitetaan {skippedHlod} HLOD-proxya");
+        int ok = 0, skip = 0, fail = 0, extras = 0;
         Console.WriteLine($"Viedaan {names.Count} meshia -> {dir}");
 
         // Vienti eraissa: kaikkien kymmenientuhansien meshien pitaminen muistissa
@@ -468,15 +482,22 @@ internal static class Program
             if (todo.Count == 0) continue;
 
             var session = new ExportSession();
+            var wanted = new HashSet<string>(todo.Select(m => m.GetPathName()),
+                                             StringComparer.OrdinalIgnoreCase);
             foreach (var mesh in todo) session.Add(mesh);
             var results = await session.RunAsync(dir, options).ConfigureAwait(false);
 
-            ok += results.Count(r => r.Success);
-            fail += results.Count(r => !r.Success);
-            Console.WriteLine($"  {ok + skip + fail}/{names.Count} (ok {ok}, oli jo {skip}, virhe {fail})");
+            // Sessio vie mesheista ketjutetut materiaalit ja tekstuurit samalla,
+            // joten tuloksia on enemman kuin meshia - lasketaan vain meshit.
+            ok += results.Count(r => r.Success && wanted.Contains(r.ObjectPath));
+            fail += results.Count(r => !r.Success && wanted.Contains(r.ObjectPath));
+            extras += results.Count(r => !wanted.Contains(r.ObjectPath));
+            Console.WriteLine($"  {ok + skip + fail}/{names.Count} meshia "
+                              + $"(ok {ok}, oli jo {skip}, virhe {fail}, liitannaisia {extras})");
         }
 
-        Console.WriteLine($"Meshit valmiit: {ok} vietu, {skip} oli jo, {fail} epaonnistui.");
+        Console.WriteLine($"Meshit valmiit: {ok} vietu, {skip} oli jo, {fail} epaonnistui, "
+                          + $"{extras} materiaalia ja tekstuuria mukana.");
     }
 
     /// '/Game/Foo/SM_Bar.SM_Bar' -> 'Game/Foo/SM_Bar' (sama polku jonne vienti kirjoittaa).
@@ -484,6 +505,159 @@ internal static class Program
     {
         var p = objectPath.Split('.')[0].TrimStart('/');
         return p.Replace('/', Path.DirectorySeparatorChar);
+    }
+
+
+    // ---------------------------------------------------------------- layer-tekstuurit
+
+    // Varitekstuurien tunnistus nimesta. Normaalikartta tai maski albedona pilaisi
+    // koko maanpinnan varin, joten hylatyt painavat enemman kuin hyvaksytyt.
+    private static readonly string[] AlbedoHints =
+        ["_d", "_bc", "_alb", "albedo", "basecolor", "base_color", "diffuse", "_col", "_c"];
+    private static readonly string[] RejectHints =
+        ["_n", "_nrm", "normal", "_orm", "_rma", "_mask", "_ao", "rough", "_mt", "metal",
+         "height", "_disp", "_spec", "_em", "emissive", "_opacity", "_packed"];
+
+    /// Etsii jokaiselle landscape-layerille varitekstuurin koko pakin tiedostoindeksista.
+    ///
+    /// Materiaalin omat parametrit eivat riita: SCUMin layer-tekstuurit elavat
+    /// materiaalifunktioiden sisalla, joten ylatason parametreista loytyi vain 4/26.
+    /// Nimihaku koko indeksista loytaa loput, koska tekstuurit on nimetty kuvaavasti
+    /// (Grass_Continental_LayerInfo -> T_Grass_Continental_D).
+    private static int FindLayerTextures(DefaultFileProvider provider, string dir)
+    {
+        var compsPath = Path.Combine(_out, "landscape", "components.json");
+        if (!File.Exists(compsPath))
+        {
+            Console.Error.WriteLine($"{compsPath} puuttuu - aja taysi purku ensin.");
+            return 1;
+        }
+
+        var layers = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        using (var doc = JsonDocument.Parse(File.ReadAllText(compsPath)))
+        {
+            foreach (var comp in doc.RootElement.EnumerateArray())
+            {
+                if (!comp.TryGetProperty("Layers", out var arr)) continue;
+                foreach (var alloc in arr.EnumerateArray())
+                {
+                    var name = alloc.GetProperty("Name").GetString();
+                    if (!string.IsNullOrEmpty(name) && name != "None") layers.Add(name);
+                }
+            }
+        }
+        Console.WriteLine($"{layers.Count} layeria, haetaan tekstuurit {provider.Files.Count} tiedostosta...");
+
+        // Esilaske jokaisen paketin nimi ja tokenit kerran - muuten 26 x 263k
+        // merkkijonojen pilkkomista tehtaisiin uudestaan joka layerille.
+        var candidates = provider.Files.Keys
+            .Where(k => k.EndsWith(".uasset", StringComparison.OrdinalIgnoreCase))
+            .Select(k => (Path: k,
+                          Name: Path.GetFileNameWithoutExtension(k),
+                          Tokens: Tokenize(Path.GetFileNameWithoutExtension(k))))
+            .Where(c => c.Tokens.Count > 0 && IsAlbedoName(c.Name))
+            .ToList();
+        Console.WriteLine($"  {candidates.Count} varitekstuuriehdokasta");
+
+        Directory.CreateDirectory(dir);
+        var found = new Dictionary<string, string>();
+
+        foreach (var layer in layers)
+        {
+            var wanted = Tokenize(layer.Replace("_LayerInfo", "", StringComparison.OrdinalIgnoreCase));
+            if (wanted.Count == 0) continue;
+
+            string? bestPath = null;
+            var bestScore = 0.0;
+            foreach (var cand in candidates)
+            {
+                var hits = wanted.Count(w => cand.Tokens.Contains(w));
+                if (hits == 0) continue;
+
+                var score = (double)hits / wanted.Count;
+                // Landscape-poluissa olevat tekstuurit ovat lahes varmasti oikeita;
+                // sama nimi voi esiintya myos esim. propsien tekstuureissa.
+                if (cand.Path.Contains("Landscape", StringComparison.OrdinalIgnoreCase)
+                    || cand.Path.Contains("Terrain", StringComparison.OrdinalIgnoreCase))
+                    score += 0.25;
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    bestPath = cand.Path;
+                }
+            }
+
+            if (bestPath == null || bestScore < 0.6)
+            {
+                Console.WriteLine($"  {layer,-36} ei osumaa");
+                continue;
+            }
+
+            var file = DumpTextureByPath(provider, bestPath, dir);
+            if (file == null)
+            {
+                Console.WriteLine($"  {layer,-36} {Path.GetFileNameWithoutExtension(bestPath)} (lataus epaonnistui)");
+                continue;
+            }
+
+            found[layer] = file;
+            Console.WriteLine($"  {layer,-36} {file} ({bestScore:0.00})");
+        }
+
+        WriteJson(Path.Combine(_out, "landscape", "layer_textures.json"), found);
+        Console.WriteLine($"\n{found.Count}/{layers.Count} layeria sai tekstuurin -> {dir}");
+        return 0;
+    }
+
+    private static string? DumpTextureByPath(DefaultFileProvider provider, string packagePath, string dir)
+    {
+        try
+        {
+            var tex = provider.LoadPackageObject<UTexture2D>(
+                packagePath[..packagePath.LastIndexOf('.')]);
+            if (tex == null) return null;
+
+            var name = Sanitize(tex.Name);
+            if (File.Exists(Path.Combine(dir, name + ".raw"))) return name;
+
+            var bitmap = tex.Decode();
+            if (bitmap == null) return null;
+
+            File.WriteAllBytes(Path.Combine(dir, name + ".raw"), bitmap.Data);
+            WriteJson(Path.Combine(dir, name + ".json"), new TextureMetaRec
+            {
+                Width = bitmap.Width,
+                Height = bitmap.Height,
+                PixelFormat = bitmap.PixelFormat.ToString(),
+                Source = tex.GetPathName(),
+            });
+            return name;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static HashSet<string> Tokenize(string name)
+    {
+        // Poistetaan tyyppi- ja numeroliitteet, jotta 'T_Grass_Continental_01_D' ja
+        // 'Grass_Continental_LayerInfo' loytavat toisensa.
+        string[] noise = ["t", "tex", "texture", "d", "bc", "n", "alb", "albedo",
+                          "basecolor", "diffuse", "col", "c", "mi", "m", "landscape",
+                          "land", "layer", "layerinfo", "info", "mat", "01", "02", "03"];
+        var parts = name.Split(['_', '-', '.', ' '], StringSplitOptions.RemoveEmptyEntries);
+        return parts
+            .Select(p => p.ToLowerInvariant())
+            .Where(p => p.Length > 1 && !noise.Contains(p) && !p.All(char.IsDigit))
+            .ToHashSet();
+    }
+
+    private static bool IsAlbedoName(string name)
+    {
+        var low = name.ToLowerInvariant();
+        if (RejectHints.Any(h => low.EndsWith(h) || low.Contains(h + "_"))) return false;
+        return AlbedoHints.Any(h => low.EndsWith(h) || low.Contains(h + "_"));
     }
 
     // ---------------------------------------------------------------- apurit

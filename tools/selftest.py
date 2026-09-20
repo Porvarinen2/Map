@@ -225,6 +225,15 @@ def main() -> int:
         assert (n_static, n_foliage) == (1, 5000), (n_static, n_foliage)
         print(f"  kanta: {n_static} staattinen, {n_foliage} kasvi-instanssia")
 
+        # Regressio: absurdi tiilitys kaatoi ajon 57 GB:n muistinvaraukseen.
+        sys.path.insert(0, str(REPO / "pipeline" / "01_landscape"))
+        import ground_albedo as ga
+        huge = ga.load_layer_texture({"tiling_m": 33327.0, "_name": "Absurd"}, 0.465)
+        assert huge.nbytes < 1_000_000, f"absurdi tiilitys varaa {huge.nbytes} tavua"
+        assert ga.clamp_tiling(-5, "x") == 4.0 and ga.clamp_tiling("roska", "x") == 4.0
+        assert ga.clamp_tiling(6.0, "x") == 6.0
+        print("  absurdi tiilitys rajataan, ei muistiraketti")
+
         # Tiilipyramidi PIL-reitilla (ilman libvipsia) suoraan "renderoiduista" tiilista.
         render_dir = out / "tiles"
         render_dir.mkdir(parents=True, exist_ok=True)

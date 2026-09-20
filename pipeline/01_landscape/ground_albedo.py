@@ -44,18 +44,43 @@ def bilinear(src: np.ndarray, x: np.ndarray, y: np.ndarray) -> np.ndarray:
     return top + (bot - top) * fy
 
 
+# Maa-aineksen tiilitys on kaytannossa metrista muutamaan kymmeneen metriin.
+# Naiden ulkopuoliset arvot eivat ole tiilityksia vaan vaarin tunnistettuja
+# materiaaliparametreja - ja ilman rajausta ne kaatavat ajon muistinvaraukseen.
+TILING_MIN_M = 0.25
+TILING_MAX_M = 512.0
+# 0.465 m/px:lla 1024 texelia on 476 m maastoa, eli mikaan todellinen tiilitys ei
+# ylita tata. Viimeinen varmistus muistinkayton ylarajalle.
+TARGET_MAX_PX = 1024
+
+
+def clamp_tiling(value, name: str = "") -> float:
+    """Rajaa tiilitys jarkevaan haarukkaan ja kerro jos arvo hylattiin."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        v = float("nan")
+    if not np.isfinite(v) or not (TILING_MIN_M <= v <= TILING_MAX_M):
+        print(f"  VAROITUS: {name or 'layer'} tiling_m={value} ei ole jarkeva "
+              f"({TILING_MIN_M}-{TILING_MAX_M} m) - kaytetaan 4 m")
+        return 4.0
+    return v
+
+
 def load_layer_texture(spec: dict, meters_per_px: float) -> np.ndarray:
     """Layerin tekstuuri skaalattuna niin etta 1 texel ~ 1 ulostulopikseli."""
     from PIL import Image
 
-    tiling_m = float(spec.get("tiling_m", 4.0))
-    target = max(4, int(round(tiling_m / meters_per_px)))
+    name = spec.get("_name", "")
+    tiling_m = clamp_tiling(spec.get("tiling_m", 4.0), name)
+    target = int(np.clip(round(tiling_m / meters_per_px), 4, TARGET_MAX_PX))
 
     path = spec.get("texture")
     if not path or not Path(path).exists():
-        color = np.array(spec.get("color") or fallback_color(spec.get("_name", "")),
-                         dtype=np.float32)
-        return np.tile(color, (target, target, 1))
+        # Tasavarilla ei ole yksityiskohtia, joten 4x4 riittaa: naytteistys tekee
+        # modulon tekstuurin kokoon, ja jokainen texel on sama vari.
+        color = np.array(spec.get("color") or fallback_color(name), dtype=np.float32)
+        return np.tile(color, (4, 4, 1))
 
     img = Image.open(path).convert("RGB")
     if max(img.size) > 2048:                       # kevennys ennen laatikkosuodatusta
@@ -105,7 +130,9 @@ def main() -> int:
     args = ap.parse_args()
 
     world = World.load()
-    heights = np.load(WORK / "heightmap.npy")
+    # mmap: tiili lukee vain oman alueensa sivut. Ilman tata 26 layeria x 10161^2
+    # maskia olisi 2.7 GB muistia pelkkina painokarttoina.
+    heights = np.load(WORK / "heightmap.npy", mmap_mode="r")
     wm_dir = WORK / "weightmaps"
     manifest = json.loads((wm_dir / "layers.json").read_text())
 
@@ -119,7 +146,7 @@ def main() -> int:
         spec = layer_cfg.get(name, {})
         if spec.get("skip"):
             continue
-        layers.append((name, np.load(wm_dir / f"{name}.npy"),
+        layers.append((name, np.load(wm_dir / f"{name}.npy", mmap_mode="r"),
                        load_layer_texture({**spec, "_name": name}, world.meters_per_px)))
     if not layers:
         raise SystemExit("Ei yhtaan layeria - aja weightmaps.py ensin.")

@@ -24,10 +24,24 @@ from common import DUMP, WORK, ensure_dirs  # noqa: E402
 import heightmap as _hm  # noqa: E402  (jaetaan atlas-kokoamislogiikka)
 
 
+# Kaikki landscapen layerit eivat ole maa-ainesta. Nama ohjaavat pelilogiikkaa
+# (kasvillisuuden poisto, datakerrokset) eivatka nay maastossa mitenkaan - mukaan
+# otettuna ne sekoittuisivat albedoon omalla keksityilla varillaan.
+NON_VISUAL = ("erasefoliage", "datalayer", "nofoliage", "blockvolume",
+              "spawn", "navmesh", "collision")
+
+
+def is_visual(layer: str) -> bool:
+    low = layer.lower()
+    return not any(word in low for word in NON_VISUAL)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--min-coverage", type=float, default=0.0005,
                     help="hylkaa layerit jotka peittavat tata pienemman osan kartasta")
+    ap.add_argument("--keep-non-visual", action="store_true",
+                    help="ota mukaan myos pelilogiikan layerit")
     args = ap.parse_args()
 
     comps = json.loads((DUMP / "landscape" / "components.json").read_text())
@@ -52,6 +66,10 @@ def main() -> int:
     manifest = {}
 
     for layer, entries in sorted(by_layer.items()):
+        if not args.keep_non_visual and not is_visual(layer):
+            print(f"  ohitetaan {layer}: ei maa-ainesta")
+            continue
+
         mask = np.zeros((h, w), dtype=np.uint8)
         placed = _hm.blit_components(
             entries, mask, min_x, min_y,
