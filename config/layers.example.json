@@ -1,0 +1,12 @@
+{
+  "_ohje": "Kopioi tama nimelle layers.json. Avaimet ovat weightmaps.py:n tulostamia layer-nimia. Jos tekstuuri puuttuu, kaytetaan 'color'-arvoa. 'tiling_m' on se matka metreina jonka valein tekstuuri toistuu pelin landscape-materiaalissa.",
+  "Grass": { "texture": "assets/landscape/grass_d.png", "tiling_m": 4.0, "tint": [1.0, 1.0, 1.0] },
+  "Forest": { "texture": "assets/landscape/forest_d.png", "tiling_m": 4.0 },
+  "Dirt": { "texture": "assets/landscape/dirt_d.png", "tiling_m": 3.0 },
+  "Rock": { "texture": "assets/landscape/rock_d.png", "tiling_m": 8.0 },
+  "Sand": { "color": [0.78, 0.71, 0.55], "tiling_m": 2.0 },
+  "Gravel": { "color": [0.44, 0.42, 0.40], "tiling_m": 2.0 },
+  "Snow": { "color": [0.88, 0.90, 0.93], "tiling_m": 6.0 },
+  "Asphalt": { "color": [0.16, 0.16, 0.17], "tiling_m": 6.0 },
+  "Blend_Unused": { "skip": true }
+}

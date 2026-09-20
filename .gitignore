@@ -1,0 +1,23 @@
+# Purettu pelidata ja välitulokset - EI koskaan versionhallintaan
+dump/
+work/
+out/
+assets/
+*.raw
+*.f32
+*.png
+*.tif
+*.tiff
+*.exr
+*.blend
+*.blend1
+*.gltf
+*.glb
+*.sqlite
+*.db
+
+__pycache__/
+*.pyc
+.venv/
+bin/
+obj/

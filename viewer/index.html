@@ -1,0 +1,115 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>SCUM 32K Map</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #0b0d10; }
+  #map { position: absolute; inset: 0; background: #0b0d10; }
+  .hud {
+    position: absolute; z-index: 500; left: 12px; bottom: 12px;
+    padding: 8px 12px; border-radius: 8px;
+    background: rgba(12, 14, 18, .82); border: 1px solid rgba(255, 255, 255, .12);
+    font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; color: #dfe4ea;
+    pointer-events: none; white-space: pre;
+  }
+  .hud b { color: #8fd694; font-weight: 600; }
+  .grid-label {
+    font: 600 13px/1 ui-monospace, monospace; color: rgba(255, 255, 255, .55);
+    text-shadow: 0 1px 3px #000; white-space: nowrap;
+  }
+</style>
+
+<div id="map"></div>
+<div class="hud" id="hud">ladataan…</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const SECTOR_M = 4000;   // sektoriruudukon jako metreina
+
+(async function () {
+  const meta = await (await fetch("map.json")).json();
+  const W = meta.world;
+
+  const map = L.map("map", {
+    crs: L.CRS.Simple, minZoom: 0, maxZoom: meta.maxZoom + 2,
+    zoomControl: true, attributionControl: false, preferCanvas: true,
+  });
+
+  // CRS.Simple: projektoimaton pikseliavaruus. unproject maxZoomilla antaa
+  // kuvapikselin ja karttakoordinaatin valisen 1:1 vastaavuuden.
+  const toLatLng = (x, y) => map.unproject([x, y], meta.maxZoom);
+  const bounds = L.latLngBounds(toLatLng(0, 0), toLatLng(meta.width, meta.height));
+
+  L.tileLayer(`tiles/{z}/{x}/{y}.${meta.format}`, {
+    tileSize: meta.tileSize, minZoom: 0, maxZoom: meta.maxZoom + 2,
+    maxNativeZoom: meta.maxZoom, noWrap: true, bounds,
+  }).addTo(map);
+
+  map.setMaxBounds(bounds.pad(0.05));
+  map.fitBounds(bounds);
+
+  // --- sektoriruudukko ---
+  const grid = L.layerGroup();
+  const stepPx = (SECTOR_M * W.uu_per_meter) / W.uu_per_px;
+  const cols = Math.ceil(meta.width / stepPx);
+  const rows = Math.ceil(meta.height / stepPx);
+  const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+  for (let i = 0; i <= cols; i++) {
+    const x = Math.min(i * stepPx, meta.width);
+    L.polyline([toLatLng(x, 0), toLatLng(x, meta.height)],
+      { color: "#fff", weight: 1, opacity: .18, interactive: false }).addTo(grid);
+  }
+  for (let j = 0; j <= rows; j++) {
+    const y = Math.min(j * stepPx, meta.height);
+    L.polyline([toLatLng(0, y), toLatLng(meta.width, y)],
+      { color: "#fff", weight: 1, opacity: .18, interactive: false }).addTo(grid);
+  }
+  for (let j = 0; j < rows; j++) {
+    for (let i = 0; i < cols; i++) {
+      L.marker(toLatLng(i * stepPx + 10, j * stepPx + 10), {
+        interactive: false,
+        icon: L.divIcon({ className: "grid-label", html: `${letters[j] || "?"}${i}` }),
+      }).addTo(grid);
+    }
+  }
+  grid.addTo(map);
+  L.control.layers(null, { "Sektorit": grid }, { collapsed: false }).addTo(map);
+
+  // --- koordinaattinaytto ---
+  const hud = document.getElementById("hud");
+  const fmt = (n) => n.toLocaleString("fi-FI", { maximumFractionDigits: 0 });
+
+  function update(e) {
+    const p = map.project(e.latlng, meta.maxZoom);
+    const uuX = W.origin_uu[0] + p.x * W.uu_per_px;
+    const uuY = W.origin_uu[1] + p.y * W.uu_per_px;
+    const sector = `${letters[Math.floor(p.y / stepPx)] || "?"}${Math.floor(p.x / stepPx)}`;
+    hud.innerHTML =
+      `<b>sektori</b> ${sector}\n` +
+      `<b>UU</b>      ${fmt(uuX)}, ${fmt(uuY)}\n` +
+      `<b>px</b>      ${fmt(p.x)}, ${fmt(p.y)}\n` +
+      `<b>m/px</b>    ${W.meters_per_px.toFixed(3)}`;
+  }
+  map.on("mousemove", update);
+  hud.textContent = `${meta.width}x${meta.height}px  ·  `
+    + `${(W.size_uu[0] / W.uu_per_meter / 1000).toFixed(1)} km  ·  `
+    + `${W.meters_per_px.toFixed(3)} m/px`;
+
+  // --- valinnainen POI-taso ---
+  try {
+    const pois = await (await fetch("pois.json")).json();
+    const layer = L.layerGroup();
+    for (const p of pois) {
+      const px = (p.uu[0] - W.origin_uu[0]) / W.uu_per_px;
+      const py = (p.uu[1] - W.origin_uu[1]) / W.uu_per_px;
+      L.circleMarker(toLatLng(px, py), {
+        radius: 6, color: p.color || "#7cff7c", weight: 2, fillOpacity: .25,
+      }).bindTooltip(p.name).addTo(layer);
+    }
+    layer.addTo(map);
+  } catch { /* pois.json on valinnainen */ }
+})();
+</script>
