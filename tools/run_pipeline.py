@@ -178,12 +178,30 @@ class Runner:
         self.script("pipeline/01_landscape/ground_albedo.py", "--hillshade", "0.35")
 
     def library(self) -> None:
+        meshes = REPO / "assets" / "meshes"
+
+        # Materiaalit ja niiden varitekstuurit. CUE4Parsen glTF-vienti antaa vain
+        # valkoisen perusvarin, joten ilman tata kaikki renderoityy valkoisena.
+        exe = self.s.get("paths", "dumpworld")
+        paks = self.s.get("paths", "paks")
+        if exe and paks:
+            cmd = [exe, "--paks", paks, "--out", str(REPO / "dump"),
+                   "--game", self.s.get("paths", "game", "GAME_UE4_27"),
+                   "--meshes", str(meshes), "--mesh-materials-only"]
+            aes = self.s.get("paths", "aes")
+            if aes:
+                cmd += ["--aes", aes]
+            self.run(*cmd)
+
+        # Blenderissa ei ole PILia, joten raakatekstuurit muunnetaan taalla.
+        self.script("pipeline/02_scene/textures_to_png.py", str(meshes / "_textures"))
+
         blender = self.s.get("paths", "blender")
         if not blender:
             if self.missing("Blenderin polku"):
                 return
         self.run(blender, "-b", "-P", str(REPO / "pipeline/03_render/build_library.py"),
-                 "--", "--meshes", str(REPO / "assets" / "meshes"))
+                 "--", "--meshes", str(meshes))
 
     def scene(self) -> None:
         self.script("pipeline/02_scene/actor_db.py", "--min-px", "2")

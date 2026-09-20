@@ -116,10 +116,34 @@ def build_dump(root: Path, pixfmt: str = "PF_B8G8R8A8") -> np.ndarray:
     inst[:, 4] = rng.uniform(0, 360, n)
     inst[:, 6:9] = rng.uniform(0.8, 1.3, (n, 1))
     inst.tofile(root / "foliage" / "Test_0.f32")
+
+    # Heinaa: tassa mittakaavassa nakymatonta mutta kallista. Pitaa karsiutua.
+    grass = np.zeros((2000, 9), dtype="<f4")
+    grass[:, 0] = rng.uniform(0, extent, 2000)
+    grass[:, 1] = rng.uniform(0, extent, 2000)
+    grass[:, 6:9] = 1.0
+    grass.tofile(root / "foliage" / "Test_1.f32")
+
     (root / "foliage" / "Test.json").write_text(json.dumps([
         {"Mesh": "/Game/Test/SM_Tree.SM_Tree", "Count": n, "File": "Test_0.f32",
          "ComponentLoc": [0, 0, 0], "ComponentRot": [0, 0, 0],
+         "ComponentScale": [1, 1, 1]},
+        {"Mesh": "/Game/Test/SM_Grass.SM_Grass", "Count": 2000, "File": "Test_1.f32",
+         "ComponentLoc": [0, 0, 0], "ComponentRot": [0, 0, 0],
          "ComponentScale": [1, 1, 1]}]))
+
+    # Mesh-materiaalit ja alfamaskattu lehtitekstuuri.
+    mesh_tex = root.parent / "assets" / "meshes" / "_textures"
+    mesh_tex.mkdir(parents=True, exist_ok=True)
+    leaf = np.zeros((16, 16, 4), dtype=np.uint8)
+    leaf[..., 1] = 120                       # vihrea
+    leaf[4:12, 4:12, 3] = 255                # vain keskiosa nakyy
+    write_tex(mesh_tex, "T_Leaf_D", leaf, pixfmt)
+    (root / "mesh_materials.json").write_text(json.dumps({
+        "/Game/Test/SM_Tree.SM_Tree": [
+            {"Index": 0, "Slot": "Bark", "Diffuse": None, "Blend": "BLEND_Opaque"},
+            {"Index": 1, "Slot": "Leaves", "Diffuse": "T_Leaf_D",
+             "Blend": "BLEND_Masked", "TwoSided": True}]}))
 
     # Landscape-materiaali ja sen varitekstuurit, jotta guess_layers.py:n
     # nimiperusteinen yhdistaminen ja raaka->PNG-muunnos tulevat testatuiksi.
@@ -165,6 +189,7 @@ def main() -> int:
     try:
         print(f"Synteettinen maailma {tmp}")
         expected = build_dump(dump)
+        mesh_tex = dump.parent / "assets" / "meshes" / "_textures"
 
         run("pipeline/01_landscape/heightmap.py", "--output-px", "1024",
             "--tile-grid", "4", env=env)
@@ -212,7 +237,8 @@ def main() -> int:
         print(f"  {len(tiles)} albedotiilta, {px.shape[0]}px, hajonta {px.std():.1f}")
 
         bounds = {"/Game/Test/SM_House.SM_House": {"object": "House", "radius": 800.0},
-                  "/Game/Test/SM_Tree.SM_Tree": {"object": "Tree", "radius": 400.0}}
+                  "/Game/Test/SM_Tree.SM_Tree": {"object": "Tree", "radius": 400.0},
+                  "/Game/Test/SM_Grass.SM_Grass": {"object": "Grass", "radius": 25.0}}
         (work / "mesh_bounds.json").write_text(json.dumps(bounds))
         run("pipeline/02_scene/actor_db.py", env=env)
 
@@ -223,7 +249,19 @@ def main() -> int:
             for k in (0, 1))
         con.close()
         assert (n_static, n_foliage) == (1, 5000), (n_static, n_foliage)
-        print(f"  kanta: {n_static} staattinen, {n_foliage} kasvi-instanssia")
+        print(f"  kanta: {n_static} staattinen, {n_foliage} kasvi-instanssia "
+              "(heina karsiutui)")
+
+        # Alfan on sailyttava: ilman sita lehtikortti on umpinainen suorakaide,
+        # ja juuri se muutti metsan lumeksi.
+        run("pipeline/02_scene/textures_to_png.py", str(mesh_tex), env=env)
+        leaf_png = np.asarray(Image.open(mesh_tex / "T_Leaf_D.png"))
+        assert leaf_png.shape == (16, 16, 4), leaf_png.shape
+        assert leaf_png[0, 0, 3] == 0 and leaf_png[8, 8, 3] == 255, "alfa katosi"
+        assert leaf_png[8, 8, 1] == 120, "varikanavat sekaisin"
+        mats = json.loads((dump / "mesh_materials.json").read_text())
+        assert mats["/Game/Test/SM_Tree.SM_Tree"][1]["Blend"] == "BLEND_Masked"
+        print("  lehtitekstuurin alfa sailyy raaka -> PNG muunnoksessa")
 
         # Regressio: absurdi tiilitys kaatoi ajon 57 GB:n muistinvaraukseen.
         sys.path.insert(0, str(REPO / "pipeline" / "01_landscape"))

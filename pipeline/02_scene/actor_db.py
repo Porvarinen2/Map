@@ -100,7 +100,12 @@ def load_statics(con, meshes: MeshTable, min_radius_uu: float) -> tuple[int, int
     return kept, dropped
 
 
-def load_foliage(con, meshes: MeshTable, min_radius_uu: float) -> tuple[int, int]:
+# Yli taman kokoinen "kasvi" on virheellista dataa, ei kasvillisuutta.
+MAX_FOLIAGE_RADIUS_M = 50.0
+
+
+def load_foliage(con, meshes: MeshTable, min_radius_uu: float,
+                 max_radius_uu: float) -> tuple[int, int]:
     kept = dropped = 0
     for path in sorted((DUMP / "foliage").glob("*.json")):
         for group in json.loads(path.read_text()):
@@ -128,7 +133,7 @@ def load_foliage(con, meshes: MeshTable, min_radius_uu: float) -> tuple[int, int
 
             radii = base_r * np.abs(inst[:, 6:9]).max(axis=1)
             if base_r:
-                mask = radii >= min_radius_uu
+                mask = (radii >= min_radius_uu) & (radii <= max_radius_uu)
                 dropped += int((~mask).sum())
                 inst, radii = inst[mask], radii[mask]
             kept += len(inst)
@@ -152,12 +157,17 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--min-px", type=float, default=2.0,
                     help="pudota objektit jotka jaavat tata pienemmiksi lopullisessa kuvassa")
+    ap.add_argument("--min-px-foliage", type=float, default=8.0,
+                    help="kasvillisuuden oma kynnys: heinat eivat tuota mitaan "
+                         "tassa mittakaavassa mutta maksavat valtavasti")
     ap.add_argument("--mesh-bounds", default=str(WORK / "mesh_bounds.json"))
     ap.add_argument("--db", default=str(WORK / "scene.sqlite"))
     args = ap.parse_args()
 
     world = World.load()
     min_radius_uu = args.min_px * world.uu_per_px / 2.0
+    min_foliage_uu = args.min_px_foliage * world.uu_per_px / 2.0
+    max_foliage_uu = MAX_FOLIAGE_RADIUS_M * world.uu_per_meter
 
     bounds_path = Path(args.mesh_bounds)
     bounds = json.loads(bounds_path.read_text()) if bounds_path.exists() else {}
@@ -174,15 +184,16 @@ def main() -> int:
     meshes = MeshTable(con, bounds)
     s_kept, s_drop = load_statics(con, meshes, min_radius_uu)
     print(f"Staattiset meshit: {s_kept} sailytetty, {s_drop} karsittu")
-    f_kept, f_drop = load_foliage(con, meshes, min_radius_uu)
+    f_kept, f_drop = load_foliage(con, meshes, min_foliage_uu, max_foliage_uu)
     print(f"Kasvillisuus:      {f_kept} sailytetty, {f_drop} karsittu")
 
     con.executescript(INDEXES)
     con.execute("ANALYZE")
     con.commit()
     con.close()
-    print(f"Karsintaraja {min_radius_uu / world.uu_per_meter:.2f} m sadetta "
-          f"({args.min_px} px)\nKirjoitettu {db}")
+    print(f"Karsintaraja: meshit {min_radius_uu / world.uu_per_meter:.2f} m "
+          f"({args.min_px} px), kasvillisuus {min_foliage_uu / world.uu_per_meter:.2f} m "
+          f"({args.min_px_foliage} px)\nKirjoitettu {db}")
     return 0
 
 

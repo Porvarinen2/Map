@@ -181,6 +181,34 @@ def load_raw_rgba(stem: Path):
     return (img if order == (0, 1, 2, 3) else img[:, :, order]), meta
 
 
+def raw_dir_to_png(tex_dir: Path, keep_alpha: bool = True) -> int:
+    """Muuntaa purun raakatekstuurit PNG:ksi.
+
+    Purku kirjoittaa kaiken raakana, koska silloin kanavajarjestys sailyy
+    todennettavana. Blenderissa ei ole PILia, joten muunnos tehdaan taalla ennen
+    kirjaston rakentamista.
+
+    Alfa sailytetaan: alfamaskatut lehtikortit ovat ilman sita umpinaisia
+    suorakaiteita, ja juuri se muutti metsan lumeksi.
+    """
+    from PIL import Image
+
+    made = 0
+    for meta_path in sorted(Path(tex_dir).glob("*.json")):
+        stem = meta_path.with_suffix("")
+        png = stem.with_suffix(".png")
+        if png.exists() or not stem.with_suffix(".raw").exists():
+            continue
+        try:
+            rgba, _ = load_raw_rgba(stem)
+        except SystemExit as e:
+            print(f"  {stem.name}: {str(e).splitlines()[0]}")
+            continue
+        Image.fromarray(rgba if keep_alpha else rgba[:, :, :3]).save(png)
+        made += 1
+    return made
+
+
 def ensure_dirs(*paths: Path) -> None:
     for p in paths:
         Path(p).mkdir(parents=True, exist_ok=True)

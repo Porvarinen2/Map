@@ -20,6 +20,7 @@
 
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using CUE4Parse.Encryption.Aes;
 using CUE4Parse.FileProvider;
 using CUE4Parse.UE4.Assets.Exports;
@@ -58,13 +59,16 @@ internal static class Program
         var landDir = Arg(args, "--landscape-textures");
         var exportMaterials = !args.Contains("--no-materials");
         var layerTexturesOnly = args.Contains("--layer-textures-only");
+        var meshMaterialsOnly = args.Contains("--mesh-materials-only");
+        var textureSize = int.TryParse(Arg(args, "--texture-size"), out var ts) ? ts : 256;
 
         if (paks == null)
         {
             Console.Error.WriteLine(
                 "Kaytto: --paks <polku> [--aes 0x..] [--out dump] [--game GAME_UE4_27]\n"
                 + "        [--filter Maps/] [--meshes <dir>] [--landscape-textures <dir>]\n"
-                + "        [--no-materials] [--layer-textures-only]");
+                + "        [--no-materials] [--layer-textures-only]\n"
+                + "        [--mesh-materials-only] [--texture-size 256]");
             return 1;
         }
 
@@ -90,6 +94,9 @@ internal static class Program
         // Ajaa minuutissa, joten varien korjaaminen ei vaadi koko purun toistamista.
         if (layerTexturesOnly)
             return FindLayerTextures(provider, landDir ?? "assets/landscape");
+
+        if (meshMaterialsOnly)
+            return DumpMeshMaterials(provider, meshDir ?? "assets/meshes", textureSize);
 
         var maps = provider.Files.Keys
             .Where(k => k.EndsWith(".umap", StringComparison.OrdinalIgnoreCase))
@@ -660,6 +667,153 @@ internal static class Program
         return AlbedoHints.Any(h => low.EndsWith(h) || low.Contains(h + "_"));
     }
 
+
+    // ---------------------------------------------------------------- mesh-materiaalit
+
+    /// Selvittaa jokaiselle viedylle meshille sen materiaalien varitekstuurit ja
+    /// sekoitustilan.
+    ///
+    /// Tarvitaan koska CUE4Parsen glTF-kirjoitin antaa jokaiselle materiaalille vain
+    /// valkoisen perusvarin ilman tekstuureja (Gltf.cs: WithBaseColor(Vector4.One)).
+    /// Ilman tata kaikki renderoityy valkoisena, ja alfamaskatuista lehtikorteista
+    /// tulee umpinaisia valkoisia suorakaiteita - metsasta tulee lunta.
+    private static int DumpMeshMaterials(DefaultFileProvider provider, string meshDir, int maxSize)
+    {
+        var listPath = Path.Combine(_out, "meshes_needed.txt");
+        if (!File.Exists(listPath))
+        {
+            Console.Error.WriteLine($"{listPath} puuttuu - aja taysi purku ensin.");
+            return 1;
+        }
+
+        var texDir = Path.Combine(meshDir, "_textures");
+        Directory.CreateDirectory(texDir);
+
+        var meshes = File.ReadAllLines(listPath)
+            .Where(l => !string.IsNullOrWhiteSpace(l))
+            .Where(n => !n.Contains("/HLOD/", StringComparison.OrdinalIgnoreCase)
+                        && !n.Contains("_HLOD", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        Console.WriteLine($"{meshes.Count} meshia, selvitetaan materiaalit (tekstuurit max {maxSize}px)");
+
+        var manifest = new Dictionary<string, List<MeshMaterialRec>>();
+        var dumped = new Dictionary<string, string?>();
+        int withTexture = 0, masked = 0, done = 0;
+
+        foreach (var meshPath in meshes)
+        {
+            UStaticMesh? mesh;
+            try
+            {
+                mesh = provider.LoadPackageObject<UStaticMesh>(meshPath.Split('.')[0]);
+            }
+            catch
+            {
+                continue;
+            }
+            if (mesh?.StaticMaterials == null || mesh.StaticMaterials.Length == 0) continue;
+
+            var slots = new List<MeshMaterialRec>();
+            foreach (var (staticMat, index) in mesh.StaticMaterials.Select((m, i) => (m, i)))
+            {
+                var rec = new MeshMaterialRec
+                {
+                    Index = index,
+                    Slot = staticMat.MaterialSlotName.Text ?? $"MaterialSlot_{index}",
+                    Blend = "BLEND_Opaque",
+                };
+
+                var material = staticMat.MaterialInterface?.Load<UMaterialInterface>();
+                if (material != null)
+                {
+                    var (file, blend, twoSided) = ResolveMaterial(material, texDir, maxSize, dumped);
+                    rec.Diffuse = file;
+                    rec.Blend = blend;
+                    rec.TwoSided = twoSided;
+                    if (file != null) withTexture++;
+                    if (blend == "BLEND_Masked") masked++;
+                }
+                slots.Add(rec);
+            }
+
+            manifest[meshPath] = slots;
+            if (++done % 250 == 0)
+                Console.WriteLine($"  {done}/{meshes.Count} (tekstuureja {dumped.Count})");
+        }
+
+        WriteJson(Path.Combine(_out, "mesh_materials.json"), manifest);
+        Console.WriteLine($"Valmis: {manifest.Count} meshia, {withTexture} materiaalislottia sai "
+                          + $"tekstuurin, {masked} maskattua, {dumped.Count} uniikkia tekstuuria.");
+        return 0;
+    }
+
+    /// Materiaalin varitekstuuri ja sekoitustila. CUE4Parsen CMaterialParams2 osaa
+    /// poimia diffusen sadoista eri nimeamiskaytannoista - omaa heuristiikkaa ei
+    /// kannata kirjoittaa sen rinnalle.
+    private static (string? file, string blend, bool twoSided) ResolveMaterial(
+        UMaterialInterface material, string dir, int maxSize, Dictionary<string, string?> cache)
+    {
+        var blend = "BLEND_Opaque";
+        var twoSided = false;
+        try
+        {
+            var p = new CMaterialParams2();
+            material.GetParams(p, EMaterialDepth.AllLayers);
+            blend = p.BlendMode.ToString();
+            twoSided = material.GetOrDefault("TwoSided", false);
+
+            UTexture? diffuse = null;
+            if (!p.TryGetTexture2d(out diffuse, CMaterialParams2.Diffuse[0]))
+            {
+                diffuse = p.GetTexturesByRegex(new Regex(CMaterialParams2.RegexDiffuse,
+                              RegexOptions.IgnoreCase)).OfType<UTexture>().FirstOrDefault()
+                          ?? (p.TryGetFirstTexture2d(out var first) ? first : null);
+            }
+            if (diffuse == null) return (null, blend, twoSided);
+
+            var key = diffuse.GetPathName();
+            if (!cache.TryGetValue(key, out var file))
+            {
+                file = DumpSmallTexture(diffuse, dir, maxSize);
+                cache[key] = file;
+            }
+            return (file, blend, twoSided);
+        }
+        catch
+        {
+            return (null, blend, twoSided);
+        }
+    }
+
+    /// Tekstuuri pienennettyna. Decode(maxMipSize) poimii valmiin mipin, eli 2048^2:ta
+    /// ei pureta turhaan. 0.465 m/px:lla kokonainen rakennus on noin 30 pikselia, joten
+    /// 256 px riittaa ylenpalttisesti ja pitaa Blenderin muistin kurissa.
+    private static string? DumpSmallTexture(UTexture tex, string dir, int maxSize)
+    {
+        try
+        {
+            var name = Sanitize(tex.Name);
+            if (File.Exists(Path.Combine(dir, name + ".raw"))) return name;
+
+            var bitmap = tex.Decode(maxSize);
+            if (bitmap == null) return null;
+
+            File.WriteAllBytes(Path.Combine(dir, name + ".raw"), bitmap.Data);
+            WriteJson(Path.Combine(dir, name + ".json"), new TextureMetaRec
+            {
+                Width = bitmap.Width,
+                Height = bitmap.Height,
+                PixelFormat = bitmap.PixelFormat.ToString(),
+                Source = tex.GetPathName(),
+            });
+            return name;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     // ---------------------------------------------------------------- apurit
 
     private static string? Arg(string[] a, string name)
@@ -752,6 +906,15 @@ internal static class Program
         public string Parameter { get; set; } = "";
         public string Texture { get; set; } = "";
         public string? File { get; set; }
+    }
+
+    private sealed class MeshMaterialRec
+    {
+        public int Index { get; set; }
+        public string Slot { get; set; } = "";
+        public string? Diffuse { get; set; }
+        public string Blend { get; set; } = "BLEND_Opaque";
+        public bool TwoSided { get; set; }
     }
 
     private sealed class MaterialScalarRec

@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import CONFIG, DUMP, WORK, load_raw_rgba  # noqa: E402
+from common import CONFIG, DUMP, WORK, raw_dir_to_png  # noqa: E402
 
 # Vain varitekstuurit kelpaavat. Normaalikartat ja maskit pilaisivat albedon taysin.
 ALBEDO_HINTS = ("_d", "_bc", "_alb", "albedo", "basecolor", "base_color", "diffuse", "_col")
@@ -85,31 +85,6 @@ def guess_tiling(layer: str, scalars: list[dict]) -> tuple[float, str | None]:
     return (best or DEFAULT_TILING_M), best_name
 
 
-def raw_to_png(tex_dir: Path) -> int:
-    """Muuntaa purun raakatekstuurit PNG:ksi.
-
-    Purku kirjoittaa kaiken raakana, koska silloin kanavajarjestys sailyy
-    todennettavana. ground_albedo.py taas lukee tavallisia kuvatiedostoja, joten
-    muunnos tehdaan tassa - kerran, ja vain varitekstuureille.
-    """
-    from PIL import Image
-
-    made = 0
-    for meta_path in sorted(tex_dir.glob("*.json")):
-        stem = meta_path.with_suffix("")
-        png = stem.with_suffix(".png")
-        if png.exists() or not stem.with_suffix(".raw").exists():
-            continue
-        try:
-            rgba, _ = load_raw_rgba(stem)
-        except SystemExit as e:
-            print(f"  {stem.name}: {str(e).splitlines()[0]}")
-            continue
-        Image.fromarray(rgba[:, :, :3]).save(png)
-        made += 1
-    return made
-
-
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--texture-dir", default="assets/landscape",
@@ -147,7 +122,7 @@ def main() -> int:
 
     tex_dir = Path(args.texture_dir)
     if tex_dir.exists():
-        made = raw_to_png(tex_dir)
+        made = raw_dir_to_png(tex_dir, keep_alpha=False)
         if made:
             print(f"  {made} landscape-tekstuuria muunnettu PNG:ksi")
     result = {
