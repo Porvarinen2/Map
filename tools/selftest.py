@@ -178,6 +178,33 @@ def main() -> int:
         assert (n_static, n_foliage) == (1, 5000), (n_static, n_foliage)
         print(f"  kanta: {n_static} staattinen, {n_foliage} kasvi-instanssia")
 
+        # Tiilipyramidi PIL-reitilla (ilman libvipsia) suoraan "renderoiduista" tiilista.
+        render_dir = out / "tiles"
+        render_dir.mkdir(parents=True, exist_ok=True)
+        for t in tiles:
+            shutil.copy(t, render_dir / t.name.replace("ground_", "tile_"))
+        run("pipeline/04_output/make_tiles.py", "--backend", "pil", env=env)
+
+        web = out / "web"
+        meta = json.loads((web / "map.json").read_text())
+        assert meta["maxZoom"] == 2, meta["maxZoom"]
+        for z, n in ((2, 4), (1, 2), (0, 1)):
+            got = len(list((web / "tiles" / str(z)).glob("*/*.jpg")))
+            assert got == n * n, f"z{z}: {got} != {n * n}"
+        top = np.asarray(Image.open(web / "tiles" / "0" / "0" / "0.jpg"))
+        assert top.shape == (256, 256, 3), top.shape
+        assert (web / "index.html").exists(), "katselin ei kopioitunut"
+        print(f"  tiilipyramidi: maxZoom {meta['maxZoom']}, tasot 0-2 taydet")
+
+        # Orkestroijan kuiva-ajo: kaikki vaiheet ja skriptit ovat olemassa.
+        r = subprocess.run(
+            [sys.executable, str(REPO / "tools" / "run_pipeline.py"), "--check", "--yes"],
+            capture_output=True, text=True, env=env)
+        assert r.returncode == 0, r.stdout + r.stderr
+        for stage in ("extract", "landscape", "ground", "render", "web"):
+            assert f"[{stage}]" in r.stdout, f"vaihe {stage} puuttuu kuiva-ajosta"
+        print("  orkestroijan kuiva-ajo lapi")
+
         # Koordinaattimuunnoksen edestakaisuus.
         from common import World
         w = World.load(cfg)

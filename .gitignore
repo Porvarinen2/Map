@@ -16,8 +16,15 @@ assets/
 *.sqlite
 *.db
 
+# Paikalliset asetukset sisaltavat AES-avaimen ja koneen polut
+config/settings.ini
+config/world.json
+config/layers.json
+config/landmarks.json
+
 __pycache__/
 *.pyc
 .venv/
+tools/CUE4Parse/
 bin/
 obj/

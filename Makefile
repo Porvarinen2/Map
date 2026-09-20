@@ -1,5 +1,8 @@
 # SCUM 32K ortokartta - ajojarjestys.
 #
+# Windowsissa ei tarvita makea: aja RUN_ALL.bat, joka tekee kaiken taman
+# automaattisesti (tools/run_pipeline.py). Tama Makefile on Linux/mac-polku.
+#
 #   make selftest                       tarkista putki ilman pelidataa
 #   make extract PAKS="D:/.../Paks" AES=0x...
 #   make landscape verify               korkeuskartta + koordinaattitarkistus
@@ -20,9 +23,14 @@ GRID    ?= 16
 ENGINE  ?= cycles
 SAMPLES ?= 256
 
-.PHONY: all selftest extract landscape verify ground ground-flat library scene render stitch web clean
+.PHONY: all auto selftest extract landscape verify layers ground ground-flat \
+        library scene render stitch web clean
 
-all: landscape verify ground library scene render stitch web
+all: landscape verify layers ground library scene render stitch web
+
+# Sama kuin RUN_ALL.bat: ajaa kaiken ja jatkaa keskeytyneesta kohdasta.
+auto:
+	$(PY) tools/run_pipeline.py
 
 selftest:
 	$(PY) tools/selftest.py
@@ -31,7 +39,9 @@ selftest:
 extract:
 	@test -n "$(PAKS)" || (echo "Anna PAKS=<polku SCUM/Content/Paks>"; exit 1)
 	cd pipeline/00_extract/DumpWorld && dotnet run -c Release -- \
-		--paks "$(PAKS)" --aes "$(AES)" --game $(GAME) --out "$(CURDIR)/dump"
+		--paks "$(PAKS)" --aes "$(AES)" --game $(GAME) --out "$(CURDIR)/dump" \
+		--meshes "$(CURDIR)/assets/meshes" \
+		--landscape-textures "$(CURDIR)/assets/landscape"
 
 ## --- B: maasto ja maailman rajat ---
 landscape:
@@ -42,6 +52,10 @@ verify:
 	$(PY) pipeline/02_scene/verify_landmarks.py --draw work/heightmap_u16.png
 
 ## --- C: maanpinnan albedo ---
+# layers = arvaa config/layers.json materiaalin tekstuureista (viilaa kasin jalkeenpain)
+layers:
+	$(PY) pipeline/01_landscape/guess_layers.py --texture-dir assets/landscape
+
 # ground      = valmis kartta katsottavaksi (reliefivarjostus mukana)
 # ground-flat = Blenderin syote (ei varjostusta - valo tulee renderissa auringosta)
 ground: ground-flat

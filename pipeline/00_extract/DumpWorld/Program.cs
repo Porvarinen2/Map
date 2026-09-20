@@ -1,14 +1,19 @@
-// Vaihe A: purkaa SCUMin .pak-tiedostoista vain sen datan jota kartanteko tarvitsee.
+// Vaihe A: purkaa SCUMin .pak-tiedostoista kaiken sen datan jota kartanteko tarvitsee -
+// mukaan lukien meshit, joten FModelia ei tarvita lainkaan eika putkessa ole yhtaan
+// kasin tehtavaa valivaihetta.
 //
-// Miksi oma tyokalu eika pelkka FModel:
+// Miksi oma tyokalu eika FModel:
 //   1) Landscapen heightmap/weightmap-tekstuurit on saatava ulos BITTITARKKOINA.
 //      FModelin normaali PNG-vienti ajaa ne sRGB-muunnoksen lapi, jolloin 16-bittinen
 //      korkeus (R*256+G) korruptoituu eika maasto tule ikina oikein.
 //   2) Kasvillisuuden PerInstanceSMData on binaaridataa jota JSON-vienti ei anna.
-//   3) Kaytto: kymmenettuhannet actorit halutaan tiiviina taulukkona, ei GB:n JSON-vuorena.
+//   3) Kymmenettuhannet actorit halutaan tiiviina taulukkona, ei GB:n JSON-vuorena.
+//   4) Meshien vienti osataan tehda samalla ajolla vain niille mesheille jotka
+//      oikeasti esiintyvat kartalla - ei koko pelin sisallolle.
 //
 // Kaytto:
-//   dotnet run -c Release -- --paks "C:\...\SCUM\Content\Paks" --aes 0x<avain> --out ..\..\..\dump
+//   dotnet run -c Release -- --paks "C:\...\SCUM\Content\Paks" --aes 0x<avain>
+//                            --out ..\..\..\dump --meshes ..\..\..\assets\meshes
 //
 // HUOM CUE4Parse-API elaa: uudemmissa versioissa provider.Initialize() on Mount(),
 // ja DefaultFileProvider-konstruktorista on poistunut isCaseInsensitive-parametri.
@@ -16,6 +21,10 @@
 
 using System.Text;
 using CUE4Parse.Encryption.Aes;
+using CUE4Parse.UE4.Assets.Exports.Material;
+using CUE4Parse.UE4.Assets.Exports.StaticMesh;
+using CUE4Parse_Conversion;
+using CUE4Parse_Conversion.Meshes;
 using CUE4Parse.FileProvider;
 using CUE4Parse.UE4.Assets.Exports;
 using CUE4Parse.UE4.Assets.Exports.Component.StaticMesh;
@@ -35,6 +44,7 @@ internal static class Program
     private static string _out = "dump";
     private static readonly HashSet<string> DumpedTextures = new();
     private static readonly HashSet<string> NeededMeshes = new();
+    private static FPackageIndex _landscapeMaterial;
 
     private static int Main(string[] args)
     {
@@ -42,11 +52,15 @@ internal static class Program
         string aes = Arg(args, "--aes") ?? "";
         _out = Arg(args, "--out") ?? "dump";
         string gameName = Arg(args, "--game") ?? "GAME_UE4_27";
-        string filter = Arg(args, "--filter");   // esim. "Maps/" jos halutaan rajata
+        string filter = Arg(args, "--filter");     // esim. "Maps/" jos halutaan rajata
+        string meshDir = Arg(args, "--meshes");    // jos annettu, meshit viedaan glTF:na
+        string landDir = Arg(args, "--landscape-textures");
 
         if (paks == null)
         {
-            Console.Error.WriteLine("Kaytto: --paks <polku> [--aes 0x..] [--out dump] [--game GAME_UE4_27] [--filter Maps/]");
+            Console.Error.WriteLine(
+                "Kaytto: --paks <polku> [--aes 0x..] [--out dump] [--game GAME_UE4_27]\n"
+                + "        [--filter Maps/] [--meshes <dir>] [--landscape-textures <dir>]");
             return 1;
         }
 
@@ -107,6 +121,7 @@ internal static class Program
                     case "Landscape":
                     case "LandscapeStreamingProxy":
                         landscapeActors.Add(ReadActorTransform(export, levelName));
+                        _landscapeMaterial ??= export.GetOrDefault<FPackageIndex>("LandscapeMaterial");
                         break;
                 }
 
@@ -136,13 +151,16 @@ internal static class Program
         WriteJson(Path.Combine(_out, "landscape", "components.json"), landscape);
         WriteJson(Path.Combine(_out, "landscape", "actors.json"), landscapeActors);
 
-        // Lista meshista jotka oikeasti nakyvat kartalla -> FModelissa viedaan vain nama,
-        // ei koko pelin sisaltoa.
         File.WriteAllLines(Path.Combine(_out, "meshes_needed.txt"), NeededMeshes.OrderBy(x => x));
 
-        Console.WriteLine($"Valmis. {landscape.Count} landscape-komponenttia, "
+        DumpLandscapeMaterial(landDir);
+
+        Console.WriteLine($"Purettu: {landscape.Count} landscape-komponenttia, "
                           + $"{DumpedTextures.Count} tekstuuria, {NeededMeshes.Count} uniikkia meshia.");
-        Console.WriteLine($"Seuraavaksi: vie dump/meshes_needed.txt:n meshit FModelista glTF:na kansioon assets/meshes.");
+
+        if (meshDir != null)
+            ExportMeshes(provider, meshDir);
+
         return 0;
     }
 
@@ -316,6 +334,135 @@ internal static class Program
             Loc = new[] { loc.X, loc.Y, loc.Z },
             Scale = new[] { scale.X, scale.Y, scale.Z },
         };
+    }
+
+
+    // ---------------------------------------------------------------- meshien vienti
+
+    /// Vie kartalla esiintyvat meshit glTF:na. Vain nama - koko pelin sisallon vienti
+    /// olisi kymmenia gigatavuja ja tunteja, ja 99 % siita ei nay ylhaalta koskaan.
+    private static void ExportMeshes(DefaultFileProvider provider, string dir)
+    {
+        Directory.CreateDirectory(dir);
+        var options = new ExporterOptions
+        {
+            MeshFormat = EMeshFormat.Gltf2,
+            LodFormat = ELodFormat.FirstLod,     // LOD0 riittaa: kamera on ortokamera
+            ExportMaterials = true,
+            Platform = ETexturePlatform.DesktopMobile,
+        };
+
+        int ok = 0, fail = 0, skip = 0;
+        var todo = NeededMeshes.OrderBy(x => x).ToList();
+        Console.WriteLine($"Viedaan {todo.Count} meshia -> {dir}");
+
+        foreach (var (path, i) in todo.Select((p, i) => (p, i)))
+        {
+            // Jatkettavuus: jo viedyt ohitetaan, jotta keskeytynyt ajo ei ala alusta.
+            var rel = path.Split('.')[0].TrimStart('/');
+            if (File.Exists(Path.Combine(dir, rel + ".gltf")))
+            {
+                skip++;
+                continue;
+            }
+
+            try
+            {
+                var mesh = provider.LoadObject<UStaticMesh>(path.Split('.')[0]);
+                if (mesh == null) { fail++; continue; }
+
+                var exporter = new MeshExporter(mesh, options);
+                if (exporter.TryWriteToDir(new DirectoryInfo(dir), out _, out _)) ok++;
+                else fail++;
+            }
+            catch (Exception e)                                       // puuttuva mesh ei
+            {                                                         // kaada koko ajoa
+                if (fail < 10) Console.Error.WriteLine($"  {rel}: {e.Message}");
+                fail++;
+            }
+
+            if ((i + 1) % 250 == 0)
+                Console.WriteLine($"  {i + 1}/{todo.Count} (ok {ok}, ohitettu {skip}, virhe {fail})");
+        }
+
+        Console.WriteLine($"Meshit valmiit: {ok} vietu, {skip} oli jo, {fail} epaonnistui.");
+    }
+
+    // ---------------------------------------------------------------- landscape-materiaali
+
+    /// Kirjoittaa landscape-materiaalin tekstuuriparametrit ja vie tekstuurit PNG:na.
+    /// Naiden avulla guess_layers.py osaa yhdistaa layer-nimen oikeaan maa-aineksen
+    /// tekstuuriin, jolloin kartan varit tulevat pelista eivatka varivareista.
+    private static void DumpLandscapeMaterial(string textureDir)
+    {
+        if (_landscapeMaterial == null || _landscapeMaterial.IsNull)
+        {
+            Console.WriteLine("Landscape-materiaalia ei loytynyt - layer-varit arvataan nimista.");
+            return;
+        }
+
+        var mat = _landscapeMaterial.Load<UMaterialInterface>();
+        if (mat == null) return;
+
+        var entries = new List<object>();
+        var textures = mat.GetOrDefault<FStructFallback[]>("TextureParameterValues")
+                       ?? Array.Empty<FStructFallback>();
+
+        foreach (var tp in textures)
+        {
+            var info = tp.GetOrDefault<FStructFallback>("ParameterInfo");
+            var name = info?.GetOrDefault<FName>("Name").Text ?? "?";
+            var texIdx = tp.GetOrDefault<FPackageIndex>("ParameterValue");
+            var texPath = texIdx?.ResolvedObject?.GetPathName();
+            if (texPath == null) continue;
+
+            string file = null;
+            if (textureDir != null)
+                file = ExportTexturePng(texIdx, textureDir);
+
+            entries.Add(new { parameter = name, texture = texPath, file });
+        }
+
+        var scalars = mat.GetOrDefault<FStructFallback[]>("ScalarParameterValues")
+                      ?? Array.Empty<FStructFallback>();
+        var tiling = scalars.Select(sp => new
+        {
+            parameter = sp.GetOrDefault<FStructFallback>("ParameterInfo")
+                          ?.GetOrDefault<FName>("Name").Text ?? "?",
+            value = sp.GetOrDefault("ParameterValue", 0f),
+        }).ToArray();
+
+        WriteJson(Path.Combine(_out, "landscape", "material.json"), new
+        {
+            material = mat.GetPathName(),
+            textures = entries,
+            scalars = tiling,
+        });
+        Console.WriteLine($"Landscape-materiaali: {entries.Count} tekstuuria, {tiling.Length} skalaaria.");
+    }
+
+    private static string ExportTexturePng(FPackageIndex idx, string dir)
+    {
+        try
+        {
+            var tex = idx.Load<UTexture2D>();
+            if (tex == null) return null;
+            Directory.CreateDirectory(dir);
+            var name = Sanitize(tex.Name) + ".png";
+            var path = Path.Combine(dir, name);
+            if (File.Exists(path)) return name;
+
+            using var bmp = tex.Decode();
+            if (bmp == null) return null;
+            using var data = bmp.Encode(SKEncodedImageFormat.Png, 100);
+            File.WriteAllBytes(path, data.ToArray());
+            return name;
+        }
+        catch (Exception e)                                           // noqa
+        {
+            Console.Error.WriteLine($"  landscape-tekstuuri: {e.Message}");
+            return null;
+        }
     }
 
     // ---------------------------------------------------------------- apurit
