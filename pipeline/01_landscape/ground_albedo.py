@@ -44,14 +44,14 @@ def bilinear(src: np.ndarray, x: np.ndarray, y: np.ndarray) -> np.ndarray:
     return top + (bot - top) * fy
 
 
-# Maa-aineksen tiilitys on kaytannossa metrista muutamaan kymmeneen metriin.
-# Naiden ulkopuoliset arvot eivat ole tiilityksia vaan vaarin tunnistettuja
-# materiaaliparametreja - ja ilman rajausta ne kaatavat ajon muistinvaraukseen.
-TILING_MIN_M = 0.25
-TILING_MAX_M = 512.0
-# 0.465 m/px:lla 1024 texelia on 476 m maastoa, eli mikaan todellinen tiilitys ei
-# ylita tata. Viimeinen varmistus muistinkayton ylarajalle.
-TARGET_MAX_PX = 1024
+# Maa-aineksen tiilitys on kaytannossa 1-8 metria. Iso tiilitys nakyy 0.465 m/px:lla
+# toistuvana valokuvana: 100 m tiilitys toistuu 215 pikselin valein, eli silmaan
+# osuvana ruudukkona. Juuri sita tama haarukka estaa.
+TILING_MIN_M = 0.5
+TILING_MAX_M = 16.0
+# Ylaraja tekstuurin sivulle. 16 m tiilitys on 0.465 m/px:lla 34 pikselia, joten
+# tama on pelkka varmistus eika koskaan pure normaalisti.
+TARGET_MAX_PX = 256
 
 
 def clamp_tiling(value, name: str = "") -> float:

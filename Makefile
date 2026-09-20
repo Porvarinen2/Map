@@ -3,7 +3,8 @@
 # Windowsissa ei tarvita makea: aja RUN_ALL.bat, joka tekee kaiken taman
 # automaattisesti (tools/run_pipeline.py). Tama Makefile on Linux/mac-polku.
 #
-#   make selftest                       tarkista putki ilman pelidataa
+#   make selftest                       tarkista Python-putki ilman pelidataa
+#   make blendertest                    aja oikea Blender-render ja tarkista pikselit
 #   make extract PAKS="D:/.../Paks" AES=0x...
 #   make landscape verify               korkeuskartta + koordinaattitarkistus
 #   make ground                         M2: 32K maanpinta ilman objekteja
@@ -34,6 +35,12 @@ auto:
 
 selftest:
 	$(PY) tools/selftest.py
+
+# Ajaa OIKEAN Blender-renderoinnin synteettisella maailmalla ja tarkistaa
+# lopputuloksen pikseleista. Ilman tata Blender-koodi kirjoitetaan sokkona ja
+# bugit loytyvat vasta oikeasta ajosta.
+blendertest:
+	$(PY) tools/blender_selftest.py --blender $(BLENDER)
 
 ## --- A: purku (vaatii Windowsin ja pelin paketit) ---
 extract:

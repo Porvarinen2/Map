@@ -222,9 +222,11 @@ def main() -> int:
         layers_cfg = json.loads((conf / "layers.json").read_text())
         assert "Lowland" in layers_cfg and "Highland" in layers_cfg, layers_cfg
         assert layers_cfg["Lowland"]["texture"].endswith("T_Lowland_D.png"), layers_cfg["Lowland"]
-        assert layers_cfg["Lowland"]["tiling_m"] == 6.0, layers_cfg["Lowland"]
+        # Tiilitys on kiintea: materiaalin skalaareista arvaaminen tuotti kartalle
+        # toistuvan valokuvakuvion, joten se hylattiin.
+        assert layers_cfg["Lowland"]["tiling_m"] == 4.0, layers_cfg["Lowland"]
         assert (land_dir / "T_Lowland_D.png").exists(), "raaka -> PNG muunnos puuttuu"
-        print("  layer-tekstuurit yhdistetty nimien perusteella, tiilitys materiaalista")
+        print("  layer-tekstuurit yhdistetty nimien perusteella, tiilitys kiintea")
 
         run("pipeline/01_landscape/ground_albedo.py", "--hillshade", "0.4", env=env)
 

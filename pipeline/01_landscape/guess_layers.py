@@ -60,29 +60,23 @@ def score(layer: str, cand: str) -> float:
     return len(shared) / len(a | b)
 
 
-def guess_tiling(layer: str, scalars: list[dict]) -> tuple[float, str | None]:
-    """Etsi layerin tiilitysskalaari materiaalista.
+def layer_tiling(layer: str) -> float:
+    """Maa-aineksen tiilitys metreina.
 
-    UE:n landscape-materiaaleissa tiilitys ilmaistaan joko metreina tai kaanteislukuna,
-    eika nimesta voi paatella kumpi. Yli yhden arvot tulkitaan metreiksi ja alle yhden
-    kaanteisluvuiksi - vaara arvaus nakyy vain tekstuurin karkeudessa, ei sijainnissa.
+    Materiaalin skalaareista arvaaminen hylattiin: se osui kahdesti pahasti pieleen.
+    Ensin se tuotti 33 km:n arvon joka kaatoi ajon muistinvaraukseen, sitten kymmenia
+    metreja, mika nakyi kartalla toistuvana valokuvana - juuri sina "tekstuurina
+    esittamassa maastoa" jota ei haluta.
+
+    Kiintea 4 m on 0.465 m/px:lla 8.6 pikselia. Laatikkosuodatettuna se on kaytannossa
+    layerin keskivari hienolla kohinalla, eli ei mitaan silmaan osuvaa kuviota. Niin
+    kuuluukin: tassa mittakaavassa maan yksityiskohdat ovat alle pikselin, ja kartan
+    ilme tulee puista eika maan tekstuurista.
+
+    Kayttaja voi yha asettaa layers.jsoniin oman arvon, jolloin sita kaytetaan.
     """
-    best, best_name = None, None
-    for s in scalars:
-        name = s.get("parameter", "")
-        if score(layer, name) <= 0:
-            continue
-        if not any(k in name.lower() for k in ("tile", "tiling", "scale", "uv", "size")):
-            continue
-        v = float(s.get("value", 0) or 0)
-        if v <= 0:
-            continue
-        candidate = v if v > 1.0 else 1.0 / v
-        if not (TILING_MIN_M <= candidate <= TILING_MAX_M):
-            continue                      # ei tiilitys vaan jokin muu parametri
-        best, best_name = candidate, name
-        break
-    return (best or DEFAULT_TILING_M), best_name
+    del layer
+    return DEFAULT_TILING_M
 
 
 def main() -> int:
@@ -118,7 +112,7 @@ def main() -> int:
 
     tex_entries = [t for t in (norm(x) for x in mat.get("Textures", mat.get("textures", [])))
                    if t.get("file") and is_albedo(t.get("parameter", ""))]
-    scalars = [norm(x) for x in mat.get("Scalars", mat.get("scalars", []))]
+
 
     tex_dir = Path(args.texture_dir)
     if tex_dir.exists():
@@ -134,8 +128,7 @@ def main() -> int:
 
     matched = 0
     for layer in sorted(layers):
-        tiling, tiling_src = guess_tiling(layer, scalars)
-        spec: dict = {"tiling_m": round(tiling, 3)}
+        spec: dict = {"tiling_m": layer_tiling(layer)}
 
         if layer in direct:
             spec["texture"] = str(tex_dir / (direct[layer] + ".png")).replace("\\", "/")
@@ -157,9 +150,6 @@ def main() -> int:
                 note = f"-> {best['file']} ({best_score:.2f})"
             else:
                 note = "-> ei tekstuuriosumaa, kaytetaan varivaria"
-        if tiling_src:
-            spec["_guess"] = {**spec.get("_guess", {}), "tiling_from": tiling_src}
-
         result[layer] = spec
         print(f"  {layer:<28} {note}")
 

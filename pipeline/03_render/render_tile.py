@@ -32,10 +32,10 @@ UU = 0.01  # Unreal-yksikko metreina
 # Tasot on viritetty kohti pelin oman kartan ilmetta: tumma kylla metsa, ei pesty.
 SUN_AZIMUTH = 315.0
 SUN_ELEVATION = 60.0
-SUN_STRENGTH = 2.4
+SUN_STRENGTH = 3.2
 SUN_ANGLE_DEG = 1.5      # pehmea mutta luettava varjonreuna
 WORLD_FILL = (0.32, 0.36, 0.42)
-WORLD_STRENGTH = 0.35
+WORLD_STRENGTH = 0.5
 
 
 # ---------------------------------------------------------------- argumentit

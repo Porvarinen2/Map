@@ -157,9 +157,9 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--min-px", type=float, default=2.0,
                     help="pudota objektit jotka jaavat tata pienemmiksi lopullisessa kuvassa")
-    ap.add_argument("--min-px-foliage", type=float, default=8.0,
-                    help="kasvillisuuden oma kynnys: heinat eivat tuota mitaan "
-                         "tassa mittakaavassa mutta maksavat valtavasti")
+    ap.add_argument("--min-px-foliage", type=float, default=3.0,
+                    help="kasvillisuuden oma kynnys. Heinat karsiutuvat, mutta pensaat "
+                         "ja pienet puut jaavat - juuri ne tekevat metsasta metsan")
     ap.add_argument("--mesh-bounds", default=str(WORK / "mesh_bounds.json"))
     ap.add_argument("--db", default=str(WORK / "scene.sqlite"))
     args = ap.parse_args()
