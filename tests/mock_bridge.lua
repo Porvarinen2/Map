@@ -1,0 +1,110 @@
+-- Stand-in for bridge/scum.lua used by the world simulation test.
+-- It behaves like a cooperative-but-imperfect engine: spawns can fail, move
+-- requests are sometimes rejected, and actors move with turn-rate limits.
+local U = require("core.util")
+local Grid = require("world.navgrid")
+local Actor = require("mock_actor")
+
+local B = { health = {}, actors = {}, next = 1, players = {},
+            spawn_fail_rate = 0.05, move_reject_rate = 0.05,
+            stats = { spawns = 0, fails = 0, moves = 0, rejects = 0, despawns = 0 } }
+
+function B.configure(rng, opts)
+    B.rng = rng
+    opts = opts or {}
+    B.spawn_fail_rate = opts.spawn_fail_rate or B.spawn_fail_rate
+    B.move_reject_rate = opts.move_reject_rate or B.move_reject_rate
+    B.class_available = opts.class_available ~= false
+end
+
+function B.available() return true end
+function B.player_positions() return B.players end
+
+function B.spawn_npc(req)
+    if not B.class_available then return nil, "NPC_CLASS_UNAVAILABLE" end
+    if B.rng:float() < B.spawn_fail_rate then
+        B.stats.fails = B.stats.fails + 1
+        return nil, "SPAWN_FAILED"
+    end
+    local h = B.next
+    B.next = h + 1
+    B.actors[h] = Actor.new(req.position, { rng = B.rng, speed = 400,
+                                            reject_rate = B.move_reject_rate })
+    B.actors[h].npcId = req.npcId
+    B.actors[h].alive = true
+    B.stats.spawns = B.stats.spawns + 1
+    return h
+end
+
+function B.despawn(h)
+    if B.actors[h] then B.stats.despawns = B.stats.despawns + 1 end
+    B.actors[h] = nil
+    return true
+end
+
+function B.actor_position(h)
+    local a = B.actors[h]
+    return a and U.copy_vec(a.pos) or nil
+end
+
+function B.is_alive(h)
+    local a = B.actors[h]
+    return a ~= nil and a.alive
+end
+
+function B.actor_health(h)
+    local a = B.actors[h]
+    return a and (a.hp or 100) or nil
+end
+
+function B.move_to(h, dest)
+    local a = B.actors[h]
+    if not a then return false end
+    local ok = a:command(dest)
+    if ok then B.stats.moves = B.stats.moves + 1 else B.stats.rejects = B.stats.rejects + 1 end
+    return ok
+end
+
+function B.stop(h)
+    local a = B.actors[h]
+    if a then a.target = nil end
+    return true
+end
+
+function B.set_speed(h, v)
+    local a = B.actors[h]
+    if a then a.speed = v end
+    return true
+end
+
+function B.ground_at(pos) return pos.Z end
+function B.nearby_zombies() return 0 end
+function B.find_buildings() return nil end
+function B.aim_at() return true end
+function B.start_fire() return true end
+function B.stop_fire() return true end
+B.owned = 0
+function B.take_ownership(h)
+    if B.actors[h] then B.owned = B.owned + 1; return true end
+    return false
+end
+
+-- Advance every spawned actor by dt seconds.
+function B.step(dt)
+    local sub = 0.25
+    local n = math.max(1, math.floor(dt / sub))
+    for _ = 1, n do
+        for _, a in pairs(B.actors) do
+            if a.alive then a:step(sub) end
+        end
+    end
+end
+
+function B.reset()
+    B.actors = {}
+    B.owned = 0
+    B.next = 1
+    B.stats = { spawns = 0, fails = 0, moves = 0, rejects = 0, despawns = 0 }
+end
+
+return B

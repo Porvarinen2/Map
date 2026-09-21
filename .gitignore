@@ -1,0 +1,8 @@
+build/
+dist/
+package/livemap/livemap_paths.txt
+package/livemap/map/tiles/
+package/mod/TeslesNPCOverhaul/output/*
+package/mod/TeslesNPCOverhaul/state/*
+!package/mod/TeslesNPCOverhaul/output/.keep
+!package/mod/TeslesNPCOverhaul/state/.keep

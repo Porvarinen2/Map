@@ -1,0 +1,111 @@
+-- Point-of-interest queries. POIs are generated from the map image
+-- (settlements, wilderness, shoreline, junctions) plus hand-verified
+-- landmarks, and carry a kind that group classes weight differently.
+local U = require("core.util")
+local Grid = require("world.navgrid")
+
+local P = {}
+local data = require("world.poi_data")
+
+P.points = {}
+P.by_id = {}
+P.by_kind = {}
+P.by_sector = {}
+
+for _, p in ipairs(data.points) do
+    local poi = {
+        id = p.id, label = p.label, sector = p.sector, kind = p.kind,
+        pos = { X = p.x, Y = p.y, Z = 0 },
+        weight = p.weight or 1.0,
+        radius = p.radius or 9000,
+    }
+    -- A few landmarks (a naval base, coastal bunkers) sit on a nav cell the
+    -- coarse grid calls water. Snap them ashore so nothing is ever sent to a
+    -- destination it cannot legally stand on.
+    if not Grid.is_passable(poi.pos) then
+        local snapped = Grid.snap_to_land(poi.pos)
+        if snapped then
+            poi.pos = snapped
+            poi.snapped = true
+        end
+    end
+    poi.landmass = Grid.landmass_at(poi.pos)
+    P.points[#P.points + 1] = poi
+    P.by_id[poi.id] = poi
+    P.by_kind[poi.kind] = P.by_kind[poi.kind] or {}
+    table.insert(P.by_kind[poi.kind], poi)
+    P.by_sector[poi.sector] = P.by_sector[poi.sector] or {}
+    table.insert(P.by_sector[poi.sector], poi)
+end
+
+P.count = #P.points
+
+-- Spatial buckets for nearest lookups.
+local BUCKET = 60000
+local buckets = {}
+for _, poi in ipairs(P.points) do
+    local k = math.floor(poi.pos.X / BUCKET) .. ":" .. math.floor(poi.pos.Y / BUCKET)
+    buckets[k] = buckets[k] or {}
+    table.insert(buckets[k], poi)
+end
+
+function P.kinds()
+    local out = {}
+    for k in pairs(P.by_kind) do out[#out + 1] = k end
+    table.sort(out)
+    return out
+end
+
+-- Weighted selection for a group: the class's POI weights, scaled down by
+-- distance and by how recently this group visited the place, so a squad does
+-- not keep circling the same village.
+function P.choose(opts)
+    local from = opts.from
+    local weights = opts.weights or {}
+    local visited = opts.visited or {}
+    local now = opts.now or os.time()
+    local rng = opts.rng
+    local min_d = opts.min_distance or 0
+    local max_d = opts.max_distance or math.huge
+    local mass = from and Grid.landmass_at(from) or nil
+    local exclude = opts.exclude
+    local allow = opts.allow
+
+    local pool = {}
+    for _, poi in ipairs(P.points) do
+        local w = weights[poi.kind]
+        if w and w > 0 then
+            local ok = true
+            if exclude and exclude(poi) then ok = false end
+            if ok and allow and not allow(poi) then ok = false end
+            if ok and mass and poi.landmass and poi.landmass ~= mass then ok = false end
+            if ok and opts.avoid_id and poi.id == opts.avoid_id then ok = false end
+            if ok then
+                local d = from and U.dist2d(from, poi.pos) or 1
+                if d >= min_d and d <= max_d then
+                    -- Distance falloff: reachable but not always the nearest.
+                    local dw = 1.0 / (1.0 + (d / 260000) ^ 1.45)
+                    local vis = visited[poi.id]
+                    local vw = 1.0
+                    if vis then
+                        local age = now - vis
+                        local memory = opts.visit_memory or 10800
+                        if age < memory then
+                            vw = 0.12 + 0.88 * (age / memory)
+                        end
+                    end
+                    pool[#pool + 1] = {
+                        poi = poi,
+                        weight = w * poi.weight * dw * vw
+                            * (opts.bias and opts.bias(poi) or 1.0),
+                    }
+                end
+            end
+        end
+    end
+    if #pool == 0 then return nil end
+    local pick = U.weighted_pick(pool, rng)
+    return pick and pick.poi or nil
+end
+
+return P

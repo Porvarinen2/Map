@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="fi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>TESLES NPC Overhaul - Live Map</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+
+  <div id="mapWrap">
+    <canvas id="map"></canvas>
+
+    <div class="hud" id="hudTop">
+      <div class="chip" id="chipLink">Yhdistetään…</div>
+      <div class="chip" id="chipPop">NPC – · Ryhmät –</div>
+      <div class="chip" id="chipPhys">Fyysisiä –</div>
+      <div class="chip ghost" id="chipTick">tick –</div>
+    </div>
+
+    <div class="hud" id="hudTools">
+      <button id="btnFit" title="Sovita koko kartta">Koko kartta</button>
+      <button id="btnRoutes" class="on" title="Näytä suunnitellut reitit">Reitit</button>
+      <button id="btnTrails" class="on" title="Näytä kuljetut jäljet">Jäljet</button>
+      <button id="btnLabels" title="Näytä ryhmien nimet">Nimet</button>
+      <button id="btnGrid" class="on" title="Näytä sektoriruudukko">Ruudukko</button>
+    </div>
+
+    <div class="hud" id="hudFoot">
+      <div id="legend"></div>
+      <div class="chip ghost" id="chipCoords">X – / Y – / –</div>
+    </div>
+
+    <div id="tip"></div>
+  </div>
+
+  <aside>
+    <header>
+      <h1>TESLES <span>NPC OVERHAUL</span><small id="verLabel">–</small></h1>
+      <div class="sub" id="subLabel">Pysyvä NPC-populaatio · virtuaalinen maailmansimulaatio</div>
+    </header>
+
+    <div class="tabs">
+      <button data-tab="world" class="on">Maailma</button>
+      <button data-tab="groups">Ryhmät</button>
+      <button data-tab="detail">Valittu</button>
+      <button data-tab="feed">Tapahtumat</button>
+    </div>
+
+    <div class="scroll" id="panel"></div>
+  </aside>
+
+</div>
+<script src="app.js"></script>
+</body>
+</html>
