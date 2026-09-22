@@ -233,6 +233,57 @@ if (Test-Path $sigFile) {
 Check (-not (Test-Path $sigFile)) "revert withdraws the signature override too"
 
 Write-Host ""
+Write-Host "== automatic FText signature =="
+
+# UE4SS stops when its own pattern for FText::FText(FString&&) is ambiguous.
+# -Auto resolves that from the server executable, and must refuse rather than
+# write an address it cannot stand behind.
+function New-FakeExe($dir, [byte[]]$plant, [long[]]$at) {
+  New-Item -ItemType Directory -Path $dir -Force | Out-Null
+  Set-Content (Join-Path $dir "UE4SS-settings.ini") `
+    "[General]`nSigScannerNumThreads = 8`nSecondsToScanBeforeGivingUp = 30"
+  $buf = New-Object byte[] 3000000
+  (New-Object Random 7).NextBytes($buf)
+  foreach ($o in $at) { [Array]::Copy($plant, 0, $buf, $o, $plant.Length) }
+  [System.IO.File]::WriteAllBytes((Join-Path $dir "SCUMServer.exe"), $buf)
+}
+
+$ftext = [byte[]]@(0x48,0x8B,0xC4,0x56,0x57,0x48,0x83,0xEC,0x68,0x48,0x89,0x58,0x18,0x48,0x8B,0xF9)
+$al = Join-Path ([System.IO.Path]::GetTempPath()) ("tesles_auto_" + [guid]::NewGuid().ToString("N"))
+
+$one = Join-Path $al "one"
+New-FakeExe $one $ftext @(900000L)
+& (Join-Path $pkg "FIX_UE4SS_SCAN.ps1") -Win64 $one -Auto | Out-Null
+$sig = Join-Path $one "UE4SS_Signatures\FText_Constructor.lua"
+Check (Test-Path $sig) "a single unambiguous match is written out"
+$sigText = Get-Content $sig -Raw
+Check ($sigText -match 'Register\s*=\s*function') "the file defines Register"
+Check ($sigText -match 'OnMatchFound\s*=\s*function') "the file defines OnMatchFound"
+Check ($sigText -match '48 8B C4 56 57 48 83 EC 68 48 89 58 18 48 8B F9') `
+      "it carries the longest candidate that matched"
+Check ($sigText -match 'file offset 0x') "it records where the match was found"
+
+# Two copies of the prologue: UE4SS's own failure mode, and no basis to pick.
+$two = Join-Path $al "two"
+New-FakeExe $two $ftext @(900000L, 1900000L)
+& (Join-Path $pkg "FIX_UE4SS_SCAN.ps1") -Win64 $two -Auto | Out-Null
+Check (-not (Test-Path (Join-Path $two "UE4SS_Signatures\FText_Constructor.lua"))) `
+      "an ambiguous executable is refused, not guessed at"
+
+# Nothing recognisable at all.
+$none = Join-Path $al "none"
+New-FakeExe $none $ftext @()
+$out = & (Join-Path $pkg "FIX_UE4SS_SCAN.ps1") -Win64 $none -Auto | Out-String
+Check (-not (Test-Path (Join-Path $none "UE4SS_Signatures\FText_Constructor.lua"))) `
+      "an executable with no known prologue is refused"
+
+# A written override is part of the same experiment and has to come back out.
+& (Join-Path $pkg "FIX_UE4SS_SCAN.ps1") -Win64 $one -Revert | Out-Null
+Check (-not (Test-Path $sig)) "-Revert withdraws the automatic signature"
+
+Remove-Item $al -Recurse -Force -ErrorAction SilentlyContinue
+
+Write-Host ""
 Write-Host "== health: scan in progress =="
 
 # A scan that has not finished is not a failure. With one thread and a raised

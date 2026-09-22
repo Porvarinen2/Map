@@ -58,7 +58,7 @@ function Get-UE4SSHealth {
                        (Get-Item $p).LastWriteTime.ToString("yyyy-MM-dd"))
     }
   }
-  foreach ($n in @(@("UE4SS.dll"), @("ue4ss", "UE4SS.dll"))) {
+  foreach ($n in @(@("ue4ss", "UE4SS.dll"), @("UE4SS.dll"))) {
     $p = $Win64; foreach ($seg in $n) { $p = Join-Path $p $seg }
     if (Test-Path $p) {
       $h.ue4ssDll = $p
@@ -66,7 +66,7 @@ function Get-UE4SSHealth {
       break
     }
   }
-  foreach ($n in @(@("UE4SS-settings.ini"), @("ue4ss", "UE4SS-settings.ini"))) {
+  foreach ($n in @(@("ue4ss", "UE4SS-settings.ini"), @("UE4SS-settings.ini"))) {
     $p = $Win64; foreach ($seg in $n) { $p = Join-Path $p $seg }
     if (Test-Path $p) { $h.settings = $p; break }
   }
@@ -79,7 +79,7 @@ function Get-UE4SSHealth {
     }
     $h.scanFixApplied = Test-Path ($h.settings + ".tesles-backup")
   }
-  foreach ($n in @(@("Mods"), @("ue4ss", "Mods"))) {
+  foreach ($n in @(@("ue4ss", "Mods"), @("Mods"))) {
     $p = $Win64; foreach ($seg in $n) { $p = Join-Path $p $seg }
     if (Test-Path $p) {
       $mt = Join-Path $p "mods.txt"
@@ -95,7 +95,7 @@ function Get-UE4SSHealth {
   # Pick the newest log, not the first one found: a stale log in the old
   # location is exactly what makes this hard to read.
   $logs = @()
-  foreach ($n in @(@("UE4SS.log"), @("ue4ss", "UE4SS.log"), @("Mods", "UE4SS.log"))) {
+  foreach ($n in @(@("ue4ss", "UE4SS.log"), @("UE4SS.log"), @("Mods", "UE4SS.log"))) {
     $p = $Win64; foreach ($seg in $n) { $p = Join-Path $p $seg }
     if (Test-Path $p) { $logs += (Get-Item $p) }
   }
@@ -274,24 +274,21 @@ function Get-UE4SSHealth {
     $h.action += "ei taman modin koodista."
     $h.action += ""
     $h.action += "Korjaus jarjestyksessa:"
-    if (($h.scanThreads -gt 1) -and -not $h.scanFixApplied) {
-      $h.action += ("  1. lisatyokalut\FIX_UE4SS_SCAN.bat  - skanneri kayttaa {0} saiketta." -f $h.scanThreads)
-      $h.action += "     Yksi saie kerrallaan voi poistaa moniselitteisyyden."
-      $h.action += "     Pelkka asetusmuutos, peruttavissa: lisatyokalut\FIX_UE4SS_SCAN.bat -Revert"
-      $h.action += "  2. lisatyokalut\UPDATE_UE4SS.bat  (hakee uusimman esijulkaisun)"
-      $h.action += "  3. Signature-ohitus, jos sinulla on oikea tavukuvio:"
-      $h.action += "     lisatyokalut\FIX_UE4SS_SCAN.bat -Signature FText_Constructor -Aob <tavukuvio>"
-    } elseif ($h.scanFixApplied) {
-      $h.action += "  1. Skannauskorjaus on kokeiltu eika se auttanut."
-      $h.action += "     Peru se, jotta kaynnistys ei hidastu turhaan:"
-      $h.action += "     lisatyokalut\FIX_UE4SS_SCAN.bat -Revert"
-      $h.action += "  2. lisatyokalut\UPDATE_UE4SS.bat  (hakee uusimman esijulkaisun)"
-      $h.action += "  3. Signature-ohitus, jos sinulla on oikea tavukuvio:"
-      $h.action += "     lisatyokalut\FIX_UE4SS_SCAN.bat -Signature FText_Constructor -Aob <tavukuvio>"
+    $h.action += "  1. INSTALL.bat  - asentaa paketin mukana tulevan uudemman"
+    $h.action += "     UE4SS:n. Tee tama ensin, jos et ole jo tehnyt."
+    $h.action += "  2. lisatyokalut\FIX_UE4SS_SCAN.bat -Auto"
+    if ($h.scanFailure -and $h.scanFailure -match "FText") {
+      $h.action += "     UE4SS kaatui juuri FText-kuvioon. -Auto etsii sen"
+      $h.action += "     suoraan SCUMServer.exe:sta ja kirjoittaa sen UE4SS:lle."
     } else {
-      $h.action += "  1. lisatyokalut\UPDATE_UE4SS.bat  (hakee uusimman esijulkaisun)"
-      $h.action += "  2. Signature-ohitus, jos sinulla on oikea tavukuvio:"
-      $h.action += "     lisatyokalut\FIX_UE4SS_SCAN.bat -Signature FText_Constructor -Aob <tavukuvio>"
+      $h.action += "     Etsii puuttuvan tavukuvion suoraan SCUMServer.exe:sta."
+    }
+    $h.action += "     Se kirjoittaa kuvion vain jos se on yksiselitteinen."
+    $h.action += "     Peruminen: lisatyokalut\FIX_UE4SS_SCAN.bat -Revert"
+    if ($h.scanFixApplied) {
+      $h.action += "  3. Saiekorjaus on jo kokeiltu eika se auttanut. Peru se,"
+      $h.action += "     jottei kaynnistys hidastu turhaan:"
+      $h.action += "     lisatyokalut\FIX_UE4SS_SCAN.bat -Revert"
     }
     if ($h.version) { $h.action += ("Asennettu nyt: {0}" -f $h.version) }
     if ($h.loaderDate) { $h.action += ("Lataajan paivays: {0}" -f $h.loaderDate) }

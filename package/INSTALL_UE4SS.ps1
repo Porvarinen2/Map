@@ -17,7 +17,8 @@ param(
   [switch]$Yes,            # skip the confirmation prompt
   [string]$ZipFile = "",   # install from an already downloaded zip instead
   [switch]$KeepSampleMods, # leave UE4SS's own bundled mods enabled
-  [switch]$Chained         # called from INSTALL.ps1: no next-step advice
+  [switch]$Chained,        # called from INSTALL.ps1: no next-step advice
+  [switch]$Online          # ignore the bundled build, fetch from GitHub
 )
 
 $ErrorActionPreference = "Stop"
@@ -67,7 +68,7 @@ try {
   # update actually replaced anything. "I updated it" and "the loader on disk
   # changed" are not the same claim.
   function Get-LoaderInfo($w) {
-    foreach ($n in @(@('UE4SS.dll'), @('ue4ss', 'UE4SS.dll'))) {
+    foreach ($n in @(@('ue4ss', 'UE4SS.dll'), @('UE4SS.dll'))) {
       $p = $w; foreach ($seg in $n) { $p = Join-Path $p $seg }
       if (Test-Path $p) {
         $f = Get-Item $p
@@ -94,6 +95,24 @@ try {
 
   $zip = $ZipFile
   $tag = "(paikallinen zip)"
+  # Only a zip this run downloaded into TEMP may be deleted afterwards. The
+  # bundled copy and a zip the user pointed at are theirs, not ours.
+  $zipIsTemp = $false
+
+  # The package ships a UE4SS build, so a clean server can be set up without a
+  # network and always gets the exact build this mod was tested against.
+  if (-not $zip -and -not $Online) {
+    $bundleDir = Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) 'ue4ss'
+    $bundle = Get-ChildItem -LiteralPath $bundleDir -Filter 'UE4SS_*.zip' `
+                            -ErrorAction SilentlyContinue |
+              Sort-Object Name -Descending | Select-Object -First 1
+    if ($bundle) {
+      $zip = $bundle.FullName
+      $tag = [IO.Path]::GetFileNameWithoutExtension($bundle.Name)
+      Say "Kaytetaan paketin mukana tullutta UE4SS:aa: $($bundle.Name)" "Cyan"
+      Say "Verkosta haku: lisatyokalut\INSTALL_UE4SS.bat -Force -Online" "DarkGray"
+    }
+  }
 
   if (-not $zip) {
     [Net.ServicePointManager]::SecurityProtocol =
@@ -166,6 +185,7 @@ try {
     }
 
     $zip = Join-Path ([System.IO.Path]::GetTempPath()) ("ue4ss_" + $asset.name)
+    $zipIsTemp = $true
     Say "Ladataan..."
     Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zip `
                       -Headers @{ "User-Agent" = "TeslesNPCOverhaul-Installer" } `
@@ -177,7 +197,8 @@ try {
     return
   }
   $hash = (Get-FileHash $zip -Algorithm SHA256).Hash
-  Say ("Ladattu: {0:N2} MB" -f ((Get-Item $zip).Length / 1MB)) "Green"
+  Say ("{0}: {1:N2} MB" -f $(if ($zipIsTemp) { "Ladattu" } else { "Paketti" }),
+       ((Get-Item $zip).Length / 1MB)) "Green"
   Say "SHA256 : $hash" "DarkGray"
 
   # -------------------------------------------------------------- extract ---
@@ -186,22 +207,26 @@ try {
   New-Item -ItemType Directory -Path $tmp -Force | Out-Null
   Expand-Archive -LiteralPath $zip -DestinationPath $tmp -Force
 
-  # The zip's layout varies between releases: the payload is whichever folder
-  # actually holds the loader, not necessarily the archive root.
-  $srcRoot = $tmp
-  $marker = Get-ChildItem $tmp -Recurse -File -Include "UE4SS.dll", "UE4SS-settings.ini" |
-            Select-Object -First 1
-  if ($marker) { $srcRoot = $marker.Directory.FullName }
-  Say "Paketin juuri: $($srcRoot.Substring($tmp.Length).TrimStart('\'))" "DarkGray"
-
-  $proxy = Get-ChildItem $srcRoot -File | Where-Object {
-    $_.Name -in @("dwmapi.dll", "xinput1_3.dll", "d3d11.dll", "dinput8.dll", "version.dll")
-  }
-  if (-not $proxy) {
+  # The zip's layout varies between releases. Up to v3.0.1 the loader, its
+  # settings and Mods all sat at the archive root; newer builds keep those in a
+  # ue4ss\ subfolder and leave only the proxy DLL at the root. The proxy is the
+  # one file that always belongs directly in Win64, so root the copy there and
+  # the rest of the layout follows unchanged.
+  $proxyNames = @("dwmapi.dll", "xinput1_3.dll", "d3d11.dll", "dinput8.dll", "version.dll")
+  $proxyFile = Get-ChildItem $tmp -Recurse -File |
+               Where-Object { $proxyNames -contains $_.Name } |
+               Sort-Object { $_.FullName.Length } | Select-Object -First 1
+  if (-not $proxyFile) {
     Say "Paketista ei loydy proxy-DLL:aa - vaara zip?" "Red"
-    Say "Sisalto: $((Get-ChildItem $srcRoot | Select-Object -First 12 | ForEach-Object { $_.Name }) -join ', ')" "DarkGray"
+    Say "Sisalto: $((Get-ChildItem $tmp | Select-Object -First 12 | ForEach-Object { $_.Name }) -join ', ')" "DarkGray"
     return
   }
+  $srcRoot = $proxyFile.Directory.FullName
+  $proxy = @($proxyFile)
+  $rel = $srcRoot.Substring($tmp.Length).Trim('\', '/')
+  Say "Paketin juuri: $(if ($rel) { $rel } else { '(arkiston juuri)' })" "DarkGray"
+  $nested = Test-Path (Join-Path (Join-Path $srcRoot 'ue4ss') 'UE4SS.dll')
+  if ($nested) { Say "Uusi rakenne: lataaja kansiossa ue4ss\" "DarkGray" }
 
   # Back up anything we are about to overwrite.
   $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
@@ -219,11 +244,26 @@ try {
   Copy-Item (Join-Path $srcRoot '*') $Win64 -Recurse -Force
   Say "UE4SS kopioitu palvelimelle." "Green"
 
+  # An older flat install leaves UE4SS.dll and Mods\ directly in Win64. The new
+  # proxy loads ue4ss\UE4SS.dll instead, so those are dead weight that would
+  # read as the live install. Park them rather than delete them.
+  if ($nested) {
+    foreach ($stale in @('UE4SS.dll', 'Mods')) {
+      $sp = Join-Path $Win64 $stale
+      if (Test-Path -LiteralPath $sp) {
+        $dest = "$sp.vanha-rakenne"
+        if (Test-Path -LiteralPath $dest) { Remove-Item $dest -Recurse -Force -ErrorAction SilentlyContinue }
+        Move-Item -LiteralPath $sp -Destination $dest -Force -ErrorAction SilentlyContinue
+        Say "Vanha rakenne siirrettiin syrjaan: $stale -> $stale.vanha-rakenne" "Yellow"
+      }
+    }
+  }
+
   # ---------------------------------------------------------------- verify --
 
-  $modsDir = Join-Path $Win64 'Mods'
+  $modsDir = Join-Path (Join-Path $Win64 'ue4ss') 'Mods'
   if (-not (Test-Path $modsDir)) {
-    $modsDir = Join-Path (Join-Path $Win64 'ue4ss') 'Mods'
+    $modsDir = Join-Path $Win64 'Mods'
   }
   if (-not (Test-Path $modsDir)) {
     New-Item -ItemType Directory -Path $modsDir -Force | Out-Null
@@ -295,7 +335,7 @@ try {
   Write-Host ""
 
   Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
-  if (-not $ZipFile) { Remove-Item $zip -Force -ErrorAction SilentlyContinue }
+  if ($zipIsTemp) { Remove-Item $zip -Force -ErrorAction SilentlyContinue }
 }
 catch {
   Write-Host ""

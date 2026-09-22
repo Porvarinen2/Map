@@ -1,4 +1,4 @@
-TESLES NPC OVERHAUL 1.0.8
+TESLES NPC OVERHAUL 1.0.9
 =========================
 
 Pysyva NPC-populaatio SCUM-palvelimelle. NPC-hahmot ja niiden ryhmat ovat
@@ -18,7 +18,7 @@ ASENNUS
 Siina kaikki. INSTALL.bat tekee loput itse:
 
   1/6  etsii SCUM-palvelimen (myos Steam-kirjastoista muilta levyilta)
-  2/6  asentaa tai paivittaa UE4SS:n uusimpaan versioon GitHubista
+  2/6  asentaa UE4SS:n paketin mukana tulevasta versiosta (ei verkkoa)
   3/6  ottaa kaikki muut Lua-modit pois kaytosta, jottei mikaan sekoita tata
   4/6  asentaa modin ja rekisteroi sen (mods.txt + enabled.txt)
   5/6  pilkkoo tarkan kartan zoom-tasoiksi jos se on paikallaan
@@ -67,24 +67,45 @@ UE4SS-asennuksen tilan yhteen zip-tiedostoon.
 
 UE4SS:N ASENNUS ERIKSEEN
 ------------------------
-lisatyokalut\INSTALL_UE4SS.bat asentaa pelkan UE4SS:n. Kaytannollista jos haluat
-kokeilla toista versiota:
+Paketissa on mukana UE4SS (kansio ue4ss\, MIT-lisenssi, alkupera kerrottu
+tiedostossa ue4ss\ALKUPERA.txt). INSTALL.bat asentaa sen, joten verkkoyhteytta
+ei tarvita eika versio voi olla vaara.
 
-  lisatyokalut\INSTALL_UE4SS.bat                  uusin vakaa julkaisu
-  lisatyokalut\INSTALL_UE4SS.bat -Experimental    uusin, myos esijulkaisut
-  lisatyokalut\INSTALL_UE4SS.bat -Force           asenna uudelleen paalle
-  lisatyokalut\INSTALL_UE4SS.bat -ZipFile C:\polku\UE4SS.zip    kasin ladatusta zipista
-  lisatyokalut\INSTALL_UE4SS.bat -KeepSampleMods  jata UE4SS:n omat modit paalle
+Jos haluat kokeilla jotain muuta versiota:
+
+  lisatyokalut\INSTALL_UE4SS.bat -Force                paketin mukana tuleva
+  lisatyokalut\UPDATE_UE4SS.bat                        uusin GitHubista
+  lisatyokalut\INSTALL_UE4SS.bat -Force -ZipFile C:\polku\UE4SS.zip
+  lisatyokalut\INSTALL_UE4SS.bat -KeepSampleMods       jata UE4SS:n omat modit paalle
 
 Korvattavat tiedostot varmuuskopioidaan kansioon UE4SS_Backups.
-Jos vakaa versio jaa AOB-skannausluuppiin (ks. alla), kokeile
--Experimental: uusien pelibuildien tuki tulee usein ensin sinne.
 
+Uudemmissa UE4SS-versioissa lataaja on kansiossa ue4ss\ ja modit kansiossa
+ue4ss\Mods. Asennin siirtaa vanhan rakenteen (Win64\UE4SS.dll, Win64\Mods)
+syrjaan nimille .vanha-rakenne, jottei kaksi asennusta sekoitu keskenaan.
 
 UE4SS EI KAYNNISTA MODEJA
 -------------------------
 Tama modi on UE4SS-Lua-modi. Jos UE4SS ei paase kayttamaan Lua-modeja,
 mikaan tassa paketissa ei voi toimia - eivatka muutkaan Lua-modit.
+
+Jos UE4SS.log paattyy riviin
+  Failed to find FText::FText(FString&&): iter returned multiple unique values
+  Fatal Error: PS scan timed out
+niin UE4SS:n oma tavukuvio osuu tassa pelin buildissa useampaan paikkaan eika
+se osaa valita. Silloin:
+
+  lisatyokalut\FIX_UE4SS_SCAN.bat -Auto
+
+Se lukee SCUMServer.exe:n ja kokeilee siihen jokaista tunnettua
+FText-kuviota, jotka UE4SS itse toimittaa muille Unreal-peleille. Kuvio
+kirjoitetaan tiedostoon UE4SS_Signatures\FText_Constructor.lua vain jos
+
+  - se osuu exe:hen tasan kerran, ja
+  - jokainen muukin osuva kuvio osoittaa samaan kohtaan.
+
+Muuten se kieltaytyy: vaara osoite kaataisi palvelimen, eika arvaus ole
+parempi kuin ei mitaan. Peruminen: lisatyokalut\FIX_UE4SS_SCAN.bat -Revert
 
 lisatyokalut\CHECK.bat ja DIAGNOSE.bat kertovat UE4SS:n tilan yhdella sanalla:
 

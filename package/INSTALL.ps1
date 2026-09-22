@@ -37,6 +37,7 @@ function Die($t) {
 }
 
 $warnings = @()
+$ue4ssUnchanged = $false
 
 Write-Host ""
 Write-Host "  TESLES NPC OVERHAUL - asennus" -ForegroundColor Yellow
@@ -122,7 +123,7 @@ $win64 = Join-Path $server 'SCUM\Binaries\Win64'
 Say "Palvelin: $server" "Green"
 
 function Resolve-ModsDir($w) {
-  foreach ($n in @(@('Mods'), @('ue4ss', 'Mods'))) {
+  foreach ($n in @(@('ue4ss', 'Mods'), @('Mods'))) {
     $p = $w
     foreach ($seg in $n) { $p = Join-Path $p $seg }
     if (Test-Path -LiteralPath $p) { return $p }
@@ -130,8 +131,15 @@ function Resolve-ModsDir($w) {
   return $null
 }
 function Test-Loader($w) {
-  return (Test-Path (Join-Path $w 'UE4SS.dll')) -or
-         (Test-Path (Join-Path (Join-Path $w 'ue4ss') 'UE4SS.dll'))
+  return (Test-Path (Join-Path (Join-Path $w 'ue4ss') 'UE4SS.dll')) -or
+         (Test-Path (Join-Path $w 'UE4SS.dll'))
+}
+function Get-LoaderStamp($w) {
+  foreach ($n in @(@('ue4ss', 'UE4SS.dll'), @('UE4SS.dll'))) {
+    $p = $w; foreach ($seg in $n) { $p = Join-Path $p $seg }
+    if (Test-Path $p) { return (Get-FileHash $p -Algorithm SHA256).Hash }
+  }
+  return $null
 }
 
 # ============================================================== 2. UE4SS ===
@@ -157,15 +165,25 @@ if ($SkipUE4SS) {
   }
 
   $had = Test-Loader $win64
+  $beforeHash = Get-LoaderStamp $win64
   if ($had) {
-    Say "UE4SS on jo asennettu - paivitetaan uusimpaan." "Gray"
+    Say "UE4SS on jo asennettu - vaihdetaan paketin mukana tulleeseen." "Gray"
   } else {
-    Say "UE4SS puuttuu - asennetaan GitHubista." "Gray"
+    Say "UE4SS puuttuu - asennetaan." "Gray"
   }
   try {
-    & $installer -Win64 $win64 -Yes -Force -Experimental -Chained
+    & $installer -Win64 $win64 -Yes -Force -Chained
   } catch {
     Say "UE4SS-asennus keskeytyi: $($_.Exception.Message)" "Red"
+  }
+  $afterHash = Get-LoaderStamp $win64
+  if ($had -and $beforeHash -and $beforeHash -eq $afterHash) {
+    # 1.0.8 said it updated the loader while the file on disk never changed.
+    # Whatever the cause, the summary has to show it instead of hiding it.
+    $ue4ssUnchanged = $true
+    Say "VAROITUS: UE4SS.dll ei vaihtunut." "Red"
+  } elseif ($afterHash) {
+    Say "UE4SS-lataaja on nyt vaihdettu." "Green"
   }
 
   if (-not (Test-Loader $win64)) {
@@ -193,12 +211,28 @@ if (-not $mods) {
 Say "Mods: $mods" "Green"
 
 $modsTxt = Join-Path $mods 'mods.txt'
+# Newer UE4SS builds read mods.json and fall back to mods.txt, so both have to
+# say the same thing or the two disagree about what runs.
+$modsJson = Join-Path $mods 'mods.json'
 $backupRoot = Join-Path $server 'TeslesNPCOverhaul_Backups'
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $backup = Join-Path $backupRoot $stamp
 New-Item -ItemType Directory -Path $backup -Force | Out-Null
 if (Test-Path -LiteralPath $modsTxt) {
   Copy-Item -LiteralPath $modsTxt -Destination (Join-Path $backup 'mods.txt') -Force
+}
+if (Test-Path -LiteralPath $modsJson) {
+  Copy-Item -LiteralPath $modsJson -Destination (Join-Path $backup 'mods.json') -Force
+}
+
+function Write-ModsJson($path, $entries) {
+  $json = if ($entries.Count -eq 1) { "[" + ($entries | ConvertTo-Json -Depth 4) + "]" }
+          else { $entries | ConvertTo-Json -Depth 4 }
+  Set-Content -LiteralPath $path -Value $json -Encoding ASCII
+}
+function Read-ModsJson($path) {
+  if (-not (Test-Path -LiteralPath $path)) { return $null }
+  try { return @(Get-Content -LiteralPath $path -Raw | ConvertFrom-Json) } catch { return $null }
 }
 
 # ======================================================== 3. muut modit ====
@@ -232,6 +266,22 @@ if ($KeepOtherMods) {
       Move-Item -LiteralPath $marker -Destination "$marker.disabled" -Force
       $parked++
       if ($off -notcontains $d.Name) { $off += $d.Name }
+    }
+  }
+
+  $jsonEntries = Read-ModsJson $modsJson
+  if ($jsonEntries) {
+    $changed = $false
+    foreach ($e in $jsonEntries) {
+      if ($e.mod_name -ne $MOD -and $e.mod_enabled) {
+        $e.mod_enabled = $false
+        $changed = $true
+        if ($off -notcontains $e.mod_name) { $off += $e.mod_name }
+      }
+    }
+    if ($changed) {
+      Write-ModsJson $modsJson $jsonEntries
+      Say "mods.json paivitetty samaan tilaan kuin mods.txt." "Gray"
     }
   }
 
@@ -284,7 +334,16 @@ $lines = @($lines | Where-Object { $_ -notmatch "^\s*$MOD\s*:" })
 $lines = $lines + @("$MOD : 1")
 Set-Content -LiteralPath $modsTxt -Value $lines -Encoding ASCII
 Set-Content -LiteralPath (Join-Path $target 'enabled.txt') -Value "" -Encoding ASCII
-Say "Rekisteroity: mods.txt + enabled.txt" "Green"
+
+$registered = "mods.txt + enabled.txt"
+$jsonEntries = Read-ModsJson $modsJson
+if ($jsonEntries) {
+  $jsonEntries = @($jsonEntries | Where-Object { $_.mod_name -ne $MOD })
+  $jsonEntries += [pscustomobject]@{ mod_name = $MOD; mod_enabled = $true }
+  Write-ModsJson $modsJson $jsonEntries
+  $registered = "mods.json + mods.txt + enabled.txt"
+}
+Say "Rekisteroity: $registered" "Green"
 
 $outDir = Join-Path $target 'output'
 Set-Content -LiteralPath (Join-Path $here 'livemap\livemap_paths.txt') `
@@ -376,10 +435,15 @@ Write-Host "   VALMIS - kaikki asennettu" -ForegroundColor Green
 Write-Host "  ================================================" -ForegroundColor Green
 Write-Host ""
 
-if ($health -and $health.verdict -in @("SCAN_ABORTED", "SCAN_LOOP")) {
+if ($ue4ssUnchanged) {
+  Say "UE4SS.dll on edelleen sama tiedosto kuin ennen asennusta." "Red"
+  Say "Aja: lisatyokalut\INSTALL_UE4SS.bat -Force   ja katso mita se sanoo." "Yellow"
+  Write-Host ""
+} elseif ($health -and $health.verdict -in @("SCAN_ABORTED", "SCAN_LOOP")) {
   Say "HUOM: UE4SS ei edellisella kaynnistyksella paassyt modien lataukseen." "Yellow"
-  Say "UE4SS paivitettiin juuri, joten kokeile kaynnistysta - jos sama" "Yellow"
-  Say "toistuu, aja DIAGNOSE.bat." "Yellow"
+  Say "Lataaja vaihdettiin juuri uudempaan, joten kokeile kaynnistysta." "Yellow"
+  Say "Jos sama toistuu, aja:  lisatyokalut\FIX_UE4SS_SCAN.bat -Auto" "Yellow"
+  Say "Se etsii puuttuvan tavukuvion suoraan SCUMServer.exe:sta." "Yellow"
   Write-Host ""
 }
 foreach ($w in $warnings) { Say "VAROITUS: $w" "Yellow" }
