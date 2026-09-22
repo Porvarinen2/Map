@@ -21,6 +21,12 @@ function Get-UE4SSHealth {
     loaderDate = $null
     logPath = $null
     logTime = $null
+    logLastEntry = $null
+    scanAge = $null
+    scanIsFresh = $false
+    loaderInProcess = $null
+    processModules = $null
+    gameExeDate = $null
     logAgeMinutes = $null
     serverStart = $null
     logIsFromThisRun = $false
@@ -100,9 +106,27 @@ function Get-UE4SSHealth {
     $h.allLogs = $logs | ForEach-Object { "{0}  ({1})" -f $_.FullName, $_.LastWriteTime }
   }
 
+  $exe = Join-Path $Win64 "SCUMServer.exe"
+  if (Test-Path $exe) { $h.gameExeDate = (Get-Item $exe).LastWriteTime }
+
   $proc = Get-Process -Name "SCUMServer" -ErrorAction SilentlyContinue
   if ($proc) {
     try { $h.serverStart = $proc.StartTime } catch {}
+    # The decisive question when there is no log: did the running server
+    # actually load UE4SS's proxy DLL? Everything else is inference.
+    try {
+      $mods = $proc.Modules | ForEach-Object { $_.ModuleName }
+      $h.processModules = $mods.Count
+      $h.loaderInProcess = [bool]($mods | Where-Object {
+        $_ -match '^(UE4SS|dwmapi|xinput1_3|d3d11|dinput8|version)\.dll$'
+      })
+      $h.loadedProxies = @($mods | Where-Object {
+        $_ -match '^(UE4SS|dwmapi|xinput1_3|d3d11|dinput8|version)\.dll$'
+      })
+    } catch {
+      # Access is denied when the server runs as another user or elevated.
+      $h.processModules = -1
+    }
   }
 
   if ($h.logPath) {
@@ -131,8 +155,33 @@ function Get-UE4SSHealth {
     if ($started) {
       $h.startedLuaMods = $started.Matches | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique
     }
-    if ($h.serverStart -and $h.logTime) {
-      $h.logIsFromThisRun = ($h.logTime -ge $h.serverStart.AddMinutes(-2))
+    # Windows updates LastWriteTime lazily while a file is held open, so the
+    # timestamps inside the log are the reliable signal, not the file's own.
+    $stamps = $all | Select-String -Pattern '^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]' |
+              ForEach-Object { $_.Matches[0].Groups[1].Value }
+    if ($stamps) {
+      $last = $stamps | Select-Object -Last 1
+      try { $h.logLastEntry = [datetime]::ParseExact($last, "yyyy-MM-dd HH:mm:ss", $null) } catch {}
+    }
+    $effective = if ($h.logLastEntry) { $h.logLastEntry } else { $h.logTime }
+    if ($effective) {
+      $limit = $(if ($h.scanSeconds) { $h.scanSeconds } else { 30 }) + 90
+      # UE4SS may log in UTC while the clock here is local, so a whole number
+      # of hours of offset is ignored when judging freshness.
+      $age = [math]::Abs(((Get-Date) - $effective).TotalSeconds)
+      $age = $age % 3600
+      if ($age -gt 1800) { $age = 3600 - $age }
+      $h.scanAge = [int]$age
+      $h.scanIsFresh = ($age -le $limit) -and
+                       ([math]::Abs(((Get-Date) - $effective).TotalDays) -lt 1)
+    }
+    if ($h.serverStart -and $effective) {
+      # UE4SS logs in UTC on some setups and local time on others, so compare
+      # generously: anything within a few hours either way counts as this run,
+      # and a log from a clearly earlier session does not.
+      $delta = ($effective - $h.serverStart).TotalMinutes
+      $h.logIsFromThisRun = ($delta -ge -3) -or
+                            ([math]::Abs($delta % 60) -lt 3 -and [math]::Abs($delta) -lt 900)
     }
   }
 
@@ -149,15 +198,55 @@ function Get-UE4SSHealth {
   }
   elseif ($h.serverStart -and -not $h.logIsFromThisRun) {
     $h.verdict = "STALE_LOG"
-    $h.action += ("UE4SS.log on ajalta {0}, mutta palvelin kaynnistyi {1}." -f
-                  $h.logTime, $h.serverStart)
-    $h.action += "UE4SS ei siis lataudu tassa ajossa - mikaan Lua-modi ei kayty."
-    $h.action += "Tarkista etta palvelin kaynnistetaan samasta Win64-kansiosta"
-    $h.action += "ja etta proxy-DLL on yha paikallaan (SCUM-paivitys voi poistaa sen)."
+    $h.action += ("UE4SS.log:n viimeinen merkinta on {0}, mutta palvelin kaynnistyi {1}." -f
+                  ($(if ($h.logLastEntry) { $h.logLastEntry } else { $h.logTime })), $h.serverStart)
+    $h.action += "UE4SS ei siis kirjoittanut mitaan tassa ajossa."
+    if ($h.loaderInProcess -eq $true) {
+      $h.action += ""
+      $h.action += "MUTTA: proxy-DLL ON ladattu palvelinprosessiin"
+      $h.action += ("  ({0})" -f ($h.loadedProxies -join ", "))
+      $h.action += "eli UE4SS latautui ja kaatui ennen lokin avaamista."
+      $h.action += "Todennakoisin syy on UE4SS-settings.ini."
+      if ($h.scanFixApplied) {
+        $h.action += "Skannauskorjaus on kaytossa - peru se ensin:"
+        $h.action += "  FIX_UE4SS_SCAN.bat -Revert"
+        $h.action += "Kaynnista palvelin ja aja CHECK.bat uudestaan."
+      }
+    } elseif ($h.loaderInProcess -eq $false) {
+      $h.action += ""
+      $h.action += "Palvelinprosessi EI ole ladannut UE4SS:n proxy-DLL:aa."
+      $h.action += ("  ladattuja moduuleja: {0}" -f $h.processModules)
+      $h.action += "Syy on injektiossa, ei UE4SS:n asetuksissa:"
+      $h.action += "  - onko dwmapi.dll yha Win64-kansiossa (virustorjunta?)"
+      $h.action += "  - kaynnistetaanko palvelin samasta Win64-kansiosta"
+      if ($h.gameExeDate) {
+        $h.action += ("  - SCUMServer.exe on paivitetty {0}" -f $h.gameExeDate.ToString("yyyy-MM-dd"))
+      }
+    } else {
+      $h.action += "Prosessin moduuleja ei voitu lukea (oikeudet)."
+      $h.action += "Aja CHECK.bat yllapitajana nahdaksesi latautuiko proxy-DLL."
+      $h.action += "Tarkista etta proxy-DLL on paikallaan ja palvelin kaynnistyy"
+      $h.action += "samasta Win64-kansiosta."
+    }
+    if ($h.scanFixApplied -and $h.loaderInProcess -ne $false) {
+      $h.action += ""
+      $h.action += "Jos mikaan muu ei selita tata, peru skannauskorjaus:"
+      $h.action += "  FIX_UE4SS_SCAN.bat -Revert"
+    }
   }
   elseif ($h.startedLuaMods -contains "TeslesNPCOverhaul") {
     $h.verdict = "MOD_STARTED"
     $h.action += "UE4SS kaynnisti modin. Ongelma on modin sisalla - katso boot.log."
+  }
+  elseif ($h.scanAttempts -ge 5 -and -not $h.fatalError -and $h.scanIsFresh) {
+    # The scan has not resolved yet. With a single thread and a raised
+    # deadline that legitimately takes minutes, so it is not a failure.
+    $h.verdict = "SCANNING"
+    $h.action += ("UE4SS skannaa parhaillaan ({0} yritysta, ei viela lopputulosta)." -f
+                  $h.scanAttempts)
+    $h.action += ("Odota {0} s ja aja CHECK.bat uudestaan." -f
+                  $(if ($h.scanSeconds) { $h.scanSeconds } else { 60 }))
+    $h.action += "Tama ei ole viela virhe."
   }
   elseif ($h.fatalError -and $h.fatalError -match "scan") {
     $h.verdict = "SCAN_ABORTED"
@@ -219,6 +308,7 @@ function Write-UE4SSHealth {
 
   $col = switch ($h.verdict) {
     "MOD_STARTED" { "Green" }
+    "SCANNING" { "Cyan" }
     "SCAN_ABORTED" { "Red" }
     "SCAN_LOOP" { "Red" }
     "STALE_LOG" { "Red" }
@@ -239,8 +329,19 @@ function Write-UE4SSHealth {
   }
   if ($h.logPath) {
     Say "  loki          : $($h.logPath)"
-    Say "  loki kirjattu : $($h.logTime)  ($($h.logAgeMinutes) min sitten)"
+    if ($h.logLastEntry) {
+      Say "  viim. merkinta: $($h.logLastEntry)"
+    }
+    Say "  tiedosto muok.: $($h.logTime)"
   }
+  if ($null -ne $h.loaderInProcess) {
+    if ($h.loaderInProcess) {
+      Say "  prosessissa   : $($h.loadedProxies -join ', ')" "Green"
+    } else {
+      Say "  prosessissa   : UE4SS:aa EI ladattu ($($h.processModules) moduulia)" "Red"
+    }
+  }
+  if ($h.gameExeDate) { Say "  SCUMServer.exe: $($h.gameExeDate.ToString('yyyy-MM-dd'))" }
   if ($h.serverStart) { Say "  palvelin alkoi: $($h.serverStart)" }
   if ($h.modsDirectoryInLog) { Say "  mods (lokista): $($h.modsDirectoryInLog)" }
   foreach ($m in $h.modsDirs) {

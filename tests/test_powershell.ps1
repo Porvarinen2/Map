@@ -159,10 +159,11 @@ function IniVal($lines, $key) {
 }
 Check ((IniVal $ini "SigScannerNumThreads") -eq "1") "the scanner is switched to a single thread"
 Check ((IniVal $ini "SecondsToScanBeforeGivingUp") -eq "120") "the scan deadline is raised"
-Check ((IniVal $ini "SigScannerMultithreadingModuleSizeThreshold") -eq "4294967295") `
-      "multi-threading stays off even if the thread count is restored"
+Check ((IniVal $ini "SigScannerMultithreadingModuleSizeThreshold") -eq "2000000000") `
+      "multi-threading stays off, without sitting on the uint32 ceiling"
 Check ((IniVal $ini "GuiConsoleEnabled") -eq "0") "-ServerTuning turns the debug GUI off"
-Check (-not (Test-Path (Join-Path $sw "Mods\cache"))) "the stale AOB cache is cleared"
+Check (-not (Test-Path (Join-Path $sw "Mods\cache"))) "the stale AOB cache is moved out of the way"
+Check (Test-Path (Join-Path $sw "Mods\cache.tesles-backup")) "the cache is kept, not deleted"
 Check (Test-Path (Join-Path $sw "UE4SS-settings.ini.tesles-backup")) "the original settings are backed up"
 Check (($ini | Where-Object { $_ -match "^;" }).Count -gt 20) "comments in the ini survive the rewrite"
 
@@ -182,6 +183,8 @@ Check ((IniVal $ini2 "SigScannerNumThreads") -eq "8") "revert restores the origi
 Check ((IniVal $ini2 "SecondsToScanBeforeGivingUp") -eq "30") "revert restores the original deadline"
 Check (-not (Test-Path (Join-Path $sw "UE4SS-settings.ini.tesles-backup"))) `
       "revert removes its own backup"
+Check (Test-Path (Join-Path $sw "Mods\\cache")) "revert puts the AOB cache back"
+Check (-not (Test-Path (Join-Path $sw "Mods\\cache.tesles-backup"))) "revert cleans up its cache copy"
 
 # A signature override must be written in the shape UE4SS loads.
 & (Join-Path $pkg "FIX_UE4SS_SCAN.ps1") -Win64 $sw -Signature "FText_Constructor" -Aob "48 89 5C 24 ??" | Out-Null
@@ -194,6 +197,42 @@ if (Test-Path $sigFile) {
   Check ($sig -match "48 89 5C 24 \?\?") "it carries the given byte pattern"
 }
 
+# Revert must also withdraw a signature override this tool wrote.
+& (Join-Path $pkg "FIX_UE4SS_SCAN.ps1") -Win64 $sw -Revert | Out-Null
+Check (-not (Test-Path $sigFile)) "revert withdraws the signature override too"
+
+Write-Host ""
+Write-Host "== health: scan in progress =="
+
+# A scan that has not finished is not a failure. With one thread and a raised
+# deadline it legitimately takes minutes, and CHECK must not call that broken.
+$sp = Join-Path ([System.IO.Path]::GetTempPath()) ("tesles_scanning_" + [guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Path (Join-Path $sp "Mods") -Force | Out-Null
+Set-Content (Join-Path $sp "dwmapi.dll") "x"
+Set-Content (Join-Path $sp "UE4SS.dll") "x"
+$now = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+$scanLines = @(
+  "[$now] Console created",
+  "[$now] UE4SS - v3.0.1 Beta #0 - Git SHA #d935b5b",
+  "[$now] mods directory: C:\Game\Win64\Mods")
+for ($i = 1; $i -le 40; $i++) {
+  $scanLines += "[$now] PS Scan attempt $i"
+  $scanLines += "[$now] [PS] Starting scan"
+  $scanLines += "[$now] [PS] Failed to find FText::FText(FString&&): iter returned multiple unique values"
+  $scanLines += "[$now] [PS] Scan failed"
+}
+$scanLines | Set-Content (Join-Path $sp "UE4SS.log")
+$hs2 = Get-UE4SSHealth $sp
+Check ($hs2.verdict -eq "SCANNING") "an unfinished scan reports SCANNING, not a failure (got $($hs2.verdict))"
+Check ((($hs2.action -join " ") -match "Odota")) "the advice says to wait, not to change anything"
+Check ($hs2.logLastEntry -ne $null) "the last timestamp is read from inside the log"
+
+# The same log with the fatal line appended is a failure again.
+Add-Content (Join-Path $sp "UE4SS.log") "[$now] Fatal Error: PS scan timed out"
+$hs3 = Get-UE4SSHealth $sp
+Check ($hs3.verdict -eq "SCAN_ABORTED") "once UE4SS aborts, the verdict changes (got $($hs3.verdict))"
+
+Remove-Item $sp -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item $sl -Recurse -Force -ErrorAction SilentlyContinue
 
 Write-Host ""

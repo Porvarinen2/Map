@@ -1,4 +1,4 @@
-TESLES NPC OVERHAUL 1.0.5
+TESLES NPC OVERHAUL 1.0.6
 =========================
 
 Pysyva NPC-populaatio SCUM-palvelimelle. NPC-hahmot ja niiden ryhmat ovat
@@ -76,10 +76,13 @@ mikaan tassa paketissa ei voi toimia - eivatka muutkaan Lua-modit.
 CHECK.bat ja DIAGNOSE.bat kertovat UE4SS:n tilan yhdella sanalla:
 
   MOD_STARTED     UE4SS kaynnisti modin. Vika on modissa, katso boot.log.
+  SCANNING        UE4SS skannaa parhaillaan. Ei viela virhe - odota aikaraja.
   SCAN_ABORTED    UE4SS lopetti omaan virheeseensa ennen modien latausta.
-  SCAN_LOOP       UE4SS juuttui AOB-skannaukseen eika paase modeihin.
-  STALE_LOG       UE4SS.log on vanhemmalta ajolta kuin nykyinen palvelin.
-                  UE4SS ei siis lataudu lainkaan tassa ajossa.
+  SCAN_LOOP       Skannaus katkesi eika paassyt maaliin.
+  STALE_LOG       UE4SS.log:n viimeinen merkinta on vanhemmalta ajolta kuin
+                  nykyinen palvelin. CHECK kertoo silloin myos onko UE4SS:n
+                  proxy-DLL ladattu palvelinprosessiin - se erottaa
+                  "injektio ei toiminut" tilanteesta "UE4SS kaatui heti".
   NO_LOG          UE4SS ei ole kirjoittanut lokia koskaan.
   NO_MODS_STARTED UE4SS latautui mutta ei kaynnistanyt yhtaan Lua-modia.
 
@@ -107,8 +110,13 @@ koodia. Mita tehda, tassa jarjestyksessa:
      yhteen saikeeseen, antaa sille lisaa aikaa ja tyhjentaa vanhan
      AOB-valimuistin.
 
-     Pelkka asetusmuutos. Alkuperainen tiedosto varmuuskopioidaan ja
-     FIX_UE4SS_SCAN.bat -Revert palauttaa sen.
+     Pelkka asetusmuutos. Alkuperainen tiedosto varmuuskopioidaan,
+     AOB-valimuisti siirretaan syrjaan eika poisteta, ja
+     FIX_UE4SS_SCAN.bat -Revert palauttaa kaiken.
+
+     HUOM: yksi saie skannaa hitaammin. Odota koko aikaraja (120 s)
+     palvelimen kaynnistyksesta ennen CHECK.bat:ia. Sita ennen tila on
+     SCANNING, mika on normaalia.
 
      Tama on kokeiltava hypoteesi, ei varmuus. Jos kuvio osuu binaarissa
      aidosti useaan paikkaan, saikeiden maara ei auta.

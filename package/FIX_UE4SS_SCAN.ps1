@@ -96,13 +96,35 @@ try {
 
   # ------------------------------------------------------------- revert ----
   if ($Revert) {
+    $did = $false
     if (Test-Path $backup) {
       Copy-Item $backup $ini -Force
       Remove-Item $backup -Force
       Say "Alkuperaiset asetukset palautettiin." "Green"
-    } else {
-      Say "Varmuuskopiota ei loydy - mitaan ei palautettu." "Yellow"
+      $did = $true
     }
+    foreach ($c in @('Mods\cache', 'cache', 'ue4ss\cache')) {
+      $p = $Win64
+      foreach ($seg in $c.Split('\')) { $p = Join-Path $p $seg }
+      if (Test-Path "$p.tesles-backup") {
+        if (Test-Path $p) { Remove-Item $p -Recurse -Force -ErrorAction SilentlyContinue }
+        Move-Item "$p.tesles-backup" $p -Force -ErrorAction SilentlyContinue
+        Say "AOB-valimuisti palautettiin: $p" "Green"
+        $did = $true
+      }
+    }
+    # Any signature override this tool wrote is part of the same experiment.
+    $sigDir = Join-Path (Split-Path $ini -Parent) 'UE4SS_Signatures'
+    if (Test-Path $sigDir) {
+      $mine = Get-ChildItem $sigDir -Filter *.lua -ErrorAction SilentlyContinue |
+              Where-Object { (Get-Content $_.FullName -TotalCount 1) -match 'TESLES' }
+      foreach ($f in $mine) {
+        Remove-Item $f.FullName -Force
+        Say "Poistettu signature-ohitus: $($f.Name)" "Green"
+        $did = $true
+      }
+    }
+    if (-not $did) { Say "Mitaan palautettavaa ei loytynyt." "Yellow" }
     return
   }
 
@@ -156,9 +178,12 @@ try {
 
   # A huge threshold keeps multi-threading off even if the thread count is
   # reapplied by a future UE4SS update.
-  $r = Set-IniValue $lines 'SigScannerMultithreadingModuleSizeThreshold' '4294967295'
+  # Well clear of SCUMServer.exe (about 129 MB) but nowhere near the uint32
+  # ceiling: a value at the exact maximum is a needless risk in a parser we
+  # cannot inspect.
+  $r = Set-IniValue $lines 'SigScannerMultithreadingModuleSizeThreshold' '2000000000'
   $lines = $r.lines
-  if ($r.changed) { $applied += "SigScannerMultithreadingModuleSizeThreshold = 4294967295" }
+  if ($r.changed) { $applied += "SigScannerMultithreadingModuleSizeThreshold = 2000000000" }
 
   if ($ServerTuning) {
     $r = Set-IniValue $lines 'GuiConsoleEnabled' '0'
@@ -168,14 +193,15 @@ try {
 
   Set-Content -LiteralPath $ini -Value $lines -Encoding UTF8
 
-  # A stale AOB cache would be reused instead of rescanning.
+  # A stale AOB cache would be reused instead of rescanning. Rename rather
+  # than delete, so -Revert can put it back.
   $cleared = 0
   foreach ($c in @('Mods\cache', 'cache', 'ue4ss\cache')) {
     $p = $Win64
     foreach ($seg in $c.Split('\')) { $p = Join-Path $p $seg }
-    if (Test-Path $p) {
-      Remove-Item $p -Recurse -Force -ErrorAction SilentlyContinue
-      $cleared++
+    if ((Test-Path $p) -and -not (Test-Path "$p.tesles-backup")) {
+      Move-Item $p "$p.tesles-backup" -Force -ErrorAction SilentlyContinue
+      if (-not (Test-Path $p)) { $cleared++ }
     }
   }
 
@@ -189,7 +215,10 @@ try {
   }
 
   Write-Host ""
-  Say "Kaynnista palvelin ja aja CHECK.bat."
+  Say "Kaynnista palvelin ja ODOTA $ScanSeconds sekuntia ennen CHECK.bat:ia." "Cyan"
+  Say "Yksi saie skannaa hitaammin, joten lopputulos nakyy vasta aikarajan"
+  Say "jalkeen. Sita ennen CHECK nayttaa tilan SCANNING, mika on normaalia."
+  Write-Host ""
   Say "Jos UE4SS yha kaatuu samaan riviin, skannaus ei ollut saikeiden vika:"
   Say "  INSTALL_UE4SS.bat -Force -Experimental" "Cyan"
   Write-Host ""
