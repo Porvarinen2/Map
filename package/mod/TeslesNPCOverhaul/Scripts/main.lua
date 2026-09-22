@@ -261,6 +261,40 @@ local function on_game_thread(fn)
     end
 end
 
+-- The tick has to stay inside the Lua state this file runs in.
+--
+-- The obvious way to drive it, LoopAsync, runs its callback in a SEPARATE Lua
+-- state. Handing that state a closure built here (by calling
+-- ExecuteInGameThread with it) makes UE4SS store a registry reference against
+-- the wrong state. It then reports "[Lua::Registry::get_function_ref] Ref was
+-- not function" on every tick, values in unrelated tables turn into stray
+-- userdata and functions, and the server dies with an access violation inside
+-- UE4SS.dll. That is exactly what a 1.0.9 server log showed.
+--
+-- ExecuteWithDelay keeps the same state - startup itself is scheduled that way
+-- and completes correctly - so the loop is a delay that re-arms itself. The
+-- next tick is scheduled from inside the game-thread callback, so two ticks can
+-- never overlap however long one takes.
+local schedule_tick
+
+local function tick_and_rearm()
+    safe_tick()
+    M.last_tick_at = os.time()
+    schedule_tick()
+end
+
+schedule_tick = function()
+    if type(ExecuteWithDelay) == "function" then
+        ExecuteWithDelay(CFG.TickMs or 1000, function()
+            on_game_thread(tick_and_rearm)
+        end)
+    elseif not M.tick_warned then
+        M.tick_warned = true
+        Log.warn("ExecuteWithDelay unavailable: the director cannot tick")
+        boot("ExecuteWithDelay NOT AVAILABLE - the director cannot tick")
+    end
+end
+
 local function start()
     boot("startup beginning")
     Log.info("TESLES NPC OVERHAUL " .. tostring(CFG.Version) .. " starting")
@@ -296,17 +330,9 @@ local function start()
         boot("live_state.json COULD NOT BE WRITTEN to " .. OUTPUT_DIR)
     end
 
-    if type(LoopAsync) == "function" then
-        LoopAsync(CFG.TickMs or 1000, function()
-            on_game_thread(safe_tick)
-            return false
-        end)
-        Log.info("director loop running at " .. tostring(CFG.TickMs) .. " ms")
-        boot("director loop registered at " .. tostring(CFG.TickMs) .. " ms")
-    else
-        Log.warn("LoopAsync unavailable: the director will not tick by itself")
-        boot("LoopAsync NOT AVAILABLE - the director cannot tick")
-    end
+    schedule_tick()
+    Log.info("director loop running at " .. tostring(CFG.TickMs) .. " ms")
+    boot("director loop registered at " .. tostring(CFG.TickMs) .. " ms")
     boot("startup complete")
 end
 

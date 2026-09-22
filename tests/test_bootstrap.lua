@@ -18,9 +18,17 @@ local function check(cond, msg)
 end
 
 -- UE4SS stubs. Nothing in the mod may require these to exist.
-local delayed = nil
+--
+-- LoopAsync is stubbed only so the test can prove the mod never calls it: its
+-- callback runs in a separate Lua state, and handing that state a closure from
+-- this one corrupts UE4SS's function registry and crashes the server.
+local scheduled = nil      -- the most recently scheduled ExecuteWithDelay call
+local schedules = {}       -- every one of them, in order
 local loops = {}
-_G.ExecuteWithDelay = function(ms, fn) delayed = fn end
+_G.ExecuteWithDelay = function(ms, fn)
+    scheduled = { ms = ms, fn = fn }
+    schedules[#schedules + 1] = scheduled
+end
 _G.LoopAsync = function(ms, fn) loops[#loops + 1] = { ms = ms, fn = fn } end
 _G.ExecuteInGameThread = function(fn) fn() end
 -- Deliberately no FindFirstOf / StaticFindObject: the bridge must degrade
@@ -34,20 +42,28 @@ local ok, M = pcall(chunk)
 check(ok, "main.lua runs without error: " .. tostring(M))
 if not ok then os.exit(1) end
 
-check(delayed ~= nil, "startup is deferred, not run inside the load callback")
-local ok2, err2 = pcall(delayed)
+check(scheduled ~= nil, "startup is deferred, not run inside the load callback")
+local startup = scheduled
+local ok2, err2 = pcall(startup.fn)
 check(ok2, "deferred startup completes: " .. tostring(err2))
 
-check(#loops == 1, "the director registers exactly one tick loop")
-check(loops[1] and loops[1].ms == 1000, "tick period comes from config.lua")
+check(#loops == 0, "LoopAsync is never used: its callback runs in another Lua state")
+check(scheduled ~= startup, "startup schedules the first tick")
+check(scheduled and scheduled.ms == 1000, "tick period comes from config.lua")
 
--- Drive a few ticks through the registered loop, as UE4SS would.
+-- Drive a few ticks. Each one has to schedule the next itself, from inside the
+-- game-thread callback, so ticks can never overlap.
 local ticked = true
+local rearmed = true
 for _ = 1, 5 do
-    local okt, errt = pcall(loops[1].fn)
+    local this_tick = scheduled
+    local okt, errt = pcall(this_tick.fn)
     if not okt then ticked = false; print("     tick error: " .. tostring(errt)) end
+    if scheduled == this_tick then rearmed = false end
 end
 check(ticked, "five director ticks run with no engine available")
+check(rearmed, "every tick schedules the next one")
+check(#loops == 0, "still no LoopAsync after ticking")
 
 local function exists(p)
     local f = io.open(p, "r")

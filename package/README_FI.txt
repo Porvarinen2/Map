@@ -1,4 +1,4 @@
-TESLES NPC OVERHAUL 1.0.9
+TESLES NPC OVERHAUL 1.1.0
 =========================
 
 Pysyva NPC-populaatio SCUM-palvelimelle. NPC-hahmot ja niiden ryhmat ovat
@@ -60,6 +60,14 @@ Se kertoo mihin asti mod paasi. Lue se ensin.
   boot.log PUUTTUU kokonaan
     -> UE4SS ei ole ajanut modia lainkaan. lisatyokalut\CHECK.bat tutkii silloin
        automaattisesti UE4SS:n tilan ja kertoo syyn. Ks. seuraava osio.
+
+  palvelin kaatuu virheeseen "EXCEPTION_ACCESS_VIOLATION ... UE4SS.dll"
+  ja UE4SS.log toistaa rivia
+  "[Lua::Registry::get_function_ref] Ref was not function"
+    -> tama oli versioiden 1.0.9 ja vanhempien vika. Tickaus ajettiin
+       LoopAsyncilla, joka suorittaa koodin eri Lua-tilassa kuin missa modi
+       on ladattu, ja se sekoitti UE4SS:n funktiorekisterin. 1.1.0 ajaa
+       tickauksen samassa tilassa. Paivita modi.
 
 DIAGNOSE.bat kerää boot.log:n, director.log:n, mods.txt:n, UE4SS.log:n ja
 UE4SS-asennuksen tilan yhteen zip-tiedostoon.

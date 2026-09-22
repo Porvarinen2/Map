@@ -143,7 +143,11 @@ local esc_map = {
 }
 
 local function esc(s)
-    return (tostring(s):gsub('[%c"\\]', function(c)
+    -- tostring can be overridden on a table via __tostring and return
+    -- something that is not a string; one bad value must not end the tick.
+    local str = tostring(s)
+    if type(str) ~= "string" then return "" end
+    return (str:gsub('[%c"\\]', function(c)
         return esc_map[c] or string.format('\\u%04X', c:byte())
     end))
 end
