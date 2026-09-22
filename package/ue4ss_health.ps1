@@ -22,6 +22,7 @@ function Get-UE4SSHealth {
     logPath = $null
     logTime = $null
     logLastEntry = $null
+    logClockOffsetMinutes = $null
     scanAge = $null
     scanIsFresh = $false
     loaderInProcess = $null
@@ -115,16 +116,18 @@ function Get-UE4SSHealth {
     # The decisive question when there is no log: did the running server
     # actually load UE4SS's proxy DLL? Everything else is inference.
     try {
-      $mods = $proc.Modules | ForEach-Object { $_.ModuleName }
+      $mods = @($proc.Modules | ForEach-Object { $_.ModuleName })
       $h.processModules = $mods.Count
-      $h.loaderInProcess = [bool]($mods | Where-Object {
-        $_ -match '^(UE4SS|dwmapi|xinput1_3|d3d11|dinput8|version)\.dll$'
-      })
       $h.loadedProxies = @($mods | Where-Object {
         $_ -match '^(UE4SS|dwmapi|xinput1_3|d3d11|dinput8|version)\.dll$'
       })
+      # An empty list is Windows refusing to enumerate (another user, a
+      # protected process, a bitness mismatch), not proof that the server
+      # loaded nothing. Only a populated list can show the proxy is absent.
+      if ($mods.Count -ge 8) {
+        $h.loaderInProcess = ($h.loadedProxies.Count -gt 0)
+      }
     } catch {
-      # Access is denied when the server runs as another user or elevated.
       $h.processModules = -1
     }
   }
@@ -163,7 +166,19 @@ function Get-UE4SSHealth {
       $last = $stamps | Select-Object -Last 1
       try { $h.logLastEntry = [datetime]::ParseExact($last, "yyyy-MM-dd HH:mm:ss", $null) } catch {}
     }
-    $effective = if ($h.logLastEntry) { $h.logLastEntry } else { $h.logTime }
+    # UE4SS writes its timestamps in UTC on this setup while the file's own
+    # timestamp is local, so the two can differ by whole hours. The later of
+    # the two is the honest "when did something last happen" - the file
+    # timestamp catches the offset, the content catches a log held open whose
+    # timestamp Windows has not flushed.
+    if ($h.logLastEntry -and $h.logTime) {
+      $offset = [math]::Round(($h.logTime - $h.logLastEntry).TotalMinutes)
+      if ([math]::Abs($offset) -ge 55) { $h.logClockOffsetMinutes = $offset }
+    }
+    $effective = $h.logTime
+    if ($h.logLastEntry -and (-not $effective -or $h.logLastEntry -gt $effective)) {
+      $effective = $h.logLastEntry
+    }
     if ($effective) {
       $limit = $(if ($h.scanSeconds) { $h.scanSeconds } else { 30 }) + 90
       # UE4SS may log in UTC while the clock here is local, so a whole number
@@ -263,16 +278,18 @@ function Get-UE4SSHealth {
       $h.action += ("  1. FIX_UE4SS_SCAN.bat  - skanneri kayttaa {0} saiketta." -f $h.scanThreads)
       $h.action += "     Yksi saie kerrallaan voi poistaa moniselitteisyyden."
       $h.action += "     Pelkka asetusmuutos, peruttavissa: FIX_UE4SS_SCAN.bat -Revert"
-      $h.action += "  2. INSTALL_UE4SS.bat -Force -Experimental"
+      $h.action += "  2. UPDATE_UE4SS.bat  (hakee uusimman esijulkaisun)"
       $h.action += "  3. Signature-ohitus, jos sinulla on oikea tavukuvio:"
       $h.action += "     FIX_UE4SS_SCAN.bat -Signature FText_Constructor -Aob <tavukuvio>"
     } elseif ($h.scanFixApplied) {
-      $h.action += "  1. Skannauskorjaus on jo kokeiltu eika se auttanut."
-      $h.action += "  2. INSTALL_UE4SS.bat -Force -Experimental"
+      $h.action += "  1. Skannauskorjaus on kokeiltu eika se auttanut."
+      $h.action += "     Peru se, jotta kaynnistys ei hidastu turhaan:"
+      $h.action += "     FIX_UE4SS_SCAN.bat -Revert"
+      $h.action += "  2. UPDATE_UE4SS.bat  (hakee uusimman esijulkaisun)"
       $h.action += "  3. Signature-ohitus, jos sinulla on oikea tavukuvio:"
       $h.action += "     FIX_UE4SS_SCAN.bat -Signature FText_Constructor -Aob <tavukuvio>"
     } else {
-      $h.action += "  1. INSTALL_UE4SS.bat -Force -Experimental"
+      $h.action += "  1. UPDATE_UE4SS.bat  (hakee uusimman esijulkaisun)"
       $h.action += "  2. Signature-ohitus, jos sinulla on oikea tavukuvio:"
       $h.action += "     FIX_UE4SS_SCAN.bat -Signature FText_Constructor -Aob <tavukuvio>"
     }
@@ -285,7 +302,7 @@ function Get-UE4SSHealth {
     if ($h.scanFailure) { $h.action += $h.scanFailure }
     $h.action += "Se ei paase kayttamaan yhtaan Lua-modia ennen kuin skannaus onnistuu."
     $h.action += "Tama ei ole taman modin vika: sama estaa kaikki muutkin Lua-modit."
-    $h.action += "Korjaus: INSTALL_UE4SS.bat -Force -Experimental"
+    $h.action += "Korjaus: UPDATE_UE4SS.bat"
     if ($h.version) { $h.action += ("Asennettu versio: {0}" -f $h.version) }
   }
   elseif ($h.startedLuaMods.Count -gt 0) {
@@ -340,6 +357,11 @@ function Write-UE4SSHealth {
     } else {
       Say "  prosessissa   : UE4SS:aa EI ladattu ($($h.processModules) moduulia)" "Red"
     }
+  } elseif ($h.serverStart) {
+    Say "  prosessissa   : moduulilistaa ei voitu lukea" "DarkGray"
+  }
+  if ($h.logClockOffsetMinutes) {
+    Say "  loki kirjaa UTC-aikaa ($($h.logClockOffsetMinutes) min ero paikalliseen)" "DarkGray"
   }
   if ($h.gameExeDate) { Say "  SCUMServer.exe: $($h.gameExeDate.ToString('yyyy-MM-dd'))" }
   if ($h.serverStart) { Say "  palvelin alkoi: $($h.serverStart)" }

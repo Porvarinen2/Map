@@ -100,7 +100,24 @@ try {
     Say "Haetaan julkaisulista: $API"
     $headers = @{ "User-Agent" = "TeslesNPCOverhaul-Installer"
                   "Accept" = "application/vnd.github+json" }
-    $releases = Invoke-RestMethod -Uri "$API`?per_page=15" -Headers $headers -TimeoutSec 60
+    $releases = $null
+    try {
+      $releases = Invoke-RestMethod -Uri "$API`?per_page=15" -Headers $headers -TimeoutSec 60
+    } catch {
+      Write-Host ""
+      Say "Julkaisulistaa ei saatu haettua:" "Red"
+      Say "  $($_.Exception.Message)" "Red"
+      Write-Host ""
+      Say "Yleisimmat syyt: verkko, palomuuri, tai GitHubin tuntirajoitus" "Yellow"
+      Say "(60 pyyntoa tunnissa ilman kirjautumista)." "Yellow"
+      Write-Host ""
+      Say "Lataa zip kasin ja asenna siita:" "Cyan"
+      Say "  1. Avaa https://github.com/$REPO/releases" "Cyan"
+      Say "  2. Lataa uusin UE4SS_vX.Y.Z.zip" "Cyan"
+      Say "  3. INSTALL_UE4SS.bat -Force -ZipFile C:\polku\UE4SS.zip" "Cyan"
+      Write-Host ""
+      return
+    }
 
     # Pick the newest release that ships a plain UE4SS zip. Development and
     # debug builds are skipped; a pre-release is only used when asked for,
@@ -124,8 +141,20 @@ try {
     }
 
     $tag = $chosen.tag_name
+    $published = $null
+    try { $published = ([datetime]$chosen.published_at).ToString("yyyy-MM-dd") } catch {}
     Write-Host ""
     Say "Versio  : $tag$(if ($chosen.prerelease) { '  (pre-release)' })" "Cyan"
+    if ($published) { Say "Julkaistu: $published" "Cyan" }
+    if ($before) {
+      Say ("Nykyinen : {0}" -f $before.date.ToString("yyyy-MM-dd")) "DarkGray"
+      if ($published -and $published -le $before.date.ToString("yyyy-MM-dd")) {
+        Say "Tama ei ole uudempi kuin asennettu versio." "Yellow"
+        if (-not $Experimental) {
+          Say "Kokeile: INSTALL_UE4SS.bat -Force -Experimental" "Yellow"
+        }
+      }
+    }
     Say "Tiedosto: $($asset.name)  ($([math]::Round($asset.size/1MB,2)) MB)"
     Say "Osoite  : $($asset.browser_download_url)"
     Write-Host ""

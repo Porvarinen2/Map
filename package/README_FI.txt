@@ -1,4 +1,4 @@
-TESLES NPC OVERHAUL 1.0.6
+TESLES NPC OVERHAUL 1.0.7
 =========================
 
 Pysyva NPC-populaatio SCUM-palvelimelle. NPC-hahmot ja niiden ryhmat ovat
@@ -102,7 +102,16 @@ Yhtaan Lua-modia ei ladata - ei tata eika muita.
 Tama on UE4SS:n ja pelin buildin valinen yhteensopivuusongelma, ei modin
 koodia. Mita tehda, tassa jarjestyksessa:
 
-  1. FIX_UE4SS_SCAN.bat
+  1. UPDATE_UE4SS.bat
+     Hakee uusimman UE4SS-esijulkaisun ja asentaa sen. Uusien pelibuildien
+     tuki tulee yleensa ensin sinne. Asennin kertoo julkaisupaivan ja sen
+     jos lataaja ei tosiasiassa vaihtunut.
+
+     Jos lataus ei onnistu (verkko tai GitHubin tuntiraja), asennin nayttaa
+     suoran osoitteen. Lataa zip kasin ja aja:
+       INSTALL_UE4SS.bat -Force -ZipFile C:\polku\UE4SS.zip
+
+  2. FIX_UE4SS_SCAN.bat
      UE4SS skannaa pelin binaaria oletuksena kahdeksalla saikeella. Jokainen
      saie skannaa oman lohkonsa, ja lohkon rajalla oleva kuvio voi tulla
      raportoiduksi useaan kertaan hieman eri kohdasta - juuri sita
@@ -123,11 +132,6 @@ koodia. Mita tehda, tassa jarjestyksessa:
 
      Lisaksi -ServerTuning kytkee UE4SS:n debug-GUIn pois, jota
      headless-palvelin ei tarvitse.
-
-  2. INSTALL_UE4SS.bat -Force -Experimental
-     Uusien pelibuildien tuki tulee usein ensin esijulkaisuihin. Asennin
-     kertoo jos lataaja ei tosiasiassa vaihtunut - silloin sinulla oli jo
-     sama versio.
 
   3. Signature-ohitus, jos saat oikean tavukuvion UE4SS:n tai SCUM-
      modausyhteison puolelta:

@@ -232,6 +232,30 @@ Add-Content (Join-Path $sp "UE4SS.log") "[$now] Fatal Error: PS scan timed out"
 $hs3 = Get-UE4SSHealth $sp
 Check ($hs3.verdict -eq "SCAN_ABORTED") "once UE4SS aborts, the verdict changes (got $($hs3.verdict))"
 
+# UE4SS logs in UTC on this server while the file timestamp is local. A log
+# written minutes ago must not read as three hours stale.
+Write-Host ""
+Write-Host "== health: UTC log offset =="
+$tz = Join-Path ([System.IO.Path]::GetTempPath()) ("tesles_tz_" + [guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Path (Join-Path $tz "Mods") -Force | Out-Null
+Set-Content (Join-Path $tz "dwmapi.dll") "x"
+Set-Content (Join-Path $tz "UE4SS.dll") "x"
+Set-Content (Join-Path $tz "SCUMServer.exe") "x"
+$utc = (Get-Date).AddHours(-3).ToString("yyyy-MM-dd HH:mm:ss")
+$tzLines = @("[$utc] Console created", "[$utc] UE4SS - v3.0.1 Beta #0 - Git SHA #x")
+for ($i = 1; $i -le 30; $i++) {
+  $tzLines += "[$utc] PS Scan attempt $i"
+  $tzLines += "[$utc] [PS] Failed to find FText::FText(FString&&): iter returned multiple unique values"
+}
+$tzLines += "[$utc] Fatal Error: PS scan timed out"
+$tzLines | Set-Content (Join-Path $tz "UE4SS.log")
+(Get-Item (Join-Path $tz "UE4SS.log")).LastWriteTime = (Get-Date)
+$ht = Get-UE4SSHealth $tz
+Check ($ht.verdict -eq "SCAN_ABORTED") `
+      "a log written in UTC is not mistaken for a stale one (got $($ht.verdict))"
+Check ($ht.logClockOffsetMinutes -ne $null) "the clock offset between log and file is reported"
+Remove-Item $tz -Recurse -Force -ErrorAction SilentlyContinue
+
 Remove-Item $sp -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item $sl -Recurse -Force -ErrorAction SilentlyContinue
 
