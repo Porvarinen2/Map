@@ -20,7 +20,12 @@ Ph.tuning = {
     virtualize_uu = 88000,        -- release them past this (hysteresis)
     spawn_spacing_uu = 260,
     spawn_retry_sec = 25,
-    max_spawns_per_tick = 4,
+    -- One spawn per tick until this server has proven it can materialise an
+    -- NPC at all. Class loading, physics, AI and replication all land on the
+    -- game thread at once, and a burst of them is what stalls a tick.
+    max_spawns_per_tick = 1,
+    max_spawns_per_tick_proven = 3,
+    require_ground_proof = true,
     max_physical_groups = 12,
     ground_probe_uu = 20000,
 }
@@ -99,7 +104,10 @@ function Ph.materialize(group, bridge, ctx)
 
     local spawned, failed = 0, 0
     local last_reason = nil
-    local budget = Ph.tuning.max_spawns_per_tick
+    -- The wider budget is earned: only after this session has materialised an
+    -- NPC successfully is it safe to ask for several in one tick.
+    local budget = Ph.proven and Ph.tuning.max_spawns_per_tick_proven
+                   or Ph.tuning.max_spawns_per_tick
     local alive = {}
     for _, m in ipairs(group.members) do
         if m.alive then alive[#alive + 1] = m end
@@ -110,35 +118,47 @@ function Ph.materialize(group, bridge, ctx)
         if not m.materialized then
             local pos = Ph.member_spawn_point(group, i, #alive)
             local ground = bridge.ground_at and bridge.ground_at(pos) or nil
+            -- No proven ground means the actor would be dropped from a guessed
+            -- height. A falling NPC is a failed spawn dressed up as a live one,
+            -- so refuse rather than place it.
+            local grounded = ground ~= nil or not Ph.tuning.require_ground_proof
             if ground then pos.Z = ground end
-            local handle, err = bridge.spawn_npc({
-                archetype = m.archetype,
-                level = m.level,
-                position = pos,
-                group = group.gid,
-                npcId = m.npcId,
-                -- Radiation-zone groups get SCUM's hazmat body variant where
-                -- the server exposes it; the bridge falls back to the plain
-                -- class when it does not.
-                variant = (group.zone == "RADIATION") and "Radiation" or nil,
-                yaw = ctx.yaw,
-            })
             budget = budget - 1
-            if handle then
-                m.runtime_id = handle
-                m.materialized = true
-                m.position = U.copy_vec(pos)
-                m.spawned_at = now
-                spawned = spawned + 1
-                -- Without this SCUM's own encounter logic keeps issuing its
-                -- own move orders and fights the director for the same pawn.
-                if ctx.take_ownership and bridge.take_ownership then
-                    bridge.take_ownership(handle)
-                end
-                if ctx.on_spawn then ctx.on_spawn(group, m, pos) end
-            else
+
+            if not grounded then
                 failed = failed + 1
-                last_reason = err or "SPAWN_FAILED"
+                last_reason = "NO_GROUND_PROOF"
+            else
+                local handle, err = bridge.spawn_npc({
+                    archetype = m.archetype,
+                    level = m.level,
+                    position = pos,
+                    group = group.gid,
+                    npcId = m.npcId,
+                    -- Radiation-zone groups get SCUM's hazmat body variant
+                    -- where the server exposes it; the bridge falls back to
+                    -- the plain class when it does not.
+                    variant = (group.zone == "RADIATION") and "Radiation" or nil,
+                    yaw = ctx.yaw,
+                })
+                if handle then
+                    m.runtime_id = handle
+                    m.materialized = true
+                    m.position = U.copy_vec(pos)
+                    m.spawned_at = now
+                    spawned = spawned + 1
+                    Ph.proven = true
+                    -- Without this SCUM's own encounter logic keeps issuing
+                    -- its own move orders and fights the director for the
+                    -- same pawn.
+                    if ctx.take_ownership and bridge.take_ownership then
+                        bridge.take_ownership(handle)
+                    end
+                    if ctx.on_spawn then ctx.on_spawn(group, m, pos) end
+                else
+                    failed = failed + 1
+                    last_reason = err or "SPAWN_FAILED"
+                end
             end
         end
     end

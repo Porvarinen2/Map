@@ -1,7 +1,7 @@
 -- TESLES NPC OVERHAUL - server configuration.
 -- Distances are Unreal units unless a name says otherwise. 100 UU = 1 metre.
 return {
-    Version = "1.0.3",
+    Version = "1.0.4",
 
     -- ---------------------------------------------------------- population --
     Enabled = true,
@@ -45,8 +45,21 @@ return {
     MaterializeDistanceUU = 60000,
     VirtualizeDistanceUU = 88000,
     MaxPhysicalGroups = 12,
-    MaxSpawnsPerTick = 4,
+    -- One spawn per tick until this server proves it can materialise an NPC,
+    -- then the larger budget. Class loading, physics, AI and replication all
+    -- land on the game thread together, and a burst of them stalls the tick.
+    MaxSpawnsPerTick = 1,
+    MaxSpawnsPerTickProven = 3,
     SpawnRetrySec = 25,
+    -- Refuse to spawn where navigation cannot prove the ground height. An
+    -- actor dropped from a guessed height falls, and that is a failed spawn.
+    RequireGroundProof = true,
+
+    -- ------------------------------------------------- engine scan budget --
+    -- Reflection scans are the expensive part of a tick, so their results are
+    -- reused for this many seconds instead of being repeated per group.
+    PlayerScanIntervalSec = 2,
+    ZombieScanIntervalSec = 4,
 
     -- ------------------------------------------------------------- combat --
     EnableCombat = true,

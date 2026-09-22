@@ -18,6 +18,7 @@ function Get-UE4SSHealth {
     ue4ssDll = $null
     settings = $null
     modsDirs = @()
+    loaderDate = $null
     logPath = $null
     logTime = $null
     logAgeMinutes = $null
@@ -27,6 +28,7 @@ function Get-UE4SSHealth {
     modsDirectoryInLog = $null
     scanAttempts = 0
     scanFailure = $null
+    fatalError = $null
     startedLuaMods = @()
     verdict = "UNKNOWN"
     action = @()
@@ -48,7 +50,11 @@ function Get-UE4SSHealth {
   }
   foreach ($n in @(@("UE4SS.dll"), @("ue4ss", "UE4SS.dll"))) {
     $p = $Win64; foreach ($seg in $n) { $p = Join-Path $p $seg }
-    if (Test-Path $p) { $h.ue4ssDll = $p; break }
+    if (Test-Path $p) {
+      $h.ue4ssDll = $p
+      $h.loaderDate = (Get-Item $p).LastWriteTime.ToString("yyyy-MM-dd")
+      break
+    }
   }
   foreach ($n in @(@("UE4SS-settings.ini"), @("ue4ss", "UE4SS-settings.ini"))) {
     $p = $Win64; foreach ($seg in $n) { $p = Join-Path $p $seg }
@@ -105,6 +111,10 @@ function Get-UE4SSHealth {
     }
     $fail = $all | Select-String -Pattern "Failed to find ([^:]+):(.*)$" | Select-Object -Last 1
     if ($fail) { $h.scanFailure = $fail.Line.Trim() }
+    # UE4SS does not merely stall on a failed scan: it gives up after
+    # SecondsToScanBeforeGivingUp and aborts. That line is the real verdict.
+    $fatal = $all | Select-String -Pattern "Fatal Error:(.*)$" | Select-Object -Last 1
+    if ($fatal) { $h.fatalError = $fatal.Line.Trim() }
     $started = $all | Select-String -Pattern "Starting Lua mod '([^']+)'"
     if ($started) {
       $h.startedLuaMods = $started.Matches | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique
@@ -137,13 +147,31 @@ function Get-UE4SSHealth {
     $h.verdict = "MOD_STARTED"
     $h.action += "UE4SS kaynnisti modin. Ongelma on modin sisalla - katso boot.log."
   }
+  elseif ($h.fatalError -and $h.fatalError -match "scan") {
+    $h.verdict = "SCAN_ABORTED"
+    $h.action += "UE4SS LOPETTI kaynnistyksen omaan virheeseensa:"
+    $h.action += ("  {0}" -f $h.fatalError)
+    if ($h.scanFailure) { $h.action += ("  {0}" -f $h.scanFailure) }
+    $h.action += ("Se ehti {0} skannausyritysta ennen aikakatkaisua." -f $h.scanAttempts)
+    $h.action += "UE4SS ei siis ladannut yhtaan Lua-modia - ei tata eika muita."
+    $h.action += "Kyse on UE4SS:n ja pelin buildin valisesta yhteensopivuudesta,"
+    $h.action += "ei taman modin koodista."
+    $h.action += ""
+    $h.action += "Korjaus jarjestyksessa:"
+    $h.action += "  1. INSTALL_UE4SS.bat -Force              (uusin vakaa)"
+    $h.action += "  2. INSTALL_UE4SS.bat -Force -Experimental (uusin esijulkaisu)"
+    $h.action += "  3. Jos molemmat kaatuvat samaan riviin, UE4SS tarjoaa"
+    $h.action += "     signature-ohituksen: UE4SS_Signatures\<nimi>.lua"
+    if ($h.version) { $h.action += ("Asennettu nyt: {0}" -f $h.version) }
+    if ($h.loaderDate) { $h.action += ("Lataajan paivays: {0}" -f $h.loaderDate) }
+  }
   elseif ($h.scanAttempts -ge 5) {
     $h.verdict = "SCAN_LOOP"
     $h.action += ("UE4SS juuttui AOB-skannaukseen: {0} yritysta." -f $h.scanAttempts)
     if ($h.scanFailure) { $h.action += $h.scanFailure }
     $h.action += "Se ei paase kayttamaan yhtaan Lua-modia ennen kuin skannaus onnistuu."
     $h.action += "Tama ei ole taman modin vika: sama estaa kaikki muutkin Lua-modit."
-    $h.action += "Korjaus: paivita UE4SS uudempaan versioon joka tukee SCUMin nykyista buildia."
+    $h.action += "Korjaus: INSTALL_UE4SS.bat -Force -Experimental"
     if ($h.version) { $h.action += ("Asennettu versio: {0}" -f $h.version) }
   }
   elseif ($h.startedLuaMods.Count -gt 0) {
@@ -166,6 +194,7 @@ function Write-UE4SSHealth {
 
   $col = switch ($h.verdict) {
     "MOD_STARTED" { "Green" }
+    "SCAN_ABORTED" { "Red" }
     "SCAN_LOOP" { "Red" }
     "STALE_LOG" { "Red" }
     "NO_LOG" { "Red" }
@@ -174,7 +203,10 @@ function Write-UE4SSHealth {
   Write-Host ""
   Say "UE4SS: $($h.verdict)" $col
   if ($h.version) { Say "  versio        : $($h.version)" }
-  if ($h.ue4ssDll) { Say "  UE4SS.dll     : $($h.ue4ssDll)" }
+  if ($h.ue4ssDll) {
+    Say "  UE4SS.dll     : $($h.ue4ssDll)"
+    Say "  lataaja teht. : $($h.loaderDate)"
+  }
   if ($h.proxyDlls.Count -gt 0) {
     Say "  proxy-DLL     : $($h.proxyDlls -join ', ')"
   } else {
@@ -190,6 +222,7 @@ function Write-UE4SSHealth {
     Say "  mods-kansio   : $($m.path)  ($($m.folders) modia)"
   }
   if ($h.scanAttempts -gt 0) { Say "  AOB-skannaus  : $($h.scanAttempts) yritysta" "Yellow" }
+  if ($h.fatalError) { Say "  UE4SS-virhe   : $($h.fatalError)" "Red" }
   if ($h.startedLuaMods.Count -gt 0) {
     Say "  kaynnistetyt  : $($h.startedLuaMods -join ', ')"
   }

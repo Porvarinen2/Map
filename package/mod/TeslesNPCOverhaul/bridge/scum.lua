@@ -19,6 +19,11 @@ local CONTROLLER_CLASSES = {
 local ZOMBIE_CLASSES = { "BP_Puppet_C", "BP_Zombie_C", "PuppetCharacter" }
 
 local world_cache = nil
+-- Reflection scans are the expensive part of every tick. Each cache holds a
+-- result for a short window so a busy world does not re-scan GUObjectArray
+-- several times inside one frame.
+local scan_cache = { players = { t = 0, v = {} }, zombies = {} }
+local CATALOG_RETRY_SEC = 45
 local aihelper_cache = nil
 local controller_cache = setmetatable({}, { __mode = "k" })
 local class_cache = {}
@@ -170,6 +175,19 @@ function B.refresh_catalog()
     return found
 end
 
+-- Assets load as the server finishes starting, so a catalog that was empty at
+-- boot is not permanently empty. Rescan on a backoff until classes appear,
+-- then stop: repeating a successful scan is pure game-thread cost.
+function B.maybe_refresh_catalog(now)
+    if (B.catalog_found or 0) >= 5 then return false end
+    now = now or os.time()
+    if B.catalog_next_scan and now < B.catalog_next_scan then return false end
+    B.catalog_next_scan = now + CATALOG_RETRY_SEC
+    local before = B.catalog_found or 0
+    B.refresh_catalog()
+    return (B.catalog_found or 0) > before
+end
+
 function B.class_for(level, variant)
     local key = math.max(1, math.min(5, math.floor(level or 1))) .. (variant or "")
     local c = class_cache[key]
@@ -195,6 +213,11 @@ end
 -- --------------------------------------------------------------- players ---
 
 function B.player_positions()
+    local now = os.time()
+    local c = scan_cache.players
+    if c.t and (now - c.t) < (B.cfg and B.cfg.PlayerScanIntervalSec or 2) then
+        return c.v
+    end
     local out = {}
     local ok, list = pcall(function() return FindAllOf("ConZPlayerController") end)
     if not ok or not list then
@@ -211,11 +234,15 @@ function B.player_positions()
             end
         end
     end
+    c.t, c.v = now, out
     return out
 end
 
 -- ------------------------------------------------------------- spawn/kill --
 
+-- Returns the navigable ground height, or nil when it cannot be proven. The
+-- caller must treat nil as "do not spawn here": an actor placed at a guessed
+-- height falls, and a falling NPC is a failed spawn, not a live one.
 function B.ground_at(pos)
     local ok, nav = pcall(function() return FindFirstOf("NavigationSystemV1") end)
     if not ok or not valid(nav) then return nil end
@@ -431,20 +458,36 @@ end
 
 -- --------------------------------------------------------------- sensing ---
 
-function B.nearby_zombies(pos, radius)
-    local total = 0
+-- Zombie positions are collected once per interval and then answered from the
+-- cache for every group that asks, instead of one full scan per group.
+local function zombie_positions()
+    local now = os.time()
+    local c = scan_cache.zombies
+    if c.t and (now - c.t) < (B.cfg and B.cfg.ZombieScanIntervalSec or 4) then
+        return c.v
+    end
+    local out = {}
     for _, cname in ipairs(ZOMBIE_CLASSES) do
         local ok, list = pcall(function() return FindAllOf(cname) end)
-        if ok and list then
+        if ok and list and #list > 0 then
             for _, z in ipairs(list) do
                 if valid(z) then
                     local okl, loc = pcall(function() return z:K2_GetActorLocation() end)
                     local v = okl and vec(loc) or nil
-                    if v and U.dist2d(v, pos) <= radius then total = total + 1 end
+                    if v then out[#out + 1] = v end
                 end
             end
-            if #list > 0 then break end
+            break
         end
+    end
+    c.t, c.v = now, out
+    return out
+end
+
+function B.nearby_zombies(pos, radius)
+    local total = 0
+    for _, v in ipairs(zombie_positions()) do
+        if U.dist2d(v, pos) <= radius then total = total + 1 end
     end
     return total
 end

@@ -1,4 +1,4 @@
-TESLES NPC OVERHAUL 1.0.3
+TESLES NPC OVERHAUL 1.0.4
 =========================
 
 Pysyva NPC-populaatio SCUM-palvelimelle. NPC-hahmot ja niiden ryhmat ovat
@@ -76,32 +76,47 @@ mikaan tassa paketissa ei voi toimia - eivatka muutkaan Lua-modit.
 CHECK.bat ja DIAGNOSE.bat kertovat UE4SS:n tilan yhdella sanalla:
 
   MOD_STARTED     UE4SS kaynnisti modin. Vika on modissa, katso boot.log.
+  SCAN_ABORTED    UE4SS lopetti omaan virheeseensa ennen modien latausta.
   SCAN_LOOP       UE4SS juuttui AOB-skannaukseen eika paase modeihin.
   STALE_LOG       UE4SS.log on vanhemmalta ajolta kuin nykyinen palvelin.
                   UE4SS ei siis lataudu lainkaan tassa ajossa.
   NO_LOG          UE4SS ei ole kirjoittanut lokia koskaan.
   NO_MODS_STARTED UE4SS latautui mutta ei kaynnistanyt yhtaan Lua-modia.
 
-SCAN_LOOP nayttaa UE4SS.log:ssa tallaiselta:
+SCAN_ABORTED nayttaa UE4SS.log:ssa tallaiselta:
 
   [PS] Failed to find FText::FText(FString&&): iter returned multiple unique values
+  [PS] You can supply your own AOB in 'UE4SS_Signatures/FText_Constructor.lua'
   [PS] Scan failed
-  PS Scan attempt 2
-  PS Scan attempt 3
-  ... satoja yrityksia, loki paattyy kesken
+  ...
+  Fatal Error: PS scan timed out
 
-UE4SS yrittaa loytaa pelin binaarista tarvitsemansa osoitteet ja jaa
-luuppiin kun yksi niista on moniselitteinen. Se ei paase modien lataukseen.
-Tama on UE4SS:n ja pelin version valinen yhteensopivuusongelma.
+UE4SS etsii pelin binaarista tarvitsemansa osoitteet. Yksi niista on
+moniselitteinen, joten skannaus epaonnistuu, ja asetuksen
+SecondsToScanBeforeGivingUp kuluttua UE4SS lopettaa kaynnistyksen kokonaan.
+Yhtaan Lua-modia ei ladata - ei tata eika muita.
 
-Mita tehda:
-  1. Paivita UE4SS uudempaan versioon. v3.0.1 Beta on vanha eika tunne
-     SCUMin nykyista buildia.
-  2. Jos palvelin on juuri paivittynyt, SCUM-paivitys on voinut ylikirjoittaa
-     UE4SS:n proxy-DLL:n (dwmapi.dll / xinput1_3.dll) Win64-kansiossa.
-     CHECK.bat kertoo onko se paikallaan.
-  3. Tarkista etta palvelin kaynnistetaan samasta Win64-kansiosta johon
-     UE4SS on asennettu.
+Tama on UE4SS:n ja pelin buildin valinen yhteensopivuusongelma, ei modin
+koodia. Mita tehda, tassa jarjestyksessa:
+
+  1. INSTALL_UE4SS.bat -Force
+     Asentaa uusimman vakaan julkaisun. Asennin kertoo jos lataaja ei
+     tosiasiassa vaihtunut - silloin sinulla oli jo sama versio.
+
+  2. INSTALL_UE4SS.bat -Force -Experimental
+     Uusien pelibuildien tuki tulee usein ensin esijulkaisuihin.
+
+  3. Jos molemmat kaatuvat samaan riviin, UE4SS tarjoaa itse ohituksen:
+     tiedosto UE4SS_Signatures\FText_Constructor.lua, jossa annetaan oma
+     AOB. Oikea tavukuvio riippuu SCUMServer.exe:n buildista, joten se on
+     haettava UE4SS:n tai SCUM-modausyhteison puolelta. Tama paketti ei
+     arvaa sita: vaara osoite voi kaataa palvelimen.
+
+Tarkista myos:
+  - Onko proxy-DLL (dwmapi.dll / xinput1_3.dll) yha Win64-kansiossa.
+    SCUM-paivitys voi ylikirjoittaa sen. CHECK.bat kertoo.
+  - Kaynnistetaanko palvelin samasta Win64-kansiosta johon UE4SS on
+    asennettu.
 
 Kun UE4SS alkaa kayttaa Lua-modeja, tama modi kirjoittaa boot.log:n
 sekunneissa. Aja CHECK.bat uudestaan - sen pitaisi nayttaa MOD_STARTED.
@@ -131,6 +146,11 @@ ASETUKSET
 Mods\TeslesNPCOverhaul\config.lua
 
   TargetNPCs              populaation koko (oletus 100, kova katto 250)
+  MaxSpawnsPerTick        1 kunnes palvelin on todistanut yhden spawnin
+  MaxSpawnsPerTickProven  3 sen jalkeen
+  RequireGroundProof      true = ei spawnata ilman todennettua maanpintaa
+  PlayerScanIntervalSec   pelaajahaun valimuisti (2 s)
+  ZombieScanIntervalSec   zombihaun valimuisti (4 s)
   EnableReplenish         false = kuolleita ei korvata automaattisesti
   MaterializeDistanceUU   milloin ryhma muuttuu fyysiseksi (60000 = 600 m)
   VirtualizeDistanceUU    milloin fyysiset hahmot vapautetaan (88000 = 880 m)

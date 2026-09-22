@@ -62,9 +62,29 @@ try {
   }
   Say "Palvelin: $Win64" "Green"
 
-  $already = (Test-Path (Join-Path $Win64 'UE4SS.dll')) -or
-             (Test-Path (Join-Path (Join-Path $Win64 'ue4ss') 'UE4SS.dll'))
-  if ($already -and -not $Force) {
+  # Record what is installed now, so the end of the run can prove whether the
+  # update actually replaced anything. "I updated it" and "the loader on disk
+  # changed" are not the same claim.
+  function Get-LoaderInfo($w) {
+    foreach ($n in @(@('UE4SS.dll'), @('ue4ss', 'UE4SS.dll'))) {
+      $p = $w; foreach ($seg in $n) { $p = Join-Path $p $seg }
+      if (Test-Path $p) {
+        $f = Get-Item $p
+        return [pscustomobject]@{
+          path = $p; size = $f.Length; date = $f.LastWriteTime
+          hash = (Get-FileHash $p -Algorithm SHA256).Hash
+        }
+      }
+    }
+    return $null
+  }
+  $before = Get-LoaderInfo $Win64
+  if ($before) {
+    Say ("Asennettuna nyt: UE4SS.dll  {0:N0} B  {1}" -f $before.size,
+         $before.date.ToString("yyyy-MM-dd")) "DarkGray"
+  }
+
+  if ($before -and -not $Force) {
     Say "UE4SS on jo asennettu. Aja -Force jos haluat asentaa uudelleen." "Yellow"
     return
   }
@@ -216,17 +236,29 @@ try {
     }
   }
 
-  $ok = (Test-Path (Join-Path $Win64 'UE4SS.dll')) -or
-        (Test-Path (Join-Path (Join-Path $Win64 'ue4ss') 'UE4SS.dll'))
+  $after = Get-LoaderInfo $Win64
   Write-Host ""
-  if ($ok) {
+  if (-not $after) {
+    Say "UE4SS.dll ei loydy asennuksen jalkeen - jokin meni pieleen." "Red"
+  } elseif ($before -and $before.hash -eq $after.hash) {
+    Say "VAROITUS: lataaja ei muuttunut." "Yellow"
+    Say ("UE4SS.dll on yha sama tiedosto ({0:N0} B, {1})." -f
+         $after.size, $after.date.ToString("yyyy-MM-dd")) "Yellow"
+    Say "Asensit siis saman version uudelleen. Jos ongelma oli"
+    Say "yhteensopivuudessa, se ei korjaannu talla."
+    Write-Host ""
+    Say "Kokeile esijulkaisua: INSTALL_UE4SS.bat -Force -Experimental" "Cyan"
+  } else {
     Say "VALMIS - UE4SS $tag asennettu." "Green"
+    if ($before) {
+      Say ("Lataaja vaihtui: {0} -> {1}" -f $before.date.ToString("yyyy-MM-dd"),
+           $after.date.ToString("yyyy-MM-dd")) "Green"
+    }
     Say "proxy-DLL : $($proxy.Name -join ', ')"
     Say "Mods      : $modsDir"
     Write-Host ""
-    Say "Seuraavaksi: aja INSTALL.bat asentaaksesi itse modin."
-  } else {
-    Say "UE4SS.dll ei loydy asennuksen jalkeen - jokin meni pieleen." "Red"
+    Say "Seuraavaksi: aja INSTALL.bat asentaaksesi itse modin,"
+    Say "kaynnista palvelin ja aja CHECK.bat."
   }
   Write-Host ""
 

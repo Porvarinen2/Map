@@ -453,6 +453,15 @@ function D:tick(now)
     Router.begin_tick(self.cfg.RouteExpansionsPerTick or Router.TICK_BUDGET,
         self.cfg.RouteMillisecondsPerTick or Router.MS_BUDGET)
 
+    -- SCUM's NPC classes finish loading after the server is already up, so a
+    -- catalog that was empty at boot is rescanned on a backoff until it fills.
+    if self.bridge and self.bridge.maybe_refresh_catalog then
+        if self.bridge.maybe_refresh_catalog(now) then
+            Log.event("CATALOG", "SYSTEM",
+                tostring(self.bridge.catalog_found) .. " NPC classes resolved")
+        end
+    end
+
     local players = (self.bridge and self.bridge.player_positions
         and self.bridge.player_positions()) or {}
     local world = self.world

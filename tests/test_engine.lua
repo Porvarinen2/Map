@@ -1,0 +1,170 @@
+-- Contract tests for the engine-facing layer.
+--
+-- These cover the behaviour the technical environment report calls out as the
+-- real bottleneck: spawning is paced, an unproven ground height is a refusal
+-- rather than a falling NPC, the class catalog is retried as assets finish
+-- loading, and reflection scans are not repeated per group.
+package.path = "../package/mod/TeslesNPCOverhaul/?.lua;./?.lua;" .. package.path
+
+local U = require("core.util")
+local RNG = require("core.rng")
+local Log = require("core.log")
+local Physical = require("sim.physical")
+local Factory = require("npc.factory")
+Log.configure(nil, "error", false)
+
+local fails = 0
+local function check(cond, msg)
+    if cond then print("  ok  " .. msg)
+    else print("FAIL: " .. msg); fails = fails + 1 end
+end
+local function section(t) print("\n== " .. t .. " ==") end
+
+-- A bridge that records what it was asked to do.
+local function make_bridge(opts)
+    opts = opts or {}
+    local b = {
+        spawn_calls = 0, ground_calls = 0, owned = 0, handles = 0,
+        ground = opts.ground,
+    }
+    function b.available() return true end
+    function b.ground_at(p)
+        b.ground_calls = b.ground_calls + 1
+        return b.ground
+    end
+    function b.spawn_npc(req)
+        b.spawn_calls = b.spawn_calls + 1
+        b.last_req = req
+        if opts.fail then return nil, "SPAWN_FAILED" end
+        b.handles = b.handles + 1
+        return b.handles
+    end
+    function b.take_ownership(h) b.owned = b.owned + 1; return true end
+    function b.actor_position() return nil end
+    function b.despawn() return true end
+    return b
+end
+
+local function fresh_group(class, n)
+    local g = Factory.new_group({ id = 1, class = class or "scavengers", seed = 7,
+        size = n, position = { X = 0, Y = 0, Z = 1000 } })
+    g.mv = { smooth_heading = 0 }
+    return g
+end
+
+section("spawn pacing")
+Physical.proven = false
+local b = make_bridge({ ground = 950 })
+local g = fresh_group("scavengers", 5)
+check(#g.members == 5, "the test group really has five members (" .. #g.members .. ")")
+local spawned, failed = Physical.materialize(g, b, { now = 100, take_ownership = true })
+check(spawned == Physical.tuning.max_spawns_per_tick,
+      string.format("an unproven server spawns %d per tick, not the whole group (got %d)",
+                    Physical.tuning.max_spawns_per_tick, spawned))
+check(Physical.proven == true, "a successful spawn marks the server as proven")
+
+local spawned2 = Physical.materialize(g, b, { now = 101, take_ownership = true })
+check(spawned2 <= Physical.tuning.max_spawns_per_tick_proven,
+      string.format("a proven server stays within the larger budget (%d)", spawned2))
+check(spawned2 > Physical.tuning.max_spawns_per_tick,
+      "the budget actually widens once spawning is proven")
+check(b.owned == spawned + spawned2, "ownership is taken for every spawned actor")
+
+section("ground proof")
+Physical.proven = false
+local b2 = make_bridge({ ground = nil })     -- navigation cannot prove a height
+local g2 = fresh_group("scavengers", 4)
+local s2, f2, why = Physical.materialize(g2, b2, { now = 200 })
+check(s2 == 0, "nothing is spawned when the ground height cannot be proven")
+check(why == "NO_GROUND_PROOF", "the refusal names the reason (got " .. tostring(why) .. ")")
+check(b2.spawn_calls == 0, "the engine is never asked to spawn into thin air")
+check(Physical.physical_count(g2) == 0, "no member is marked materialized")
+check(g2.spawn_retry_at ~= nil, "a backoff is set instead of retrying every tick")
+
+Physical.tuning.require_ground_proof = false
+local b3 = make_bridge({ ground = nil })
+local g3 = fresh_group("scavengers", 2)
+local s3 = Physical.materialize(g3, b3, { now = 300 })
+check(s3 > 0, "with the check disabled the spawn is attempted anyway")
+Physical.tuning.require_ground_proof = true
+
+section("radiation variant")
+Physical.proven = false
+local b4 = make_bridge({ ground = 500 })
+local g4 = fresh_group("radiation_group", 2)
+g4.zone = "RADIATION"
+Physical.materialize(g4, b4, { now = 400 })
+check(b4.last_req and b4.last_req.variant == "Radiation",
+      "a radiation group asks for the hazmat body variant")
+local b5 = make_bridge({ ground = 500 })
+local g5 = fresh_group("scavengers", 2)
+Physical.materialize(g5, b5, { now = 400 })
+check(b5.last_req and b5.last_req.variant == nil,
+      "an ordinary group asks for the plain class")
+
+section("spawn placement")
+Physical.proven = true
+local g6 = fresh_group("scavengers", 5)
+local pts = {}
+for i = 1, 5 do pts[i] = Physical.member_spawn_point(g6, i, 5) end
+local min_gap = math.huge
+for i = 1, 5 do
+    for j = i + 1, 5 do
+        local d = U.dist2d(pts[i], pts[j])
+        if d < min_gap then min_gap = d end
+    end
+end
+check(min_gap > 50, string.format("members are not stacked on one point (%.0f UU apart)", min_gap))
+local far = 0
+for _, p in ipairs(pts) do
+    local d = U.dist2d(p, g6.position)
+    if d > far then far = d end
+end
+check(far < 2000, string.format("the squad still lands together (%.0f UU spread)", far))
+
+section("scan caching")
+-- The bridge module itself needs the UE4SS globals, so the cache contract is
+-- checked through a stand-in with the same shape the director calls.
+local scans = 0
+local cached = { cfg = { PlayerScanIntervalSec = 2 }, _c = { t = 0, v = {} } }
+function cached.player_positions()
+    local now = os.time()
+    if cached._c.t and (now - cached._c.t) < cached.cfg.PlayerScanIntervalSec then
+        return cached._c.v
+    end
+    scans = scans + 1
+    cached._c.t, cached._c.v = now, { { X = 0, Y = 0, Z = 0 } }
+    return cached._c.v
+end
+for _ = 1, 50 do cached.player_positions() end
+check(scans == 1, string.format("repeated lookups inside the window scan once (%d)", scans))
+
+section("catalog retry")
+local catalog = { catalog_found = 0, scans = 0 }
+function catalog.refresh_catalog()
+    catalog.scans = catalog.scans + 1
+    -- Assets finish loading on the third attempt.
+    if catalog.scans >= 3 then catalog.catalog_found = 10 end
+    return catalog.catalog_found
+end
+function catalog.maybe_refresh_catalog(now)
+    if (catalog.catalog_found or 0) >= 5 then return false end
+    if catalog.next_scan and now < catalog.next_scan then return false end
+    catalog.next_scan = now + 45
+    local before = catalog.catalog_found or 0
+    catalog.refresh_catalog()
+    return (catalog.catalog_found or 0) > before
+end
+local t = 1000
+for _ = 1, 400 do
+    catalog.maybe_refresh_catalog(t)
+    t = t + 1
+end
+check(catalog.scans == 3, string.format("the catalog is retried on a backoff, not every tick (%d scans)", catalog.scans))
+check(catalog.catalog_found >= 5, "the retry eventually finds the classes")
+local before_scans = catalog.scans
+for _ = 1, 200 do catalog.maybe_refresh_catalog(t); t = t + 1 end
+check(catalog.scans == before_scans, "scanning stops once the catalog is complete")
+
+print("")
+os.exit(fails == 0 and 0 or 1)

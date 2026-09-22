@@ -166,6 +166,11 @@ Physical.tuning.light_uu = CFG.LightDistanceUU or Physical.tuning.light_uu
 Physical.tuning.materialize_uu = CFG.MaterializeDistanceUU or Physical.tuning.materialize_uu
 Physical.tuning.virtualize_uu = CFG.VirtualizeDistanceUU or Physical.tuning.virtualize_uu
 Physical.tuning.max_spawns_per_tick = CFG.MaxSpawnsPerTick or Physical.tuning.max_spawns_per_tick
+Physical.tuning.max_spawns_per_tick_proven = CFG.MaxSpawnsPerTickProven
+    or Physical.tuning.max_spawns_per_tick_proven
+if CFG.RequireGroundProof ~= nil then
+    Physical.tuning.require_ground_proof = CFG.RequireGroundProof
+end
 Physical.tuning.spawn_retry_sec = CFG.SpawnRetrySec or Physical.tuning.spawn_retry_sec
 Physical.tuning.max_physical_groups = CFG.MaxPhysicalGroups or Physical.tuning.max_physical_groups
 Movement.tuning.reissue_sec = CFG.ReissueSec or Movement.tuning.reissue_sec
@@ -244,8 +249,10 @@ local function safe_tick()
     end
 end
 
--- Engine work must run on the game thread. Outside the game (tests, syntax
--- checks) the function is simply called directly.
+-- Engine work must run on the game thread: UObject operations are not safe
+-- from an arbitrary background thread, and UE4SS documents that asset loading
+-- in particular must happen there. Outside the game (tests, syntax checks)
+-- the function is simply called directly.
 local function on_game_thread(fn)
     if type(ExecuteInGameThread) == "function" then
         ExecuteInGameThread(fn)
@@ -318,13 +325,15 @@ local function guarded_start()
     end
 end
 
+-- Startup itself touches the engine (class catalog, world lookup), so it runs
+-- on the game thread too. ExecuteWithDelay's callback does not.
 if type(ExecuteWithDelay) == "function" then
     local delay = (CFG.StartupDelaySec or 25) * 1000
-    boot("startup deferred by " .. tostring(delay) .. " ms via ExecuteWithDelay")
-    ExecuteWithDelay(delay, guarded_start)
+    boot("startup deferred by " .. tostring(delay) .. " ms, then run on the game thread")
+    ExecuteWithDelay(delay, function() on_game_thread(guarded_start) end)
 else
     boot("ExecuteWithDelay not available - starting immediately")
-    guarded_start()
+    on_game_thread(guarded_start)
 end
 
 return M
