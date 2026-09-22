@@ -1,4 +1,4 @@
-TESLES NPC OVERHAUL 1.0.4
+TESLES NPC OVERHAUL 1.0.5
 =========================
 
 Pysyva NPC-populaatio SCUM-palvelimelle. NPC-hahmot ja niiden ryhmat ovat
@@ -99,18 +99,36 @@ Yhtaan Lua-modia ei ladata - ei tata eika muita.
 Tama on UE4SS:n ja pelin buildin valinen yhteensopivuusongelma, ei modin
 koodia. Mita tehda, tassa jarjestyksessa:
 
-  1. INSTALL_UE4SS.bat -Force
-     Asentaa uusimman vakaan julkaisun. Asennin kertoo jos lataaja ei
-     tosiasiassa vaihtunut - silloin sinulla oli jo sama versio.
+  1. FIX_UE4SS_SCAN.bat
+     UE4SS skannaa pelin binaaria oletuksena kahdeksalla saikeella. Jokainen
+     saie skannaa oman lohkonsa, ja lohkon rajalla oleva kuvio voi tulla
+     raportoiduksi useaan kertaan hieman eri kohdasta - juuri sita
+     "multiple unique values" tarkoittaa. Tama komento vaihtaa skannerin
+     yhteen saikeeseen, antaa sille lisaa aikaa ja tyhjentaa vanhan
+     AOB-valimuistin.
+
+     Pelkka asetusmuutos. Alkuperainen tiedosto varmuuskopioidaan ja
+     FIX_UE4SS_SCAN.bat -Revert palauttaa sen.
+
+     Tama on kokeiltava hypoteesi, ei varmuus. Jos kuvio osuu binaarissa
+     aidosti useaan paikkaan, saikeiden maara ei auta.
+
+     Lisaksi -ServerTuning kytkee UE4SS:n debug-GUIn pois, jota
+     headless-palvelin ei tarvitse.
 
   2. INSTALL_UE4SS.bat -Force -Experimental
-     Uusien pelibuildien tuki tulee usein ensin esijulkaisuihin.
+     Uusien pelibuildien tuki tulee usein ensin esijulkaisuihin. Asennin
+     kertoo jos lataaja ei tosiasiassa vaihtunut - silloin sinulla oli jo
+     sama versio.
 
-  3. Jos molemmat kaatuvat samaan riviin, UE4SS tarjoaa itse ohituksen:
-     tiedosto UE4SS_Signatures\FText_Constructor.lua, jossa annetaan oma
-     AOB. Oikea tavukuvio riippuu SCUMServer.exe:n buildista, joten se on
-     haettava UE4SS:n tai SCUM-modausyhteison puolelta. Tama paketti ei
-     arvaa sita: vaara osoite voi kaataa palvelimen.
+  3. Signature-ohitus, jos saat oikean tavukuvion UE4SS:n tai SCUM-
+     modausyhteison puolelta:
+
+       FIX_UE4SS_SCAN.bat -Signature FText_Constructor -Aob "48 89 5C 24 ??"
+
+     Se kirjoittaa UE4SS_Signatures\FText_Constructor.lua:n oikeassa
+     muodossa. Tama paketti ei arvaa tavukuviota: vaara osoite voi kaataa
+     palvelimen.
 
 Tarkista myos:
   - Onko proxy-DLL (dwmapi.dll / xinput1_3.dll) yha Win64-kansiossa.

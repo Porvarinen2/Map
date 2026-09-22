@@ -29,6 +29,9 @@ function Get-UE4SSHealth {
     scanAttempts = 0
     scanFailure = $null
     fatalError = $null
+    scanThreads = $null
+    scanSeconds = $null
+    scanFixApplied = $false
     startedLuaMods = @()
     verdict = "UNKNOWN"
     action = @()
@@ -59,6 +62,15 @@ function Get-UE4SSHealth {
   foreach ($n in @(@("UE4SS-settings.ini"), @("ue4ss", "UE4SS-settings.ini"))) {
     $p = $Win64; foreach ($seg in $n) { $p = Join-Path $p $seg }
     if (Test-Path $p) { $h.settings = $p; break }
+  }
+  if ($h.settings) {
+    # The scanner's own settings decide how the pattern search behaves, so
+    # they belong in the verdict rather than in a separate investigation.
+    foreach ($l in (Get-Content $h.settings -ErrorAction SilentlyContinue)) {
+      if ($l -match '^\s*SigScannerNumThreads\s*=\s*(\d+)') { $h.scanThreads = [int]$Matches[1] }
+      if ($l -match '^\s*SecondsToScanBeforeGivingUp\s*=\s*(\d+)') { $h.scanSeconds = [int]$Matches[1] }
+    }
+    $h.scanFixApplied = Test-Path ($h.settings + ".tesles-backup")
   }
   foreach ($n in @(@("Mods"), @("ue4ss", "Mods"))) {
     $p = $Win64; foreach ($seg in $n) { $p = Join-Path $p $seg }
@@ -158,10 +170,23 @@ function Get-UE4SSHealth {
     $h.action += "ei taman modin koodista."
     $h.action += ""
     $h.action += "Korjaus jarjestyksessa:"
-    $h.action += "  1. INSTALL_UE4SS.bat -Force              (uusin vakaa)"
-    $h.action += "  2. INSTALL_UE4SS.bat -Force -Experimental (uusin esijulkaisu)"
-    $h.action += "  3. Jos molemmat kaatuvat samaan riviin, UE4SS tarjoaa"
-    $h.action += "     signature-ohituksen: UE4SS_Signatures\<nimi>.lua"
+    if (($h.scanThreads -gt 1) -and -not $h.scanFixApplied) {
+      $h.action += ("  1. FIX_UE4SS_SCAN.bat  - skanneri kayttaa {0} saiketta." -f $h.scanThreads)
+      $h.action += "     Yksi saie kerrallaan voi poistaa moniselitteisyyden."
+      $h.action += "     Pelkka asetusmuutos, peruttavissa: FIX_UE4SS_SCAN.bat -Revert"
+      $h.action += "  2. INSTALL_UE4SS.bat -Force -Experimental"
+      $h.action += "  3. Signature-ohitus, jos sinulla on oikea tavukuvio:"
+      $h.action += "     FIX_UE4SS_SCAN.bat -Signature FText_Constructor -Aob <tavukuvio>"
+    } elseif ($h.scanFixApplied) {
+      $h.action += "  1. Skannauskorjaus on jo kokeiltu eika se auttanut."
+      $h.action += "  2. INSTALL_UE4SS.bat -Force -Experimental"
+      $h.action += "  3. Signature-ohitus, jos sinulla on oikea tavukuvio:"
+      $h.action += "     FIX_UE4SS_SCAN.bat -Signature FText_Constructor -Aob <tavukuvio>"
+    } else {
+      $h.action += "  1. INSTALL_UE4SS.bat -Force -Experimental"
+      $h.action += "  2. Signature-ohitus, jos sinulla on oikea tavukuvio:"
+      $h.action += "     FIX_UE4SS_SCAN.bat -Signature FText_Constructor -Aob <tavukuvio>"
+    }
     if ($h.version) { $h.action += ("Asennettu nyt: {0}" -f $h.version) }
     if ($h.loaderDate) { $h.action += ("Lataajan paivays: {0}" -f $h.loaderDate) }
   }
@@ -222,6 +247,10 @@ function Write-UE4SSHealth {
     Say "  mods-kansio   : $($m.path)  ($($m.folders) modia)"
   }
   if ($h.scanAttempts -gt 0) { Say "  AOB-skannaus  : $($h.scanAttempts) yritysta" "Yellow" }
+  if ($h.scanThreads) {
+    $note = if ($h.scanFixApplied) { " (skannauskorjaus kaytossa)" } else { "" }
+    Say "  skannerisaikeet: $($h.scanThreads), aikaraja $($h.scanSeconds) s$note"
+  }
   if ($h.fatalError) { Say "  UE4SS-virhe   : $($h.fatalError)" "Red" }
   if ($h.startedLuaMods.Count -gt 0) {
     Say "  kaynnistetyt  : $($h.startedLuaMods -join ', ')"

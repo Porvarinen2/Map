@@ -16,6 +16,7 @@ param(
 $ErrorActionPreference = "Stop"
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $MOD = "TeslesNPCOverhaul"
+. (Join-Path $here 'ue4ss_health.ps1')
 
 function Say($t, $c = "Gray") { Write-Host "  $t" -ForegroundColor $c }
 
@@ -230,9 +231,22 @@ if (Test-Path $baseMap) {
 $oldBoot = Join-Path $outDir 'boot.log'
 if (Test-Path $oldBoot) { Remove-Item $oldBoot -Force }
 
+# The mod is in place, but it can only run if UE4SS reaches mod loading. If a
+# previous server start already proved it does not, say so here rather than
+# letting the user find out after another restart.
+$health = $null
+try { $health = Get-UE4SSHealth $win64 } catch {}
+
 Write-Host ""
 Write-Host "  VALMIS" -ForegroundColor Green
 Write-Host ""
+
+if ($health -and $health.verdict -in @("SCAN_ABORTED", "SCAN_LOOP", "NO_MODS_STARTED")) {
+  Say "MUTTA: UE4SS ei edellisella kaynnistyksella ladannut yhtaan Lua-modia." "Red"
+  Write-UE4SSHealth $health
+  Say "Tee yllaoleva korjaus ennen kuin kaynnistat palvelimen." "Yellow"
+  Write-Host ""
+}
 Say "1. Kaynnista SCUM-palvelin normaalisti."
 Say "2. Odota noin minuutti. Mod kirjoittaa heti tiedoston"
 Say "   $outDir\boot.log"

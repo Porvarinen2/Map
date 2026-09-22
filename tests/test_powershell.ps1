@@ -138,5 +138,64 @@ Remove-Item $lab -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item (Join-Path (Join-Path $pkg "livemap") "livemap_paths.txt") -Force -ErrorAction SilentlyContinue
 
 Write-Host ""
+Write-Host "== scan workaround =="
+
+# UE4SS aborts its own startup when the pattern scan is ambiguous. The
+# workaround is a settings change, so it has to be exact and reversible.
+$sl = Join-Path ([System.IO.Path]::GetTempPath()) ("tesles_scan_" + [guid]::NewGuid().ToString("N"))
+$sw = Join-Path (Join-Path (Join-Path (Join-Path $sl "SCUM") "Binaries") "Win64") ""
+New-Item -ItemType Directory -Path (Join-Path $sw "Mods\cache") -Force | Out-Null
+Set-Content (Join-Path $sw "SCUMServer.exe") "x"
+Set-Content (Join-Path $sw "Mods\cache\aob.cache") "stale"
+Copy-Item (Join-Path $here "fixtures\ue4ss_settings.ini") (Join-Path $sw "UE4SS-settings.ini")
+
+& (Join-Path $pkg "FIX_UE4SS_SCAN.ps1") -Win64 $sw -ServerTuning | Out-Null
+$ini = Get-Content (Join-Path $sw "UE4SS-settings.ini")
+function IniVal($lines, $key) {
+  foreach ($l in $lines) {
+    if ($l -match "^\s*$([regex]::Escape($key))\s*=\s*(.*)$") { return $Matches[1].Trim() }
+  }
+  return $null
+}
+Check ((IniVal $ini "SigScannerNumThreads") -eq "1") "the scanner is switched to a single thread"
+Check ((IniVal $ini "SecondsToScanBeforeGivingUp") -eq "120") "the scan deadline is raised"
+Check ((IniVal $ini "SigScannerMultithreadingModuleSizeThreshold") -eq "4294967295") `
+      "multi-threading stays off even if the thread count is restored"
+Check ((IniVal $ini "GuiConsoleEnabled") -eq "0") "-ServerTuning turns the debug GUI off"
+Check (-not (Test-Path (Join-Path $sw "Mods\cache"))) "the stale AOB cache is cleared"
+Check (Test-Path (Join-Path $sw "UE4SS-settings.ini.tesles-backup")) "the original settings are backed up"
+Check (($ini | Where-Object { $_ -match "^;" }).Count -gt 20) "comments in the ini survive the rewrite"
+
+# The health check must notice the workaround is in place and stop recommending it.
+. (Join-Path $pkg "ue4ss_health.ps1")
+Copy-Item (Join-Path $here "fixtures\ue4ss_scan_loop.log") (Join-Path $sw "UE4SS.log")
+Set-Content (Join-Path $sw "dwmapi.dll") "x"
+$hs = Get-UE4SSHealth $sw
+Check ($hs.scanThreads -eq 1) "the health check reads the scanner thread count"
+Check ($hs.scanFixApplied) "the health check sees that the workaround was applied"
+Check ((($hs.action -join " ") -notmatch "1\. FIX_UE4SS_SCAN")) `
+      "it no longer offers a workaround that was already tried"
+
+& (Join-Path $pkg "FIX_UE4SS_SCAN.ps1") -Win64 $sw -Revert | Out-Null
+$ini2 = Get-Content (Join-Path $sw "UE4SS-settings.ini")
+Check ((IniVal $ini2 "SigScannerNumThreads") -eq "8") "revert restores the original thread count"
+Check ((IniVal $ini2 "SecondsToScanBeforeGivingUp") -eq "30") "revert restores the original deadline"
+Check (-not (Test-Path (Join-Path $sw "UE4SS-settings.ini.tesles-backup"))) `
+      "revert removes its own backup"
+
+# A signature override must be written in the shape UE4SS loads.
+& (Join-Path $pkg "FIX_UE4SS_SCAN.ps1") -Win64 $sw -Signature "FText_Constructor" -Aob "48 89 5C 24 ??" | Out-Null
+$sigFile = Join-Path (Join-Path $sw "UE4SS_Signatures") "FText_Constructor.lua"
+Check (Test-Path $sigFile) "a signature override is written where UE4SS looks for it"
+if (Test-Path $sigFile) {
+  $sig = Get-Content $sigFile -Raw
+  Check ($sig -match "Register\s*=\s*function") "it defines Register"
+  Check ($sig -match "OnMatchFound\s*=\s*function") "it defines OnMatchFound"
+  Check ($sig -match "48 89 5C 24 \?\?") "it carries the given byte pattern"
+}
+
+Remove-Item $sl -Recurse -Force -ErrorAction SilentlyContinue
+
+Write-Host ""
 if ($fails -eq 0) { Write-Host "powershell tests passed" } else { Write-Host "$fails failures" -ForegroundColor Red }
 exit $fails
