@@ -66,5 +66,77 @@ Check ($h3.version -eq "v3.1.0") "the version is read ($($h3.version))"
 Remove-Item $fake, $empty, $good -Recurse -Force -ErrorAction SilentlyContinue
 
 Write-Host ""
+Write-Host "== clean server install =="
+
+# A wiped SCUM server: no UE4SS at all. The installer has to put UE4SS in
+# place from a release archive and then install the mod into it.
+$lab = Join-Path ([System.IO.Path]::GetTempPath()) ("tesles_lab_" + [guid]::NewGuid().ToString("N"))
+$win64 = Join-Path (Join-Path (Join-Path (Join-Path $lab "server") "SCUM") "Binaries") "Win64"
+New-Item -ItemType Directory -Path $win64 -Force | Out-Null
+Set-Content (Join-Path $win64 "SCUMServer.exe") "fake"
+
+# Build a release archive with the layout UE4SS actually ships.
+$src = Join-Path $lab "src"
+$srcMods = Join-Path $src "Mods"
+New-Item -ItemType Directory -Path (Join-Path $srcMods "ConsoleCommandsMod") -Force | Out-Null
+Set-Content (Join-Path $src "dwmapi.dll") "proxy"
+Set-Content (Join-Path $src "UE4SS.dll") "loader"
+Set-Content (Join-Path $src "UE4SS-settings.ini") "[General]"
+Set-Content (Join-Path $srcMods "mods.txt") @(
+  "CheatManagerEnablerMod : 1", "ConsoleCommandsMod : 1", "ActorDumperMod : 0",
+  "", "; Built-in keybinds, do not move up!", "Keybinds : 1")
+Set-Content (Join-Path (Join-Path $srcMods "ConsoleCommandsMod") "enabled.txt") ""
+$relZip = Join-Path $lab "UE4SS_v9.9.9.zip"
+Compress-Archive -Path (Join-Path $src "*") -DestinationPath $relZip -Force
+
+& (Join-Path $pkg "INSTALL_UE4SS.ps1") -Win64 $win64 -ZipFile $relZip -Yes | Out-Null
+
+Check (Test-Path (Join-Path $win64 "UE4SS.dll")) "UE4SS.dll installed on a clean server"
+Check (Test-Path (Join-Path $win64 "dwmapi.dll")) "the proxy DLL is installed"
+$modsDir = Join-Path $win64 "Mods"
+Check (Test-Path (Join-Path $modsDir "mods.txt")) "mods.txt is in place"
+$mt = Get-Content (Join-Path $modsDir "mods.txt")
+Check (($mt | Where-Object { $_ -match '^ConsoleCommandsMod\s*:\s*0' }).Count -eq 1) `
+      "UE4SS's own sample mods are switched off"
+Check (($mt | Where-Object { $_ -match '^Keybinds\s*:\s*1' }).Count -eq 1) `
+      "the built-in Keybinds entry is left enabled"
+Check (Test-Path (Join-Path (Join-Path $modsDir "ConsoleCommandsMod") "enabled.txt.disabled")) `
+      "a sample mod's enabled.txt marker is parked"
+Check (-not (Test-Path (Join-Path (Join-Path $modsDir "ConsoleCommandsMod") "enabled.txt"))) `
+      "the live marker is gone, so UE4SS will not start it anyway"
+
+& (Join-Path $pkg "INSTALL.ps1") -ServerRoot (Join-Path $lab "server") -Yes -NoPause | Out-Null
+
+$modDir = Join-Path $modsDir "TeslesNPCOverhaul"
+Check (Test-Path (Join-Path (Join-Path $modDir "Scripts") "main.lua")) "the mod's entry point is installed"
+Check (Test-Path (Join-Path $modDir "config.lua")) "config.lua is installed"
+Check (Test-Path (Join-Path $modDir "output")) "the output folder exists"
+Check (Test-Path (Join-Path $modDir "enabled.txt")) "the mod's own enabled.txt is written"
+$mt2 = Get-Content (Join-Path $modsDir "mods.txt")
+Check (($mt2 | Where-Object { $_ -match '^TeslesNPCOverhaul\s*:\s*1' }).Count -eq 1) `
+      "the mod is registered in mods.txt exactly once"
+Check ((Get-ChildItem $modDir -Recurse -File).Count -ge 30) `
+      "the whole mod tree is copied ($((Get-ChildItem $modDir -Recurse -File).Count) files)"
+Check (Test-Path (Join-Path (Join-Path $pkg "livemap") "livemap_paths.txt")) `
+      "the live map is pointed at the mod's output folder"
+
+# Installing twice must keep the world state and not duplicate the mods.txt row.
+Set-Content (Join-Path (Join-Path $modDir "state") "world_state.json") '{"groups":[]}'
+& (Join-Path $pkg "INSTALL.ps1") -ServerRoot (Join-Path $lab "server") -Yes -NoPause | Out-Null
+Check (Test-Path (Join-Path (Join-Path $modDir "state") "world_state.json")) `
+      "a reinstall keeps the saved world"
+$mt3 = Get-Content (Join-Path $modsDir "mods.txt")
+Check (($mt3 | Where-Object { $_ -match '^TeslesNPCOverhaul\s*:' }).Count -eq 1) `
+      "a reinstall does not duplicate the mods.txt row"
+
+. (Join-Path $pkg "ue4ss_health.ps1")
+$h4 = Get-UE4SSHealth $win64
+Check ($h4.verdict -eq "NO_LOG") "a server that has not been started yet reports NO_LOG"
+Check ($h4.ue4ssDll) "the health check finds the installed loader"
+
+Remove-Item $lab -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item (Join-Path (Join-Path $pkg "livemap") "livemap_paths.txt") -Force -ErrorAction SilentlyContinue
+
+Write-Host ""
 if ($fails -eq 0) { Write-Host "powershell tests passed" } else { Write-Host "$fails failures" -ForegroundColor Red }
 exit $fails

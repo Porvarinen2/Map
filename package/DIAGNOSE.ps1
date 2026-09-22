@@ -17,7 +17,7 @@ Write-Host "  ==================================="
 Write-Host ""
 
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-$tmp = Join-Path $env:TEMP "tesles_diag_$stamp"
+$tmp = Join-Path ([System.IO.Path]::GetTempPath()) "tesles_diag_$stamp"
 New-Item -ItemType Directory -Path $tmp -Force | Out-Null
 
 # --- locate the install ---

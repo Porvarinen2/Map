@@ -46,16 +46,16 @@ function Get-UE4SSHealth {
                        (Get-Item $p).LastWriteTime.ToString("yyyy-MM-dd"))
     }
   }
-  foreach ($n in @("UE4SS.dll", "ue4ss\UE4SS.dll")) {
-    $p = Join-Path $Win64 $n
+  foreach ($n in @(@("UE4SS.dll"), @("ue4ss", "UE4SS.dll"))) {
+    $p = $Win64; foreach ($seg in $n) { $p = Join-Path $p $seg }
     if (Test-Path $p) { $h.ue4ssDll = $p; break }
   }
-  foreach ($n in @("UE4SS-settings.ini", "ue4ss\UE4SS-settings.ini")) {
-    $p = Join-Path $Win64 $n
+  foreach ($n in @(@("UE4SS-settings.ini"), @("ue4ss", "UE4SS-settings.ini"))) {
+    $p = $Win64; foreach ($seg in $n) { $p = Join-Path $p $seg }
     if (Test-Path $p) { $h.settings = $p; break }
   }
-  foreach ($n in @("Mods", "ue4ss\Mods")) {
-    $p = Join-Path $Win64 $n
+  foreach ($n in @(@("Mods"), @("ue4ss", "Mods"))) {
+    $p = $Win64; foreach ($seg in $n) { $p = Join-Path $p $seg }
     if (Test-Path $p) {
       $mt = Join-Path $p "mods.txt"
       $h.modsDirs += [pscustomobject]@{
@@ -70,8 +70,8 @@ function Get-UE4SSHealth {
   # Pick the newest log, not the first one found: a stale log in the old
   # location is exactly what makes this hard to read.
   $logs = @()
-  foreach ($n in @("UE4SS.log", "ue4ss\UE4SS.log", "Mods\UE4SS.log")) {
-    $p = Join-Path $Win64 $n
+  foreach ($n in @(@("UE4SS.log"), @("ue4ss", "UE4SS.log"), @("Mods", "UE4SS.log"))) {
+    $p = $Win64; foreach ($seg in $n) { $p = Join-Path $p $seg }
     if (Test-Path $p) { $logs += (Get-Item $p) }
   }
   if ($logs.Count -gt 0) {

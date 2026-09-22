@@ -1,4 +1,4 @@
-TESLES NPC OVERHAUL 1.0.2
+TESLES NPC OVERHAUL 1.0.3
 =========================
 
 Pysyva NPC-populaatio SCUM-palvelimelle. NPC-hahmot ja niiden ryhmat ovat
@@ -13,6 +13,12 @@ ASENNUS
 1. Sammuta SCUM-palvelin ja vanha LiveMap-ikkuna.
 2. Pura tama ZIP omaan kansioon. ALA aja ZIPin sisalta.
 3. Aja INSTALL.bat. Asennus kieltaytyy toimimasta palvelimen ollessa paalla.
+   - Jos palvelimella ei ole UE4SS:aa, asennin tarjoutuu hakemaan sen
+     GitHubista ja asentamaan sen puolestasi. Se nayttaa version ja
+     osoitteen ennen latausta.
+   - UE4SS:n omat esimerkkimodit otetaan pois kaytosta, jottei mikaan muu
+     Lua-modi sekoita tata. Ne saa takaisin ajamalla
+     INSTALL_UE4SS.bat -KeepSampleMods
    - Vanha TeslesWorldDirector otetaan pois kaytosta automaattisesti.
      Molemmat eivat voi ohjata samoja NPC:ita.
    - Aiempi maailman tila (state\world_state.json) sailytetaan paivityksessa.
@@ -44,6 +50,22 @@ Se kertoo mihin asti mod paasi. Lue se ensin.
 
 DIAGNOSE.bat kerää boot.log:n, director.log:n, mods.txt:n, UE4SS.log:n ja
 UE4SS-asennuksen tilan yhteen zip-tiedostoon.
+
+
+UE4SS:N ASENNUS ERIKSEEN
+------------------------
+INSTALL_UE4SS.bat asentaa pelkan UE4SS:n. Kaytannollista jos haluat
+kokeilla toista versiota:
+
+  INSTALL_UE4SS.bat                  uusin vakaa julkaisu
+  INSTALL_UE4SS.bat -Experimental    uusin, myos esijulkaisut
+  INSTALL_UE4SS.bat -Force           asenna uudelleen paalle
+  INSTALL_UE4SS.bat -ZipFile C:\polku\UE4SS.zip    kasin ladatusta zipista
+  INSTALL_UE4SS.bat -KeepSampleMods  jata UE4SS:n omat modit paalle
+
+Korvattavat tiedostot varmuuskopioidaan kansioon UE4SS_Backups.
+Jos vakaa versio jaa AOB-skannausluuppiin (ks. alla), kokeile
+-Experimental: uusien pelibuildien tuki tulee usein ensin sinne.
 
 
 UE4SS EI KAYNNISTA MODEJA
