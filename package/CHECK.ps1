@@ -3,6 +3,7 @@
 $ErrorActionPreference = "SilentlyContinue"
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $MOD = "TeslesNPCOverhaul"
+. (Join-Path $here 'ue4ss_health.ps1')
 
 function Say($t, $c = "Gray") { Write-Host "  $t" -ForegroundColor $c }
 
@@ -53,8 +54,14 @@ if (Test-Path $boot) {
   } else {
     Say "     -> mods.txt puuttuu: $modsTxt" "Red"
   }
-  Say "  3. Katso UE4SS.log: lataako se modeja lainkaan."
-  Say "  4. Aja DIAGNOSE.bat ja laheta syntyva zip."
+  Say "  3. UE4SS:n tila:"
+  $win64 = Split-Path $modsDir -Parent
+  if ((Split-Path $modsDir -Leaf) -eq 'Mods' -and
+      (Split-Path $win64 -Leaf) -eq 'ue4ss') {
+    $win64 = Split-Path $win64 -Parent
+  }
+  Write-UE4SSHealth (Get-UE4SSHealth $win64)
+  Say "  4. Aja DIAGNOSE.bat ja laheta syntyva zip jos tama ei riita."
   Write-Host ""
 }
 

@@ -1,0 +1,120 @@
+[2026-09-16 02:00:51] Console created
+[2026-09-16 02:00:51] UE4SS - v3.0.1 Beta #0 - Git SHA #d935b5b
+[2026-09-16 02:00:51] UE4SS Build Configuration: Game__Shipping__Win64 (MSVC)
+[2026-09-16 02:00:51] Setting up mods...
+[2026-09-16 02:00:51] Starting mods (from mods.txt load order)...
+[2026-09-16 02:00:51] Starting mods (from enabled.txt, no defined load order)...
+[2026-09-16 02:00:51] No specific game configuration found, using default configuration file
+[2026-09-16 02:00:51] Config: F:\SteamLibrary\steamapps\common\SCUM Server\SCUM\Binaries\Win64\UE4SS-settings.ini
+
+[2026-09-16 02:00:51] root directory: F:\SteamLibrary\steamapps\common\SCUM Server\SCUM\Binaries\Win64
+[2026-09-16 02:00:51] working directory: F:\SteamLibrary\steamapps\common\SCUM Server\SCUM\Binaries\Win64
+[2026-09-16 02:00:51] game executable directory: F:\SteamLibrary\steamapps\common\SCUM Server\SCUM\Binaries\Win64
+[2026-09-16 02:00:51] game executable: F:\SteamLibrary\steamapps\common\SCUM Server\SCUM\Binaries\Win64\SCUMServer.exe (128982528 bytes)
+
+
+[2026-09-16 02:00:51] mods directory: F:\SteamLibrary\steamapps\common\SCUM Server\SCUM\Binaries\Win64\Mods
+[2026-09-16 02:00:51] log directory: F:\SteamLibrary\steamapps\common\SCUM Server\SCUM\Binaries\Win64
+[2026-09-16 02:00:51] object dumper directory: F:\SteamLibrary\steamapps\common\SCUM Server\SCUM\Binaries\Win64
+
+
+[2026-09-16 02:00:51] PS Scan attempt 1
+[2026-09-16 02:00:51] [PS] Reading image
+[2026-09-16 02:00:51] [PS] Starting scan
+[2026-09-16 02:00:51] [PS] Scan finished in 153.6561ms
+[2026-09-16 02:00:51] [PS] Found EngineVersion: 4.27
+[2026-09-16 02:00:51] [PS] Found GUObjectArray: 0x7ff62045d650
+[2026-09-16 02:00:51] [PS] Found GMalloc: 0x7ff6203d8660
+[2026-09-16 02:00:51] [PS] Found FName::ToString: 0x7ff61ba27ba0
+[2026-09-16 02:00:51] [PS] Found FName::FName(wchar_t*): 0x7ff61ba191e0
+[2026-09-16 02:00:51] [PS] Found StaticConstructObject_Internal: 0x7ff61bc34010
+[2026-09-16 02:00:51] [PS] Failed to find FText::FText(FString&&): iter returned multiple unique values
+[2026-09-16 02:00:51] [PS] You can supply your own AOB in 'UE4SS_Signatures/FText_Constructor.lua'
+[2026-09-16 02:00:51] [PS] Scan failed
+
+[2026-09-16 02:00:51] PS Scan attempt 2
+[2026-09-16 02:00:51] [PS] Reading image
+[2026-09-16 02:00:51] [PS] Starting scan
+[2026-09-16 02:00:51] [PS] Scan finished in 145.0539ms
+[2026-09-16 02:00:51] [PS] Found EngineVersion: 4.27
+[2026-09-16 02:00:51] [PS] Found GUObjectArray: 0x7ff62045d650
+[2026-09-16 02:00:51] [PS] Found GMalloc: 0x7ff6203d8660
+[2026-09-16 02:00:51] [PS] Found FName::ToString: 0x7ff61ba27ba0
+[2026-09-16 02:00:51] [PS] Found FName::FName(wchar_t*): 0x7ff61ba191e0
+[2026-09-16 02:00:51] [PS] Found StaticConstructObject_Internal: 0x7ff61bc34010
+[2026-09-16 02:00:51] [PS] Failed to find FText::FText(FString&&): iter returned multiple unique values
+[2026-09-16 02:00:51] [PS] You can supply your own AOB in 'UE4SS_Signatures/FText_Constructor.lua'
+[2026-09-16 02:00:51] [PS] Scan failed
+
+[2026-09-16 02:00:51] PS Scan attempt 3
+[2026-09-16 02:00:51] [PS] Reading image
+[2026-09-16 02:00:51] [PS] Starting scan
+[2026-09-16 02:00:51] [PS] Scan finished in 138.6274ms
+[2026-09-16 02:00:51] [PS] Found EngineVersion: 4.27
+[2026-09-16 02:00:51] [PS] Found GUObjectArray: 0x7ff62045d650
+[2026-09-16 02:00:51] [PS] Found GMalloc: 0x7ff6203d8660
+[2026-09-16 02:00:51] [PS] Found FName::ToString: 0x7ff61ba27ba0
+[2026-09-16 02:00:51] [PS] Found FName::FName(wchar_t*): 0x7ff61ba191e0
+[2026-09-16 02:00:51] [PS] Found StaticConstructObject_Internal: 0x7ff61bc34010
+[2026-09-16 02:00:51] [PS] Failed to find FText::FText(FString&&): iter returned multiple unique values
+[2026-09-16 02:00:51] [PS] You can supply your own AOB in 'UE4SS_Signatures/FText_Constructor.lua'
+
+[2026-09-16 02:01:13] PS Scan attempt 148
+[2026-09-16 02:01:13] [PS] Reading image
+[2026-09-16 02:01:13] [PS] Starting scan
+[2026-09-16 02:01:13] [PS] Scan finished in 140.0032ms
+[2026-09-16 02:01:13] [PS] Found EngineVersion: 4.27
+[2026-09-16 02:01:13] [PS] Found GUObjectArray: 0x7ff62045d650
+[2026-09-16 02:01:13] [PS] Found GMalloc: 0x7ff6203d8660
+[2026-09-16 02:01:13] [PS] Found FName::ToString: 0x7ff61ba27ba0
+[2026-09-16 02:01:13] [PS] Found FName::FName(wchar_t*): 0x7ff61ba191e0
+[2026-09-16 02:01:13] [PS] Found StaticConstructObject_Internal: 0x7ff61bc34010
+[2026-09-16 02:01:13] [PS] Failed to find FText::FText(FString&&): iter returned multiple unique values
+[2026-09-16 02:01:13] [PS] You can supply your own AOB in 'UE4SS_Signatures/FText_Constructor.lua'
+[2026-09-16 02:01:13] [PS] Scan failed
+
+[2026-09-16 02:01:13] PS Scan attempt 149
+[2026-09-16 02:01:13] [PS] Reading image
+[2026-09-16 02:01:13] [PS] Starting scan
+[2026-09-16 02:01:14] [PS] Scan finished in 143.4043ms
+[2026-09-16 02:01:14] [PS] Found EngineVersion: 4.27
+[2026-09-16 02:01:14] [PS] Found GUObjectArray: 0x7ff62045d650
+[2026-09-16 02:01:14] [PS] Found GMalloc: 0x7ff6203d8660
+[2026-09-16 02:01:14] [PS] Found FName::ToString: 0x7ff61ba27ba0
+[2026-09-16 02:01:14] [PS] Found FName::FName(wchar_t*): 0x7ff61ba191e0
+[2026-09-16 02:01:14] [PS] Found StaticConstructObject_Internal: 0x7ff61bc34010
+[2026-09-16 02:01:14] [PS] Failed to find FText::FText(FString&&): iter returned multiple unique values
+[2026-09-16 02:01:14] [PS] You can supply your own AOB in 'UE4SS_Signatures/FText_Constructor.lua'
+[2026-09-16 02:01:14] [PS] Scan failed
+
+[2026-09-16 02:01:14] PS Scan attempt 150
+[2026-09-16 02:01:14] [PS] Reading image
+[2026-09-16 02:01:14] [PS] Starting scan
+[2026-09-16 02:01:14] [PS] Scan finished in 148.3225ms
+[2026-09-16 02:01:14] [PS] Found EngineVersion: 4.27
+[2026-09-16 02:01:14] [PS] Found GUObjectArray: 0x7ff62045d650
+[2026-09-16 02:01:14] [PS] Found GMalloc: 0x7ff6203d8660
+[2026-09-16 02:01:14] [PS] Found FName::ToString: 0x7ff61ba27ba0
+[2026-09-16 02:01:14] [PS] Found FName::FName(wchar_t*): 0x7ff61ba191e0
+[2026-09-16 02:01:14] [PS] Found StaticConstructObject_Internal: 0x7ff61bc34010
+[2026-09-16 02:01:14] [PS] Failed to find FText::FText(FString&&): iter returned multiple unique values
+[2026-09-16 02:01:14] [PS] You can supply your own AOB in 'UE4SS_Signatures/FText_Constructor.lua'
+[2026-09-16 02:01:14] [PS] Scan failed
+
+[2026-09-16 02:01:14] PS Scan attempt 151
+[2026-09-16 02:01:14] [PS] Reading image
+[2026-09-16 02:01:14] [PS] Starting scan
+[2026-09-16 02:01:14] [PS] Scan finished in 147.6874ms
+[2026-09-16 02:01:14] [PS] Found EngineVersion: 4.27
+[2026-09-16 02:01:14] [PS] Found GUObjectArray: 0x7ff62045d650
+[2026-09-16 02:01:14] [PS] Found GMalloc: 0x7ff6203d8660
+[2026-09-16 02:01:14] [PS] Found FName::ToString: 0x7ff61ba27ba0
+[2026-09-16 02:01:14] [PS] Found FName::FName(wchar_t*): 0x7ff61ba191e0
+[2026-09-16 02:01:14] [PS] Found StaticConstructObject_Internal: 0x7ff61bc34010
+[2026-09-16 02:01:14] [PS] Failed to find FText::FText(FString&&): iter returned multiple unique values
+[2026-09-16 02:01:14] [PS] You can supply your own AOB in 'UE4SS_Signatures/FText_Constructor.lua'
+[2026-09-16 02:01:14] [PS] Scan failed
+
+[2026-09-16 02:01:14] PS Scan attempt 152
+[2026-09-16 02:01:14] [PS] Reading image
+[2026-09-16 02:01:14] [PS] Starting scan

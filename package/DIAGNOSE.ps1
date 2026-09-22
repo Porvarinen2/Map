@@ -8,6 +8,7 @@
 $ErrorActionPreference = "SilentlyContinue"
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $MOD = "TeslesNPCOverhaul"
+. (Join-Path $here 'ue4ss_health.ps1')
 function Say($t, $c = "Gray") { Write-Host "  $t" -ForegroundColor $c }
 
 Write-Host ""
@@ -77,25 +78,65 @@ if ($out) {
     $report += "world_state.json: not saved yet"
   }
 
-  # UE4SS's own log sits beside the Mods folder or one level up.
-  $ue4ssCandidates = @(
-    (Join-Path $modsDir '..\UE4SS.log'),
-    (Join-Path $modsDir 'UE4SS.log'),
-    (Join-Path $modsDir '..\ue4ss\UE4SS.log')
-  )
-  foreach ($c in $ue4ssCandidates) {
-    if (Test-Path $c) {
-      $full = (Resolve-Path $c).Path
-      Copy-Item $full (Join-Path $tmp "UE4SS.log") -Force
-      $report += ""
-      $report += "--- UE4SS.log ($full) : lines mentioning Tesles ---"
-      $report += (Select-String -Path $full -Pattern "Tesles" -SimpleMatch |
-                  Select-Object -Last 40 | ForEach-Object { $_.Line })
-      $report += ""
-      $report += "--- UE4SS.log last 40 lines ---"
-      $report += (Get-Content $full -Tail 40)
-      break
+  # --- UE4SS health: the mod cannot run if UE4SS never starts Lua mods ---
+  $win64 = Split-Path $modsDir -Parent
+  if ((Split-Path $win64 -Leaf) -eq 'ue4ss') { $win64 = Split-Path $win64 -Parent }
+  $health = Get-UE4SSHealth $win64
+  $report += ""
+  $report += "=== UE4SS HEALTH: $($health.verdict) ==="
+  $report += "win64            : $($health.win64)"
+  $report += "version          : $($health.version)"
+  $report += "UE4SS.dll        : $($health.ue4ssDll)"
+  $report += "settings         : $($health.settings)"
+  $report += "proxy dlls       : $($health.proxyDlls -join ', ')"
+  $report += "log              : $($health.logPath)"
+  $report += "log written      : $($health.logTime)  ($($health.logAgeMinutes) min ago)"
+  $report += "server started   : $($health.serverStart)"
+  $report += "log is this run  : $($health.logIsFromThisRun)"
+  $report += "mods dir in log  : $($health.modsDirectoryInLog)"
+  $report += "AOB scan attempts: $($health.scanAttempts)"
+  $report += "last scan failure: $($health.scanFailure)"
+  $report += "started lua mods : $($health.startedLuaMods -join ', ')"
+  foreach ($m in $health.modsDirs) {
+    $report += ("mods folder      : {0}  ({1} mods, mods.txt {2})" -f
+                $m.path, $m.folders, $m.modsTxtTime)
+  }
+  if ($health.allLogs) {
+    $report += "all logs found   :"
+    foreach ($l in $health.allLogs) { $report += "  $l" }
+  }
+  $report += ""
+  $report += "--- what to do ---"
+  foreach ($a in $health.action) { $report += "  $a" }
+
+  # Win64 listing: shows at a glance whether the loader is present at all.
+  $report += ""
+  $report += "--- Win64 root files ---"
+  Get-ChildItem $win64 -File -ErrorAction SilentlyContinue |
+    Sort-Object Name | ForEach-Object {
+      $report += ("{0,12}  {1}  {2}" -f $_.Length, $_.LastWriteTime.ToString("yyyy-MM-dd"), $_.Name)
     }
+
+  if ($health.settings -and (Test-Path $health.settings)) {
+    Copy-Item $health.settings (Join-Path $tmp "UE4SS-settings.ini") -Force
+  }
+  if ($health.logPath -and (Test-Path $health.logPath)) {
+    # Copy a bounded slice; the scan loop makes these files enormous.
+    $slice = @(Get-Content $health.logPath -TotalCount 200) +
+             @("...") +
+             @(Get-Content $health.logPath -Tail 200)
+    $slice | Set-Content (Join-Path $tmp "UE4SS.log") -Encoding UTF8
+    $report += ""
+    $report += "--- UE4SS.log : lines mentioning Tesles ---"
+    $hits = Select-String -Path $health.logPath -Pattern "Tesles" -SimpleMatch |
+            Select-Object -Last 20 | ForEach-Object { $_.Line }
+    if ($hits) { $report += $hits } else { $report += "  (none)" }
+    $report += ""
+    $report += "--- UE4SS.log first 30 lines ---"
+    $report += (Get-Content $health.logPath -TotalCount 30)
+    $report += ""
+    $report += "--- UE4SS.log last 30 lines ---"
+    $report += (Get-Content $health.logPath -Tail 30)
   }
 } else {
   $report += "INSTALL.bat has not been run, or livemap_paths.txt was deleted."
@@ -127,9 +168,9 @@ Compress-Archive -Path (Join-Path $tmp '*') -DestinationPath $zip -Force
 Remove-Item $tmp -Recurse -Force
 
 Say "Raportti: $zip" "Green"
-Write-Host ""
-Say "Tarkeimmat kohdat:" "Cyan"
-$report | Where-Object { $_ -match "MISSING|boot.log|mods.txt|Tesles" } |
-  Select-Object -First 25 | ForEach-Object { Write-Host "    $_" }
+if ($health) { Write-UE4SSHealth $health }
+Say "Modin oma tila:" "Cyan"
+$report | Where-Object { $_ -match "^--- (boot|director)\.log" } |
+  ForEach-Object { Write-Host "    $_" }
 Write-Host ""
 Read-Host "  Enter sulkee"

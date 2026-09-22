@@ -112,7 +112,24 @@ try {
     Say "scum_map.png luotu." "Green"
   }
 
+  # One level is held in memory as 32-bit pixels while its tiles are cut.
+  # Say what that costs before starting, and step down automatically when the
+  # requested level would clearly not fit.
+  $avail = 1024
+  try {
+    $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+    $avail = [int]($os.FreePhysicalMemory / 1024)
+  } catch {}
   $target = [math]::Min($MaxSize, $srcW)
+  while ($target -gt 2048) {
+    $needMb = [int](($target * $target * 4) / 1MB * 1.6)
+    if ($needMb -lt $avail - 512) { break }
+    Say ("Taso {0} vaatisi noin {1} MB, vapaana {2} MB - pudotetaan tasolle {3}." -f
+         $target, $needMb, $avail, ($target / 2)) "Yellow"
+    $target = [int]($target / 2)
+  }
+  Say ("Suurin taso: {0} x {0}  (noin {1} MB muistia)" -f
+       $target, [int](($target * $target * 4) / 1MB * 1.6))
   $levels = @()
   $w = 2048
   while ($w -le $target) { $levels += $w; $w = $w * 2 }

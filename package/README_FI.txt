@@ -1,4 +1,4 @@
-TESLES NPC OVERHAUL 1.0.1
+TESLES NPC OVERHAUL 1.0.2
 =========================
 
 Pysyva NPC-populaatio SCUM-palvelimelle. NPC-hahmot ja niiden ryhmat ovat
@@ -39,14 +39,50 @@ Se kertoo mihin asti mod paasi. Lue se ensin.
     -> rivilla on syy. Laheta DIAGNOSE.bat:n tuottama zip.
 
   boot.log PUUTTUU kokonaan
-    -> UE4SS ei ole ajanut modia lainkaan. Tarkista:
-       - Mods\TeslesNPCOverhaul\Scripts\main.lua on olemassa
-       - Mods\mods.txt sisaltaa rivin  TeslesNPCOverhaul : 1
-       - UE4SS.log lataako se muita modeja
-    CHECK.bat tekee nama tarkistukset puolestasi.
+    -> UE4SS ei ole ajanut modia lainkaan. CHECK.bat tutkii silloin
+       automaattisesti UE4SS:n tilan ja kertoo syyn. Ks. seuraava osio.
 
-DIAGNOSE.bat kerää boot.log:n, director.log:n, mods.txt:n ja UE4SS.log:n
-yhteen zip-tiedostoon.
+DIAGNOSE.bat kerää boot.log:n, director.log:n, mods.txt:n, UE4SS.log:n ja
+UE4SS-asennuksen tilan yhteen zip-tiedostoon.
+
+
+UE4SS EI KAYNNISTA MODEJA
+-------------------------
+Tama modi on UE4SS-Lua-modi. Jos UE4SS ei paase kayttamaan Lua-modeja,
+mikaan tassa paketissa ei voi toimia - eivatka muutkaan Lua-modit.
+
+CHECK.bat ja DIAGNOSE.bat kertovat UE4SS:n tilan yhdella sanalla:
+
+  MOD_STARTED     UE4SS kaynnisti modin. Vika on modissa, katso boot.log.
+  SCAN_LOOP       UE4SS juuttui AOB-skannaukseen eika paase modeihin.
+  STALE_LOG       UE4SS.log on vanhemmalta ajolta kuin nykyinen palvelin.
+                  UE4SS ei siis lataudu lainkaan tassa ajossa.
+  NO_LOG          UE4SS ei ole kirjoittanut lokia koskaan.
+  NO_MODS_STARTED UE4SS latautui mutta ei kaynnistanyt yhtaan Lua-modia.
+
+SCAN_LOOP nayttaa UE4SS.log:ssa tallaiselta:
+
+  [PS] Failed to find FText::FText(FString&&): iter returned multiple unique values
+  [PS] Scan failed
+  PS Scan attempt 2
+  PS Scan attempt 3
+  ... satoja yrityksia, loki paattyy kesken
+
+UE4SS yrittaa loytaa pelin binaarista tarvitsemansa osoitteet ja jaa
+luuppiin kun yksi niista on moniselitteinen. Se ei paase modien lataukseen.
+Tama on UE4SS:n ja pelin version valinen yhteensopivuusongelma.
+
+Mita tehda:
+  1. Paivita UE4SS uudempaan versioon. v3.0.1 Beta on vanha eika tunne
+     SCUMin nykyista buildia.
+  2. Jos palvelin on juuri paivittynyt, SCUM-paivitys on voinut ylikirjoittaa
+     UE4SS:n proxy-DLL:n (dwmapi.dll / xinput1_3.dll) Win64-kansiossa.
+     CHECK.bat kertoo onko se paikallaan.
+  3. Tarkista etta palvelin kaynnistetaan samasta Win64-kansiosta johon
+     UE4SS on asennettu.
+
+Kun UE4SS alkaa kayttaa Lua-modeja, tama modi kirjoittaa boot.log:n
+sekunneissa. Aja CHECK.bat uudestaan - sen pitaisi nayttaa MOD_STARTED.
 
 
 TARKKA KARTTA (valinnainen)
