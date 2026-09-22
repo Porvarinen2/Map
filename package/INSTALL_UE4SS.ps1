@@ -310,14 +310,20 @@ try {
   Write-Host ""
   if (-not $after) {
     Say "UE4SS.dll ei loydy asennuksen jalkeen - jokin meni pieleen." "Red"
+  } elseif ($before -and $before.hash -eq $after.hash -and -not $zipIsTemp) {
+    # Reinstalling the bundled build over itself is the normal case once the
+    # server is up to date. That is not a warning.
+    Say ("UE4SS oli jo tama versio ({0:N0} B, {1}) - ei muutosta." -f
+         $after.size, $after.date.ToString("yyyy-MM-dd")) "Green"
+    Say "proxy-DLL : $($proxy.Name -join ', ')"
+    Say "Mods      : $modsDir"
+    $global:TeslesLoaderAlreadyCurrent = $true
   } elseif ($before -and $before.hash -eq $after.hash) {
     Say "VAROITUS: lataaja ei muuttunut." "Yellow"
     Say ("UE4SS.dll on yha sama tiedosto ({0:N0} B, {1})." -f
          $after.size, $after.date.ToString("yyyy-MM-dd")) "Yellow"
-    Say "Asensit siis saman version uudelleen. Jos ongelma oli"
+    Say "Latasit siis saman version uudelleen. Jos ongelma oli"
     Say "yhteensopivuudessa, se ei korjaannu talla."
-    Write-Host ""
-    Say "Kokeile esijulkaisua: lisatyokalut\INSTALL_UE4SS.bat -Force -Experimental" "Cyan"
   } else {
     Say "VALMIS - UE4SS $tag asennettu." "Green"
     if ($before) {

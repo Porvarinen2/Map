@@ -26,11 +26,24 @@ local scheduled = nil      -- the most recently scheduled ExecuteWithDelay call
 local schedules = {}       -- every one of them, in order
 local loops = {}
 _G.ExecuteWithDelay = function(ms, fn)
+    if in_game_thread then armed_inside_game_thread = true end
     scheduled = { ms = ms, fn = fn }
     schedules[#schedules + 1] = scheduled
 end
 _G.LoopAsync = function(ms, fn) loops[#loops + 1] = { ms = ms, fn = fn } end
-_G.ExecuteInGameThread = function(fn) fn() end
+
+-- ExecuteInGameThread does not return until the game thread has run the
+-- callback. Asking for a new timer while that wait is in progress is what
+-- froze a server on 1.1.0: the timer thread holds the queue and waits for the
+-- game thread, the game thread wants the queue. The stub records any such
+-- overlap so the test can refuse it.
+local in_game_thread = false
+local armed_inside_game_thread = false
+_G.ExecuteInGameThread = function(fn)
+    in_game_thread = true
+    fn()
+    in_game_thread = false
+end
 -- Deliberately no FindFirstOf / StaticFindObject: the bridge must degrade
 -- gracefully when the engine API is not there.
 
@@ -63,6 +76,8 @@ for _ = 1, 5 do
 end
 check(ticked, "five director ticks run with no engine available")
 check(rearmed, "every tick schedules the next one")
+check(not armed_inside_game_thread,
+      "the next tick is armed outside the game-thread call, not inside it")
 check(#loops == 0, "still no LoopAsync after ticking")
 
 local function exists(p)

@@ -261,38 +261,56 @@ local function on_game_thread(fn)
     end
 end
 
--- The tick has to stay inside the Lua state this file runs in.
+-- Two things have to be true at once, and 1.0.9 and 1.1.0 each got one of them
+-- wrong.
 --
--- The obvious way to drive it, LoopAsync, runs its callback in a SEPARATE Lua
--- state. Handing that state a closure built here (by calling
--- ExecuteInGameThread with it) makes UE4SS store a registry reference against
--- the wrong state. It then reports "[Lua::Registry::get_function_ref] Ref was
--- not function" on every tick, values in unrelated tables turn into stray
--- userdata and functions, and the server dies with an access violation inside
--- UE4SS.dll. That is exactly what a 1.0.9 server log showed.
+-- 1.0.9 drove the tick with LoopAsync. Its callback runs in a SEPARATE Lua
+-- state, so the closure it handed ExecuteInGameThread was registered against
+-- the wrong state: "[Lua::Registry::get_function_ref] Ref was not function" on
+-- every tick, stray userdata appearing inside unrelated tables, and finally an
+-- access violation inside UE4SS.dll.
 --
--- ExecuteWithDelay keeps the same state - startup itself is scheduled that way
--- and completes correctly - so the loop is a delay that re-arms itself. The
--- next tick is scheduled from inside the game-thread callback, so two ticks can
--- never overlap however long one takes.
+-- 1.1.0 moved to a self-arming ExecuteWithDelay, which fixed that - no registry
+-- errors, no tick errors - but re-armed the next delay from INSIDE the
+-- game-thread callback. One second after "startup complete" the game thread
+-- stopped, blocked in a wait reached through UE4SS. The delay thread was inside
+-- ExecuteInGameThread waiting for the game thread, while the game thread was in
+-- our callback asking ExecuteWithDelay for a new timer: each holds what the
+-- other needs.
+--
+-- So the timer is armed only from the delay thread, never from inside the
+-- game-thread work. ExecuteInGameThread does not return until the tick has run,
+-- so ticks still cannot overlap, and by the time the next timer is requested
+-- the game thread is free again.
 local schedule_tick
 
-local function tick_and_rearm()
-    safe_tick()
-    M.last_tick_at = os.time()
-    schedule_tick()
+local function trace_tick(text)
+    -- The first few ticks are the ones that have hung a server twice. Writing
+    -- them to boot.log costs nothing and turns "it froze" into a line number.
+    if M.ticks < 3 then boot(text) end
 end
 
 schedule_tick = function()
-    if type(ExecuteWithDelay) == "function" then
-        ExecuteWithDelay(CFG.TickMs or 1000, function()
-            on_game_thread(tick_and_rearm)
-        end)
-    elseif not M.tick_warned then
-        M.tick_warned = true
-        Log.warn("ExecuteWithDelay unavailable: the director cannot tick")
-        boot("ExecuteWithDelay NOT AVAILABLE - the director cannot tick")
+    if type(ExecuteWithDelay) ~= "function" then
+        if not M.tick_warned then
+            M.tick_warned = true
+            Log.warn("ExecuteWithDelay unavailable: the director cannot tick")
+            boot("ExecuteWithDelay NOT AVAILABLE - the director cannot tick")
+        end
+        return
     end
+    ExecuteWithDelay(CFG.TickMs or 1000, function()
+        trace_tick("tick " .. (M.ticks + 1) .. ": queued for the game thread")
+        if CFG.RunTicksOnGameThread == false then
+            safe_tick()
+        else
+            on_game_thread(safe_tick)
+        end
+        trace_tick("tick " .. M.ticks .. ": done")
+        M.last_tick_at = os.time()
+        -- Re-armed here, on the delay thread, with the game thread free.
+        schedule_tick()
+    end)
 end
 
 local function start()

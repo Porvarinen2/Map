@@ -164,6 +164,7 @@ if ($SkipUE4SS) {
     Die "Paketista puuttuu INSTALL_UE4SS.ps1."
   }
 
+  $global:TeslesLoaderAlreadyCurrent = $false
   $had = Test-Loader $win64
   $beforeHash = Get-LoaderStamp $win64
   if ($had) {
@@ -177,7 +178,9 @@ if ($SkipUE4SS) {
     Say "UE4SS-asennus keskeytyi: $($_.Exception.Message)" "Red"
   }
   $afterHash = Get-LoaderStamp $win64
-  if ($had -and $beforeHash -and $beforeHash -eq $afterHash) {
+  if ($global:TeslesLoaderAlreadyCurrent) {
+    Say "UE4SS on ajan tasalla." "Green"
+  } elseif ($had -and $beforeHash -and $beforeHash -eq $afterHash) {
     # 1.0.8 said it updated the loader while the file on disk never changed.
     # Whatever the cause, the summary has to show it instead of hiding it.
     $ue4ssUnchanged = $true
@@ -435,7 +438,7 @@ Write-Host "   VALMIS - kaikki asennettu" -ForegroundColor Green
 Write-Host "  ================================================" -ForegroundColor Green
 Write-Host ""
 
-if ($ue4ssUnchanged) {
+if ($ue4ssUnchanged -and -not $global:TeslesLoaderAlreadyCurrent) {
   Say "UE4SS.dll on edelleen sama tiedosto kuin ennen asennusta." "Red"
   Say "Aja: lisatyokalut\INSTALL_UE4SS.bat -Force   ja katso mita se sanoo." "Yellow"
   Write-Host ""

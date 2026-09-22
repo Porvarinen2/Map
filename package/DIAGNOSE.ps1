@@ -120,6 +120,30 @@ if ($out) {
   if ($health.settings -and (Test-Path $health.settings)) {
     Copy-Item $health.settings (Join-Path $tmp "UE4SS-settings.ini") -Force
   }
+
+  # The server's own log is where a crash or a hung game thread is recorded.
+  # Without it a freeze is just "it stopped".
+  $serverRoot = Split-Path (Split-Path (Split-Path $win64 -Parent) -Parent) -Parent
+  $scumLog = Get-ChildItem (Join-Path (Join-Path $serverRoot 'SCUM') 'Saved\Logs') `
+                           -Filter '*.log' -File -ErrorAction SilentlyContinue |
+             Sort-Object LastWriteTime -Descending | Select-Object -First 1
+  if ($scumLog) {
+    @(Get-Content $scumLog.FullName -Tail 1200) |
+      Set-Content (Join-Path $tmp "SCUM_server.log") -Encoding UTF8
+    $report += ""
+    $report += "--- SCUM server log: crash / hang lines ---"
+    $hits = @(Get-Content $scumLog.FullName |
+              Where-Object { $_ -match 'Fatal error|Critical error|Hang detected|EXCEPTION_|Unhandled Exception|UE4SS\.dll' })
+    if ($hits.Count -gt 0) {
+      $report += ("{0}: {1} osumaa" -f $scumLog.Name, $hits.Count)
+      $report += ($hits | Select-Object -First 40)
+    } else {
+      $report += ("{0}: ei kaatumisia lokissa" -f $scumLog.Name)
+    }
+  } else {
+    $report += ""
+    $report += "--- SCUM server log: ei loytynyt (SCUM\Saved\Logs) ---"
+  }
   if ($health.logPath -and (Test-Path $health.logPath)) {
     # Copy a bounded slice; the scan loop makes these files enormous.
     $slice = @(Get-Content $health.logPath -TotalCount 200) +

@@ -1,7 +1,7 @@
 -- TESLES NPC OVERHAUL - server configuration.
 -- Distances are Unreal units unless a name says otherwise. 100 UU = 1 metre.
 return {
-    Version = "1.1.0",
+    Version = "1.1.1",
 
     -- ---------------------------------------------------------- population --
     Enabled = true,
@@ -12,6 +12,11 @@ return {
     -- ---------------------------------------------------------------- tick --
     TickMs = 1000,                  -- director tick period
     StartupDelaySec = 25,           -- let the server finish loading first
+    -- Engine work belongs on the game thread. Set this to false only if the
+    -- server freezes on the first tick: the director then runs on UE4SS's own
+    -- timer thread instead. Say so if you need it - it means UE4SS is handing
+    -- out the game thread differently on your build.
+    RunTicksOnGameThread = true,
     MaxDeltaSec = 12,               -- no catch-up burst after a server stall
     RouteSolvesPerTick = 2,         -- route searches allowed per tick
     RouteExpansionsPerTick = 7000,  -- shared A* work cap per tick
