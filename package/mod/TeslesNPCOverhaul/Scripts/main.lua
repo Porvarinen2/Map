@@ -219,24 +219,35 @@ end
 local function safe_tick()
     if M.ticking then return end
     M.ticking = true
+    local now = os.time()
+    if Bridge.begin_tick then Bridge.begin_tick(now) end
+
     local ok, err = pcall(function()
-        local now = os.time()
         M.director:tick(now)
         M.ticks = M.ticks + 1
-
-        if now - M.last_telemetry >= (CFG.TelemetryIntervalSec or 2) then
-            M.last_telemetry = now
-            Telemetry.write(M.world, Bridge, M.director, {
-                version = CFG.Version,
-                uptime = now - M.started_at,
-            })
-        end
 
         if Persist.due(now) then
             Persist.rotate()
             Persist.save(Population.serialize(M.world))
         end
     end)
+
+    -- Telemetry is how anyone sees what is happening, so it must not depend on
+    -- the tick having succeeded. A tick that fails is exactly when the live map
+    -- needs to say so.
+    if now - M.last_telemetry >= (CFG.TelemetryIntervalSec or 2) then
+        M.last_telemetry = now
+        local okt, terr = pcall(Telemetry.write, M.world, Bridge, M.director, {
+            version = CFG.Version,
+            uptime = now - M.started_at,
+        })
+        if not okt and not M.telemetry_failed then
+            M.telemetry_failed = true
+            Log.error("live_state.json could not be written: " .. tostring(terr))
+            boot("TELEMETRY FAILED: " .. tostring(terr))
+        end
+    end
+
     M.ticking = false
     if not ok then
         M.errors = M.errors + 1
@@ -284,10 +295,31 @@ end
 -- the game thread is free again.
 local schedule_tick
 
-local function trace_tick(text)
-    -- The first few ticks are the ones that have hung a server twice. Writing
-    -- them to boot.log costs nothing and turns "it froze" into a line number.
-    if M.ticks < 3 then boot(text) end
+-- A tick that runs on the game thread and takes ten seconds is reported by the
+-- engine as a hang. Timing every tick and writing down the slow ones turns that
+-- into a number, and names the engine scan that cost the most.
+local SLOW_TICK_MS = 250
+
+local function report_tick(elapsed_ms)
+    local slow = elapsed_ms >= SLOW_TICK_MS
+    if M.ticks <= 3 or slow then
+        local line = string.format("tick %d: %.0f ms", M.ticks, elapsed_ms)
+        if Bridge.scan then
+            line = line .. string.format(" (scans %d, slowest %.0f ms %s)",
+                Bridge.scan.calls, Bridge.scan.slowest_ms,
+                Bridge.scan.slowest_name ~= "" and Bridge.scan.slowest_name or "-")
+        end
+        if slow then
+            if not M.slow_tick_logged or elapsed_ms > (M.worst_tick_ms or 0) then
+                M.slow_tick_logged = true
+                M.worst_tick_ms = elapsed_ms
+                Log.warn("SLOW " .. line)
+                boot("SLOW " .. line)
+            end
+        else
+            boot(line)
+        end
+    end
 end
 
 schedule_tick = function()
@@ -300,13 +332,13 @@ schedule_tick = function()
         return
     end
     ExecuteWithDelay(CFG.TickMs or 1000, function()
-        trace_tick("tick " .. (M.ticks + 1) .. ": queued for the game thread")
+        local t0 = os.clock()
         if CFG.RunTicksOnGameThread == false then
             safe_tick()
         else
             on_game_thread(safe_tick)
         end
-        trace_tick("tick " .. M.ticks .. ": done")
+        report_tick((os.clock() - t0) * 1000)
         M.last_tick_at = os.time()
         -- Re-armed here, on the delay thread, with the game thread free.
         schedule_tick()
@@ -321,6 +353,12 @@ local function start()
     boot(string.format("world data ready: grid %d, roads %d/%d, pois %d",
         Grid.size, Road.node_count, Road.edge_count, POI.count))
 
+    Bridge.on_api_error = function(where, err)
+        -- One line per call site, the first time it fails. Without this an
+        -- engine API that changed shows up only as "tick failed".
+        Log.error("engine call failed: " .. where .. " -> " .. err)
+        boot("ENGINE CALL FAILED: " .. where .. " -> " .. err)
+    end
     Bridge.init(CFG)
     boot("bridge init: " .. (Bridge.available() and "engine available"
         or "engine NOT available yet"))

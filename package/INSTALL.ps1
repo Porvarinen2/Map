@@ -303,16 +303,22 @@ Step 4 "Asennetaan TESLES NPC OVERHAUL"
 
 $target = Join-Path $mods $MOD
 $keepState = $null
+$keepOutput = $null
 if (Test-Path -LiteralPath $target) {
   Copy-Item -LiteralPath $target -Destination (Join-Path $backup $MOD) -Recurse -Force
   Say "Vanha versio varmuuskopioitiin." "Gray"
-  # Pysyva maailma on se ainoa asia jota paivitys ei saa heittaa pois.
-  $stateSrc = Join-Path $target 'state'
-  if (Test-Path -LiteralPath $stateSrc) {
-    $keepState = Join-Path ([System.IO.Path]::GetTempPath()) "tesles_state_$stamp"
-    Copy-Item -LiteralPath $stateSrc -Destination $keepState -Recurse -Force
-    Say "Maailman tila otettiin talteen." "Green"
+  # Two folders have to survive an update: the saved world, and the output the
+  # live map reads. Wiping output\ made the map say "live_state.json does not
+  # exist yet" after every reinstall, which looked like the mod had never run.
+  foreach ($keep in @('state', 'output')) {
+    $src = Join-Path $target $keep
+    if (Test-Path -LiteralPath $src) {
+      $dst = Join-Path ([System.IO.Path]::GetTempPath()) "tesles_${keep}_$stamp"
+      Copy-Item -LiteralPath $src -Destination $dst -Recurse -Force
+      if ($keep -eq 'state') { $keepState = $dst } else { $keepOutput = $dst }
+    }
   }
+  if ($keepState) { Say "Maailman tila otettiin talteen." "Green" }
   Remove-Item -LiteralPath $target -Recurse -Force
 }
 
@@ -320,12 +326,19 @@ $src = Join-Path $here "mod\$MOD"
 if (-not (Test-Path -LiteralPath $src)) { Die "Paketista puuttuu mod\$MOD" }
 Copy-Item -LiteralPath $src -Destination $target -Recurse -Force
 New-Item -ItemType Directory -Path (Join-Path $target 'state') -Force | Out-Null
-New-Item -ItemType Directory -Path (Join-Path $target 'output') -Force | Out-Null
+$outDirEarly = Join-Path $target 'output'
+New-Item -ItemType Directory -Path $outDirEarly -Force | Out-Null
 
 if ($keepState) {
   Copy-Item -Path (Join-Path $keepState '*') -Destination (Join-Path $target 'state') -Recurse -Force
   Remove-Item -LiteralPath $keepState -Recurse -Force
   Say "Maailman tila palautettiin." "Green"
+}
+if ($keepOutput) {
+  Copy-Item -Path (Join-Path $keepOutput '*') -Destination $outDirEarly -Recurse -Force `
+            -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath $keepOutput -Recurse -Force
+  Say "Live mapin tiedot sailytettiin." "Green"
 }
 
 $files = (Get-ChildItem -LiteralPath $target -Recurse -File).Count

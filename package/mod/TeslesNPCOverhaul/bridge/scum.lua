@@ -34,6 +34,80 @@ local next_handle = 1
 
 local function have(name) return type(_G[name]) == "function" end
 
+-- Reflection scans are what made the engine call this mod a hung game thread.
+-- FindAllOf walks the object array - 258,622 actors on this server - and it
+-- costs the same walk whether or not the class exists. The tick runs on the
+-- game thread, so a few of those in one tick is the difference between a five
+-- millisecond tick and a server that misses its heartbeat for ten seconds.
+--
+-- So: at most one scan per tick, and a class that comes back empty is not asked
+-- about again until its backoff expires. A class that is simply not in this
+-- build is then asked about once every fifteen minutes instead of every tick.
+local SCANS_PER_TICK = 1
+local MISS_BACKOFF = { 5, 15, 60, 300, 900 }
+local scan_budget = 0
+local scan_misses = {}
+
+B.api_errors = {}
+B.scan = { calls = 0, skipped_budget = 0, skipped_backoff = 0,
+           slowest_ms = 0, slowest_name = "" }
+
+-- One line per distinct failing call site: the same error every tick tells us
+-- nothing new, and the first one tells us everything.
+local function note_api_error(where, err)
+    if B.api_errors[where] then
+        B.api_errors[where].count = B.api_errors[where].count + 1
+        return false
+    end
+    B.api_errors[where] = { count = 1, err = tostring(err) }
+    if B.on_api_error then pcall(B.on_api_error, where, tostring(err)) end
+    return true
+end
+B.note_api_error = note_api_error
+
+function B.begin_tick(now)
+    scan_budget = SCANS_PER_TICK
+    B.tick_now = now or os.time()
+end
+
+local function find_all(cname, now)
+    now = now or B.tick_now or os.time()
+    local m = scan_misses[cname]
+    if m and now < m.next_try then
+        B.scan.skipped_backoff = B.scan.skipped_backoff + 1
+        return nil
+    end
+    if scan_budget <= 0 then
+        B.scan.skipped_budget = B.scan.skipped_budget + 1
+        return nil
+    end
+    scan_budget = scan_budget - 1
+    B.scan.calls = B.scan.calls + 1
+
+    local t0 = os.clock()
+    local ok, list = pcall(function() return FindAllOf(cname) end)
+    local ms = (os.clock() - t0) * 1000
+    if ms > B.scan.slowest_ms then
+        B.scan.slowest_ms, B.scan.slowest_name = ms, cname
+    end
+    if not ok then
+        note_api_error("FindAllOf(" .. cname .. ")", list)
+        list = nil
+    end
+
+    if list and #list > 0 then
+        scan_misses[cname] = nil
+        return list
+    end
+    local n = (m and m.misses or 0) + 1
+    scan_misses[cname] = {
+        misses = n,
+        next_try = now + MISS_BACKOFF[math.min(n, #MISS_BACKOFF)],
+    }
+    return nil
+end
+B.find_all = find_all
+
 local function set_health(key, status, detail)
     B.health[key] = { status = status, detail = detail or "" }
 end
@@ -219,11 +293,12 @@ function B.player_positions()
         return c.v
     end
     local out = {}
-    local ok, list = pcall(function() return FindAllOf("ConZPlayerController") end)
-    if not ok or not list then
-        ok, list = pcall(function() return FindAllOf("PlayerController") end)
+    local list = find_all("ConZPlayerController", now) or find_all("PlayerController", now)
+    if not list then
+        -- Keep the previous answer rather than reporting an empty server: a
+        -- skipped scan is not proof that nobody is online.
+        return c.v or out
     end
-    if not ok or not list then return out end
     for _, pc in ipairs(list) do
         if valid(pc) then
             local okp, pawn = pcall(function() return pc:K2_GetPawn() end)
@@ -243,9 +318,19 @@ end
 -- Returns the navigable ground height, or nil when it cannot be proven. The
 -- caller must treat nil as "do not spawn here": an actor placed at a guessed
 -- height falls, and a falling NPC is a failed spawn, not a live one.
-function B.ground_at(pos)
+local navsys_cache = nil
+local function get_navsys()
+    if navsys_cache and valid(navsys_cache) then return navsys_cache end
     local ok, nav = pcall(function() return FindFirstOf("NavigationSystemV1") end)
-    if not ok or not valid(nav) then return nil end
+    if not ok then note_api_error("FindFirstOf(NavigationSystemV1)", nav); return nil end
+    if not valid(nav) then return nil end
+    navsys_cache = nav
+    return nav
+end
+
+function B.ground_at(pos)
+    local nav = get_navsys()
+    if not nav then return nil end
     local okp, projected = pcall(function()
         local out = {}
         nav:K2_ProjectPointToNavigation(
@@ -370,8 +455,8 @@ function B.controller(actor)
     end
     -- Fallback: scan controller classes and match the possessed pawn.
     for _, cname in ipairs(CONTROLLER_CLASSES) do
-        local okl, list = pcall(function() return FindAllOf(cname) end)
-        if okl and list then
+        local list = find_all(cname)
+        if list then
             for _, cand in ipairs(list) do
                 if valid(cand) then
                     local okp, pawn = pcall(function() return cand:K2_GetPawn() end)
@@ -466,10 +551,15 @@ local function zombie_positions()
     if c.t and (now - c.t) < (B.cfg and B.cfg.ZombieScanIntervalSec or 4) then
         return c.v
     end
+    -- No players online means no physical NPCs, so nothing can meet a zombie.
+    if #B.player_positions() == 0 then
+        c.t, c.v = now, {}
+        return c.v
+    end
     local out = {}
     for _, cname in ipairs(ZOMBIE_CLASSES) do
-        local ok, list = pcall(function() return FindAllOf(cname) end)
-        if ok and list and #list > 0 then
+        local list = find_all(cname, now)
+        if list and #list > 0 then
             for _, z in ipairs(list) do
                 if valid(z) then
                     local okl, loc = pcall(function() return z:K2_GetActorLocation() end)
@@ -500,8 +590,8 @@ function B.find_buildings(pos, radius)
         set_health("buildingSearch", "PENDING", "disabled in config")
         return nil
     end
-    local ok, list = pcall(function() return FindAllOf("ConZBuilding") end)
-    if not ok or not list or #list == 0 then
+    local list = find_all("ConZBuilding")
+    if not list or #list == 0 then
         set_health("buildingSearch", "PENDING",
             "waiting for live proof: building_discovery")
         return nil

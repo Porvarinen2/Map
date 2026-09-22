@@ -151,11 +151,22 @@ Check (Test-Path (Join-Path (Join-Path $modsDir "SomeThirdPartyMod") "enabled.tx
       "its enabled.txt marker is parked, so UE4SS will not start it anyway"
 
 # Installing twice must keep the world state and not duplicate the mods.txt row.
+# output\ counts too: wiping it made the live map report that the mod had never
+# run, right after an update that went fine.
+Set-Content -LiteralPath (Join-Path (Join-Path $modDir "output") "live_state.json") -Value "LIVE"
+Set-Content -LiteralPath (Join-Path (Join-Path $modDir "output") "director.log") -Value "LOG"
+Set-Content -LiteralPath (Join-Path (Join-Path $modDir "output") "boot.log") -Value "STALE"
 Set-Content (Join-Path (Join-Path $modDir "state") "world_state.json") '{"groups":[]}'
 & (Join-Path $pkg "INSTALL.ps1") -ServerRoot (Join-Path $lab "server") `
   -SkipUE4SS -NoMap -Yes -NoPause | Out-Null
 Check (Test-Path (Join-Path (Join-Path $modDir "state") "world_state.json")) `
       "a reinstall keeps the saved world"
+Check (Test-Path (Join-Path (Join-Path $modDir "output") "live_state.json")) `
+      "a reinstall keeps live_state.json, so the live map keeps its picture"
+Check (Test-Path (Join-Path (Join-Path $modDir "output") "director.log")) `
+      "a reinstall keeps director.log"
+Check (-not (Test-Path (Join-Path (Join-Path $modDir "output") "boot.log"))) `
+      "the stale boot.log is still cleared, so it cannot be read as this run's"
 $mt3 = Get-Content (Join-Path $modsDir "mods.txt")
 Check (($mt3 | Where-Object { $_ -match '^TeslesNPCOverhaul\s*:' }).Count -eq 1) `
       "a reinstall does not duplicate the mods.txt row"
