@@ -16,7 +16,8 @@ param(
   [switch]$Force,          # reinstall even if UE4SS is already present
   [switch]$Yes,            # skip the confirmation prompt
   [string]$ZipFile = "",   # install from an already downloaded zip instead
-  [switch]$KeepSampleMods  # leave UE4SS's own bundled mods enabled
+  [switch]$KeepSampleMods, # leave UE4SS's own bundled mods enabled
+  [switch]$Chained         # called from INSTALL.ps1: no next-step advice
 )
 
 $ErrorActionPreference = "Stop"
@@ -114,7 +115,7 @@ try {
       Say "Lataa zip kasin ja asenna siita:" "Cyan"
       Say "  1. Avaa https://github.com/$REPO/releases" "Cyan"
       Say "  2. Lataa uusin UE4SS_vX.Y.Z.zip" "Cyan"
-      Say "  3. INSTALL_UE4SS.bat -Force -ZipFile C:\polku\UE4SS.zip" "Cyan"
+      Say "  3. lisatyokalut\INSTALL_UE4SS.bat -Force -ZipFile C:\polku\UE4SS.zip" "Cyan"
       Write-Host ""
       return
     }
@@ -136,7 +137,7 @@ try {
     if (-not $asset) {
       Say "Sopivaa UE4SS-pakettia ei loytynyt julkaisuista." "Red"
       Say "Lataa se kasin osoitteesta https://github.com/$REPO/releases" "Yellow"
-      Say "ja aja: INSTALL_UE4SS.bat -ZipFile <polku zipiin>" "Yellow"
+      Say "ja aja: lisatyokalut\INSTALL_UE4SS.bat -ZipFile <polku zipiin>" "Yellow"
       return
     }
 
@@ -151,7 +152,7 @@ try {
       if ($published -and $published -le $before.date.ToString("yyyy-MM-dd")) {
         Say "Tama ei ole uudempi kuin asennettu versio." "Yellow"
         if (-not $Experimental) {
-          Say "Kokeile: INSTALL_UE4SS.bat -Force -Experimental" "Yellow"
+          Say "Kokeile: lisatyokalut\INSTALL_UE4SS.bat -Force -Experimental" "Yellow"
         }
       }
     }
@@ -276,7 +277,7 @@ try {
     Say "Asensit siis saman version uudelleen. Jos ongelma oli"
     Say "yhteensopivuudessa, se ei korjaannu talla."
     Write-Host ""
-    Say "Kokeile esijulkaisua: INSTALL_UE4SS.bat -Force -Experimental" "Cyan"
+    Say "Kokeile esijulkaisua: lisatyokalut\INSTALL_UE4SS.bat -Force -Experimental" "Cyan"
   } else {
     Say "VALMIS - UE4SS $tag asennettu." "Green"
     if ($before) {
@@ -285,9 +286,11 @@ try {
     }
     Say "proxy-DLL : $($proxy.Name -join ', ')"
     Say "Mods      : $modsDir"
-    Write-Host ""
-    Say "Seuraavaksi: aja INSTALL.bat asentaaksesi itse modin,"
-    Say "kaynnista palvelin ja aja CHECK.bat."
+    if (-not $Chained) {
+      Write-Host ""
+      Say "Seuraavaksi: aja INSTALL.bat asentaaksesi itse modin,"
+      Say "kaynnista palvelin ja aja lisatyokalut\CHECK.bat."
+    }
   }
   Write-Host ""
 
@@ -301,9 +304,11 @@ catch {
     Say "Rivi $($_.InvocationInfo.ScriptLineNumber): $($_.InvocationInfo.Line.Trim())" "DarkGray"
   }
   Write-Host ""
-  Say "Voit myos ladata UE4SS:n kasin:" "Yellow"
-  Say "  https://github.com/UE4SS-RE/RE-UE4SS/releases" "Yellow"
-  Say "ja asentaa sen komennolla:" "Yellow"
-  Say "  INSTALL_UE4SS.bat -ZipFile C:\polku\UE4SS.zip" "Yellow"
+  if (-not $Chained) {
+    Say "Voit myos ladata UE4SS:n kasin:" "Yellow"
+    Say "  https://github.com/UE4SS-RE/RE-UE4SS/releases" "Yellow"
+    Say "ja asentaa sen komennolla:" "Yellow"
+    Say "  lisatyokalut\INSTALL_UE4SS.bat -ZipFile C:\polku\UE4SS.zip" "Yellow"
+  }
   Write-Host ""
 }

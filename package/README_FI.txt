@@ -1,4 +1,4 @@
-TESLES NPC OVERHAUL 1.0.7
+TESLES NPC OVERHAUL 1.0.8
 =========================
 
 Pysyva NPC-populaatio SCUM-palvelimelle. NPC-hahmot ja niiden ryhmat ovat
@@ -10,22 +10,35 @@ uudelleenkaynnistyksen.
 
 ASENNUS
 -------
-1. Sammuta SCUM-palvelin ja vanha LiveMap-ikkuna.
+1. Sammuta SCUM-palvelin.
 2. Pura tama ZIP omaan kansioon. ALA aja ZIPin sisalta.
-3. Aja INSTALL.bat. Asennus kieltaytyy toimimasta palvelimen ollessa paalla.
-   - Jos palvelimella ei ole UE4SS:aa, asennin tarjoutuu hakemaan sen
-     GitHubista ja asentamaan sen puolestasi. Se nayttaa version ja
-     osoitteen ennen latausta.
-   - UE4SS:n omat esimerkkimodit otetaan pois kaytosta, jottei mikaan muu
-     Lua-modi sekoita tata. Ne saa takaisin ajamalla
-     INSTALL_UE4SS.bat -KeepSampleMods
-   - Vanha TeslesWorldDirector otetaan pois kaytosta automaattisesti.
-     Molemmat eivat voi ohjata samoja NPC:ita.
-   - Aiempi maailman tila (state\world_state.json) sailytetaan paivityksessa.
-4. Kaynnista palvelin normaalisti. Mod kaynnistyy 25 s viiveella.
-5. Aja START_LIVEMAP.bat -> selain aukeaa osoitteeseen http://127.0.0.1:8777/
-6. Tarkista tilanne: CHECK.bat
+3. Aja INSTALL.bat.
+4. Kaynnista SCUM-palvelin.
 
+Siina kaikki. INSTALL.bat tekee loput itse:
+
+  1/6  etsii SCUM-palvelimen (myos Steam-kirjastoista muilta levyilta)
+  2/6  asentaa tai paivittaa UE4SS:n uusimpaan versioon GitHubista
+  3/6  ottaa kaikki muut Lua-modit pois kaytosta, jottei mikaan sekoita tata
+  4/6  asentaa modin ja rekisteroi sen (mods.txt + enabled.txt)
+  5/6  pilkkoo tarkan kartan zoom-tasoiksi jos se on paikallaan
+  6/6  kaynnistaa live mapin omaan ikkunaansa ja avaa selaimen
+
+Mikaan ei katoa: kaikki korvattava varmuuskopioidaan kansioon
+<SCUM Server>\TeslesNPCOverhaul_Backups\<aikaleima>, ja pois kaytosta
+otetut modit listataan sen disabled_mods.txt:aan. Aiempi maailman tila
+(state\world_state.json) sailyy paivityksessa.
+
+Valitsimet jos haluat ohjata asennusta:
+
+  INSTALL.bat -SkipUE4SS        ala kosketa UE4SS-asennukseen
+  INSTALL.bat -KeepOtherMods    jata muut Lua-modit paalle
+  INSTALL.bat -NoMap            ala pilko karttaa ala kaynnista live mapia
+  INSTALL.bat -ServerRoot "D:\SCUM Server"    anna palvelimen polku kasin
+
+Palvelimen kaynnistyksen jalkeen mod alkaa toimia 25 sekunnin kuluttua.
+Live map paivittyy itsestaan osoitteessa http://127.0.0.1:8777/
+Jos suljit live map -ikkunan, avaa se uudestaan: START_LIVEMAP.bat
 
 JOS MITAAN EI TAPAHDU
 ---------------------
@@ -36,7 +49,7 @@ Mod kirjoittaa heti kaynnistyessaan tiedoston
 Se kertoo mihin asti mod paasi. Lue se ensin.
 
   boot.log on olemassa ja paattyy riviin "startup deferred by 25000 ms"
-    -> odota 25 s ja aja CHECK.bat uudestaan. Tama on normaalia.
+    -> odota 25 s ja aja lisatyokalut\CHECK.bat uudestaan. Tama on normaalia.
 
   boot.log on olemassa ja paattyy riviin "startup complete"
     -> mod toimii. live_state.json ilmestyy parin sekunnin sisalla.
@@ -45,7 +58,7 @@ Se kertoo mihin asti mod paasi. Lue se ensin.
     -> rivilla on syy. Laheta DIAGNOSE.bat:n tuottama zip.
 
   boot.log PUUTTUU kokonaan
-    -> UE4SS ei ole ajanut modia lainkaan. CHECK.bat tutkii silloin
+    -> UE4SS ei ole ajanut modia lainkaan. lisatyokalut\CHECK.bat tutkii silloin
        automaattisesti UE4SS:n tilan ja kertoo syyn. Ks. seuraava osio.
 
 DIAGNOSE.bat kerää boot.log:n, director.log:n, mods.txt:n, UE4SS.log:n ja
@@ -54,14 +67,14 @@ UE4SS-asennuksen tilan yhteen zip-tiedostoon.
 
 UE4SS:N ASENNUS ERIKSEEN
 ------------------------
-INSTALL_UE4SS.bat asentaa pelkan UE4SS:n. Kaytannollista jos haluat
+lisatyokalut\INSTALL_UE4SS.bat asentaa pelkan UE4SS:n. Kaytannollista jos haluat
 kokeilla toista versiota:
 
-  INSTALL_UE4SS.bat                  uusin vakaa julkaisu
-  INSTALL_UE4SS.bat -Experimental    uusin, myos esijulkaisut
-  INSTALL_UE4SS.bat -Force           asenna uudelleen paalle
-  INSTALL_UE4SS.bat -ZipFile C:\polku\UE4SS.zip    kasin ladatusta zipista
-  INSTALL_UE4SS.bat -KeepSampleMods  jata UE4SS:n omat modit paalle
+  lisatyokalut\INSTALL_UE4SS.bat                  uusin vakaa julkaisu
+  lisatyokalut\INSTALL_UE4SS.bat -Experimental    uusin, myos esijulkaisut
+  lisatyokalut\INSTALL_UE4SS.bat -Force           asenna uudelleen paalle
+  lisatyokalut\INSTALL_UE4SS.bat -ZipFile C:\polku\UE4SS.zip    kasin ladatusta zipista
+  lisatyokalut\INSTALL_UE4SS.bat -KeepSampleMods  jata UE4SS:n omat modit paalle
 
 Korvattavat tiedostot varmuuskopioidaan kansioon UE4SS_Backups.
 Jos vakaa versio jaa AOB-skannausluuppiin (ks. alla), kokeile
@@ -73,7 +86,7 @@ UE4SS EI KAYNNISTA MODEJA
 Tama modi on UE4SS-Lua-modi. Jos UE4SS ei paase kayttamaan Lua-modeja,
 mikaan tassa paketissa ei voi toimia - eivatka muutkaan Lua-modit.
 
-CHECK.bat ja DIAGNOSE.bat kertovat UE4SS:n tilan yhdella sanalla:
+lisatyokalut\CHECK.bat ja DIAGNOSE.bat kertovat UE4SS:n tilan yhdella sanalla:
 
   MOD_STARTED     UE4SS kaynnisti modin. Vika on modissa, katso boot.log.
   SCANNING        UE4SS skannaa parhaillaan. Ei viela virhe - odota aikaraja.
@@ -102,16 +115,16 @@ Yhtaan Lua-modia ei ladata - ei tata eika muita.
 Tama on UE4SS:n ja pelin buildin valinen yhteensopivuusongelma, ei modin
 koodia. Mita tehda, tassa jarjestyksessa:
 
-  1. UPDATE_UE4SS.bat
+  1. lisatyokalut\UPDATE_UE4SS.bat
      Hakee uusimman UE4SS-esijulkaisun ja asentaa sen. Uusien pelibuildien
      tuki tulee yleensa ensin sinne. Asennin kertoo julkaisupaivan ja sen
      jos lataaja ei tosiasiassa vaihtunut.
 
      Jos lataus ei onnistu (verkko tai GitHubin tuntiraja), asennin nayttaa
      suoran osoitteen. Lataa zip kasin ja aja:
-       INSTALL_UE4SS.bat -Force -ZipFile C:\polku\UE4SS.zip
+       lisatyokalut\INSTALL_UE4SS.bat -Force -ZipFile C:\polku\UE4SS.zip
 
-  2. FIX_UE4SS_SCAN.bat
+  2. lisatyokalut\FIX_UE4SS_SCAN.bat
      UE4SS skannaa pelin binaaria oletuksena kahdeksalla saikeella. Jokainen
      saie skannaa oman lohkonsa, ja lohkon rajalla oleva kuvio voi tulla
      raportoiduksi useaan kertaan hieman eri kohdasta - juuri sita
@@ -121,10 +134,10 @@ koodia. Mita tehda, tassa jarjestyksessa:
 
      Pelkka asetusmuutos. Alkuperainen tiedosto varmuuskopioidaan,
      AOB-valimuisti siirretaan syrjaan eika poisteta, ja
-     FIX_UE4SS_SCAN.bat -Revert palauttaa kaiken.
+     lisatyokalut\FIX_UE4SS_SCAN.bat -Revert palauttaa kaiken.
 
      HUOM: yksi saie skannaa hitaammin. Odota koko aikaraja (120 s)
-     palvelimen kaynnistyksesta ennen CHECK.bat:ia. Sita ennen tila on
+     palvelimen kaynnistyksesta ennen lisatyokalut\CHECK.bat:ia. Sita ennen tila on
      SCANNING, mika on normaalia.
 
      Tama on kokeiltava hypoteesi, ei varmuus. Jos kuvio osuu binaarissa
@@ -136,7 +149,7 @@ koodia. Mita tehda, tassa jarjestyksessa:
   3. Signature-ohitus, jos saat oikean tavukuvion UE4SS:n tai SCUM-
      modausyhteison puolelta:
 
-       FIX_UE4SS_SCAN.bat -Signature FText_Constructor -Aob "48 89 5C 24 ??"
+       lisatyokalut\FIX_UE4SS_SCAN.bat -Signature FText_Constructor -Aob "48 89 5C 24 ??"
 
      Se kirjoittaa UE4SS_Signatures\FText_Constructor.lua:n oikeassa
      muodossa. Tama paketti ei arvaa tavukuviota: vaara osoite voi kaataa
@@ -144,12 +157,12 @@ koodia. Mita tehda, tassa jarjestyksessa:
 
 Tarkista myos:
   - Onko proxy-DLL (dwmapi.dll / xinput1_3.dll) yha Win64-kansiossa.
-    SCUM-paivitys voi ylikirjoittaa sen. CHECK.bat kertoo.
+    SCUM-paivitys voi ylikirjoittaa sen. lisatyokalut\CHECK.bat kertoo.
   - Kaynnistetaanko palvelin samasta Win64-kansiosta johon UE4SS on
     asennettu.
 
 Kun UE4SS alkaa kayttaa Lua-modeja, tama modi kirjoittaa boot.log:n
-sekunneissa. Aja CHECK.bat uudestaan - sen pitaisi nayttaa MOD_STARTED.
+sekunneissa. Aja lisatyokalut\CHECK.bat uudestaan - sen pitaisi nayttaa MOD_STARTED.
 
 
 TARKKA KARTTA (valinnainen)
@@ -157,7 +170,7 @@ TARKKA KARTTA (valinnainen)
 Mukana tulee 2048 x 2048 kartta. Jos haluat tarkemman:
 1. Lataa 14k x 14k SCUM-kartta selaimella.
 2. Tallenna se nimella scum_map_hires.png kansioon livemap\map\
-3. Aja SETUP_HIRES_MAP.bat. Se pilkkoo kartan zoom-tasoiksi.
+3. Aja lisatyokalut\SETUP_HIRES_MAP.bat. Se pilkkoo kartan zoom-tasoiksi.
 Kuvan on katettava koko saari samalla rajauksella kuin mukana tuleva kartta,
 muuten merkit osuvat vaaraan kohtaan.
 
@@ -214,5 +227,5 @@ kanssa tata ei voitu ajaa taman paketin rakennusymparistossa.
 
 POISTO
 ------
-UNINSTALL.bat. Varmuuskopio jaa palvelimen kansioon
+lisatyokalut\UNINSTALL.bat. Varmuuskopio jaa palvelimen kansioon
 TeslesNPCOverhaul_Backups.

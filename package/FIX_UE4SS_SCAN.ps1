@@ -215,14 +215,14 @@ try {
   }
 
   Write-Host ""
-  Say "Kaynnista palvelin ja ODOTA $ScanSeconds sekuntia ennen CHECK.bat:ia." "Cyan"
+  Say "Kaynnista palvelin ja ODOTA $ScanSeconds sekuntia ennen lisatyokalut\CHECK.bat:ia." "Cyan"
   Say "Yksi saie skannaa hitaammin, joten lopputulos nakyy vasta aikarajan"
   Say "jalkeen. Sita ennen CHECK nayttaa tilan SCANNING, mika on normaalia."
   Write-Host ""
   Say "Jos UE4SS yha kaatuu samaan riviin, skannaus ei ollut saikeiden vika:"
-  Say "  INSTALL_UE4SS.bat -Force -Experimental" "Cyan"
+  Say "  lisatyokalut\INSTALL_UE4SS.bat -Force -Experimental" "Cyan"
   Write-Host ""
-  Say "Peruminen: FIX_UE4SS_SCAN.bat -Revert" "DarkGray"
+  Say "Peruminen: lisatyokalut\FIX_UE4SS_SCAN.bat -Revert" "DarkGray"
   Write-Host ""
 }
 catch {

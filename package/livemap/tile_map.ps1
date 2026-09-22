@@ -4,7 +4,7 @@
   A 14336 x 14336 PNG is far too heavy for a browser canvas, so the live map
   loads 512 px tiles per zoom level instead. Drop the map into livemap\map\ as
   scum_map_hires.png (any common image extension works) and run
-  SETUP_HIRES_MAP.bat.
+  lisatyokalut\SETUP_HIRES_MAP.bat.
 
   Each level is decoded directly at that level's width (DecodePixelWidth) and
   cut with WPF imaging, so only one level is ever in memory and there is no

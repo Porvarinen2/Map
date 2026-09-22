@@ -55,7 +55,7 @@ if ($ModOutput) {
 $baseMap = Join-Path $root "map\scum_map.png"
 if (-not (Test-Path $baseMap)) {
   Say "map\scum_map.png puuttuu - kartta nakyy tyhjana ruudukkona." "Yellow"
-  Say "Aja SETUP_HIRES_MAP.bat, se luo peruskartan uudestaan." "Yellow"
+  Say "Aja lisatyokalut\SETUP_HIRES_MAP.bat, se luo peruskartan uudestaan." "Yellow"
 }
 Say "Sulje tama ikkuna kun lopetat."
 Write-Host ""

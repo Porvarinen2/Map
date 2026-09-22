@@ -224,8 +224,8 @@ function Get-UE4SSHealth {
       $h.action += "Todennakoisin syy on UE4SS-settings.ini."
       if ($h.scanFixApplied) {
         $h.action += "Skannauskorjaus on kaytossa - peru se ensin:"
-        $h.action += "  FIX_UE4SS_SCAN.bat -Revert"
-        $h.action += "Kaynnista palvelin ja aja CHECK.bat uudestaan."
+        $h.action += "  lisatyokalut\FIX_UE4SS_SCAN.bat -Revert"
+        $h.action += "Kaynnista palvelin ja aja lisatyokalut\CHECK.bat uudestaan."
       }
     } elseif ($h.loaderInProcess -eq $false) {
       $h.action += ""
@@ -239,14 +239,14 @@ function Get-UE4SSHealth {
       }
     } else {
       $h.action += "Prosessin moduuleja ei voitu lukea (oikeudet)."
-      $h.action += "Aja CHECK.bat yllapitajana nahdaksesi latautuiko proxy-DLL."
+      $h.action += "Aja lisatyokalut\CHECK.bat yllapitajana nahdaksesi latautuiko proxy-DLL."
       $h.action += "Tarkista etta proxy-DLL on paikallaan ja palvelin kaynnistyy"
       $h.action += "samasta Win64-kansiosta."
     }
     if ($h.scanFixApplied -and $h.loaderInProcess -ne $false) {
       $h.action += ""
       $h.action += "Jos mikaan muu ei selita tata, peru skannauskorjaus:"
-      $h.action += "  FIX_UE4SS_SCAN.bat -Revert"
+      $h.action += "  lisatyokalut\FIX_UE4SS_SCAN.bat -Revert"
     }
   }
   elseif ($h.startedLuaMods -contains "TeslesNPCOverhaul") {
@@ -259,7 +259,7 @@ function Get-UE4SSHealth {
     $h.verdict = "SCANNING"
     $h.action += ("UE4SS skannaa parhaillaan ({0} yritysta, ei viela lopputulosta)." -f
                   $h.scanAttempts)
-    $h.action += ("Odota {0} s ja aja CHECK.bat uudestaan." -f
+    $h.action += ("Odota {0} s ja aja lisatyokalut\CHECK.bat uudestaan." -f
                   $(if ($h.scanSeconds) { $h.scanSeconds } else { 60 }))
     $h.action += "Tama ei ole viela virhe."
   }
@@ -275,23 +275,23 @@ function Get-UE4SSHealth {
     $h.action += ""
     $h.action += "Korjaus jarjestyksessa:"
     if (($h.scanThreads -gt 1) -and -not $h.scanFixApplied) {
-      $h.action += ("  1. FIX_UE4SS_SCAN.bat  - skanneri kayttaa {0} saiketta." -f $h.scanThreads)
+      $h.action += ("  1. lisatyokalut\FIX_UE4SS_SCAN.bat  - skanneri kayttaa {0} saiketta." -f $h.scanThreads)
       $h.action += "     Yksi saie kerrallaan voi poistaa moniselitteisyyden."
-      $h.action += "     Pelkka asetusmuutos, peruttavissa: FIX_UE4SS_SCAN.bat -Revert"
-      $h.action += "  2. UPDATE_UE4SS.bat  (hakee uusimman esijulkaisun)"
+      $h.action += "     Pelkka asetusmuutos, peruttavissa: lisatyokalut\FIX_UE4SS_SCAN.bat -Revert"
+      $h.action += "  2. lisatyokalut\UPDATE_UE4SS.bat  (hakee uusimman esijulkaisun)"
       $h.action += "  3. Signature-ohitus, jos sinulla on oikea tavukuvio:"
-      $h.action += "     FIX_UE4SS_SCAN.bat -Signature FText_Constructor -Aob <tavukuvio>"
+      $h.action += "     lisatyokalut\FIX_UE4SS_SCAN.bat -Signature FText_Constructor -Aob <tavukuvio>"
     } elseif ($h.scanFixApplied) {
       $h.action += "  1. Skannauskorjaus on kokeiltu eika se auttanut."
       $h.action += "     Peru se, jotta kaynnistys ei hidastu turhaan:"
-      $h.action += "     FIX_UE4SS_SCAN.bat -Revert"
-      $h.action += "  2. UPDATE_UE4SS.bat  (hakee uusimman esijulkaisun)"
+      $h.action += "     lisatyokalut\FIX_UE4SS_SCAN.bat -Revert"
+      $h.action += "  2. lisatyokalut\UPDATE_UE4SS.bat  (hakee uusimman esijulkaisun)"
       $h.action += "  3. Signature-ohitus, jos sinulla on oikea tavukuvio:"
-      $h.action += "     FIX_UE4SS_SCAN.bat -Signature FText_Constructor -Aob <tavukuvio>"
+      $h.action += "     lisatyokalut\FIX_UE4SS_SCAN.bat -Signature FText_Constructor -Aob <tavukuvio>"
     } else {
-      $h.action += "  1. UPDATE_UE4SS.bat  (hakee uusimman esijulkaisun)"
+      $h.action += "  1. lisatyokalut\UPDATE_UE4SS.bat  (hakee uusimman esijulkaisun)"
       $h.action += "  2. Signature-ohitus, jos sinulla on oikea tavukuvio:"
-      $h.action += "     FIX_UE4SS_SCAN.bat -Signature FText_Constructor -Aob <tavukuvio>"
+      $h.action += "     lisatyokalut\FIX_UE4SS_SCAN.bat -Signature FText_Constructor -Aob <tavukuvio>"
     }
     if ($h.version) { $h.action += ("Asennettu nyt: {0}" -f $h.version) }
     if ($h.loaderDate) { $h.action += ("Lataajan paivays: {0}" -f $h.loaderDate) }
@@ -302,7 +302,7 @@ function Get-UE4SSHealth {
     if ($h.scanFailure) { $h.action += $h.scanFailure }
     $h.action += "Se ei paase kayttamaan yhtaan Lua-modia ennen kuin skannaus onnistuu."
     $h.action += "Tama ei ole taman modin vika: sama estaa kaikki muutkin Lua-modit."
-    $h.action += "Korjaus: UPDATE_UE4SS.bat"
+    $h.action += "Korjaus: lisatyokalut\UPDATE_UE4SS.bat"
     if ($h.version) { $h.action += ("Asennettu versio: {0}" -f $h.version) }
   }
   elseif ($h.startedLuaMods.Count -gt 0) {

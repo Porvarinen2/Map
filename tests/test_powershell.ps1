@@ -84,6 +84,7 @@ Set-Content (Join-Path $src "UE4SS.dll") "loader"
 Set-Content (Join-Path $src "UE4SS-settings.ini") "[General]"
 Set-Content (Join-Path $srcMods "mods.txt") @(
   "CheatManagerEnablerMod : 1", "ConsoleCommandsMod : 1", "ActorDumperMod : 0",
+  "SomeThirdPartyMod : 1",
   "", "; Built-in keybinds, do not move up!", "Keybinds : 1")
 Set-Content (Join-Path (Join-Path $srcMods "ConsoleCommandsMod") "enabled.txt") ""
 $relZip = Join-Path $lab "UE4SS_v9.9.9.zip"
@@ -105,7 +106,17 @@ Check (Test-Path (Join-Path (Join-Path $modsDir "ConsoleCommandsMod") "enabled.t
 Check (-not (Test-Path (Join-Path (Join-Path $modsDir "ConsoleCommandsMod") "enabled.txt"))) `
       "the live marker is gone, so UE4SS will not start it anyway"
 
-& (Join-Path $pkg "INSTALL.ps1") -ServerRoot (Join-Path $lab "server") -Yes -NoPause | Out-Null
+# A mod the user installed themselves after UE4SS: the one-click installer has
+# to switch it off too, not just UE4SS's own samples.
+Set-Content (Join-Path $modsDir "mods.txt") `
+  (@(Get-Content (Join-Path $modsDir "mods.txt")) -replace '^SomeThirdPartyMod\s*:\s*0', 'SomeThirdPartyMod : 1')
+New-Item -ItemType Directory -Path (Join-Path $modsDir "SomeThirdPartyMod") -Force | Out-Null
+Set-Content (Join-Path (Join-Path $modsDir "SomeThirdPartyMod") "enabled.txt") ""
+
+# -SkipUE4SS: the loader install is exercised above from a fixed zip, and the
+# one-click path must not depend on GitHub inside the test.
+& (Join-Path $pkg "INSTALL.ps1") -ServerRoot (Join-Path $lab "server") `
+  -SkipUE4SS -NoMap -Yes -NoPause | Out-Null
 
 $modDir = Join-Path $modsDir "TeslesNPCOverhaul"
 Check (Test-Path (Join-Path (Join-Path $modDir "Scripts") "main.lua")) "the mod's entry point is installed"
@@ -120,9 +131,29 @@ Check ((Get-ChildItem $modDir -Recurse -File).Count -ge 30) `
 Check (Test-Path (Join-Path (Join-Path $pkg "livemap") "livemap_paths.txt")) `
       "the live map is pointed at the mod's output folder"
 
+# The user asked for one installer that also makes sure nothing else runs
+# alongside this mod.
+Check (($mt2 | Where-Object { $_ -match '^SomeThirdPartyMod\s*:\s*0' }).Count -eq 1) `
+      "a third-party Lua mod is switched off"
+Check (($mt2 | Where-Object { $_ -match '^Keybinds\s*:\s*0' }).Count -eq 1) `
+      "even UE4SS's own Keybinds mod is switched off"
+Check (($mt2 | Where-Object { $_ -match '^\s*;' }).Count -ge 1) `
+      "comment lines in mods.txt survive"
+$backupDir = Get-ChildItem (Join-Path (Join-Path $lab "server") "TeslesNPCOverhaul_Backups") `
+             -Directory | Select-Object -First 1
+Check ($backupDir -ne $null) "a backup folder is created"
+Check (Test-Path (Join-Path $backupDir.FullName "mods.txt")) "the original mods.txt is backed up"
+Check (Test-Path (Join-Path $backupDir.FullName "disabled_mods.txt")) `
+      "what was switched off is written down"
+Check ((Get-Content (Join-Path $backupDir.FullName "disabled_mods.txt")) -contains "SomeThirdPartyMod") `
+      "the list names the mod that was switched off"
+Check (Test-Path (Join-Path (Join-Path $modsDir "SomeThirdPartyMod") "enabled.txt.disabled")) `
+      "its enabled.txt marker is parked, so UE4SS will not start it anyway"
+
 # Installing twice must keep the world state and not duplicate the mods.txt row.
 Set-Content (Join-Path (Join-Path $modDir "state") "world_state.json") '{"groups":[]}'
-& (Join-Path $pkg "INSTALL.ps1") -ServerRoot (Join-Path $lab "server") -Yes -NoPause | Out-Null
+& (Join-Path $pkg "INSTALL.ps1") -ServerRoot (Join-Path $lab "server") `
+  -SkipUE4SS -NoMap -Yes -NoPause | Out-Null
 Check (Test-Path (Join-Path (Join-Path $modDir "state") "world_state.json")) `
       "a reinstall keeps the saved world"
 $mt3 = Get-Content (Join-Path $modsDir "mods.txt")
