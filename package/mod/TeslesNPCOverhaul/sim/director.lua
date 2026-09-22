@@ -450,7 +450,8 @@ function D:tick(now)
     self.last_tick = now
     self.now = now
     self.route_budget = self.cfg.RouteSolvesPerTick or 3
-    Router.begin_tick(self.cfg.RouteExpansionsPerTick or Router.TICK_BUDGET)
+    Router.begin_tick(self.cfg.RouteExpansionsPerTick or Router.TICK_BUDGET,
+        self.cfg.RouteMillisecondsPerTick or Router.MS_BUDGET)
 
     local players = (self.bridge and self.bridge.player_positions
         and self.bridge.player_positions()) or {}

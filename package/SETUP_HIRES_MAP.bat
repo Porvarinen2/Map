@@ -10,3 +10,8 @@ echo   3. Paina Enter.
 echo.
 pause
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0livemap\tile_map.ps1"
+if errorlevel 1 (
+  echo.
+  echo   PowerShell palautti virheen. Kopioi yllaoleva teksti talteen.
+)
+pause

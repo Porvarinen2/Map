@@ -1,7 +1,7 @@
 -- TESLES NPC OVERHAUL - server configuration.
 -- Distances are Unreal units unless a name says otherwise. 100 UU = 1 metre.
 return {
-    Version = "1.0.0",
+    Version = "1.0.1",
 
     -- ---------------------------------------------------------- population --
     Enabled = true,
@@ -15,6 +15,7 @@ return {
     MaxDeltaSec = 12,               -- no catch-up burst after a server stall
     RouteSolvesPerTick = 2,         -- route searches allowed per tick
     RouteExpansionsPerTick = 7000,  -- shared A* work cap per tick
+    RouteMillisecondsPerTick = 22,  -- wall-clock cap on route solving per tick
     SaveIntervalSec = 45,
     TelemetryIntervalSec = 2,
 

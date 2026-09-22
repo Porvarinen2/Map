@@ -1,18 +1,21 @@
 -- TESLES NPC OVERHAUL - UE4SS entry point.
 --
--- This file does three things and nothing else: work out where the mod lives,
--- wire the modules together, and drive the tick. All engine contact is inside
--- bridge/scum.lua; everything else is plain Lua and is covered by the test
--- suite that ships in the package.
+-- This file works out where the mod lives, wires the modules together and
+-- drives the tick. All engine contact is inside bridge/scum.lua; everything
+-- else is plain Lua and is covered by the test suite.
+--
+-- Every stage writes to output\boot.log through a raw io.open before any
+-- module is loaded. If the mod goes quiet, that file says exactly how far it
+-- got, which is the difference between a diagnosable failure and silence.
 
 local MOD_NAME = "TeslesNPCOverhaul"
+local VERSION_FALLBACK = "1.0.0"
 
 -- --------------------------------------------------------------- mod path --
 
 -- UE4SS may present the script folder as "Scripts" or "scripts", and may use
 -- either path separator. Always take the parent of whatever folder this file
--- is in rather than matching a name: earlier versions matched only lowercase
--- "scripts" and ended up looking for config.lua inside the script folder.
+-- is in rather than matching a name.
 local function split_dir(path)
     local cut = 0
     for i = #path, 1, -1 do
@@ -23,39 +26,121 @@ local function split_dir(path)
     return path:sub(1, cut - 1), path:sub(cut + 1)
 end
 
-local function mod_dir()
-    local src = debug.getinfo(1, "S").source
-    if src:sub(1, 1) == "@" then src = src:sub(2) end
-    local script_dir = split_dir(src)
-    local parent = split_dir(script_dir)
-    if parent and parent ~= "" and parent ~= "." then return parent end
-    return script_dir
+local SOURCE = debug.getinfo(1, "S").source
+local SRC_PATH = SOURCE
+if SRC_PATH:sub(1, 1) == "@" then SRC_PATH = SRC_PATH:sub(2) end
+local SCRIPT_DIR = split_dir(SRC_PATH)
+local MOD_DIR = split_dir(SCRIPT_DIR)
+if MOD_DIR == "" or MOD_DIR == "." then MOD_DIR = SCRIPT_DIR end
+local SEP = MOD_DIR:find("\\", 1, true) and "\\" or "/"
+
+-- ------------------------------------------------------------- boot log ----
+
+local BOOT_PATH = MOD_DIR .. SEP .. "output" .. SEP .. "boot.log"
+local boot_target = nil
+
+local function boot(msg)
+    local line = os.date("%Y-%m-%d %H:%M:%S") .. "  " .. tostring(msg)
+    if print then pcall(print, "[TeslesNPC] " .. line) end
+    if boot_target == nil then
+        -- Find a writable location once. output\ is created by the installer;
+        -- fall back to the mod folder and then the script folder so a broken
+        -- install still leaves a trace.
+        for _, p in ipairs({
+            BOOT_PATH,
+            MOD_DIR .. SEP .. "boot.log",
+            SCRIPT_DIR .. SEP .. "boot.log",
+        }) do
+            local f = io.open(p, "a")
+            if f then f:close(); boot_target = p; break end
+        end
+        if boot_target == nil then boot_target = false end
+    end
+    if boot_target then
+        local f = io.open(boot_target, "a")
+        if f then f:write(line, "\n"); f:close() end
+    end
 end
 
-local MOD_DIR = mod_dir()
-local SEP = MOD_DIR:find("\\", 1, true) and "\\" or "/"
-package.path = MOD_DIR .. SEP .. "?.lua;" .. package.path
+-- A fresh boot log per start: the last start is the one being diagnosed.
+do
+    local f = io.open(BOOT_PATH, "w")
+    if f then f:close() end
+end
 
-local ok_cfg, CFG = pcall(dofile, MOD_DIR .. SEP .. "config.lua")
-if not ok_cfg or type(CFG) ~= "table" then
-    CFG = { Version = "1.0.0", Enabled = true, TickMs = 1000, TargetNPCs = 100 }
+boot("---- " .. MOD_NAME .. " boot ----")
+boot("lua        : " .. tostring(_VERSION))
+boot("source     : " .. tostring(SOURCE))
+boot("script dir : " .. tostring(SCRIPT_DIR))
+boot("mod dir    : " .. tostring(MOD_DIR))
+boot("separator  : " .. (SEP == "\\" and "backslash" or "slash"))
+boot("log target : " .. tostring(boot_target))
+
+package.path = MOD_DIR .. SEP .. "?.lua;"
+    .. MOD_DIR .. SEP .. "?" .. SEP .. "init.lua;"
+    .. package.path
+boot("package.path set")
+
+-- UE4SS ships Lua 5.4, but some builds embed 5.1/LuaJIT where math.atan takes
+-- a single argument. Lua silently drops the extra argument rather than
+-- erroring, so detect it by result: atan(1,-1) is 3pi/4 on 5.3+ and pi/4 on
+-- 5.1. Restore the two-argument form before anything uses it.
+if math.atan2 then
+    local ok, v = pcall(math.atan, 1, -1)
+    if not ok or math.abs(v - 2.3561944901923) > 1e-6 then
+        local atan2 = math.atan2
+        local atan1 = math.atan
+        math.atan = function(y, x)
+            if x == nil then return atan1(y) end
+            return atan2(y, x)
+        end
+        boot("math.atan shim installed for Lua 5.1 / LuaJIT")
+    end
+end
+
+-- ------------------------------------------------------------- config ------
+
+local CFG
+do
+    local ok, result = pcall(dofile, MOD_DIR .. SEP .. "config.lua")
+    if ok and type(result) == "table" then
+        CFG = result
+        boot("config.lua loaded (version " .. tostring(CFG.Version) .. ")")
+    else
+        CFG = { Version = VERSION_FALLBACK, Enabled = true, TickMs = 1000,
+                TargetNPCs = 100 }
+        boot("config.lua FAILED (" .. tostring(result) .. ") - using defaults")
+    end
 end
 
 -- ----------------------------------------------------------------- modules --
 
-local Log        = require("core.log")
-local Persist    = require("core.persist")
-local Grid       = require("world.navgrid")
-local Road       = require("world.roadnet")
-local POI        = require("world.pois")
-local Movement   = require("sim.movement")
-local Physical   = require("sim.physical")
-local Combat     = require("sim.combat")
-local Buildings  = require("sim.buildings")
-local Population = require("sim.population")
-local Director   = require("sim.director")
-local Bridge     = require("bridge.scum")
-local Telemetry  = require("bridge.telemetry")
+-- Loaded one at a time so a failure names the module that broke instead of
+-- taking the whole file down with a single stack trace.
+local function need(name)
+    local ok, mod = pcall(require, name)
+    if not ok then
+        boot("REQUIRE FAILED " .. name .. ": " .. tostring(mod))
+        error("TeslesNPCOverhaul: could not load " .. name .. ": " .. tostring(mod), 0)
+    end
+    return mod
+end
+
+boot("loading modules")
+local Log        = need("core.log")
+local Persist    = need("core.persist")
+local Grid       = need("world.navgrid")
+local Road       = need("world.roadnet")
+local POI        = need("world.pois")
+local Movement   = need("sim.movement")
+local Physical   = need("sim.physical")
+local Combat     = need("sim.combat")
+local Buildings  = need("sim.buildings")
+local Population = need("sim.population")
+local Director   = need("sim.director")
+local Bridge     = need("bridge.scum")
+local Telemetry  = need("bridge.telemetry")
+boot("modules loaded")
 
 local STATE_DIR  = MOD_DIR .. SEP .. "state"
 local OUTPUT_DIR = MOD_DIR .. SEP .. "output"
@@ -63,6 +148,17 @@ local OUTPUT_DIR = MOD_DIR .. SEP .. "output"
 Log.configure(OUTPUT_DIR, CFG.LogLevel, CFG.LogEcho)
 Persist.configure(STATE_DIR, CFG.SaveIntervalSec)
 Telemetry.configure(OUTPUT_DIR)
+
+-- Prove the output folder is writable before the director relies on it.
+do
+    local probe = io.open(OUTPUT_DIR .. SEP .. "director.log", "a")
+    if probe then
+        probe:close()
+        boot("output folder is writable: " .. OUTPUT_DIR)
+    else
+        boot("OUTPUT FOLDER NOT WRITABLE: " .. OUTPUT_DIR)
+    end
+end
 
 -- Push the config's tunables into the modules that own them.
 Physical.tuning.full_uu = CFG.FullDistanceUU or Physical.tuning.full_uu
@@ -140,6 +236,7 @@ local function safe_tick()
     if not ok then
         M.errors = M.errors + 1
         Log.error("tick failed: " .. tostring(err))
+        if M.errors == 1 then boot("FIRST TICK ERROR: " .. tostring(err)) end
         if M.errors == 1 or M.errors % 25 == 0 then
             Bridge.health.brain = { status = "DEGRADED",
                                     detail = M.errors .. " tick errors" }
@@ -158,15 +255,22 @@ local function on_game_thread(fn)
 end
 
 local function start()
+    boot("startup beginning")
     Log.info("TESLES NPC OVERHAUL " .. tostring(CFG.Version) .. " starting")
     Log.info(string.format("nav grid %dx%d, road net %d nodes / %d edges, %d POIs",
         Grid.size, Grid.size, Road.node_count, Road.edge_count, POI.count))
+    boot(string.format("world data ready: grid %d, roads %d/%d, pois %d",
+        Grid.size, Road.node_count, Road.edge_count, POI.count))
 
     Bridge.init(CFG)
+    boot("bridge init: " .. (Bridge.available() and "engine available"
+        or "engine NOT available yet"))
     Bridge.health.worldRouting = { status = "OK",
         detail = string.format("dry-land grid %dx%d / %d POIs", Grid.size, Grid.size, POI.count) }
 
     M.world = boot_world()
+    boot(string.format("world ready: %d groups / %d NPCs",
+        #M.world.groups, Population.alive_npc_count(M.world)))
     Bridge.health.worldPopulation = { status = "OK",
         detail = string.format("%d persistent NPCs / %d groups",
             Population.alive_npc_count(M.world), #M.world.groups) }
@@ -178,8 +282,12 @@ local function start()
         seed = M.world.seed,
     })
 
-    Telemetry.write(M.world, Bridge, M.director,
+    local wrote = Telemetry.write(M.world, Bridge, M.director,
         { version = CFG.Version, uptime = 0 })
+    boot("first live_state.json write: " .. tostring(wrote))
+    if not wrote then
+        boot("live_state.json COULD NOT BE WRITTEN to " .. OUTPUT_DIR)
+    end
 
     if type(LoopAsync) == "function" then
         LoopAsync(CFG.TickMs or 1000, function()
@@ -187,25 +295,36 @@ local function start()
             return false
         end)
         Log.info("director loop running at " .. tostring(CFG.TickMs) .. " ms")
+        boot("director loop registered at " .. tostring(CFG.TickMs) .. " ms")
     else
         Log.warn("LoopAsync unavailable: the director will not tick by itself")
+        boot("LoopAsync NOT AVAILABLE - the director cannot tick")
     end
+    boot("startup complete")
 end
 
 if CFG.Enabled == false then
     Log.info("TESLES NPC OVERHAUL is disabled in config.lua")
-    return
+    boot("disabled in config.lua - stopping here")
+    return M
 end
 
 -- Give the server time to finish loading before the first scan.
-if type(ExecuteWithDelay) == "function" then
-    ExecuteWithDelay((CFG.StartupDelaySec or 25) * 1000, function()
-        local ok, err = pcall(start)
-        if not ok then Log.error("startup failed: " .. tostring(err)) end
-    end)
-else
+local function guarded_start()
     local ok, err = pcall(start)
-    if not ok then Log.error("startup failed: " .. tostring(err)) end
+    if not ok then
+        Log.error("startup failed: " .. tostring(err))
+        boot("STARTUP FAILED: " .. tostring(err))
+    end
+end
+
+if type(ExecuteWithDelay) == "function" then
+    local delay = (CFG.StartupDelaySec or 25) * 1000
+    boot("startup deferred by " .. tostring(delay) .. " ms via ExecuteWithDelay")
+    ExecuteWithDelay(delay, guarded_start)
+else
+    boot("ExecuteWithDelay not available - starting immediately")
+    guarded_start()
 end
 
 return M

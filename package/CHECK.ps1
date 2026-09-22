@@ -25,10 +25,43 @@ $proc = Get-Process -Name "SCUMServer" -ErrorAction SilentlyContinue
 if ($proc) { Say "SCUMServer: kaynnissa (PID $($proc.Id))" "Green" }
 else { Say "SCUMServer: ei kaynnissa" "Yellow" }
 
+# boot.log is written before any module loads, so it is the first thing to
+# read when the mod is quiet.
+$boot = Join-Path $out 'boot.log'
+if (Test-Path $boot) {
+  Say "boot.log loytyy - mod kaynnistyi. Viimeiset rivit:" "Green"
+  Get-Content $boot -Tail 14 | ForEach-Object { Write-Host "    $_" }
+} else {
+  Say "boot.log PUUTTUU - UE4SS ei ole ajanut modin main.lua:ta lainkaan." "Red"
+  Write-Host ""
+  Say "Tarkista tassa jarjestyksessa:" "Yellow"
+  $modRoot = Split-Path $out -Parent
+  $modsDir = Split-Path $modRoot -Parent
+  Say "  1. Onko tiedosto olemassa:"
+  Say "     $modRoot\Scripts\main.lua"
+  if (Test-Path (Join-Path $modRoot 'Scripts\main.lua')) {
+    Say "     -> on olemassa" "Green"
+  } else {
+    Say "     -> PUUTTUU. Aja INSTALL.bat uudestaan." "Red"
+  }
+  Say "  2. Onko mods.txt:ssa rivi  TeslesNPCOverhaul : 1"
+  $modsTxt = Join-Path $modsDir 'mods.txt'
+  if (Test-Path $modsTxt) {
+    $hit = Select-String -Path $modsTxt -Pattern "TeslesNPCOverhaul" -SimpleMatch
+    if ($hit) { Say "     -> $($hit.Line.Trim())" "Green" }
+    else { Say "     -> rivi PUUTTUU" "Red" }
+  } else {
+    Say "     -> mods.txt puuttuu: $modsTxt" "Red"
+  }
+  Say "  3. Katso UE4SS.log: lataako se modeja lainkaan."
+  Say "  4. Aja DIAGNOSE.bat ja laheta syntyva zip."
+  Write-Host ""
+}
+
 $state = Join-Path $out 'live_state.json'
 if (-not (Test-Path $state)) {
-  Say "live_state.json puuttuu - director ei ole viela kirjoittanut mitaan." "Red"
-  Say "Katso director.log samasta kansiosta." "Yellow"
+  Say "live_state.json puuttuu - director ei ole viela kirjoittanut tilaa." "Yellow"
+  Say "Jos boot.log loppuu riviin 'startup deferred', odota 25 s ja aja uudestaan." "Yellow"
 } else {
   $age = [int]((Get-Date) - (Get-Item $state).LastWriteTime).TotalSeconds
   if ($age -le 15) { Say "live_state.json: paivitetty $age s sitten" "Green" }
@@ -63,7 +96,7 @@ if (Test-Path $log) {
   Say "director.log viimeiset rivit:" "Cyan"
   Get-Content $log -Tail 12 | ForEach-Object { Write-Host "    $_" }
 } else {
-  Say "director.log puuttuu." "Yellow"
+  Say "director.log puuttuu (kirjoitetaan vasta kun director kaynnistyy)." "Yellow"
 }
 
 Write-Host ""

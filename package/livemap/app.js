@@ -53,9 +53,29 @@ let pollFails = 0, lastError = "";
 
 const mapImg = new Image();
 let mapReady = false;
-mapImg.onload = () => { mapReady = true; if (!view.scale) fit(); else draw(); };
-mapImg.onerror = () => { lastError = "karttakuvaa ei löytynyt"; draw(); };
-mapImg.src = "map/scum_map.png";
+let mapMissing = false;
+// The packaged base map, then the names a user-supplied download tends to
+// have, so a renamed or replaced file still shows something.
+const MAP_CANDIDATES = [
+  "map/scum_map.png", "map/scum_map_hires.png", "map/scum_map_hires.jpg",
+  "map/scum_map_hires.jpeg", "map/scum_map_hires.webp", "map/scum_map_hires",
+];
+let mapCandidate = 0;
+mapImg.onload = () => {
+  mapReady = true; mapMissing = false;
+  if (!view.scale) fit(); else draw();
+};
+mapImg.onerror = () => {
+  mapCandidate++;
+  if (mapCandidate < MAP_CANDIDATES.length) {
+    mapImg.src = MAP_CANDIDATES[mapCandidate];
+  } else {
+    mapMissing = true;
+    lastError = "karttakuvaa ei löytynyt kansiosta livemap\\map\\";
+    draw();
+  }
+};
+mapImg.src = MAP_CANDIDATES[0];
 
 // A tiled pyramid produced by SETUP_HIRES_MAP.bat takes over when present.
 let tiles = null;
@@ -153,11 +173,36 @@ function drawBase(r) {
     const o = imgToScreen(0, 0);
     ctx.imageSmoothingEnabled = view.scale < 2;
     ctx.drawImage(mapImg, o.x, o.y, s.w * view.scale, s.h * view.scale);
+  } else if (mapMissing) {
+    drawMissingMap(r);
   } else {
     ctx.fillStyle = "#6d7684";
     ctx.font = "13px Inter, sans-serif";
-    ctx.fillText(lastError || "Ladataan karttaa…", 20, 30);
+    ctx.fillText("Ladataan karttaa…", 20, 30);
   }
+}
+
+// The grid alone looks like a broken page; say what is actually wrong.
+function drawMissingMap(r) {
+  const lines = [
+    "Karttakuvaa ei löytynyt.",
+    "",
+    "Tallenna kartta tiedostoksi  livemap\\map\\scum_map.png",
+    "tai aja SETUP_HIRES_MAP.bat, joka luo sen tarkasta kartasta.",
+    "",
+    "Ryhmien sijainnit piirtyvät silti ruudukkoon.",
+  ];
+  ctx.save();
+  ctx.textAlign = "center";
+  const cx = r.width / 2;
+  let y = r.height / 2 - lines.length * 11;
+  lines.forEach((t, i) => {
+    ctx.font = i === 0 ? "600 15px Inter, sans-serif" : "13px Inter, sans-serif";
+    ctx.fillStyle = i === 0 ? "#e8c25a" : "#98a1ad";
+    ctx.fillText(t, cx, y);
+    y += 22;
+  });
+  ctx.restore();
 }
 
 // Picks the pyramid level whose pixels are closest to one screen pixel, then
@@ -356,6 +401,22 @@ function bar(v, max, cls) {
 function renderWorld() {
   const s = state.stats || {};
   const lod = state.lod || {};
+  const waiting = state.waiting ? `
+    <div class="section">
+      <h2>Odottaa dataa</h2>
+      <div class="health">
+        <div class="h"><div><div class="k">${esc(state.reason || "")}</div>
+          <div class="d">Mod-output: ${esc(state.output || "tuntematon")}</div></div>
+          <div class="s PENDING">ODOTTAA</div></div>
+      </div>
+      <div class="note">
+        1. Onko SCUM-palvelin kaynnissa? Mod kaynnistyy 25 s viiveella.<br>
+        2. Katso mod-kansion output\\boot.log - se kertoo mihin asti mod paasi.<br>
+        3. Jos boot.log puuttuu kokonaan, UE4SS ei lataa modia: tarkista
+           Mods\\mods.txt rivi "TeslesNPCOverhaul : 1" ja UE4SS.log.<br>
+        4. DIAGNOSE.bat kerää nama tiedot yhteen.
+      </div>
+    </div>` : "";
   const health = (state.health || []).map(h => `
     <div class="h">
       <div><div class="k">${esc(h.key)}</div><div class="d">${esc(h.detail)}</div></div>
@@ -363,6 +424,7 @@ function renderWorld() {
     </div>`).join("");
 
   return `<div class="pad">
+    ${waiting}
     <div class="section">
       <h2>Populaatio</h2>
       <div class="grid2">
@@ -603,8 +665,14 @@ async function poll() {
     const data = await r.json();
     state = data;
     pollFails = 0;
-    document.getElementById("chipLink").innerHTML =
-      `<b style="color:#5fd67f">LIVE</b> · päivitetty ${new Date().toLocaleTimeString()}`;
+    if (data.waiting) {
+      // The server answered, the mod has not written a snapshot yet.
+      document.getElementById("chipLink").innerHTML =
+        `<b style="color:#e8c25a">ODOTTAA</b> · ${esc(data.reason || "ei tilatietoa")}`;
+    } else {
+      document.getElementById("chipLink").innerHTML =
+        `<b style="color:#5fd67f">LIVE</b> · päivitetty ${new Date().toLocaleTimeString()}`;
+    }
     (data.groups || []).forEach(g => {
       let t = trails.get(g.gid);
       if (!t) { t = []; trails.set(g.gid, t); }
@@ -623,7 +691,8 @@ async function poll() {
     pollFails++;
     lastError = String(e.message || e);
     document.getElementById("chipLink").innerHTML =
-      `<b style="color:#f07070">OFFLINE</b> · ${esc(lastError)}`;
+      `<b style="color:#f07070">OFFLINE</b> · ${esc(lastError)} ` +
+      `· onko START_LIVEMAP.bat auki?`;
     if (pollFails === 1) draw();
   }
 }

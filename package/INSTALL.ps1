@@ -165,17 +165,34 @@ if (Test-Path -LiteralPath $oldDir) {
 # ------------------------------------------------------------- live map ----
 
 $outDir = Join-Path $target 'output'
-Set-Content -LiteralPath (Join-Path $here 'livemap\livemap_paths.txt') `
-  -Value $outDir -Encoding UTF8
+$pathFile = Join-Path $here 'livemap\livemap_paths.txt'
+Set-Content -LiteralPath $pathFile -Value $outDir -Encoding UTF8
 Say "Live map osoittaa kansioon: $outDir" "Green"
+
+# The live map needs its base image; without it the page is just a grid.
+$baseMap = Join-Path $here 'livemap\map\scum_map.png'
+if (Test-Path $baseMap) {
+  Say "Karttakuva loytyy." "Green"
+} else {
+  Say "VAROITUS: livemap\map\scum_map.png puuttuu." "Yellow"
+  Say "Live map nayttaa tyhjan ruudukon kunnes kuva on paikallaan." "Yellow"
+  Say "Pura paketti uudestaan tai aja SETUP_HIRES_MAP.bat." "Yellow"
+}
+
+# A stale boot log from the previous install would be read as this one's.
+$oldBoot = Join-Path $outDir 'boot.log'
+if (Test-Path $oldBoot) { Remove-Item $oldBoot -Force }
 
 Write-Host ""
 Write-Host "  VALMIS" -ForegroundColor Green
 Write-Host ""
 Say "1. Kaynnista SCUM-palvelin normaalisti."
-Say "2. Odota noin minuutti (mod kaynnistyy 25 s viiveella)."
+Say "2. Odota noin minuutti. Mod kirjoittaa heti tiedoston"
+Say "   $outDir\boot.log"
+Say "   ja kaynnistyy 25 s viiveella."
 Say "3. Aja START_LIVEMAP.bat ja avaa http://127.0.0.1:8777/"
 Say "4. Tarkista tilanne: CHECK.bat"
+Say "5. Jos jokin on pielessa: DIAGNOSE.bat"
 Write-Host ""
 Say "Asetukset: $target\config.lua"
 Write-Host ""

@@ -1,13 +1,14 @@
 <#
   Builds a zoom pyramid from a high-resolution SCUM map image.
 
-  Why this exists: a 14336 x 14336 PNG is far too heavy for a browser canvas,
-  so the live map loads 512 px tiles per zoom level instead. Drop the map into
-  livemap\map\ as scum_map_hires.png (or .jpg) and run SETUP_HIRES_MAP.bat.
+  A 14336 x 14336 PNG is far too heavy for a browser canvas, so the live map
+  loads 512 px tiles per zoom level instead. Drop the map into livemap\map\ as
+  scum_map_hires.png (any common image extension works) and run
+  SETUP_HIRES_MAP.bat.
 
-  Each level is produced by decoding the source directly at that level's width
-  (DecodePixelWidth), so peak memory stays at roughly level size squared times
-  four bytes rather than the full source.
+  Each level is decoded directly at that level's width (DecodePixelWidth) and
+  cut with WPF imaging, so only one level is ever in memory and there is no
+  second GDI copy of it.
 #>
 param(
   [string]$Source = "",
@@ -17,138 +18,178 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-Add-Type -AssemblyName PresentationCore
-Add-Type -AssemblyName System.Drawing
-
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $mapDir = Join-Path $root "map"
 $tileDir = Join-Path $mapDir "tiles"
 
-if (-not $Source) {
-  foreach ($n in @("scum_map_hires.png", "scum_map_hires.jpg", "scum_map_hires.jpeg",
-                   "scum_map_hires.webp")) {
-    $c = Join-Path $mapDir $n
-    if (Test-Path $c) { $Source = $c; break }
-  }
-}
+function Say($t, $c = "Gray") { Write-Host "  $t" -ForegroundColor $c }
 
-if (-not $Source -or -not (Test-Path $Source)) {
-  Write-Host ""
-  Write-Host "  Tarkkaa karttakuvaa ei loytynyt." -ForegroundColor Yellow
-  Write-Host "  Tallenna kuva nimella scum_map_hires.png tahan kansioon:"
-  Write-Host "    $mapDir"
-  Write-Host ""
-  Write-Host "  Kuvan tulee olla nelio ja kattaa koko saari samalla rajauksella"
-  Write-Host "  kuin mukana tuleva scum_map.png, muuten merkit osuvat vaaraan kohtaan."
-  Write-Host ""
-  Read-Host "  Enter sulkee"
-  exit 1
-}
-
-Write-Host ""
-Write-Host "  Lahde : $Source"
-
-$fs = [System.IO.File]::OpenRead($Source)
 try {
+  Add-Type -AssemblyName PresentationCore
+  Add-Type -AssemblyName WindowsBase
+
+  Write-Host ""
+  Write-Host "  TESLES NPC OVERHAUL - kartan pilkkominen" -ForegroundColor Yellow
+  Write-Host "  ----------------------------------------"
+
+  if (-not (Test-Path $mapDir)) {
+    throw "Kansiota ei loydy: $mapDir"
+  }
+
+  # Accept any image the user dropped in, whatever the extension.
+  if (-not $Source) {
+    $exts = @(".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tif", ".tiff", "")
+    foreach ($e in $exts) {
+      $c = Join-Path $mapDir ("scum_map_hires" + $e)
+      if (Test-Path $c -PathType Leaf) { $Source = $c; break }
+    }
+  }
+  # Still nothing: take the biggest image in the folder that is not the
+  # packaged base map, so a differently named download still works.
+  if (-not $Source) {
+    $cand = Get-ChildItem $mapDir -File |
+      Where-Object { $_.Name -ne "scum_map.png" -and $_.Length -gt 200KB } |
+      Sort-Object Length -Descending | Select-Object -First 1
+    if ($cand) {
+      $Source = $cand.FullName
+      Say "Kaytetaan loydettya kuvaa: $($cand.Name)" "Yellow"
+    }
+  }
+
+  if (-not $Source -or -not (Test-Path $Source -PathType Leaf)) {
+    Write-Host ""
+    Say "Tarkkaa karttakuvaa ei loytynyt." "Yellow"
+    Say "Tallenna kuva nimella scum_map_hires.png tahan kansioon:"
+    Say "  $mapDir"
+    Write-Host ""
+    Say "Kansiossa on nyt:"
+    Get-ChildItem $mapDir -File | ForEach-Object {
+      Say ("  {0}  ({1:N1} MB)" -f $_.Name, ($_.Length / 1MB))
+    }
+    Write-Host ""
+    return
+  }
+
+  Say "Lahde : $Source"
+
+  # Read the dimensions without decoding the pixels.
+  $uri = New-Object System.Uri((Resolve-Path $Source).Path)
   $dec = [System.Windows.Media.Imaging.BitmapDecoder]::Create(
-    $fs, [System.Windows.Media.Imaging.BitmapCreateOptions]::PreservePixelFormat,
+    $uri,
+    [System.Windows.Media.Imaging.BitmapCreateOptions]::DelayCreation,
     [System.Windows.Media.Imaging.BitmapCacheOption]::None)
   $srcW = $dec.Frames[0].PixelWidth
   $srcH = $dec.Frames[0].PixelHeight
-} finally { $fs.Close() }
+  $dec = $null
+  Say "Koko  : $srcW x $srcH"
 
-Write-Host "  Koko  : $srcW x $srcH"
-if ([math]::Abs($srcW - $srcH) -gt 4) {
-  Write-Host "  VAROITUS: kuva ei ole nelio. Merkit voivat osua vaarin." -ForegroundColor Yellow
-}
+  if ($srcW -lt 2048) {
+    Say "Kuva on pienempi kuin mukana tuleva kartta. Pilkkomista ei tarvita." "Yellow"
+    return
+  }
+  if ([math]::Abs($srcW - $srcH) -gt 4) {
+    Say "VAROITUS: kuva ei ole nelio. Merkit voivat osua vaarin." "Yellow"
+  }
 
-$target = [math]::Min($MaxSize, $srcW)
-$levels = @()
-$w = 2048
-while ($w -le $target) { $levels += $w; $w = $w * 2 }
-if ($levels.Count -eq 0) { $levels = @($target) }
-if ($levels[-1] -ne $target) { $levels += $target }
+  # The live map needs a base image even when tiles exist (it is the fallback
+  # while tiles load). Recreate it from the source if it went missing.
+  $baseMap = Join-Path $mapDir "scum_map.png"
+  if (-not (Test-Path $baseMap)) {
+    Say "scum_map.png puuttuu - luodaan se lahdekuvasta." "Yellow"
+    $b = New-Object System.Windows.Media.Imaging.BitmapImage
+    $b.BeginInit()
+    $b.UriSource = $uri
+    $b.DecodePixelWidth = 2048
+    $b.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
+    $b.EndInit()
+    $b.Freeze()
+    $penc = New-Object System.Windows.Media.Imaging.PngBitmapEncoder
+    $penc.Frames.Add([System.Windows.Media.Imaging.BitmapFrame]::Create($b))
+    $fs = [System.IO.File]::Create($baseMap)
+    try { $penc.Save($fs) } finally { $fs.Close() }
+    $b = $null
+    [System.GC]::Collect()
+    Say "scum_map.png luotu." "Green"
+  }
 
-if (Test-Path $tileDir) { Remove-Item $tileDir -Recurse -Force }
-New-Item -ItemType Directory -Path $tileDir -Force | Out-Null
+  $target = [math]::Min($MaxSize, $srcW)
+  $levels = @()
+  $w = 2048
+  while ($w -le $target) { $levels += $w; $w = $w * 2 }
+  if ($levels.Count -eq 0) { $levels = @($target) }
+  if ($levels[-1] -ne $target) { $levels += $target }
 
-$encParams = New-Object System.Drawing.Imaging.EncoderParameters(1)
-$encParams.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter(
-  [System.Drawing.Imaging.Encoder]::Quality, [int]$Quality)
-$jpeg = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() |
-  Where-Object { $_.MimeType -eq "image/jpeg" }
+  if (Test-Path $tileDir) { Remove-Item $tileDir -Recurse -Force }
+  New-Item -ItemType Directory -Path $tileDir -Force | Out-Null
 
-$meta = @{ width = $srcW; height = $srcH; tile = $Tile; ext = "jpg"; levels = @() }
+  $meta = @{ width = $srcW; height = $srcH; tile = $Tile; ext = "jpg"; levels = @() }
 
-for ($z = 0; $z -lt $levels.Count; $z++) {
-  $lw = $levels[$z]
-  Write-Host "  Taso $z : $lw x $lw ..." -NoNewline
+  for ($z = 0; $z -lt $levels.Count; $z++) {
+    $lw = $levels[$z]
+    Write-Host ("  Taso {0} : {1} x {1} ..." -f $z, $lw) -NoNewline
 
-  $fs2 = [System.IO.File]::OpenRead($Source)
-  try {
     $bmp = New-Object System.Windows.Media.Imaging.BitmapImage
     $bmp.BeginInit()
-    $bmp.StreamSource = $fs2
+    $bmp.UriSource = $uri
     $bmp.DecodePixelWidth = $lw
     $bmp.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
     $bmp.EndInit()
     $bmp.Freeze()
 
+    $lwActual = $bmp.PixelWidth
     $lh = $bmp.PixelHeight
-    $stride = $bmp.PixelWidth * 4
-    $conv = New-Object System.Windows.Media.Imaging.FormatConvertedBitmap(
-      $bmp, [System.Windows.Media.PixelFormats]::Bgra32, $null, 0)
-    $conv.Freeze()
-    $pixels = New-Object byte[] ($stride * $lh)
-    $conv.CopyPixels($pixels, $stride, 0)
-
-    $gdi = New-Object System.Drawing.Bitmap($bmp.PixelWidth, $lh,
-      [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
-    $data = $gdi.LockBits(
-      (New-Object System.Drawing.Rectangle(0, 0, $bmp.PixelWidth, $lh)),
-      [System.Drawing.Imaging.ImageLockMode]::WriteOnly,
-      [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
-    [System.Runtime.InteropServices.Marshal]::Copy($pixels, 0, $data.Scan0, $pixels.Length)
-    $gdi.UnlockBits($data)
-    $pixels = $null
-
-    $cols = [math]::Ceiling($bmp.PixelWidth / $Tile)
-    $rows = [math]::Ceiling($lh / $Tile)
+    $cols = [int][math]::Ceiling($lwActual / $Tile)
+    $rows = [int][math]::Ceiling($lh / $Tile)
     $levelDir = Join-Path $tileDir "$z"
     New-Item -ItemType Directory -Path $levelDir -Force | Out-Null
 
     for ($ty = 0; $ty -lt $rows; $ty++) {
       for ($tx = 0; $tx -lt $cols; $tx++) {
-        $tw = [math]::Min($Tile, $bmp.PixelWidth - $tx * $Tile)
-        $th = [math]::Min($Tile, $lh - $ty * $Tile)
-        $tile = New-Object System.Drawing.Bitmap($Tile, $Tile,
-          [System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
-        $g = [System.Drawing.Graphics]::FromImage($tile)
-        $g.Clear([System.Drawing.Color]::FromArgb(5, 6, 10))
-        $g.DrawImage($gdi,
-          (New-Object System.Drawing.Rectangle(0, 0, $tw, $th)),
-          (New-Object System.Drawing.Rectangle($tx * $Tile, $ty * $Tile, $tw, $th)),
-          [System.Drawing.GraphicsUnit]::Pixel)
-        $g.Dispose()
-        $tile.Save((Join-Path $levelDir "${tx}_${ty}.jpg"), $jpeg, $encParams)
-        $tile.Dispose()
+        $x = $tx * $Tile
+        $y = $ty * $Tile
+        $tw = [math]::Min($Tile, $lwActual - $x)
+        $th = [math]::Min($Tile, $lh - $y)
+        $rect = New-Object System.Windows.Int32Rect($x, $y, $tw, $th)
+        $crop = New-Object System.Windows.Media.Imaging.CroppedBitmap($bmp, $rect)
+        $enc = New-Object System.Windows.Media.Imaging.JpegBitmapEncoder
+        $enc.QualityLevel = $Quality
+        $enc.Frames.Add([System.Windows.Media.Imaging.BitmapFrame]::Create($crop))
+        $out = [System.IO.File]::Create((Join-Path $levelDir "${tx}_${ty}.jpg"))
+        try { $enc.Save($out) } finally { $out.Close() }
       }
     }
 
-    $meta.levels += @{ z = $z; width = $bmp.PixelWidth; height = $lh
+    $meta.levels += @{ z = $z; width = $lwActual; height = $lh
                        tile = $Tile; cols = $cols; rows = $rows }
-    $gdi.Dispose()
     $bmp = $null
     [System.GC]::Collect()
-    Write-Host " $($cols * $rows) ruutua"
-  } finally { $fs2.Close() }
+    [System.GC]::WaitForPendingFinalizers()
+    Write-Host (" {0} ruutua" -f ($cols * $rows))
+  }
+
+  $json = $meta | ConvertTo-Json -Depth 5 -Compress
+  [System.IO.File]::WriteAllText((Join-Path $tileDir "meta.json"), $json)
+
+  Write-Host ""
+  Say "Valmis. Live map kayttaa nyt tarkkaa karttaa." "Green"
+  Say "Paivita selain Ctrl+F5."
+  Write-Host ""
 }
-
-$json = $meta | ConvertTo-Json -Depth 5 -Compress
-[System.IO.File]::WriteAllText((Join-Path $tileDir "meta.json"), $json)
-
-Write-Host ""
-Write-Host "  Valmis. Live map kayttaa nyt tarkkaa karttaa." -ForegroundColor Green
-Write-Host "  Paivita selain (Ctrl+F5)."
-Write-Host ""
-Read-Host "  Enter sulkee"
+catch [System.OutOfMemoryException] {
+  Write-Host ""
+  Say "Muisti loppui kesken." "Red"
+  Say "Aja uudestaan pienemmalla tarkkuudella, esimerkiksi:" "Yellow"
+  Say "  powershell -ExecutionPolicy Bypass -File livemap\tile_map.ps1 -MaxSize 4096"
+  Write-Host ""
+}
+catch {
+  Write-Host ""
+  Say "VIRHE: $($_.Exception.Message)" "Red"
+  if ($_.InvocationInfo) {
+    Say "Rivi $($_.InvocationInfo.ScriptLineNumber): $($_.InvocationInfo.Line.Trim())" "DarkGray"
+  }
+  Write-Host ""
+}
+finally {
+  Read-Host "  Enter sulkee"
+}

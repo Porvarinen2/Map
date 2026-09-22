@@ -25,12 +25,18 @@ Router.SIMPLIFY_EPS = 2200         -- polyline simplification tolerance (UU)
 
 Router.stats = { direct = 0, road = 0, grid = 0, failed = 0, grid_expansions = 0 }
 
--- Expansions still available this tick. The director resets it so one busy
--- frame cannot spend the whole server budget on a single hard search.
+-- Work still available this tick. The director resets both limits, so one
+-- busy frame cannot spend the whole server budget on a single hard search.
+-- The expansion count bounds the work; the wall-clock deadline bounds the
+-- time, which is what actually matters on a loaded server where each
+-- expansion is slower than it is here.
 Router.budget_left = Router.TICK_BUDGET
+Router.MS_BUDGET = 22
+Router.deadline = nil
 
-function Router.begin_tick(budget)
+function Router.begin_tick(budget, ms_budget)
     Router.budget_left = budget or Router.TICK_BUDGET
+    Router.deadline = os.clock() + (ms_budget or Router.MS_BUDGET) / 1000
 end
 
 -- ------------------------------------------------------------- simplify ----
@@ -160,7 +166,9 @@ function Router.grid_path(from, to, budget)
             closed[cur] = true
             if cur == goal_id then break end
             expanded = expanded + 1
-            if expanded > budget then
+            if expanded > budget
+                or (Router.deadline and expanded % 512 == 0
+                    and os.clock() > Router.deadline) then
                 Router.stats.grid_expansions = Router.stats.grid_expansions + expanded
                 Router.budget_left = (Router.budget_left or 0) - expanded
                 return nil, "BUDGET"
