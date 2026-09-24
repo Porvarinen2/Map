@@ -65,6 +65,27 @@ local function note_api_error(where, err)
 end
 B.note_api_error = note_api_error
 
+-- Breadcrumb for engine calls that change the world. The line is on disk
+-- BEFORE the call is made, so when the server dies inside SCUM's own code the
+-- file names the call that took it there. main.lua supplies the writer.
+local crumb_ring = {}
+local function crumb(text)
+    crumb_ring[#crumb_ring + 1] = os.date("%H:%M:%S") .. "  " .. text
+    if #crumb_ring > 12 then table.remove(crumb_ring, 1) end
+    if B.write_crumbs then pcall(B.write_crumbs, crumb_ring) end
+end
+B.crumb = crumb
+
+-- The island spans roughly +-1,000,000 UU. A pawn in the join transition, or a
+-- struct read back wrong, reports numbers far outside that; acting on them
+-- puts actors into the engine's spatial trees at 6e10 and worse.
+local WORLD_LIMIT_UU = 1500000
+local function sane(v)
+    return v and math.abs(v.X) < WORLD_LIMIT_UU and math.abs(v.Y) < WORLD_LIMIT_UU
+        and math.abs(v.Z) < 500000
+end
+B.sane = sane
+
 function B.begin_tick(now)
     scan_budget = SCANS_PER_TICK
     B.tick_now = now or os.time()
@@ -286,6 +307,8 @@ end
 
 -- --------------------------------------------------------------- players ---
 
+local join_seen = {}
+
 function B.player_positions()
     local now = os.time()
     local c = scan_cache.players
@@ -299,15 +322,30 @@ function B.player_positions()
         -- skipped scan is not proof that nobody is online.
         return c.v or out
     end
+    -- A player counts only after their pawn has stood at a sane position for
+    -- JoinGraceSec. The server died the moment a player joined: during the
+    -- join the controller exists while the pawn is still being built in the
+    -- transition map, and that is no moment to spawn NPCs next to it.
+    local grace = (B.cfg and B.cfg.JoinGraceSec) or 30
+    local seen = {}
     for _, pc in ipairs(list) do
         if valid(pc) then
             local okp, pawn = pcall(function() return pc:K2_GetPawn() end)
             if okp and valid(pawn) then
                 local okl, loc = pcall(function() return pawn:K2_GetActorLocation() end)
                 local v = okl and vec(loc) or nil
-                if v then out[#out + 1] = v end
+                if sane(v) then
+                    local key = tostring(pc)
+                    seen[key] = true
+                    local first = join_seen[key] or now
+                    join_seen[key] = first
+                    if now - first >= grace then out[#out + 1] = v end
+                end
             end
         end
+    end
+    for key in pairs(join_seen) do
+        if not seen[key] then join_seen[key] = nil end
     end
     c.t, c.v = now, out
     return out
@@ -329,8 +367,10 @@ local function get_navsys()
 end
 
 function B.ground_at(pos)
+    if not sane(pos) then return nil end
     local nav = get_navsys()
     if not nav then return nil end
+    crumb(string.format("K2_ProjectPointToNavigation %.0f %.0f %.0f", pos.X, pos.Y, pos.Z))
     local okp, projected = pcall(function()
         local out = {}
         nav:K2_ProjectPointToNavigation(
@@ -342,7 +382,7 @@ function B.ground_at(pos)
     end)
     if okp then
         local v = vec(projected)
-        if v then return v.Z end
+        if sane(v) then return v.Z end
     end
     return nil
 end
@@ -370,7 +410,13 @@ function B.spawn_npc(req)
     end
 
     local pos = req.position
+    if not sane(pos) then
+        B.stats.spawn_fail = B.stats.spawn_fail + 1
+        return nil, "POSITION_OUT_OF_WORLD"
+    end
     local rot = { Pitch = 0, Yaw = (req.yaw or 0), Roll = 0 }
+    crumb(string.format("SpawnAIFromClass %s lvl %s at %.0f %.0f %.0f",
+        tostring(req.variant or "base"), tostring(req.level), pos.X, pos.Y, pos.Z))
     local ok, actor = pcall(function()
         return helper:SpawnAIFromClass(world, cls, nil,
             { X = pos.X, Y = pos.Y, Z = pos.Z }, rot, true, nil)
@@ -395,6 +441,7 @@ end
 function B.despawn(handle)
     local rec = handles[handle]
     if not rec then return false end
+    crumb("K2_DestroyActor h" .. tostring(handle))
     local c = B.controller(rec.actor)
     if c then pcall(function() c:StopMovement() end) end
     pcall(function() rec.actor:K2_DestroyActor() end)
@@ -487,6 +534,8 @@ function B.move_to(handle, dest)
     if not a or not dest then return false end
     local c = B.controller(a)
     if not c then return false end
+    if not sane(dest) then return false end
+    crumb(string.format("MoveToLocation h%s %.0f %.0f %.0f", tostring(handle), dest.X, dest.Y, dest.Z))
     local ok, res = pcall(function()
         return c:MoveToLocation(
             { X = dest.X, Y = dest.Y, Z = dest.Z },
@@ -650,6 +699,7 @@ end
 function B.take_ownership(handle)
     local a = B.actor(handle)
     if not a then return false, "NO_ACTOR" end
+    crumb("take_ownership h" .. tostring(handle) .. " (StopMovement, StopLogic, bIsEncounterManaged)")
     local done = {}
     local c = B.controller(a)
     if c then

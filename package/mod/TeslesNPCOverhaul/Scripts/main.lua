@@ -341,6 +341,12 @@ local function start()
         Log.error("engine call failed: " .. where .. " -> " .. err)
         boot("ENGINE CALL FAILED: " .. where .. " -> " .. err)
     end
+    Bridge.write_crumbs = function(lines)
+        local f = io.open(OUTPUT_DIR .. SEP .. "last_engine_calls.txt", "w")
+        if not f then return end
+        f:write(table.concat(lines, "\n"), "\n")
+        f:close()
+    end
     Bridge.init(CFG)
     boot("bridge init: " .. (Bridge.available() and "engine available"
         or "engine NOT available yet"))

@@ -1,7 +1,7 @@
 -- TESLES NPC OVERHAUL - server configuration.
 -- Distances are Unreal units unless a name says otherwise. 100 UU = 1 metre.
 return {
-    Version = "1.1.3",
+    Version = "1.1.4",
 
     -- ---------------------------------------------------------- population --
     Enabled = true,
@@ -64,6 +64,7 @@ return {
     -- Reflection scans are the expensive part of a tick, so their results are
     -- reused for this many seconds instead of being repeated per group.
     PlayerScanIntervalSec = 2,
+    JoinGraceSec = 30,              -- a joining player counts after this long in-world
     ZombieScanIntervalSec = 4,
 
     -- ------------------------------------------------------------- combat --
