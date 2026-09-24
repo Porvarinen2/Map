@@ -182,6 +182,57 @@ local function to_list(x)
 end
 B.to_list = to_list
 
+local function unwrap(x)
+    if x == nil then return nil end
+    local ok, v = pcall(function() return x:get() end)
+    if ok and v ~= nil then return v end
+    return x
+end
+B.unwrap = unwrap
+
+-- Every property of an object's own (non-engine) classes, with its value
+-- where it is a plain value or an object - for learning how SCUM stores
+-- things like an NPC's outfit.
+local function dump_props(obj, out, label, stop_at)
+    local okc, cls = pcall(function() return obj:GetClass() end)
+    if not (okc and cls) then return end
+    local depth = 0
+    while cls and valid(cls) and depth < 10 do
+        depth = depth + 1
+        local cn = full_name(cls)
+        if stop_at and cn:find(stop_at, 1, true) then break end
+        out[#out + 1] = label .. " class " .. cn
+        pcall(function()
+            cls:ForEachProperty(function(p)
+                local n = "?"
+                pcall(function() n = p:GetFName():ToString() end)
+                local pt = ""
+                pcall(function() pt = p:GetClass():GetFName():ToString() end)
+                local val = ""
+                pcall(function()
+                    local v = obj[n]
+                    local tv = type(v)
+                    if tv == "number" or tv == "boolean" or tv == "string" then val = tostring(v)
+                    elseif v ~= nil then
+                        local okf, fnm = pcall(function() return v:GetFullName() end)
+                        if okf and type(fnm) == "string" then val = fnm
+                        else
+                            local okt, st = pcall(function() return v:ToString() end)
+                            val = okt and tostring(st) or tostring(v)
+                        end
+                    end
+                end)
+                if #val > 160 then val = val:sub(1, 160) .. "..." end
+                out[#out + 1] = string.format("  %s : %s = %s", n, pt, val)
+            end)
+        end)
+        local oks, sup = pcall(function() return cls:GetSuperStruct() end)
+        if not (oks and sup) then break end
+        cls = sup
+    end
+end
+B.dump_props = dump_props
+
 local function address_of(o)
     local ok, a = pcall(function() return o:GetAddress() end)
     if ok and a then return tostring(a) end
@@ -1830,7 +1881,8 @@ function B.survey_outfit(actor, wanted)
         local kids = to_list(r)
         if #kids == 0 then kids = to_list(out) end
         lines[#lines + 1] = "body mesh children: " .. #kids
-        for _, k in ipairs(kids) do
+        for _, k0 in ipairs(kids) do
+            local k = unwrap(k0)
             local nm, cl, m, ow = "?", "?", "", ""
             pcall(function() nm = k:GetFName():ToString() end)
             pcall(function() cl = full_name(k:GetClass()) end)
@@ -1877,6 +1929,33 @@ function B.survey_outfit(actor, wanted)
             end
         end
         lines[#lines + 1] = string.format("FindAllOf(%s): %d in world, %d on this NPC", base, n, mine)
+    end
+    -- 2b. Everything SCUM's own NPC classes store (the outfit must be in
+    --     here somewhere, since it is not items), and what a worn clothes
+    --     item looks like inside.
+    pcall(dump_props, actor, lines, "NPC", "/Script/Engine.Character")
+    for _, it in ipairs(find_all("ClothesItem", nil, true) or {}) do
+        local okw, own = pcall(function() return it:GetOwner() end)
+        if okw and own and full_name(own) == an then
+            pcall(dump_props, it, lines, "CLOTHES", "/Script/Engine.Actor")
+            local comps = {}
+            for _, cname in ipairs({ "SkeletalMeshComponent", "StaticMeshComponent" }) do
+                for _, c in ipairs(find_all(cname, nil, true) or {}) do
+                    local oko, o = pcall(function() return c:GetOwner() end)
+                    if oko and o and full_name(o) == full_name(it) then
+                        local m = ""
+                        pcall(function() m = full_name(c.SkeletalMesh) end)
+                        pcall(function() if m == "" or m == "nil" then m = full_name(c.StaticMesh) end end)
+                        local vis = ""
+                        pcall(function() vis = tostring(c:IsVisible()) end)
+                        comps[#comps + 1] = string.format("  %s mesh=%s visible=%s", cname, m, vis)
+                    end
+                end
+            end
+            lines[#lines + 1] = "CLOTHES components: " .. #comps
+            for _, l in ipairs(comps) do lines[#lines + 1] = l end
+            break
+        end
     end
     -- 3. Item classes learned from the world so far, and the wanted ones.
     pcall(B.learn_items, 0)
