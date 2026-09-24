@@ -778,6 +778,7 @@ function D:tick(now)
     end
 
     self:run_kill_checks()
+    if self.bridge.maybe_survey then pcall(self.bridge.maybe_survey, now) end
     -- Spawn / remove requests from the live map.
     Commands.poll(self, now)
 
@@ -870,7 +871,16 @@ function D:tick_group(group, players, physical_groups, dt)
 
     -- 2. Level of detail handover.
     local want = Physical.wants_physical(group, distance, now)
-    if want and not group.physical then
+    -- A physical squad with living members still without a body gets them
+    -- too. Before 1.7.3 the squad counted as physical after its first spawn
+    -- and the rest only appeared when that one died.
+    local missing = false
+    if want and group.physical then
+        for _, m in ipairs(group.members) do
+            if m.alive and not m.materialized then missing = true; break end
+        end
+    end
+    if want and (not group.physical or missing) then
         local spawned, failed, why = Physical.materialize(group, self.bridge, {
             now = now,
             take_ownership = self.cfg.TakeOwnership ~= false,

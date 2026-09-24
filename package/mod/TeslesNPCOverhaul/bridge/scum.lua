@@ -1681,6 +1681,73 @@ end
 
 B.wear_by_mesh = function(actor, item, label) return wear_by_mesh(actor, item, label) end
 
+-- One-time survey of how SCUM dresses its NPCs, written to npc_loadout.txt:
+-- the actors attached to the NPC (worn clothes are item actors in SCUM), the
+-- item base classes that exist, and every loaded class whose name mentions
+-- the configured items. The 1.7.2 log showed the NPC has a single mesh (the
+-- prisoner body), so the clothes must be attached actors.
+B.outfit_surveyed = false
+function B.maybe_survey(now)
+    if B.outfit_surveyed or not B.survey_handle or (now or os.time()) < (B.survey_at or 0) then return end
+    local a = B.actor(B.survey_handle)
+    if not a then B.survey_handle = nil; return end
+    pcall(B.survey_outfit, a, B.survey_names)
+end
+function B.survey_outfit(actor, wanted)
+    if B.outfit_surveyed then return end
+    B.outfit_surveyed = true
+    local lines = { "OUTFIT SURVEY" }
+    local an = full_name(actor)
+    -- 1. Attached actors, asked two ways (UE4SS out-parameter styles differ).
+    local attached = {}
+    pcall(function()
+        local out = {}
+        local r = actor:GetAttachedActors(out, true)
+        local src = (type(r) == "table" or type(r) == "userdata") and r or out
+        for i = 1, #src do attached[#attached + 1] = src[i] end
+    end)
+    lines[#lines + 1] = "GetAttachedActors: " .. #attached
+    for _, a in ipairs(attached) do
+        local sock = ""
+        pcall(function() sock = a:GetAttachParentSocketName():ToString() end)
+        lines[#lines + 1] = "  " .. full_name(a) .. (sock ~= "" and ("  @" .. sock) or "")
+        pcall(function() lines[#lines + 1] = "    class " .. full_name(a:GetClass()) end)
+    end
+    -- 2. Item actors whose attach parent is this NPC, by base class.
+    for _, base in ipairs({ "Item", "ClothesItem", "ConZItem", "WearableItem", "Clothes" }) do
+        local list = find_all(base, nil, true)
+        local n, mine = list and #list or 0, 0
+        for _, it in ipairs(list or {}) do
+            local okp, par = pcall(function() return it:GetAttachParentActor() end)
+            if okp and par and full_name(par) == an then
+                mine = mine + 1
+                local sock = ""
+                pcall(function() sock = it:GetAttachParentSocketName():ToString() end)
+                lines[#lines + 1] = string.format("  [%s on NPC] %s @%s", base, full_name(it), sock)
+                pcall(function() lines[#lines + 1] = "    class " .. full_name(it:GetClass()) end)
+            end
+        end
+        lines[#lines + 1] = string.format("FindAllOf(%s): %d in world, %d on this NPC", base, n, mine)
+    end
+    -- 3. Loaded classes that match the wanted items (or look like pants).
+    local classes = find_all("BlueprintGeneratedClass", nil, true) or {}
+    lines[#lines + 1] = "loaded Blueprint classes: " .. #classes
+    local shown = 0
+    for _, c in ipairs(classes) do
+        local nm = full_name(c)
+        local l = nm:lower()
+        local hit = l:find("pants", 1, true) or l:find("christmas", 1, true)
+        for _, w in ipairs(wanted or {}) do
+            if l:find(tostring(w):lower(), 1, true) then hit = true end
+        end
+        if hit and shown < 40 then
+            lines[#lines + 1] = "  " .. nm
+            shown = shown + 1
+        end
+    end
+    lnote(table.concat(lines, "\n"))
+end
+
 function B.apply_loadout(handle, loadout, label)
     local a = B.actor(handle)
     if not (a and loadout) then return 0 end
@@ -1693,7 +1760,11 @@ function B.apply_loadout(handle, loadout, label)
     local pos = okl and vec(loc) or nil
     if not pos then return 0 end
     local given = 0
-    -- Clothes first by model part swap: the only way these NPCs wear anything.
+    -- The survey runs a few seconds later: SCUM may dress the NPC after spawn.
+    if not B.outfit_surveyed and not B.survey_handle then
+        B.survey_handle, B.survey_names, B.survey_at = handle, names, os.time() + 6
+    end
+    -- Clothes first by model part swap.
     local worn = {}
     for _, name in ipairs(loadout.Clothes or {}) do
         local okw, res = pcall(wear_by_mesh, a, name, label or "?")

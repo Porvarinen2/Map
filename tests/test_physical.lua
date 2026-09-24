@@ -91,6 +91,14 @@ end
 local first = #events
 run(20, 4000)
 check(squad.physical, "the squad materialised next to the player")
+do
+    local alive, bodies = 0, 0
+    for _, m in ipairs(squad.members) do
+        if m.alive then alive = alive + 1 end
+        if m.materialized then bodies = bodies + 1 end
+    end
+    check(bodies == alive, string.format("every living member got a body, not just the first (%d of %d)", bodies, alive))
+end
 
 -- Walk for twenty minutes of game time.
 local start_events = #events

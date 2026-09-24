@@ -1,7 +1,7 @@
 -- TESLES NPC OVERHAUL - server configuration.
 -- Distances are Unreal units unless a name says otherwise. 100 UU = 1 metre.
 return {
-    Version = "1.7.2",
+    Version = "1.7.3",
 
     -- ---------------------------------------------------------- population --
     Enabled = true,
@@ -51,7 +51,7 @@ return {
     -- then the larger budget. Class loading, physics, AI and replication all
     -- land on the game thread together, and a burst of them stalls the tick.
     MaxSpawnsPerTick = 1,
-    MaxSpawnsPerTickProven = 3,
+    MaxSpawnsPerTickProven = 5,     -- a whole squad at once, side by side
     SpawnRetrySec = 25,
     -- Refuse to spawn where navigation cannot prove the ground height. An
     -- actor dropped from a guessed height falls, and that is a failed spawn.

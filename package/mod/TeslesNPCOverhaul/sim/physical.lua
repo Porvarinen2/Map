@@ -24,7 +24,7 @@ Ph.tuning = {
     -- NPC at all. Class loading, physics, AI and replication all land on the
     -- game thread at once, and a burst of them is what stalls a tick.
     max_spawns_per_tick = 1,
-    max_spawns_per_tick_proven = 3,
+    max_spawns_per_tick_proven = 5,
     require_ground_proof = true,
     max_physical_groups = 12,
     ground_probe_uu = 20000,
