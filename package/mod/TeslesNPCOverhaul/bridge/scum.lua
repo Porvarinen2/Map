@@ -922,7 +922,8 @@ end
 local census_seen = {}
 local function classify(name)
     local n = name:lower()
-    if n:find("armed_npcs", 1, true) or n:find("armednpc", 1, true) then return "npc" end
+    if n:find("armed_npcs", 1, true) or n:find("armednpc", 1, true)
+        or n:find("^bp_drifter_lvl") or n:find("^bp_guard_lvl") then return "npc" end
     if n:find("zombie", 1, true) or n:find("puppet", 1, true) then return "zombie" end
     if n:find("animal", 1, true) or n:find("wolf", 1, true) or n:find("bear", 1, true)
         or n:find("boar", 1, true) or n:find("deer", 1, true) or n:find("horse", 1, true)
@@ -1523,6 +1524,163 @@ local function try_equip(pawn, item)
     return false
 end
 
+-- ------------------------------------------------------ outfit by mesh ---
+
+-- SCUM's armed NPCs have no inventory: npc_api.txt (1.7.1) shows no equip or
+-- item calls at all, and their clothes are parts of the character model. So
+-- an outfit is put on by swapping model parts: the clothing item's own mesh
+-- goes onto the NPC's matching mesh component (pants onto the legs part, and
+-- so on). The game's asset registry tells where each item's mesh lives.
+local asset_index = nil
+local function fname(s)
+    local ok, v = pcall(function() return FName(s) end)
+    if ok then return v end
+    return s
+end
+local function str(v)
+    if v == nil then return "" end
+    local ok, s2 = pcall(function() return v:ToString() end)
+    if ok and type(s2) == "string" then return s2 end
+    return tostring(v)
+end
+
+local function build_asset_index()
+    asset_index = {}
+    local ok, err = pcall(function()
+        local helpers = StaticFindObject("/Script/AssetRegistry.Default__AssetRegistryHelpers")
+        local reg = helpers:GetAssetRegistry()
+        -- Skeletal meshes only: a few thousand entries, not the whole game.
+        local t0 = os.clock()
+        local out = {}
+        local okc = pcall(function() reg:GetAssetsByClass(fname("SkeletalMesh"), out, false) end)
+        if not okc or #out == 0 then
+            out = {}
+            reg:GetAssetsByPath(fname("/Game/ConZ_Files/Items"), out, true, false)
+        end
+        local n = 0
+        for i = 1, #out do
+            local ad = out[i]
+            local okf, name, pkg, cls = pcall(function()
+                return str(ad.AssetName), str(ad.PackageName), str(ad.AssetClass)
+            end)
+            if okf and name ~= "" then
+                asset_index[#asset_index + 1] = { name = name, lname = name:lower(), package = pkg, class = cls }
+                n = n + 1
+            end
+        end
+        lnote(string.format("asset registry: %d assets indexed in %.0f ms", n, (os.clock() - t0) * 1000))
+    end)
+    if not ok then lnote("asset registry unavailable: " .. tostring(err)) end
+end
+
+-- Assets whose name contains the item name, e.g. Christmas_Pants_02 ->
+-- SK_Christmas_Pants_02 (mesh), Christmas_Pants_02 (item class).
+function B.find_assets(item)
+    if not asset_index then build_asset_index() end
+    local key = tostring(item):lower()
+    local out = {}
+    for _, a in ipairs(asset_index or {}) do
+        if a.lname:find(key, 1, true) then out[#out + 1] = a end
+        if #out >= 20 then break end
+    end
+    return out
+end
+
+-- The skeletal mesh parts of one actor: name, current mesh, component.
+function B.mesh_parts(actor)
+    local out = {}
+    local an = full_name(actor)
+    local list = find_all("SkeletalMeshComponent", nil, true) or {}
+    for _, comp in ipairs(list) do
+        local okw, owner = pcall(function() return comp:GetOwner() end)
+        if okw and owner and full_name(owner) == an then
+            local okn, nm = pcall(function() return comp:GetFName():ToString() end)
+            local okm, mesh = pcall(function() return comp.SkeletalMesh end)
+            out[#out + 1] = { comp = comp, name = okn and nm or "?",
+                              mesh = (okm and mesh and valid(mesh)) and full_name(mesh) or "(none)" }
+        end
+    end
+    return out
+end
+
+-- Which model part an item replaces, from words in its name.
+local SLOTS = {
+    { words = { "pants", "trouser", "jeans", "shorts", "skirt" }, parts = { "pant", "leg", "trouser", "lower", "bottom" } },
+    { words = { "shirt", "jacket", "vest", "hoodie", "coat", "sweater", "tshirt", "top", "parka", "uniform" },
+      parts = { "shirt", "torso", "upper", "jacket", "top", "chest", "body" } },
+    { words = { "shoe", "boot", "sneaker", "sandal" }, parts = { "shoe", "boot", "feet", "foot" } },
+    { words = { "hat", "cap", "helmet", "beanie", "hood", "beret" }, parts = { "hat", "head", "helmet", "cap", "hair" } },
+    { words = { "glove" }, parts = { "glove", "hand" } },
+    { words = { "mask", "balaclava", "goggle" }, parts = { "mask", "face" } },
+    { words = { "backpack", "bag" }, parts = { "backpack", "bag", "back" } },
+}
+local function slot_parts(item)
+    local l = tostring(item):lower()
+    for _, sl in ipairs(SLOTS) do
+        for _, w in ipairs(sl.words) do if l:find(w, 1, true) then return sl.parts end end
+    end
+    return nil
+end
+
+B.api_meshes_logged = false
+local function wear_by_mesh(actor, item, label)
+    local parts = B.mesh_parts(actor)
+    if not B.api_meshes_logged then
+        B.api_meshes_logged = true
+        local lines = { "NPC model parts (" .. #parts .. "):" }
+        for _, p in ipairs(parts) do lines[#lines + 1] = "  " .. p.name .. " = " .. p.mesh end
+        lnote(table.concat(lines, "\n"))
+    end
+    local assets = B.find_assets(item)
+    local mesh_asset = nil
+    for _, a in ipairs(assets) do
+        if a.class:find("SkeletalMesh", 1, true) then mesh_asset = a; break end
+    end
+    if not mesh_asset then
+        local seen = {}
+        for _, a in ipairs(assets) do seen[#seen + 1] = a.name .. " [" .. a.class .. "] " .. a.package end
+        lnote(string.format("%s: %s - no skeletal mesh asset found; matches: %s", label, item,
+            #seen > 0 and table.concat(seen, "; ") or "none"))
+        return false
+    end
+    local path = mesh_asset.package .. "." .. mesh_asset.name
+    local mesh = nil
+    pcall(function() mesh = StaticFindObject(path) end)
+    if not (mesh and valid(mesh)) and have("LoadAsset") then
+        pcall(function() LoadAsset(path) end)
+        pcall(function() mesh = StaticFindObject(path) end)
+    end
+    if not (mesh and valid(mesh)) then
+        lnote(string.format("%s: %s - mesh %s would not load", label, item, path))
+        return false
+    end
+    local want = slot_parts(item)
+    local target = nil
+    if want then
+        for _, p in ipairs(parts) do
+            local hay = (p.name .. " " .. p.mesh):lower()
+            for _, w in ipairs(want) do
+                if hay:find(w, 1, true) then target = p; break end
+            end
+            if target then break end
+        end
+    end
+    if not target then
+        lnote(string.format("%s: %s - mesh %s found, but no matching model part (slot %s)",
+            label, item, path, want and table.concat(want, "/") or "unknown"))
+        return false
+    end
+    local ok, err = pcall(function() target.comp:SetSkeletalMesh(mesh, true) end)
+    if ok then
+        lnote(string.format("%s: %s - worn: %s %s -> %s", label, item, target.name, target.mesh, path))
+        return true
+    end
+    lnote(string.format("%s: %s - SetSkeletalMesh failed on %s: %s", label, item, target.name, tostring(err)))
+    return false
+end
+
+B.wear_by_mesh = function(actor, item, label) return wear_by_mesh(actor, item, label) end
+
 function B.apply_loadout(handle, loadout, label)
     local a = B.actor(handle)
     if not (a and loadout) then return 0 end
@@ -1535,7 +1693,15 @@ function B.apply_loadout(handle, loadout, label)
     local pos = okl and vec(loc) or nil
     if not pos then return 0 end
     local given = 0
+    -- Clothes first by model part swap: the only way these NPCs wear anything.
+    local worn = {}
+    for _, name in ipairs(loadout.Clothes or {}) do
+        local okw, res = pcall(wear_by_mesh, a, name, label or "?")
+        if okw and res then worn[name] = true; given = given + 1
+        elseif not okw then lnote((label or "?") .. ": " .. name .. " - error: " .. tostring(res)) end
+    end
     for _, name in ipairs(names) do
+        if worn[name] then goto continue end
         local cls = B.find_item_class(name)
         if not cls then
             lnote(string.format("%s: %s - item class not found (not loaded, or a different name)", label or "?", name))
@@ -1554,6 +1720,7 @@ function B.apply_loadout(handle, loadout, label)
                 end
             end
         end
+        ::continue::
     end
     return given
 end

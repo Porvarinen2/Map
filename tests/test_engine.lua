@@ -360,6 +360,56 @@ do
 end
 
 print("")
+print("== outfit by model part ==")
+do
+    local function obj(name, extra)
+        local o = extra or {}
+        o.IsValid = function() return true end
+        o.GetFullName = function() return name end
+        return o
+    end
+    local npc = obj("BP_Drifter_Lvl_1_C npc")
+    local function part(n, mesh)
+        return obj("SkeletalMeshComponent " .. n, {
+            SkeletalMesh = obj("SkeletalMesh " .. mesh),
+            GetOwner = function() return npc end,
+            GetFName = function() return { ToString = function() return n end } end,
+            SetSkeletalMesh = function(self, m) self.SkeletalMesh = m; self.swapped = true end,
+        })
+    end
+    local legs = part("Legs", "/Game/ConZ_Files/Characters/NPCs/SK_Drifter_Pants_01")
+    local torso = part("Torso", "/Game/ConZ_Files/Characters/NPCs/SK_Drifter_Jacket_01")
+    local loaded = {}
+    local function ad(name, pkg, cls)
+        local s = function(v) return { ToString = function() return v end } end
+        return { AssetName = s(name), PackageName = s(pkg), AssetClass = s(cls) }
+    end
+    local registry = { GetAssetsByClass = function(self, cls, out)
+        out[1] = ad("SK_Christmas_Pants_02", "/Game/ConZ_Files/Items/Clothes/Pants/SK_Christmas_Pants_02", "SkeletalMesh")
+        out[2] = ad("SK_Hat_01", "/Game/ConZ_Files/Items/Clothes/Hats/SK_Hat_01", "SkeletalMesh")
+    end }
+    _G.FName = function(v) return v end
+    _G.FindAllOf = function(c) if c == "SkeletalMeshComponent" then return { legs, torso } end end
+    _G.LoadAsset = function(p) loaded[p] = true end
+    _G.StaticFindObject = function(p)
+        if p == "/Script/AssetRegistry.Default__AssetRegistryHelpers" then
+            return obj("helpers", { GetAssetRegistry = function() return registry end })
+        end
+        if loaded[p] then return obj("SkeletalMesh " .. p) end
+        return nil
+    end
+    package.loaded["bridge.scum"] = nil
+    local SB = require("bridge.scum")
+    SB.cfg = {}
+    local ok = SB.wear_by_mesh(npc, "Christmas_Pants_02", "test")
+    check(ok and legs.swapped, "pants go onto the legs part")
+    check(not torso.swapped, "and nothing else changes")
+    check(legs.SkeletalMesh:GetFullName():find("SK_Christmas_Pants_02", 1, true), "the item's own mesh is worn")
+    check(not SB.wear_by_mesh(npc, "No_Such_Item_99", "test"), "an item without a mesh is reported, not worn")
+    _G.FName, _G.FindAllOf, _G.LoadAsset, _G.StaticFindObject = nil, nil, nil, nil
+end
+
+print("")
 print("== radiation zone ==")
 do
     local Ph = require("sim.physical")
