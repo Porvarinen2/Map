@@ -802,6 +802,7 @@ function D:tick(now)
         self.reserve_check_at = self.now + 60
         Population.ensure_reserved(world, function(m) Log.event("RESERVED", "", m) end)
         Population.ensure_custom(world, function(m) Log.event("OWN_CLASS", "", m) end)
+        Population.grow(world, function(m) Log.event("GROW", "", m) end)
     end
 
     -- Survivors band together before the empty group is pruned away.

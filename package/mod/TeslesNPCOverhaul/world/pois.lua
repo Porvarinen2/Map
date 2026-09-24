@@ -38,6 +38,43 @@ for _, p in ipairs(data.points) do
     table.insert(P.by_sector[poi.sector], poi)
 end
 
+-- The Z4 island town has one marked place: a few streets around it are
+-- added so its residents walk the town instead of standing on one spot.
+local TOWN_SPOTS = {
+    { anchor = "VIL_Z4_01", prefix = "ISL_Z4_", label = "Saarikaupunki", n = 7, radius = 30000, spacing = 9000 },
+}
+for _, t in ipairs(TOWN_SPOTS) do
+    local a = P.by_id[t.anchor]
+    if a and a.landmass then
+        local seed, made, tries = 12345, 0, 0
+        local function rnd()
+            seed = (seed * 1103515245 + 12345) % 2147483648
+            return seed / 2147483648
+        end
+        local placed = { a.pos }
+        while made < t.n and tries < 600 do
+            tries = tries + 1
+            local ang, d = rnd() * 2 * math.pi, 2500 + rnd() * (t.radius - 2500)
+            local p = { X = a.pos.X + math.cos(ang) * d, Y = a.pos.Y + math.sin(ang) * d, Z = 0 }
+            local ok = Grid.is_passable(p) and Grid.landmass_at(p) == a.landmass
+            for _, q in ipairs(placed) do
+                if ok and U.dist2d(p, q) < t.spacing then ok = false end
+            end
+            if ok then
+                made = made + 1
+                placed[#placed + 1] = p
+                local poi = { id = t.prefix .. made, label = t.label .. " " .. made, sector = a.sector,
+                              kind = a.kind, pos = p, weight = a.weight, radius = 4000,
+                              landmass = a.landmass, town_spot = true }
+                P.points[#P.points + 1] = poi
+                P.by_id[poi.id] = poi
+                table.insert(P.by_kind[poi.kind], poi)
+                table.insert(P.by_sector[poi.sector], poi)
+            end
+        end
+    end
+end
+
 P.count = #P.points
 
 -- Trader outposts are safe zones: nobody armed belongs there. They stay in

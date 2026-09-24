@@ -53,7 +53,7 @@ end
 
 local function first_group(world, pred)
     for _, g in ipairs(world.groups) do
-        if g.class ~= "radiation_group" and Population.group_alive(g) and #g.members >= 2
+        if not require("world.zones").reserved_by_class[g.class] and Population.group_alive(g) and #g.members >= 2
             and (not pred or pred(g)) then return g end
     end
 end
@@ -129,7 +129,14 @@ end
 section("zombies around a physical squad")
 do
     local world, d = fresh(11)
-    local g = first_group(world)
+    -- Ordinary people, not a hardened unit that shrugs zombies off.
+    local HARD = { military_group = true, elite_unit = true, militia_cell = true, bunker_group = true }
+    local g = first_group(world, function(x) return not HARD[x.class] end)
+    for _, m in ipairs(g.members) do
+        m.archetype, m.experience = "survivor", 0
+        m.traits.courage, m.traits.stressResistance, m.traits.fearfulness = 0.5, 0.5, 0.5
+        m.traits.composure = 0.5
+    end
     local sim = os.time()
     local function run(n)
         for _ = 1, n do
@@ -146,10 +153,15 @@ do
     for i = 1, 6 do
         Bridge.zombies[#Bridge.zombies + 1] = {
             pos = { X = g.position.X + 2500 + i * 60, Y = g.position.Y + i * 40, Z = 0 },
-            actor = { hp = 100 } }
+            actor = { hp = 400 } }  -- tough enough to stay a while
     end
     local moods = {}
     for _ = 1, 30 do
+        -- The zombies follow the squad (a travelling squad would otherwise
+        -- just leave them behind).
+        for i, z in ipairs(Bridge.zombies) do
+            z.pos = { X = g.position.X + 2500 + i * 60, Y = g.position.Y + i * 40, Z = 0 }
+        end
         run(1)
         moods[g.mood or "?"] = true
     end
@@ -244,25 +256,105 @@ do
 end
 
 -- -------------------------------------------------------------------------
+section("the Z4 island town")
+do
+    local Zones = require("world.zones")
+    local Grid = require("world.navgrid")
+    local world, d = fresh(21)
+    local isl = Zones.reserved_by_class.island_residents
+    local own, inside, others_in = 0, 0, 0
+    for _, g in ipairs(world.groups) do
+        local here = Zones.in_zone(isl, g.position)
+        if g.class == "island_residents" then
+            own = own + 1
+            if here and Grid.landmass_at(g.position) == isl.landmass then inside = inside + 1 end
+        elseif here then others_in = others_in + 1 end
+    end
+    check(own == 2 and inside == 2, string.format("the island town has its two resident squads, on the island (%d/%d)", inside, own))
+    check(others_in == 0, "nobody else lives on the island")
+    local sim = os.time()
+    local left, visited, crossed = 0, {}, 0
+    local mass = {}
+    for _, g in ipairs(world.groups) do mass[g] = Grid.landmass_at(g.position) end
+    for _ = 1, 1800 do
+        sim = sim + 1
+        d:tick(sim)
+        for _, g in ipairs(world.groups) do
+            if g.class == "island_residents" then
+                if not Zones.in_zone(isl, g.position) then left = left + 1 end
+                if g.act.goal_poi then visited[g.act.goal_poi.id] = true end
+            elseif Zones.in_zone(isl, g.position) then others_in = others_in + 1 end
+            local m = Grid.landmass_at(g.position)
+            if m and mass[g] and m ~= mass[g] then crossed = crossed + 1; mass[g] = m end
+        end
+    end
+    local spots = 0
+    for id in pairs(visited) do if id:find("^ISL_Z4_") or id == "VIL_Z4_01" then spots = spots + 1 end end
+    check(left == 0 and others_in == 0, "the residents never leave, nobody else comes over")
+    check(spots >= 2, string.format("the residents walk the town (%d places)", spots))
+    check(crossed == 0, "no squad crosses water to another landmass")
+    local Commands = require("sim.commands")
+    local n0 = #world.groups
+    Commands.run_line(d, "t1 spawn bandit_gang 2 " .. isl.anchor.X .. " " .. isl.anchor.Y)
+    Commands.run_line(d, "t2 spawn island_residents 2 0 0")
+    check(#world.groups == n0, "the map cannot put other squads on the island, nor residents elsewhere")
+end
+
+section("a bigger population, lively Z sectors")
+do
+    local Zones = require("world.zones")
+    local world = Population.new_world({ seed = 31, target_npcs = 200 })
+    Population.generate(world)
+    local z, all = 0, 0
+    for _, g in ipairs(world.groups) do
+        if not Zones.reserved_by_class[g.class] then
+            all = all + 1
+            if Zones.sector(g.position):sub(1, 1) == "Z" then z = z + 1 end
+        end
+    end
+    check(Population.alive_npc_count(world) >= 195, string.format("a world of %d NPCs", Population.alive_npc_count(world)))
+    check(z / all >= 0.25, string.format("the Z row holds its share of the squads (%d of %d)", z, all))
+    local w2 = Population.new_world({ seed = 32, target_npcs = 60 })
+    Population.generate(w2)
+    local n0 = Population.alive_npc_count(w2)
+    w2.pending_growth = 20
+    for _ = 1, 10 do Population.grow(w2) end
+    check(Population.alive_npc_count(w2) >= n0 + 20 and w2.pending_growth == 0,
+          "a raised NPC target grows a saved world")
+end
+
+-- -------------------------------------------------------------------------
 section("the undead in the abstract")
 do
     local world, d = fresh(14)
+    -- Ordinary people (ex-soldiers take the same encounters far calmer).
     local g = first_group(world)
+    for _, m in ipairs(g.members) do m.archetype = "scavenger" end
     local city = nil
-    for _, p in ipairs(POI.points) do if p.kind == "CITY" and not p.blocked then city = p; break end end
+    for _, p in ipairs(POI.points) do
+        if p.kind == "CITY" and not p.blocked and not require("world.zones").reserved_for_poi(p) then city = p; break end
+    end
     g.act.goal_poi = city
     g.act.state = "SEARCH"
     g.act.until_t = os.time() + 100000
     g.position = U.copy_vec(city.pos)
     local sim = os.time()
     local peak = 0
-    for _ = 1, 900 do
+    -- Encounters are random (about two in 15 minutes of searching): the
+    -- squad keeps at it until it has met the dead three times.
+    local events = 0
+    local start = avg_stress(g)
+    for _ = 1, 10800 do
+        if events >= 3 then break end
         sim = sim + 1
         g.act.state = "SEARCH"; g.act.until_t = sim + 100
+        local before = g.zombie_at
         d:tick(sim)
+        if g.zombie_at ~= before then events = events + 1 end
         peak = math.max(peak, avg_stress(g))
     end
-    check(peak > 0.3, string.format("a squad searching a city runs into zombies (peak stress %.2f)", peak))
+    check(events >= 3 and peak > start + 0.1, string.format(
+        "a squad searching a city runs into zombies (%d encounters, stress %.2f -> peak %.2f)", events, start, peak))
 end
 
 -- -------------------------------------------------------------------------

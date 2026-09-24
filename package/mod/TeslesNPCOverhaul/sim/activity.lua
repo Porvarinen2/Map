@@ -132,15 +132,10 @@ local function eligible(group, cls, poi)
     if poi.blocked then return false end
     local w = cls.poi_weights[poi.kind]
     if not w or w <= 0 then return false end
-    local r = Zones.reserved_by_sector[poi.sector]
+    local r = Zones.reserved_for_poi(poi)
     if r then return r.class == group.class end
-    if cls.reserved_zone then
-        if poi.sector == cls.reserved_zone then return true end
-        -- The Z4 corner has two marked places, one of them on an islet. A
-        -- home-bound group ranges into the neighbouring sectors around home.
-        return group.home_bound == true and group.home ~= nil
-            and U.dist2d(group.home, poi.pos) <= 330000
-    end
+    -- A zone's own squads go nowhere outside it.
+    if Zones.reserved_by_class[group.class] then return false end
     if group.home_bound and group.home then
         return U.dist2d(group.home, poi.pos) <= 520000
     end

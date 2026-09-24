@@ -253,6 +253,14 @@ local function boot_world()
         if ok and world then
             Log.info(string.format("world state loaded: %d groups, %d NPCs",
                 #world.groups, Population.alive_npc_count(world)))
+            -- A raised TargetNPCs grows the saved world up to it.
+            local target = math.min(Population.HARD_CAP or 250, CFG.TargetNPCs or 100)
+            if target > (world.target_npcs or 0) then
+                world.pending_growth = (world.pending_growth or 0) + target - (world.target_npcs or 0)
+                boot(string.format("NPC target %d -> %d: the world grows by %d NPCs",
+                    world.target_npcs or 0, target, world.pending_growth))
+            end
+            world.target_npcs = target
             for cls, n in pairs(world.dropped_classes or {}) do
                 boot(string.format("world state: %d squads of the removed class %s left out", n, cls))
             end

@@ -37,10 +37,16 @@ end
 
 -- Spawn anchor: a passable point, preferring somewhere near a POI so groups
 -- start their life somewhere plausible rather than in empty forest.
+-- The south row (Z0-Z4) has fewer marked places than the rest of the map;
+-- a place there is picked for a new squad more often, so the Z sectors are
+-- as lively as the others.
+P.SECTOR_WEIGHT = { Z = 1.0 }
+P.OTHER_WEIGHT = 0.25
 local function anchor_point(rng, allow_sector)
-    for _ = 1, 80 do
+    for _ = 1, 160 do
         local poi = POI.points[rng:int(1, POI.count)]
-        if poi and not poi.blocked and (not allow_sector or allow_sector(poi)) then
+        local w = poi and (P.SECTOR_WEIGHT[tostring(poi.sector):sub(1, 1)] or P.OTHER_WEIGHT) or 0
+        if poi and not poi.blocked and rng:float() < w and (not allow_sector or allow_sector(poi)) then
             local ang = rng:float() * math.pi * 2
             local d = rng:range(0, poi.radius or 9000)
             local p = {
@@ -99,14 +105,8 @@ function P.generate(world, log)
 
     -- Reserved sectors get their guaranteed groups.
     for _, res in ipairs(Zones.RESERVED) do
-        local mass = Zones.dominant_landmass(res.sector)
         for _ = 1, res.groups do
-            local pos = nil
-            for _ = 1, 60 do
-                local p = Zones.random_point_in(res.sector, rng)
-                if p and (not mass or Grid.landmass_at(p) == mass) then pos = p; break end
-            end
-            pos = pos or Zones.random_point_in(res.sector, rng)
+            local pos = Zones.zone_point(res, rng)
             if pos then
                 local g = Factory.new_group({
                     id = world.next_group_id,
@@ -133,7 +133,7 @@ function P.generate(world, log)
         local pick = U.weighted_pick(pool, rng)
         if not pick then break end
         local pos = anchor_point(rng, function(poi)
-            return not Zones.reserved_by_sector[poi.sector]
+            return not Zones.reserved_for_poi(poi)
         end)
         if pos then
             local remaining = world.target_npcs - P.alive_npc_count(world)
@@ -173,8 +173,8 @@ function P.ensure_custom(world, log)
             end
             for _ = have + 1, cls.guaranteed do
                 local pos = anchor_point(rng, function(poi)
-                    return cls.poi_weights[poi.kind] ~= nil and not Zones.reserved_by_sector[poi.sector]
-                end) or anchor_point(rng, function(poi) return not Zones.reserved_by_sector[poi.sector] end)
+                    return cls.poi_weights[poi.kind] ~= nil and not Zones.reserved_for_poi(poi)
+                end) or anchor_point(rng, function(poi) return not Zones.reserved_for_poi(poi) end)
                 if not pos then break end
                 local g = Factory.new_group({
                     id = world.next_group_id, class = cls.key, seed = rng:next(),
@@ -199,18 +199,11 @@ function P.ensure_reserved(world, log)
     local rng = RNG.new((world.seed or 1) + (world.next_group_id or 0) * 7919)
     for _, res in ipairs(Zones.RESERVED) do
         if res.exclusive then
-            local mass = Zones.dominant_landmass(res.sector)
-            local function inside_point()
-                for _ = 1, 80 do
-                    local p = Zones.random_point_in(res.sector, rng)
-                    if p and (not mass or Grid.landmass_at(p) == mass) then return p end
-                end
-                return Zones.random_point_in(res.sector, rng)
-            end
+            local function inside_point() return Zones.zone_point(res, rng) end
             local own = 0
             for _, g in ipairs(world.groups) do
                 if P.group_alive(g) and g.position and not g.physical then
-                    local here = Zones.sector(g.position) == res.sector
+                    local here = Zones.in_zone(res, g.position)
                     if g.class == res.class and not here then
                         local p = inside_point()
                         if p then
@@ -222,11 +215,11 @@ function P.ensure_reserved(world, log)
                         end
                     elseif g.class ~= res.class and here then
                         local p = anchor_point(rng, function(poi)
-                            return not Zones.reserved_by_sector[poi.sector] and not poi.blocked
+                            return not Zones.reserved_for_poi(poi) and not poi.blocked
                         end)
                         if p then
                             g.position = p
-                            if Zones.sector(g.home or p) == res.sector then g.home = U.copy_vec(p) end
+                            if Zones.in_zone(res, g.home or p) then g.home = U.copy_vec(p) end
                             for _, m in ipairs(g.members) do m.position = U.copy_vec(p) end
                             if g.act then g.act.goal_poi, g.act.queue, g.act.state = nil, {}, "IDLE" end
                             if g.mv then g.mv.route = nil end
@@ -317,6 +310,28 @@ function P.prune(world, log)
     return removed
 end
 
+-- A raised NPC target (config TargetNPCs) grows a saved world a few squads
+-- at a time; the dead are still not replaced unless EnableReplenish is on.
+function P.grow(world, log, max_groups)
+    local added = 0
+    local rng = RNG.new((world.seed or 1) + os.time() + (world.next_group_id or 0))
+    local pool = {}
+    for _, g in ipairs(GroupClasses.general()) do pool[#pool + 1] = { key = g.key, weight = g.weight } end
+    while (world.pending_growth or 0) > 0 and added < (max_groups or 3) do
+        local pick = U.weighted_pick(pool, rng)
+        local pos = pick and anchor_point(rng, function(poi) return not Zones.reserved_for_poi(poi) end)
+        if not pos then break end
+        local g = Factory.new_group({
+            id = world.next_group_id, class = pick.key, seed = rng:next(), position = pos, home = pos,
+        })
+        P.add_group(world, g)
+        world.pending_growth = math.max(0, world.pending_growth - #g.members)
+        added = added + 1
+        if log then log(string.format("population grows: %s (%s) in %s", g.gid, g.class, Zones.sector(pos))) end
+    end
+    return added
+end
+
 -- Optional respawn to keep the world from emptying out over weeks.
 function P.replenish(world, log)
     if P.alive_npc_count(world) >= world.target_npcs then return 0 end
@@ -328,7 +343,7 @@ function P.replenish(world, log)
     local pick = U.weighted_pick(pool, rng)
     if not pick then return 0 end
     local pos = anchor_point(rng, function(poi)
-        return not Zones.reserved_by_sector[poi.sector]
+        return not Zones.reserved_for_poi(poi)
     end)
     if not pos then return 0 end
     local g = Factory.new_group({
@@ -371,6 +386,7 @@ function P.serialize(world)
         created_at = world.created_at,
         next_group_id = world.next_group_id,
         target_npcs = world.target_npcs,
+        pending_growth = world.pending_growth,
         saved_at = os.time(),
         diplomacy = world.diplomacy.pairs,
         groups = {},
@@ -422,6 +438,7 @@ function P.deserialize(saved)
     local world = P.new_world({ seed = saved.seed, target_npcs = saved.target_npcs })
     world.created_at = saved.created_at or os.time()
     world.next_group_id = saved.next_group_id or 1
+    world.pending_growth = saved.pending_growth
     world.diplomacy.pairs = saved.diplomacy or {}
 
     world.dropped_classes = {}

@@ -1,11 +1,11 @@
 -- TESLES NPC OVERHAUL - server configuration.
 -- Distances are Unreal units unless a name says otherwise. 100 UU = 1 metre.
 return {
-    Version = "1.9.4",
+    Version = "1.9.5",
 
     -- ---------------------------------------------------------- population --
     Enabled = true,
-    TargetNPCs = 100,               -- guide default; hard cap is 250
+    TargetNPCs = 200,               -- hard cap is 250
     EnableReplenish = false,        -- dead NPCs are NOT auto-replaced by default
     WorldSeed = 0,                  -- 0 = derive from first start, then stored
 

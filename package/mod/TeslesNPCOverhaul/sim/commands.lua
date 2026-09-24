@@ -55,12 +55,13 @@ function C.spawn(director, id, class, size, x, y)
     if POI.near_outpost and POI.near_outpost(pos) then
         return result(director, id, false, "outpostin lähellä ei saa olla NPC:itä")
     end
-    local in_c0 = Zones.sector(pos) == "C0"
-    if in_c0 and class ~= "radiation_group" then
-        return result(director, id, false, "C0 on vain säteilyryhmille")
+    local zone = Zones.reserved_at(pos)
+    local own_zone = Zones.reserved_by_class[class]
+    if zone and zone.class ~= class then
+        return result(director, id, false, zone.fi .. " on vain luokalle " .. zone.class)
     end
-    if class == "radiation_group" and not in_c0 then
-        return result(director, id, false, "säteilyryhmä pysyy C0:ssa")
+    if own_zone and zone ~= own_zone then
+        return result(director, id, false, class .. " pysyy alueella " .. own_zone.fi)
     end
     local world = director.world
     size = math.floor(tonumber(size) or cls.size[1])
@@ -68,7 +69,7 @@ function C.spawn(director, id, class, size, x, y)
     local g = Factory.new_group({
         id = world.next_group_id, class = class,
         seed = director.rng:int(1, 2 ^ 30), position = pos, home = pos, size = size,
-        zone = in_c0 and "RADIATION" or nil,
+        zone = zone and zone.key or nil,
     })
     Population.add_group(world, g)
     result(director, id, true, string.format("%s (%s, %d NPC) spawnattu %s", g.gid, cls.fi,
