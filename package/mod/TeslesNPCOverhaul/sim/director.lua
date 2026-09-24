@@ -615,9 +615,6 @@ function D:loadout_for(group)
             for _, n in ipairs(src[k] or {}) do out[k][#out[k] + 1] = n end
         end
     end
-    -- Outfit number: the squad's own wins over KAIKKI.
-    if own and own.Asu ~= nil then out.Asu = own.Asu
-    elseif common and common.Asu ~= nil then out.Asu = common.Asu end
     return out
 end
 

@@ -168,8 +168,8 @@ Set-Content -LiteralPath (Join-Path $modDir "ryhmat.lua") -Value 'return { { ava
   -SkipUE4SS -NoMap -Yes -NoPause | Out-Null
 $gear = Get-Content -Raw (Join-Path $modDir "varusteet.lua")
 Check ($gear -match 'My_Own_Shirt') "a reinstall keeps the owner's own gear lines"
-Check ($gear -match 'KAIKKI' -and $gear -match 'Asu = 0') `
-      "an old varusteet.lua gets the KAIKKI section with the test outfit"
+Check ($gear -match 'KAIKKI' -and $gear -match 'Weapon_M1911') `
+      "an old varusteet.lua gets the KAIKKI section with the test weapon"
 Check ((Get-Content -Raw (Join-Path $modDir "ryhmat.lua")) -match 'omat_testit') `
       "a reinstall keeps the owner's own squad classes"
 # The gear file must still be valid Lua after the insert.
@@ -191,8 +191,8 @@ return {
 & (Join-Path $pkg "INSTALL.ps1") -ServerRoot (Join-Path $lab "server") `
   -SkipUE4SS -NoMap -Yes -NoPause | Out-Null
 $gear = Get-Content -Raw (Join-Path $modDir "varusteet.lua")
-Check ($gear -match 'Asu = 0' -and $gear -notmatch 'Ghillie' -and $gear -match 'My_Own_Shirt') `
-      "the ghillie test in an owner's gear file moves to Asu = 0, their own lines stay"
+Check ($gear -match 'Weapon_M1911' -and $gear -notmatch 'Ghillie' -and $gear -match 'My_Own_Shirt') `
+      "the ghillie test in an owner's gear file moves to the weapon test, their own lines stay"
 
 # DIAGNOSE packs the gear files and the gear log.
 Set-Content -LiteralPath (Join-Path (Join-Path $modDir "output") "npc_loadout.txt") -Value "LOADOUT LOG"

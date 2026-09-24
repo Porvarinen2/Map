@@ -131,8 +131,7 @@ function G.register_custom(defs)
                 else notes[#notes + 1] = "ryhmat.lua: " .. key .. ": tuntematon kohde " .. tostring(kind) end
             end
             if next(weights) == nil then weights = { VILLAGE = 3, CITY = 2 } end
-            local body = d.runko or d.body
-            if body ~= "Guard" and body ~= "Drifter" then body = nil end
+            local body, variant = G.parse_body(d.runko or d.body)
             local cls = {
                 key = key, fi = d.nimi or d.fi or key, size = { lo, hi },
                 archetypes = arche, tactics = d.taktiikka or d.tactics or "mixed",
@@ -141,6 +140,7 @@ function G.register_custom(defs)
                 custom = true,
                 guaranteed = math.max(0, math.floor(tonumber(d.maara or d.count) or 1)),
                 body = body,
+                variant = variant,
                 color = d.vari or d.color,
                 hostile_to = d.vihamieliset or d.hostile_to or {},
                 authority = d.viranomainen == true or d.authority == true,
@@ -156,6 +156,51 @@ function G.register_custom(defs)
         end
     end
     G.count = #G.list
+    return notes
+end
+
+-- A body name from ryhmat.lua / varusteet.lua (Runko): the NPC type SCUM
+-- dresses the squad as. SCUM picks the outfit on the player's machine from
+-- the NPC type's own list, so the type is what a server can choose.
+local BODY_VARIANT = { Radiation = "Radiation", Bunker = "AbandonedBunker", AbandonedBunker = "AbandonedBunker" }
+function G.parse_body(name)
+    if type(name) ~= "string" then return nil, nil end
+    local n = name:sub(1, 1):upper() .. name:sub(2):lower()
+    if n == "Abandonedbunker" then n = "AbandonedBunker" end
+    if n == "Guard" or n == "Drifter" then return n, nil end
+    if BODY_VARIANT[n] then return nil, BODY_VARIANT[n] end
+    return nil, nil
+end
+
+-- varusteet.lua: Runko per squad class (KAIKKI = every class but the
+-- radiation squads, who always wear the hazmat body).
+function G.apply_bodies(gear)
+    local notes = {}
+    if type(gear) ~= "table" then return notes end
+    local function set(cls, runko)
+        local body, variant = G.parse_body(runko)
+        if not (body or variant) then
+            notes[#notes + 1] = "varusteet.lua: " .. cls.key .. ": tuntematon Runko " .. tostring(runko)
+            return
+        end
+        cls.body, cls.variant = body, variant
+        notes[#notes + 1] = "varusteet.lua: " .. cls.key .. " Runko = " .. tostring(body or variant)
+    end
+    local all = gear.KAIKKI or gear.ALL
+    if type(all) == "table" and all.Runko then
+        for _, cls in ipairs(G.list) do
+            if cls.key ~= "radiation_group" then set(cls, all.Runko) end
+        end
+    end
+    for key, lo in pairs(gear) do
+        if type(lo) == "table" and lo.Runko and G.by_key[key] then
+            if key == "radiation_group" then
+                notes[#notes + 1] = "varusteet.lua: radiation_group pysyy sateilypuvussa"
+            else
+                set(G.by_key[key], lo.Runko)
+            end
+        end
+    end
     return notes
 end
 

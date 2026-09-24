@@ -357,9 +357,16 @@ do
     local other = world.groups[1]
     local lo2 = d:loadout_for(other)
     check(lo2 and lo2.Clothes[1] == "Christmas_Pants_02", "including squads with no gear of their own")
-    d.cfg.Loadouts = { KAIKKI = { Asu = 0 }, palomiehet = { Asu = { 2, 5 } } }
-    check(d:loadout_for(ff).Asu[2] == 5 and d:loadout_for(other).Asu == 0,
-          "an outfit number: the squad's own wins over KAIKKI")
+    local notes = Groups.apply_bodies({ KAIKKI = { Runko = "Guard" }, palomiehet = { Runko = "bunker" },
+                                        radiation_group = { Runko = "Drifter" } })
+    check(Groups.get("pair").body == "Guard" and Physical.body_family(other.members[1], { class = "pair" }) == "Guard",
+          "Runko under KAIKKI dresses every squad as that NPC type")
+    check(Physical.body_variant({ class = "palomiehet" }, {}) == "AbandonedBunker",
+          "a squad's own Runko wins, and a variant body works too")
+    check(Physical.body_variant({ class = "radiation_group" }, {}) == "Radiation",
+          "the radiation squads keep the hazmat body whatever is set")
+    check(#notes >= 3, "each Runko is reported at boot")
+    for _, c in ipairs(Groups.list) do c.body, c.variant = nil, nil end
     -- Put things back for any later test in this file.
     for i = #Groups.list, 1, -1 do
         if Groups.list[i].custom then Groups.by_key[Groups.list[i].key] = nil; table.remove(Groups.list, i) end

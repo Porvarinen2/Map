@@ -192,6 +192,7 @@ do
                      "varusteet.lua: " .. MOD_DIR .. SEP .. "varusteet.lua" }
     if okv and type(gear) == "table" then
         CFG.Loadouts = gear
+        for _, line in ipairs(need("npc.groups").apply_bodies(gear)) do boot(line) end
         local n = 0
         local keys = {}
         for key in pairs(gear) do keys[#keys + 1] = key end
@@ -203,9 +204,7 @@ do
                 n = n + #(lo[k] or {})
                 if #(lo[k] or {}) > 0 then parts[#parts + 1] = k .. ": " .. table.concat(lo[k], ", ") end
             end
-            if lo.Asu ~= nil then
-                parts[#parts + 1] = "Asu: " .. (type(lo.Asu) == "table" and table.concat(lo.Asu, ", ") or tostring(lo.Asu))
-            end
+            if lo.Runko ~= nil then parts[#parts + 1] = "Runko: " .. tostring(lo.Runko) end
             header[#header + 1] = "  " .. key .. " = " .. (#parts > 0 and table.concat(parts, " | ") or "(tyhja)")
         end
         if not gear.KAIKKI then

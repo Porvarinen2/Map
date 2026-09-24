@@ -2199,76 +2199,10 @@ local function hold_weapon(a, handle, name, label, pos)
     return att
 end
 
--- SCUM dresses an armed NPC from a fixed list of outfits in its common data
--- (_armedNPCBaseCommonData); the NPC's _bodyMeshIndex picks one. The list of
--- each common data asset is written to npc_loadout.txt once, so varusteet.lua
--- can pick an outfit by number (Asu = 3).
-local common_dumped, common_n = {}, 0
-B.body_counts = {}
-local function survey_common_data(a)
-    local cd = nil
-    pcall(function() cd = a._armedNPCBaseCommonData end)
-    if not (cd and valid(cd)) then return nil end
-    local key = full_name(cd)
-    if common_dumped[key] or common_n >= 8 then return key end
-    common_dumped[key] = true
-    common_n = common_n + 1
-    local lines = { "NPC COMMON DATA " .. key }
-    pcall(B.dump_deep, cd, lines, "  ", 0, {})
-    for _, l in ipairs(lines) do
-        local nm, n = l:match("^    ([%w_]+) : Array%[(%d+)%]")
-        n = tonumber(n)
-        if nm and n and n > 0 and not B.body_counts[key] then
-            local low = nm:lower()
-            if low:find("mesh") or low:find("body") or low:find("outfit") or low:find("cloth") then
-                B.body_counts[key] = n
-                lines[#lines + 1] = string.format("  -> asut: %s, Asu = 0..%d", nm, n - 1)
-            end
-        end
-    end
-    lnote(table.concat(lines, "\n"))
-    return key
-end
-B.survey_common_data = survey_common_data
-
-local body_noted = {}
-function B.set_body(a, want, label)
-    local idx = want
-    if type(want) == "table" then
-        if #want == 0 then return false end
-        idx = want[math.random(#want)]
-    end
-    idx = tonumber(idx)
-    if not idx then return false end
-    idx = math.floor(idx)
-    local key = survey_common_data(a)
-    local n = key and B.body_counts[key]
-    if n and n > 0 and (idx < 0 or idx >= n) then idx = idx % n end
-    local before, after = nil, nil
-    pcall(function() before = a._bodyMeshIndex end)
-    local ok = pcall(function() a._bodyMeshIndex = idx end)
-    pcall(function() after = a._bodyMeshIndex end)
-    local res = ok and after == idx
-    local nk = tostring(key) .. "/" .. tostring(res)
-    if not body_noted[nk] then
-        body_noted[nk] = true
-        lnote(string.format("%s: Asu %d (%s) - _bodyMeshIndex %s -> %s: %s", label, idx, tostring(key),
-            tostring(before), tostring(after), res and "asetettu" or "EI ONNISTUNUT"))
-    end
-    return res
-end
-
 function B.apply_loadout(handle, loadout, label)
     local a = B.actor(handle)
     if not (a and loadout) then return 0 end
     label = label or "?"
-    local body_set = false
-    if loadout.Asu ~= nil then
-        local ok, res = pcall(B.set_body, a, loadout.Asu, label)
-        body_set = ok and res
-    else
-        pcall(survey_common_data, a)
-    end
     local names = {}
     for _, key in ipairs({ "Clothes", "Weapons", "Items" }) do
         for _, n in ipairs(loadout[key] or {}) do names[#names + 1] = n end
@@ -2276,11 +2210,11 @@ function B.apply_loadout(handle, loadout, label)
     if not B.outfit_surveyed and not B.survey_handle then
         B.survey_handle, B.survey_names, B.survey_at = handle, names, os.time() + 6
     end
-    if #names == 0 then return body_set and 1 or 0 end
+    if #names == 0 then return 0 end
     local okl, loc = pcall(function() return a:K2_GetActorLocation() end)
     local pos = okl and vec(loc) or nil
     if not pos then return 0 end
-    local given = body_set and 1 or 0
+    local given = 0
     for _, name in ipairs(loadout.Clothes or {}) do
         local ok, res = pcall(wear_item, a, handle, name, label, pos)
         if ok and res then given = given + 1

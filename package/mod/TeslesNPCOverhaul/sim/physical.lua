@@ -110,6 +110,8 @@ function Ph.body_variant(group, m)
         or group.class == "radiation_group" then
         return "Radiation"
     end
+    local cls = GroupClasses.get(group.class)
+    if cls and cls.variant then return cls.variant end
     if group.class == "bunker_group" or m.archetype == "bunker_specialist" then
         return "AbandonedBunker"
     end
