@@ -11,6 +11,7 @@ local Grid = require("world.navgrid")
 local Zones = require("world.zones")
 local GroupClasses = require("npc.groups")
 local Tr = require("npc.trauma")
+local SweepData = require("world.c0_sweep")
 
 local A = {}
 
@@ -151,24 +152,67 @@ local function contains(list, id)
     return false
 end
 
+-- How many places a group remembers: ten by default, fewer for a class that
+-- works a small fixed circuit (the radiation squads remember two).
+function A.memory_of(group)
+    local cls = group and GroupClasses.get(group.class)
+    return (cls and cls.memory) or A.MEMORY
+end
+
+-- The places a group has been and will be, oldest first: what it remembers,
+-- then its current goal, then what is queued. A place is blocked for the next
+-- pick while it is among the last `memory` entries of this walk, so "no
+-- return until ten others" also holds across the planned queue.
+local function planned_walk(act, extra)
+    local seq = {}
+    for _, id in ipairs(act.recent or {}) do seq[#seq + 1] = id end
+    local goal = act.goal_poi and act.goal_poi.id
+    if goal and seq[#seq] ~= goal then seq[#seq + 1] = goal end
+    if act.pending_goal and seq[#seq] ~= act.pending_goal.id then
+        seq[#seq + 1] = act.pending_goal.id
+    end
+    if extra and seq[#seq] ~= extra.id then seq[#seq + 1] = extra.id end
+    for _, id in ipairs(act.queue or {}) do seq[#seq + 1] = id end
+    return seq
+end
+
+local function blocked_set(seq, memory)
+    local out = {}
+    for i = math.max(1, #seq - memory + 1), #seq do out[seq[i]] = true end
+    return out
+end
+A._planned_walk, A._blocked_set = planned_walk, blocked_set
+
 -- Next place after `from`: the nearest places the class cares about win.
 -- Distance dominates - (1 + d/0.9 km)^2 - so a group works its way across
 -- the island neighbourhood by neighbourhood instead of criss-crossing it; the
 -- class weight decides between places at similar distance, and a little
 -- randomness among the best three keeps two identical groups from marching
--- in lockstep. The last MEMORY places and anything already queued are out.
-function A.pick_next(group, act, from, exclude)
+-- in lockstep. A class with a fixed circuit walks it in order instead.
+function A.pick_next(group, act, from, blocked, last_id)
     local cls = GroupClasses.get(group.class)
     if not (cls and from) then return nil end
+    blocked = blocked or {}
+    if cls.circuit then
+        local n = #cls.circuit
+        -- Without a last place the squad joins the circuit anywhere, so five
+        -- squads do not all start with the same place.
+        local at = act.rng and act.rng:int(0, n - 1) or 0
+        for i, id in ipairs(cls.circuit) do if id == last_id then at = i end end
+        for k = 1, n do
+            local id = cls.circuit[(at + k - 1) % n + 1]
+            local poi = POI.by_id[id]
+            if poi and not blocked[id] and eligible(group, cls, poi) then return poi end
+        end
+        return nil
+    end
     -- Places are judged by the land the group stands on: a queued place on
     -- an islet must not make every later pick impossible.
     local mass = Grid.landmass_at(group.position or from)
     local scored = {}
     for _, poi in ipairs(POI.points) do
         if eligible(group, cls, poi)
-            and not contains(act.recent, poi.id)
-            and not contains(act.queue, poi.id)
-            and not (exclude and exclude[poi.id])
+            and not blocked[poi.id]
             and (not mass or not poi.landmass or poi.landmass == mass) then
             local d = U.dist2d(from, poi.pos)
             if d > 6000 then
@@ -199,26 +243,22 @@ function A.refill_queue(group, act, heading_to)
         local poi = POI.by_id[act.queue[i]]
         if not (poi and cls and eligible(group, cls, poi)) then table.remove(act.queue, i) end
     end
+    local memory = A.memory_of(group)
     local guard = 0
     while #act.queue < A.QUEUE_LENGTH and guard < 6 do
         guard = guard + 1
-        local last = act.queue[#act.queue]
-        local from = (last and POI.by_id[last] and POI.by_id[last].pos)
-            or (heading_to and heading_to.pos)
-            or (act.goal_poi and act.goal_poi.pos) or group.position
-        local exclude = {}
-        if act.goal_poi then exclude[act.goal_poi.id] = true end
-        if act.pending_goal then exclude[act.pending_goal.id] = true end
-        if heading_to then exclude[heading_to.id] = true end
-        local poi = A.pick_next(group, act, from, exclude)
-        if not poi and #(act.recent or {}) > 0 then
-            -- A small territory (an island, a reserved sector) can run out of
-            -- unvisited places. Then the oldest memory gives way first.
-            local saved = act.recent
-            act.recent = {}
-            for i = math.floor(#saved / 2) + 1, #saved do act.recent[#act.recent + 1] = saved[i] end
-            poi = A.pick_next(group, act, from, exclude)
-            act.recent = saved
+        local seq = planned_walk(act, heading_to)
+        local last = seq[#seq]
+        local from = (last and POI.by_id[last] and POI.by_id[last].pos) or group.position
+        local blocked = blocked_set(seq, memory)
+        -- The place a leg starts from is never its own next stop.
+        if last then blocked[last] = true end
+        local poi = A.pick_next(group, act, from, blocked, last)
+        if not poi and memory > 1 then
+            -- A small territory can run out of places the memory allows.
+            -- Then the oldest memories give way first.
+            poi = A.pick_next(group, act, from,
+                blocked_set(seq, math.max(1, math.floor(memory / 2))), last)
         end
         if not poi then break end
         act.queue[#act.queue + 1] = poi.id
@@ -274,18 +314,16 @@ function A.duration_for(state, act, poi)
     return 300
 end
 
-function A.mark_visited(act, poi, now)
+function A.mark_visited(act, poi, now, group)
     if not poi then return end
     act.recent = act.recent or {}
     for i = #act.recent, 1, -1 do
         if act.recent[i] == poi.id then table.remove(act.recent, i) end
     end
     act.recent[#act.recent + 1] = poi.id
-    while #act.recent > A.MEMORY do table.remove(act.recent, 1) end
-    -- A place just visited is no longer a plan.
-    for i = #(act.queue or {}), 1, -1 do
-        if act.queue[i] == poi.id then table.remove(act.queue, i) end
-    end
+    while #act.recent > A.memory_of(group) do table.remove(act.recent, 1) end
+    -- A place just visited is no longer the next plan.
+    if act.queue and act.queue[1] == poi.id then table.remove(act.queue, 1) end
     act.visited[poi.id] = now
     local n = 0
     for _ in pairs(act.visited) do n = n + 1 end
@@ -354,10 +392,78 @@ function A.build_tour(poi, act, spread, count)
     return stops
 end
 
+-- ------------------------------------------------------------ city sweep --
+
+-- Krsko is swept by the radiation squads area by area, 1 to 5 or 5 to 1,
+-- each area lane by lane. When the last stop of the last area is walked the
+-- city counts as visited and the squad moves on.
+A.SWEEP_MAX_SEC = 4 * 3600
+A.sweep = { city = SweepData.city, areas = {} }
+for _, a in ipairs(SweepData.areas) do
+    local pts = {}
+    for _, p in ipairs(a.points) do
+        local v = { X = p[1], Y = p[2], Z = 0 }
+        if not Grid.is_passable(v) then v = Grid.snap_to_land(v) end
+        if v then pts[#pts + 1] = v end
+    end
+    A.sweep.areas[#A.sweep.areas + 1] = { id = a.id, points = pts }
+end
+
+function A.sweeps(poi, group)
+    return poi ~= nil and group ~= nil and poi.id == A.sweep.city
+        and group.class == "radiation_group" and #A.sweep.areas > 0
+end
+
+-- Stops for the whole sweep in walking order. Each area is entered at the
+-- end nearer to where the previous one finished, so lanes join up. The
+-- order depends only on the direction, so a saved sweep resumes exactly.
+function A.build_sweep(poi, act, dir)
+    local order = {}
+    for i = 1, #A.sweep.areas do order[i] = A.sweep.areas[i] end
+    if dir < 0 then
+        for i = 1, math.floor(#order / 2) do
+            order[i], order[#order - i + 1] = order[#order - i + 1], order[i]
+        end
+    end
+    local stops, areas = {}, {}
+    local at = poi.pos
+    for _, area in ipairs(order) do
+        local pts = area.points
+        if #pts > 0 then
+            local fwd = U.dist2d(at, pts[1]) <= U.dist2d(at, pts[#pts])
+            for k = 1, #pts do
+                local p = pts[fwd and k or (#pts - k + 1)]
+                stops[#stops + 1] = U.copy_vec(p)
+                areas[#areas + 1] = area.id
+            end
+            at = stops[#stops]
+        end
+    end
+    act.tour = stops
+    act.tour_area = areas
+    act.tour_poi = poi.id
+    act.sweep_dir = dir
+    return stops
+end
+
 -- Next stop on the tour, rebuilding it when the POI changed or the loop is
--- finished. Always on land.
+-- finished. Always on land. A sweep is not a loop: at its end this returns
+-- nil and marks it done.
 function A.next_stop(poi, act, spread)
     if not poi then return nil end
+    if act.sweep_dir then
+        if not act.tour or act.tour_poi ~= poi.id then
+            local idx = act.tour_index or 0
+            A.build_sweep(poi, act, act.sweep_dir)
+            act.tour_index = idx
+        end
+        if (act.tour_index or 0) >= #act.tour then
+            act.sweep_done = true
+            return nil
+        end
+        act.tour_index = (act.tour_index or 0) + 1
+        return U.copy_vec(act.tour[act.tour_index])
+    end
     if not act.tour or act.tour_poi ~= poi.id or (act.tour_index or 0) >= #act.tour then
         A.build_tour(poi, act, spread)
     end

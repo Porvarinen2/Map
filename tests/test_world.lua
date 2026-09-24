@@ -76,6 +76,8 @@ local states_seen = {}
 
 for _, g in ipairs(world.groups) do trails[g.gid] = {}; travel_trails[g.gid] = {} end
 
+local zone_breaches = {}
+local rad_goals, sweeps_done = {}, 0
 local t0 = os.clock()
 local sim_now = os.time()
 for step = 1, math.floor(SIM_SECONDS / TICK) do
@@ -89,6 +91,21 @@ for step = 1, math.floor(SIM_SECONDS / TICK) do
     total_tick_ms = total_tick_ms + ms
     tick_samples[#tick_samples + 1] = ms
     if ms > max_tick_ms then max_tick_ms = ms end
+
+    for _, g in ipairs(world.groups) do
+        if g.class == "radiation_group" and g.act then
+            local seq = rad_goals[g.gid] or {}
+            rad_goals[g.gid] = seq
+            local id = g.act.goal_poi and g.act.goal_poi.id
+            if id and seq[#seq] ~= id then seq[#seq + 1] = id end
+            if g.act.sweep_done and not g.act._counted then
+                g.act._counted = true
+                sweeps_done = sweeps_done + 1
+            elseif not g.act.sweep_done then
+                g.act._counted = nil
+            end
+        end
+    end
 
     if step % 8 == 0 then
         for _, g in ipairs(world.groups) do
@@ -114,6 +131,10 @@ for step = 1, math.floor(SIM_SECONDS / TICK) do
                     water_detail[key] = (water_detail[key] or 0) + 1
                 end
                 if Zones.sector(p) == "OUT" then out_of_bounds = out_of_bounds + 1 end
+                local in_c0 = Zones.sector(p) == "C0"
+                if (g.class == "radiation_group") ~= in_c0 then
+                    zone_breaches[g.class] = (zone_breaches[g.class] or 0) + 1
+                end
             end
             states_seen[g.act.state] = (states_seen[g.act.state] or 0) + 1
             if g.physical then materialized_events = materialized_events + 1
@@ -228,37 +249,80 @@ check(max_tick_ms < 120, string.format("peak tick %.1f ms < 120", max_tick_ms))
 check(total_tick_ms / (SIM_SECONDS / TICK) < 6,
       string.format("average tick %.2f ms < 6", total_tick_ms / (SIM_SECONDS / TICK)))
 
--- Destination queue and place memory. A reserved territory (the radiation
--- zone) has fewer places than the memory holds, so there the oldest memories
--- give way by design; everywhere else the rules hold exactly.
+-- Destination queue and place memory. Queued places obey the memory too:
+-- a place may not come back while it is among the last MEMORY places walked
+-- before it, counting what is remembered, the goal and the queue itself.
 do
-    local open_groups, full, dup, requeued, starved = 0, 0, 0, 0, 0
+    local open_groups, full, dup, early = 0, 0, 0, 0
     for _, g in ipairs(world.groups) do
         local act = g.act or {}
-        local cls = require("npc.groups").get(g.class)
+        local mem = Activity.memory_of(g)
         local seen = {}
         for _, id in ipairs(act.recent or {}) do
             if seen[id] then dup = dup + 1 end
             seen[id] = true
         end
-        if cls and cls.reserved_zone then
-            if #(act.queue or {}) == 0 then starved = starved + 1 end
-        else
-            open_groups = open_groups + 1
-            if #(act.queue or {}) == Activity.QUEUE_LENGTH then full = full + 1 end
-            for _, id in ipairs(act.queue or {}) do
-                if seen[id] then requeued = requeued + 1 end
+        local seq = Activity._planned_walk(act)
+        local nq = #(act.queue or {})
+        for k = #seq - nq + 1, #seq do
+            for j = math.max(1, k - mem), k - 1 do
+                if seq[j] == seq[k] then early = early + 1 end
             end
-            if os.getenv("DEBUG_QUEUE") and #(act.queue or {}) < Activity.QUEUE_LENGTH then
-                print("  queue", g.gid, g.class, act.state, table.concat(act.queue or {}, ","))
-            end
+        end
+        open_groups = open_groups + 1
+        if nq == Activity.QUEUE_LENGTH then full = full + 1 end
+        if os.getenv("DEBUG_QUEUE") and nq < Activity.QUEUE_LENGTH then
+            print("  queue", g.gid, g.class, act.state, table.concat(act.queue or {}, ","))
         end
     end
     check(full == open_groups,
           string.format("%d of %d groups have %d places queued", full, open_groups, Activity.QUEUE_LENGTH))
-    check(starved == 0, string.format("reserved-territory groups always have a next place (%d without)", starved))
-    check(dup == 0, string.format("no place repeats inside the %d-place memory (%d)", Activity.MEMORY, dup))
-    check(requeued == 0, string.format("nothing in memory is queued again (%d)", requeued))
+    check(dup == 0, string.format("no place repeats inside a group's memory (%d)", dup))
+    check(early == 0, string.format("no queued place returns before its memory allows (%d)", early))
+end
+
+-- C0 is the radiation squads' alone: five of them, never outside, and no
+-- other squad inside. They walk Krsko -> power plant -> camp and sweep the
+-- city area by area.
+do
+    local rad = 0
+    for _, g in ipairs(world.groups) do
+        if g.class == "radiation_group" and Population.group_alive(g) then rad = rad + 1 end
+    end
+    check(rad == 5, string.format("five radiation squads hold C0 (%d)", rad))
+    local breaches = 0
+    for k, v in pairs(zone_breaches) do
+        breaches = breaches + v
+        print("  zone breach: " .. k .. " x" .. v)
+    end
+    check(breaches == 0, string.format("no squad crossed the C0 line either way (%d samples)", breaches))
+    local circuit = { CIT_C0_01 = "IND_C0_01", IND_C0_01 = "LAN_C0_01", LAN_C0_01 = "CIT_C0_01" }
+    local steps, wrong = 0, 0
+    for _, seq in pairs(rad_goals) do
+        for i = 2, #seq do
+            steps = steps + 1
+            if circuit[seq[i - 1]] ~= seq[i] then wrong = wrong + 1 end
+        end
+    end
+    check(steps >= 5 and wrong == 0,
+          string.format("radiation squads walk city -> plant -> camp in order (%d moves, %d out of order)", steps, wrong))
+    local city = POI.by_id["CIT_C0_01"]
+    local ordered = true
+    for _, dir in ipairs({ 1, -1 }) do
+        local act = { rng = RNG.new(1) }
+        Activity.build_sweep(city, act, dir)
+        local prev = dir > 0 and 0 or 99
+        for _, a in ipairs(act.tour_area) do
+            if (dir > 0 and a < prev) or (dir < 0 and a > prev) then ordered = false end
+            prev = a
+        end
+        if act.tour_area[1] ~= (dir > 0 and 1 or 5) or #act.tour < 40 then ordered = false end
+        for _, p in ipairs(act.tour) do
+            if Zones.sector(p) ~= "C0" then ordered = false end
+        end
+    end
+    check(ordered, "a sweep walks areas 1-5 or 5-1, every stop inside C0")
+    check(sweeps_done >= 1, string.format("Krsko was swept area by area to the end (%d sweeps)", sweeps_done))
 end
 
 -- Save / load fidelity after a live run.

@@ -160,6 +160,70 @@ function P.generate(world, log)
     return world
 end
 
+-- Keeps the exclusive zones exactly as the design says, for a new world and
+-- for a saved one from an older version: the zone's class has its fixed
+-- number of squads, all of them inside, and no other squad stands in it.
+-- Only virtual groups are moved; a group with bodies in the world is left
+-- to walk out on its own (its routes are fenced).
+function P.ensure_reserved(world, log)
+    local changed = 0
+    local rng = RNG.new((world.seed or 1) + (world.next_group_id or 0) * 7919)
+    for _, res in ipairs(Zones.RESERVED) do
+        if res.exclusive then
+            local mass = Zones.dominant_landmass(res.sector)
+            local function inside_point()
+                for _ = 1, 80 do
+                    local p = Zones.random_point_in(res.sector, rng)
+                    if p and (not mass or Grid.landmass_at(p) == mass) then return p end
+                end
+                return Zones.random_point_in(res.sector, rng)
+            end
+            local own = 0
+            for _, g in ipairs(world.groups) do
+                if P.group_alive(g) and g.position and not g.physical then
+                    local here = Zones.sector(g.position) == res.sector
+                    if g.class == res.class and not here then
+                        local p = inside_point()
+                        if p then
+                            g.position, g.home = p, U.copy_vec(p)
+                            for _, m in ipairs(g.members) do m.position = U.copy_vec(p) end
+                            if g.act then g.act.goal_poi, g.act.queue, g.act.state = nil, {}, "IDLE" end
+                            if g.mv then g.mv.route = nil end
+                            changed = changed + 1
+                        end
+                    elseif g.class ~= res.class and here then
+                        local p = anchor_point(rng, function(poi)
+                            return not Zones.reserved_by_sector[poi.sector] and not poi.blocked
+                        end)
+                        if p then
+                            g.position = p
+                            if Zones.sector(g.home or p) == res.sector then g.home = U.copy_vec(p) end
+                            for _, m in ipairs(g.members) do m.position = U.copy_vec(p) end
+                            if g.act then g.act.goal_poi, g.act.queue, g.act.state = nil, {}, "IDLE" end
+                            if g.mv then g.mv.route = nil end
+                            changed = changed + 1
+                        end
+                    end
+                end
+                if g.class == res.class and P.group_alive(g) then own = own + 1 end
+            end
+            while own < res.groups do
+                local pos = inside_point()
+                if not pos then break end
+                local g = Factory.new_group({
+                    id = world.next_group_id, class = res.class, seed = rng:next(),
+                    position = pos, home = pos, zone = res.key,
+                })
+                P.add_group(world, g)
+                own = own + 1
+                changed = changed + 1
+                if log then log("reserved zone " .. res.sector .. ": added " .. g.gid) end
+            end
+        end
+    end
+    return changed
+end
+
 -- Auto-grouping from the guide: a lone survivor near a compatible group joins
 -- it, within a 20 m radius and a five-member ceiling. Bandits never mix with
 -- other backgrounds. This is how a wiped-out squad's last member stops being a
@@ -305,6 +369,8 @@ function P.serialize(world)
                 journeys = g.act.journeys,
                 distance = g.act.distance,
                 searched = g.act.searched,
+                sweep_dir = g.act.sweep_dir,
+                tour_index = g.act.sweep_dir and g.act.tour_index or nil,
             }
         end
         for _, m in ipairs(g.members) do
@@ -377,6 +443,11 @@ function P.deserialize(saved)
                 g.act.distance = sg.act.distance or 0
                 g.act.searched = sg.act.searched or 0
                 if sg.act.goal_id then g.act.goal_poi = POI.by_id[sg.act.goal_id] end
+                -- A sweep resumes at the stop it had reached.
+                if sg.act.sweep_dir and g.act.goal_poi then
+                    g.act.sweep_dir = sg.act.sweep_dir
+                    g.act.tour_index = sg.act.tour_index or 0
+                end
                 -- A restored group re-solves its route on the next tick.
                 if g.act.state == "TRAVEL" then g.act.state = "IDLE" end
             end

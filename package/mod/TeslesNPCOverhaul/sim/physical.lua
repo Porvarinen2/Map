@@ -114,6 +114,21 @@ function Ph.body_variant(group, m)
     return nil
 end
 
+-- SCUM ships the Radiation bodies for levels 3-5 and the AbandonedBunker
+-- bodies for 4-5 only. Every radiation NPC must wear the hazmat body, so a
+-- lower level NPC wears the lowest body of its variant; its own level and
+-- skills are unchanged.
+local VARIANT_MIN_LEVEL = { Radiation = 3, AbandonedBunker = 4 }
+function Ph.body_level(level, variant)
+    local lv = math.max(1, math.min(5, math.floor(tonumber(level) or 1)))
+    local min = variant and VARIANT_MIN_LEVEL[variant]
+    if min and lv < min then
+        -- A bunker group keeps its plain low-level body; radiation never does.
+        if variant == "Radiation" then return min end
+    end
+    return lv
+end
+
 -- Materialises a group through the bridge. Returns spawned, failed, reason.
 function Ph.materialize(group, bridge, ctx)
     if not bridge or not bridge.available() then
@@ -151,9 +166,10 @@ function Ph.materialize(group, bridge, ctx)
                 failed = failed + 1
                 last_reason = "NO_GROUND_PROOF"
             else
+                local variant = Ph.body_variant(group, m)
                 local handle, err = bridge.spawn_npc({
                     archetype = m.archetype,
-                    level = m.level,
+                    level = Ph.body_level(m.level, variant),
                     position = pos,
                     group = group.gid,
                     npcId = m.npcId,
@@ -161,7 +177,7 @@ function Ph.materialize(group, bridge, ctx)
                     -- where the server exposes it; the bridge falls back to
                     -- the plain class when it does not.
                     family = Ph.body_family(m),
-                    variant = Ph.body_variant(group, m),
+                    variant = variant,
                     yaw = ctx.yaw,
                 })
                 if handle then

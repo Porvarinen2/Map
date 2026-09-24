@@ -230,7 +230,8 @@ for _, grp2 in ipairs(w.groups) do
         if grp2.class ~= "island_residents" then intruders = intruders + 1 end
     end
 end
-check(c0 == 3, "C0:n sateilyalueelle varattu 3 sateilyryhmaa (" .. c0 .. ")")
+-- The owner raised C0 to five radiation squads (1.4.0).
+check(c0 == 5, "C0:n sateilyalueelle varattu 5 sateilyryhmaa (" .. c0 .. ")")
 check(z4 == 2, "Z4:n saarikaupunkiin varattu 2 asukasryhmaa (" .. z4 .. ")")
 check(intruders == 0, "tavallisia ryhmia ei sijoiteta varatuille alueille")
 

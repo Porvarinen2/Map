@@ -188,6 +188,11 @@ local function group_row(group, world)
         goal_x = goal_pos and round(goal_pos.X, 0) or nil,
         goal_y = goal_pos and round(goal_pos.Y, 0) or nil,
         queue = queue,
+        -- Krsko sweep: the area being worked and how far through the city.
+        sweep_area = act.sweep_dir and act.tour_area and act.tour_area[act.tour_index or 0] or nil,
+        sweep_dir = act.sweep_dir,
+        sweep_done = act.sweep_dir and act.tour and
+            round(100 * (act.tour_index or 0) / math.max(1, #act.tour), 0) or nil,
         recent = #(act.recent or {}),
         intent = Activity.describe(group, act),
         route = route,

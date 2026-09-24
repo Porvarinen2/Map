@@ -34,6 +34,60 @@ Router.budget_left = Router.TICK_BUDGET
 Router.MS_BUDGET = 22
 Router.deadline = nil
 
+-- ---------------------------------------------------------------- fences --
+
+-- A fence is a world box a route must stay inside (inside = true) or out of
+-- (inside = false): the C0 radiation zone keeps its own squads in and every
+-- other squad out. It is set for the duration of one Router.route call.
+Router.fence = nil
+
+local function in_box(f, p)
+    return p.X >= f.xMin and p.X <= f.xMax and p.Y >= f.yMin and p.Y <= f.yMax
+end
+Router.in_box = in_box
+
+function Router.point_ok(p, f)
+    f = f or Router.fence
+    if not f then return true end
+    return in_box(f, p) == f.inside
+end
+
+-- Liang-Barsky: does the segment a-b touch the box at all?
+local function segment_hits_box(f, a, b)
+    local t0, t1 = 0, 1
+    local dx, dy = b.X - a.X, b.Y - a.Y
+    local p = { -dx, dx, -dy, dy }
+    local q = { a.X - f.xMin, f.xMax - a.X, a.Y - f.yMin, f.yMax - a.Y }
+    for i = 1, 4 do
+        if p[i] == 0 then
+            if q[i] < 0 then return false end
+        else
+            local r = q[i] / p[i]
+            if p[i] < 0 then
+                if r > t1 then return false end
+                if r > t0 then t0 = r end
+            else
+                if r < t0 then return false end
+                if r < t1 then t1 = r end
+            end
+        end
+    end
+    return true
+end
+
+function Router.segment_ok(a, b, f)
+    f = f or Router.fence
+    if not f then return true end
+    if f.inside then return in_box(f, a) and in_box(f, b) end
+    return not segment_hits_box(f, a, b)
+end
+
+-- Clear walking line that also respects the fence.
+local function clear(a, b)
+    return Grid.segment_passable(a, b) and Router.segment_ok(a, b)
+end
+Router.clear = clear
+
 function Router.begin_tick(budget, ms_budget)
     Router.budget_left = budget or Router.TICK_BUDGET
     Router.deadline = os.clock() + (ms_budget or Router.MS_BUDGET) / 1000
@@ -80,7 +134,7 @@ function Router.simplify(pts, eps)
     local anchor = 1
     for i = 2, #pts do
         if keep[i] then
-            if Grid.segment_passable(pts[anchor], pts[i]) then
+            if clear(pts[anchor], pts[i]) then
                 out[#out + 1] = pts[i]
             else
                 -- Put the original shape back for this span.
@@ -104,7 +158,7 @@ function Router.string_pull(pts, max_skip)
         local best = i + 1
         local limit = math.min(#pts, i + max_skip)
         for j = limit, i + 2, -1 do
-            if Grid.segment_passable(pts[i], pts[j]) then
+            if clear(pts[i], pts[j]) then
                 best = j
                 break
             end
@@ -159,6 +213,21 @@ function Router.grid_path(from, to, budget)
 
     local expanded = 0
     local cells = Grid.cells
+    -- Fenced cells, judged by the cell centre.
+    local fence_cell = nil
+    local f = Router.fence
+    if f then
+        local ok_cache = {}
+        fence_cell = function(cx, cy)
+            local id = cy * n + cx
+            local v = ok_cache[id]
+            if v == nil then
+                v = Router.point_ok(Grid.grid_to_world(cx, cy, 0), f)
+                ok_cache[id] = v
+            end
+            return v
+        end
+    end
     while true do
         local cur = Road._heap_pop(open)
         if not cur then return nil, "NO_PATH" end
@@ -181,7 +250,8 @@ function Router.grid_path(from, to, budget)
                 if nx >= 0 and ny >= 0 and nx < n and ny < n then
                     local ni = ny * n + nx
                     local v = cells[ni]
-                    if v and v ~= Grid.WATER and not closed[ni] then
+                    if v and v ~= Grid.WATER and not closed[ni]
+                        and (not fence_cell or fence_cell(nx, ny)) then
                         -- Diagonal moves may not cut a water corner.
                         local ok = true
                         if d[1] ~= 0 and d[2] ~= 0 then
@@ -234,7 +304,7 @@ local function repair(pts)
     local out = { pts[1] }
     for i = 2, #pts do
         local a, b = out[#out], pts[i]
-        if Grid.segment_passable(a, b) then
+        if clear(a, b) then
             out[#out + 1] = b
         else
             local leg = Router.grid_path(a, b, 3000)
@@ -272,7 +342,46 @@ end
 -- Builds a route from `from` to `to`.
 --   opts.prefer_roads  false for cross-country activities (hunting, camping)
 --   opts.allow_grid    false to skip the expensive A* fallback
+-- A road link is usable under a fence when every piece of its shape is.
+local function link_ok_for(f)
+    f._links = f._links or {}
+    return function(from_node, link)
+        local key = link.edge
+        local v = f._links[key]
+        if v == nil then
+            local e = Road.edges[link.edge]
+            local pts = { Road.nodes[from_node] }
+            for _, p in ipairs((e and e.pts) or {}) do pts[#pts + 1] = p end
+            pts[#pts + 1] = Road.nodes[link.to]
+            v = true
+            for i = 1, #pts - 1 do
+                if not Router.segment_ok(pts[i], pts[i + 1], f) then v = false; break end
+            end
+            f._links[key] = v
+        end
+        return v
+    end
+end
+
+-- Builds a route from `from` to `to`, honouring opts.fence (see above). A
+-- group already on the wrong side of its fence is routed without it, so it
+-- can get back; a destination on the wrong side is refused.
 function Router.route(from, to, opts)
+    opts = opts or {}
+    local f = opts.fence
+    if f and U.finite_vec(from) and not Router.point_ok(from, f) then f = nil end
+    if f and U.finite_vec(to) and not Router.point_ok(to, f) then
+        Router.stats.failed = Router.stats.failed + 1
+        return nil, "FENCED"
+    end
+    Router.fence = f
+    local ok, route, why = pcall(Router.route_unfenced, from, to, opts)
+    Router.fence = nil
+    if not ok then error(route, 0) end
+    return route, why
+end
+
+function Router.route_unfenced(from, to, opts)
     opts = opts or {}
     if not (U.finite_vec(from) and U.finite_vec(to)) then
         Router.stats.failed = Router.stats.failed + 1
@@ -284,7 +393,7 @@ function Router.route(from, to, opts)
     if straight < 1 then return nil, "ALREADY_THERE" end
 
     -- 1. Short and clear: one straight leg.
-    if Grid.segment_passable(from, to) then
+    if clear(from, to) then
         if straight <= (opts.direct_max or Router.DIRECT_MAX) or opts.prefer_roads == false then
             return finish({ U.copy_vec(from), U.copy_vec(to) }, "DIRECT", from, to)
         end
@@ -295,6 +404,16 @@ function Router.route(from, to, opts)
     if opts.prefer_roads ~= false then
         local ca = Road.snap_candidates(from, Router.ROAD_SNAP)
         local cb = Road.snap_candidates(to, Router.ROAD_SNAP)
+        if Router.fence then
+            local function keep(list)
+                local out = {}
+                for _, c in ipairs(list) do
+                    if Router.point_ok(Road.nodes[c.node]) then out[#out + 1] = c end
+                end
+                return out
+            end
+            ca, cb = keep(ca), keep(cb)
+        end
         local by_comp = {}
         for _, c in ipairs(cb) do
             if not by_comp[c.comp] or c.dist < by_comp[c.comp].dist then
@@ -312,21 +431,22 @@ function Router.route(from, to, opts)
             end
         end
         if a and b and a ~= b then
-            local node_path = Road.find_path(a, b)
+            local node_path = Road.find_path(a, b, nil,
+                Router.fence and link_ok_for(Router.fence) or nil)
             if node_path then
                 local poly = Road.expand_path(node_path)
                 if poly and #poly > 0 then
                     local pts = { U.copy_vec(from) }
                     -- Leg onto the network. If it is not a clear walk, route
                     -- it on the grid so the group does not cut through water.
-                    if not Grid.segment_passable(from, poly[1]) then
+                    if not clear(from, poly[1]) then
                         local leg = Router.grid_path(from, poly[1])
                         if leg then
                             for i = 2, #leg - 1 do pts[#pts + 1] = leg[i] end
                         end
                     end
                     for _, p in ipairs(poly) do pts[#pts + 1] = U.copy_vec(p) end
-                    if not Grid.segment_passable(poly[#poly], to) then
+                    if not clear(poly[#poly], to) then
                         local leg = Router.grid_path(poly[#poly], to)
                         if leg then
                             for i = 2, #leg - 1 do pts[#pts + 1] = leg[i] end

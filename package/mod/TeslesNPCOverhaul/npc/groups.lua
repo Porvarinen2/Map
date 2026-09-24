@@ -47,7 +47,11 @@ G.list = {
         key = "radiation_group", fi = "Säteilyryhmä", size = { 2, 5 },
         archetypes = { "radiation_specialist" },
         tactics = "hazmat", weight = 3, reserved_zone = "C0",
-        poi_weights = { CITY = 3.0, INDUSTRIAL = 3.0, VILLAGE = 2.0, LANDMARK = 1.5, HUNTING = 1.0 },
+        -- Krsko (swept area by area), the nuclear power plant, the camp below
+        -- it, round and round. Two places of memory make that the only walk.
+        poi_weights = { CITY = 3.0, INDUSTRIAL = 3.0, LANDMARK = 2.0 },
+        circuit = { "CIT_C0_01", "IND_C0_01", "LAN_C0_01" },
+        memory = 2,
     },
     {
         key = "bunker_group", fi = "Bunkkeriryhmä", size = { 2, 5 },

@@ -42,7 +42,8 @@ function Z.sector_bounds(name)
 end
 
 Z.RESERVED = {
-    { sector = "C0", class = "radiation_group", groups = 3,
+    -- Exclusive: the radiation squads never leave C0 and nobody else enters.
+    { sector = "C0", class = "radiation_group", groups = 5, exclusive = true,
       fi = "Sateilyalue", key = "RADIATION" },
     { sector = "Z4", class = "island_residents", groups = 2,
       fi = "Saarikaupunki", key = "ISLAND" },
@@ -50,6 +51,36 @@ Z.RESERVED = {
 
 Z.reserved_by_sector = {}
 for _, r in ipairs(Z.RESERVED) do Z.reserved_by_sector[r.sector] = r end
+
+-- Route fences for the exclusive zones: one to keep the zone's own groups
+-- in, one to keep everybody else out.
+for _, r in ipairs(Z.RESERVED) do
+    if r.exclusive then
+        local bx = Z.sector_bounds(r.sector)
+        r.fence_in = { xMin = bx.xMin, xMax = bx.xMax, yMin = bx.yMin, yMax = bx.yMax,
+                       inside = true, sector = r.sector }
+        r.fence_out = { xMin = bx.xMin, xMax = bx.xMax, yMin = bx.yMin, yMax = bx.yMax,
+                        inside = false, sector = r.sector }
+    end
+end
+
+function Z.fence_for(group)
+    for _, r in ipairs(Z.RESERVED) do
+        if r.exclusive then
+            return (group.class == r.class) and r.fence_in or r.fence_out
+        end
+    end
+    return nil
+end
+
+-- True when the group stands where its fence allows.
+function Z.on_right_side(group, pos)
+    local f = Z.fence_for(group)
+    pos = pos or group.position
+    if not (f and pos) then return true end
+    local inside = pos.X >= f.xMin and pos.X <= f.xMax and pos.Y >= f.yMin and pos.Y <= f.yMax
+    return inside == f.inside
+end
 
 function Z.reserved_at(pos)
     return Z.reserved_by_sector[Z.sector(pos)]

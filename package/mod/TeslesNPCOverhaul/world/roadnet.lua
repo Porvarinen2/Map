@@ -163,7 +163,7 @@ end
 R._heap_new, R._heap_push, R._heap_pop = heap_new, heap_push, heap_pop
 
 -- A* between two graph nodes. Returns an ordered node list, or nil.
-function R.find_path(start, goal, budget)
+function R.find_path(start, goal, budget, link_ok)
     if not (start and goal) then return nil end
     if start == goal then return { start } end
     if not R.connected(start, goal) then return nil end
@@ -195,7 +195,8 @@ function R.find_path(start, goal, budget)
             local base = g[cur]
             for _, link in ipairs(R.adj[cur] or {}) do
                 local ng = base + link.len
-                if g[link.to] == nil or ng < g[link.to] - 1 then
+                if (not link_ok or link_ok(cur, link))
+                    and (g[link.to] == nil or ng < g[link.to] - 1) then
                     g[link.to] = ng
                     came[link.to] = cur
                     heap_push(open, link.to, ng + U.dist2d(R.nodes[link.to], goal_pos))

@@ -45,6 +45,7 @@ const POI_STYLE = {
 };
 // The mod keeps its groups this far from every outpost (world/pois.lua).
 const OUTPOST_MARGIN_UU = 45000;
+const ZONES = window.TESLES_ZONES || {};
 const POIS = (window.TESLES_POIS || []).map(p => Object.assign({
   named: !/^[A-Z][0-4] /.test(p.n) }, p));
 
@@ -329,6 +330,59 @@ function poiShape(x, y, st, k) {
   }
 }
 
+// C0: the radiation squads' zone, closed to everyone else, with Krsko's five
+// sweep areas. The area a selected radiation squad is working is lit.
+function drawZones(moving) {
+  const rz = ZONES.radiation;
+  if (!rz) return;
+  const s = mapSize();
+  const ri = ROWS.indexOf(rz.sector[0]), ci = COLS.indexOf(rz.sector[1]);
+  const a = imgToScreen(ci / 5 * s.w, ri / 5 * s.h);
+  const b = imgToScreen((ci + 1) / 5 * s.w, (ri + 1) / 5 * s.h);
+  ctx.save();
+  ctx.fillStyle = "rgba(196,121,255,.07)";
+  ctx.fillRect(a.x, a.y, b.x - a.x, b.y - a.y);
+  ctx.strokeStyle = "rgba(196,121,255,.8)";
+  ctx.setLineDash([10, 6]); ctx.lineWidth = 2;
+  ctx.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y);
+  ctx.setLineDash([]);
+  if (!moving) {
+    ctx.font = "600 11px Inter, sans-serif";
+    ctx.textAlign = "left"; ctx.textBaseline = "top";
+    ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,.85)";
+    const t = "☢ SÄTEILYALUE · vain säteilyryhmät";
+    ctx.strokeText(t, a.x + 6, a.y + 18);
+    ctx.fillStyle = "#d9a8ff"; ctx.fillText(t, a.x + 6, a.y + 18);
+  }
+  const sel = selected && state.groups.find(g => g.gid === selected.gid);
+  const lit = sel && sel.sweep_area;
+  (ZONES.sweep || []).forEach(z => {
+    ctx.beginPath();
+    z.poly.forEach((p, i) => {
+      const q = worldToScreen(p[0], p[1]);
+      if (i) ctx.lineTo(q.x, q.y); else ctx.moveTo(q.x, q.y);
+    });
+    ctx.closePath();
+    const on = lit === z.id;
+    ctx.fillStyle = on ? "rgba(255,0,255,.28)" : "rgba(255,0,255,.09)";
+    ctx.fill();
+    ctx.strokeStyle = on ? "rgba(255,120,255,.95)" : "rgba(255,0,255,.45)";
+    ctx.lineWidth = on ? 2 : 1;
+    ctx.stroke();
+    if (!moving && view.scale > 0.9) {
+      let cx = 0, cy = 0;
+      z.poly.forEach(p => { cx += p[0]; cy += p[1]; });
+      const c = worldToScreen(cx / z.poly.length, cy / z.poly.length);
+      ctx.font = "bold 13px Inter, sans-serif";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,.85)";
+      ctx.strokeText(String(z.id), c.x, c.y);
+      ctx.fillStyle = "#ffb3ff"; ctx.fillText(String(z.id), c.x, c.y);
+    }
+  });
+  ctx.restore();
+}
+
 // The places groups actually travel to. Minor places (villages, hunting
 // towers) appear as the map is zoomed in; names follow at closer zoom.
 function drawPois(moving) {
@@ -401,7 +455,9 @@ function drawQueue(g, isSel) {
     ctx.font = `bold ${isSel ? 10 : 8}px Inter, sans-serif`;
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillText(String(i + 1), p.x, p.y + 0.5);
-    if (isSel) {
+    // The POI layer already names a named place at this zoom.
+    const named = show.pois && view.scale >= 0.7 && !/^[A-Z][0-4] /.test(q[i].label || "");
+    if (isSel && !named) {
       const label = q[i].label || q[i].id;
       ctx.font = "11px Inter, sans-serif"; ctx.textAlign = "left";
       ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,.85)";
@@ -549,7 +605,7 @@ function drawNow() {
   // trails and every group's route come back as soon as it stops.
   const moving = performance.now() - lastInteraction < 180;
   if (moving) setTimeout(draw, 200);
-  if (show.pois) drawPois(moving);
+  if (show.pois) { drawZones(moving); drawPois(moving); }
   const list = visibleGroups();
   if (show.trails && !moving) list.forEach(drawTrail);
   if (show.queue && !moving) list.forEach(g => {
@@ -820,7 +876,8 @@ function renderDetail() {
         <b>Jonossa</b><span>${(g.queue || []).length
           ? g.queue.map((q, i) => `${i + 1}. ${esc(q.label)} <i style="color:${(POI_STYLE[q.kind] || {}).c || "#ccc"}">${esc((POI_STYLE[q.kind] || {}).fi || q.kind)}</i>`).join("<br>")
           : "–"}</span>
-        <b>Muisti</b><span>${g.recent ?? 0} / 10 viimeksi käytyä paikkaa</span>
+        <b>Muisti</b><span>${g.recent ?? 0} / ${g.class === "radiation_group" ? 2 : 10} viimeksi käytyä paikkaa</span>
+        ${g.sweep_dir ? `<b>Krsko-sweep</b><span>alue ${g.sweep_area ?? "–"} · suunta ${g.sweep_dir > 0 ? "1→5" : "5→1"} · ${g.sweep_done ?? 0} % käyty</span>` : ""}
         <b>Reitti</b><span>${g.route_km || 0} km · ${esc(g.route_kind || "–")}
           · piste ${g.route_index}</span>
         <b>Sijainti</b><span>${g.x}, ${g.y} · ${esc(g.sector)}</span>
@@ -1031,6 +1088,7 @@ function showTip(g, x, y) {
     ${g.members_alive}/${g.members_total} NPC · taso ${g.level} ·
     ${g.physical_members > 0 ? "fyysinen" : "virtuaalinen"}<br>
     ${esc(g.intent || g.state)}<br>
+    ${g.sweep_dir ? `Krsko: alue ${g.sweep_area ?? "–"} (${g.sweep_dir > 0 ? "1→5" : "5→1"}), ${g.sweep_done ?? 0} %<br>` : ""}
     ${(g.queue || []).length ? "Jono: " + g.queue.map(q => esc(q.label)).join(" → ") + "<br>" : ""}
     ${lead ? "Johtaja: " + esc(lead.name) + " (" + esc(lead.archetype_fi) + ")<br>" : ""}
     Moraali ${g.morale} · stressi ${g.stress} · voima ${g.power}`;

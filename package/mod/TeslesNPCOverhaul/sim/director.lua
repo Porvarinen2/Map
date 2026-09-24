@@ -16,6 +16,7 @@ local Log = require("core.log")
 local Router = require("world.router")
 local Grid = require("world.navgrid")
 local POI = require("world.pois")
+local Zones = require("world.zones")
 local Movement = require("sim.movement")
 local Activity = require("sim.activity")
 local Population = require("sim.population")
@@ -59,7 +60,11 @@ function D:solve_route(group, dest, opts)
     if self.route_budget <= 0 then return false, "BUDGET" end
     self.route_budget = self.route_budget - 1
     local from = group.position
-    local route, why = Router.route(from, dest, opts)
+    -- Every route honours the group's zone fence (C0: radiation in, others out).
+    local o = {}
+    for k, v in pairs(opts or {}) do o[k] = v end
+    if o.fence == nil then o.fence = Zones.fence_for(group) end
+    local route, why = Router.route(from, dest, o)
     if not route then
         self.counters.route_fail = self.counters.route_fail + 1
         Log.event("ROUTE_FAIL", group.gid, tostring(why))
@@ -89,7 +94,7 @@ function D:start_travel(group, poi, opts)
         end
         act.route_tries = 0
         act.pending_goal = nil
-        if poi then Activity.mark_visited(act, poi, self.now) end
+        if poi then Activity.mark_visited(act, poi, self.now, group) end
         act.goal_poi = nil
         act.state = S.IDLE
         act.until_t = self.now + self.rng:range(8, 25)
@@ -148,11 +153,19 @@ function D:on_arrival(group)
     act.tour = nil
     act.tour_index = 0
     act.stop_until = nil
+    act.sweep_dir, act.sweep_done = nil, nil
     self.counters.arrivals = self.counters.arrivals + 1
-    Activity.mark_visited(act, poi, self.now)
+    Activity.mark_visited(act, poi, self.now, group)
     local next_state = Activity.activity_for(poi, group, act)
     act.state = next_state
     act.until_t = self.now + Activity.duration_for(next_state, act, poi)
+    if Activity.sweeps(poi, group) then
+        -- Krsko is done when the sweep is, not on a timer.
+        act.state = S.SEARCH
+        next_state = S.SEARCH
+        act.sweep_dir = act.rng:chance(0.5) and 1 or -1
+        act.until_t = self.now + Activity.SWEEP_MAX_SEC
+    end
     act.local_target = nil
     Movement.clear(group.mv, Movement.ARRIVED)
     if next_state == S.SEARCH then
@@ -171,7 +184,14 @@ function D:local_move(group, spread)
     if Movement.has_route(group.mv) and group.mv.state == Movement.MOVING then return end
     if act.stop_until and self.now < act.stop_until then return end
     local p = Activity.next_stop(act.goal_poi, act, spread)
-    if not p then return end
+    if not p then
+        if act.sweep_done then
+            act.until_t = self.now
+            Activity.note(act, "kaupunki kayty lapi: " .. act.goal_poi.label)
+            Log.event("SWEEP_DONE", group.gid, act.goal_poi.id)
+        end
+        return
+    end
     local ok = self:solve_route(group, p, { prefer_roads = false, direct_max = 400000 })
     if ok then
         act.local_target = p
@@ -207,7 +227,7 @@ function D:run_activity(group)
                     "route could not be rebuilt for " ..
                     tostring(act.goal_poi and act.goal_poi.id or "?"))
                 act.route_tries = 0
-                if act.goal_poi then Activity.mark_visited(act, act.goal_poi, self.now) end
+                if act.goal_poi then Activity.mark_visited(act, act.goal_poi, self.now, group) end
                 act.goal_poi = nil
                 act.state = S.IDLE
                 act.until_t = self.now + self.rng:range(5, 15)
@@ -576,6 +596,12 @@ function D:tick(now)
                 Log.event("NEW_LEADER", group.gid, pick.name)
             end
         end
+    end
+
+    -- The radiation zone keeps its fixed squads, inside, and nobody else.
+    if self.now >= (self.reserve_check_at or 0) then
+        self.reserve_check_at = self.now + 60
+        Population.ensure_reserved(world, function(m) Log.event("RESERVED", "", m) end)
     end
 
     -- Survivors band together before the empty group is pruned away.

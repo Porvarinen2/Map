@@ -284,4 +284,57 @@ do
 end
 
 print("")
+print("== radiation zone ==")
+do
+    local Ph = require("sim.physical")
+    check(Ph.body_level(2, "Radiation") == 3, "a level 2 radiation NPC wears the level 3 hazmat body")
+    check(Ph.body_level(5, "Radiation") == 5, "higher levels keep their own hazmat body")
+    check(Ph.body_level(2, nil) == 2, "plain bodies keep the NPC's level")
+
+    -- An older save: three radiation squads, one outsider standing in C0.
+    local Population = require("sim.population")
+    local Zones = require("world.zones")
+    local w = Population.new_world({ seed = 7, target_npcs = 60 })
+    Population.generate(w, function() end)
+    local removed = 0
+    local kept = {}
+    for _, g in ipairs(w.groups) do
+        if g.class == "radiation_group" and removed < 2 then removed = removed + 1
+        else kept[#kept + 1] = g end
+    end
+    w.groups = kept
+    local intruder = nil
+    for _, g in ipairs(w.groups) do
+        if g.class ~= "radiation_group" then intruder = g; break end
+    end
+    intruder.position = Zones.random_point_in("C0")
+    Population.ensure_reserved(w)
+    local rad, inside_other = 0, 0
+    for _, g in ipairs(w.groups) do
+        local c0 = Zones.sector(g.position) == "C0"
+        if g.class == "radiation_group" then
+            if c0 then rad = rad + 1 end
+        elseif c0 then inside_other = inside_other + 1 end
+    end
+    check(rad == 5, "an older world is topped up to five radiation squads inside C0 (" .. rad .. ")")
+    check(inside_other == 0, "an outsider found in C0 is moved out")
+
+    -- Routes: an outsider never crosses C0, a radiation squad never leaves it.
+    local Router = require("world.router")
+    local r = Zones.RESERVED[1]
+    local b = Zones.sector_bounds("C0")
+    local west = { X = b.xMax + 40000, Y = (b.yMin + b.yMax) / 2, Z = 0 }
+    local south = { X = (b.xMin + b.xMax) / 2, Y = b.yMin - 40000, Z = 0 }
+    local route = Router.route(west, south, { fence = r.fence_out })
+    local ok = route ~= nil
+    for i = 1, route and #route.points - 1 or 0 do
+        if not Router.segment_ok(route.points[i], route.points[i + 1], r.fence_out) then ok = false end
+    end
+    check(ok, "a route past C0 goes around it")
+    local fenced = Router.route(west, { X = (b.xMin + b.xMax) / 2, Y = (b.yMin + b.yMax) / 2, Z = 0 },
+                                { fence = r.fence_out })
+    check(fenced == nil, "an outsider cannot be routed into C0")
+end
+
+print("")
 os.exit(fails == 0 and 0 or 1)
