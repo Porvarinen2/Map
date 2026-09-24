@@ -308,6 +308,28 @@ do
 end
 
 print("")
+print("== death detection ==")
+do
+    package.loaded["bridge.scum"] = nil
+    local SB = require("bridge.scum")
+    local function actor(t)
+        t.IsValid = function() return true end
+        t.GetFullName = function() return "BP_Drifter_Lvl_3_C x" end
+        return t
+    end
+    local ctrl = actor({})
+    local alive = actor({ GetController = function() return ctrl end })
+    local no_ctrl = actor({ GetController = function() return nil end })
+    local by_method = actor({ IsDead = function() return true end })
+    local by_hp = actor({ Health = 0 })
+    check(not SB.is_dead_actor(alive), "a possessed NPC with no other signal is alive")
+    check(SB.is_dead_actor(no_ctrl), "an unpossessed body is dead")
+    check(SB.is_dead_actor(by_method), "IsDead() is believed")
+    check(SB.is_dead_actor(by_hp), "zero health is dead")
+    check(SB.is_dead_actor(nil), "a destroyed actor is gone")
+end
+
+print("")
 print("== radiation zone ==")
 do
     local Ph = require("sim.physical")

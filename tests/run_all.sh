@@ -3,7 +3,7 @@
 set -e
 cd "$(dirname "$0")"
 fail=0
-for t in test_guide.lua test_engine.lua test_movement.lua test_world.lua test_lifecycle.lua test_bootstrap.lua; do
+for t in test_guide.lua test_engine.lua test_movement.lua test_world.lua test_physical.lua test_lifecycle.lua test_bootstrap.lua; do
   echo ""
   echo "=================== $t ==================="
   if lua5.4 "$t"; then :; else echo "*** $t FAILED"; fail=1; fi

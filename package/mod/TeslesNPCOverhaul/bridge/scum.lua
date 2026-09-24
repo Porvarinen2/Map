@@ -694,11 +694,61 @@ function B.actor(handle)
     return nil
 end
 
+-- Is an NPC dead? SCUM's armed NPCs do not expose a plain Health number, so
+-- 1.4.1 took every one of them for alive: two killed squad members stood up
+-- again on the next materialise. Several signals are read; the first that
+-- answers decides, and which one it was is logged once so the log proves it.
+local death_logged = {}
+local function note_death(how)
+    if not death_logged[how] and B.on_debug then
+        death_logged[how] = true
+        pcall(B.on_debug, "npc death detected via " .. how)
+    end
+end
+
+local function read_bool(a, name, as_method)
+    local ok, v = pcall(function()
+        if as_method then return a[name](a) end
+        return a[name]
+    end)
+    if ok and type(v) == "boolean" then return v end
+    return nil
+end
+
+function B.is_dead_actor(a)
+    if not valid(a) then return true, "actor gone" end
+    local v = read_bool(a, "IsDead", true)
+    if v ~= nil then if v then return true, "IsDead()" end return false end
+    v = read_bool(a, "IsAlive", true)
+    if v ~= nil then if not v then return true, "IsAlive()" end return false end
+    v = read_bool(a, "bIsDead")
+    if v then return true, "bIsDead" end
+    for _, prop in ipairs({ "Health", "CurrentHealth", "HP" }) do
+        local ok, hp = pcall(function() return a[prop] end)
+        if ok and type(hp) == "number" then
+            if hp <= 0 then return true, prop .. " <= 0" end
+            return false
+        end
+    end
+    -- A ragdoll: the body mesh has gone to physics simulation.
+    local okm, sim = pcall(function() return a.Mesh:IsSimulatingPhysics() end)
+    if okm and sim == true then return true, "ragdoll mesh" end
+    -- A dead pawn is unpossessed; a live one keeps its AI controller.
+    local okc, c = pcall(function() return a:GetController() end)
+    if okc and not valid(c) then return true, "no controller" end
+    return false
+end
+
 function B.is_alive(handle)
-    local a = B.actor(handle)
-    if not a then return false end
-    local ok, hp = pcall(function() return a.Health end)
-    if ok and type(hp) == "number" then return hp > 0 end
+    local rec = handles[handle]
+    if not rec then return false end
+    local dead, how = B.is_dead_actor(rec.actor)
+    if dead then
+        -- The first seconds after a spawn the pawn may not be possessed yet.
+        if how == "no controller" and os.time() - (rec.spawned_at or 0) < 6 then return true end
+        note_death(how)
+        return false
+    end
     return true
 end
 
@@ -986,8 +1036,7 @@ local vanilla = { i = 0, next_at = 0, miss = {} }
 B.vanilla = { removed = 0, scans = 0 }
 
 local function is_dead(a)
-    local ok, hp = pcall(function() return a.Health end)
-    return ok and type(hp) == "number" and hp <= 0
+    return (B.is_dead_actor(a))
 end
 
 local function remove_foreign(obj, is_controller)
@@ -1055,6 +1104,59 @@ function B.cleanup_vanilla(now)
     set_health("vanillaCleanup", "OK", string.format("%d SCUM armed NPCs removed, %d scans",
         B.vanilla.removed, B.vanilla.scans))
     return n
+end
+
+-- SCUM's behaviour tree restarts on its own (a perception event is enough),
+-- and then two authorities steer one pawn - the zig-zag. Called every few
+-- seconds per actor: a running brain is stopped again.
+B.brain_restarts = 0
+function B.keep_ownership(handle)
+    local a = B.actor(handle)
+    if not a then return false end
+    local c = B.controller(a)
+    if not c then return false end
+    local ok, running = pcall(function()
+        local bt = c.BrainComponent
+        return bt and bt:IsRunning()
+    end)
+    if ok and running == true then
+        pcall(function() c.BrainComponent:StopLogic("TeslesDirector") end)
+        B.brain_restarts = B.brain_restarts + 1
+        if B.brain_restarts <= 3 and B.on_debug then
+            pcall(B.on_debug, "SCUM AI had restarted on h" .. tostring(handle) .. "; stopped again")
+        end
+        return true
+    end
+    return false
+end
+
+-- Follow another actor: the engine tracks the moving goal itself, so the
+-- follower walks a continuous curve instead of hopping between points.
+function B.follow(handle, target_handle, radius)
+    local a, t = B.actor(handle), B.actor(target_handle)
+    if not (a and t) then return false end
+    local c = B.controller(a)
+    if not c then return false end
+    crumb("MoveToActor h" .. tostring(handle) .. " -> h" .. tostring(target_handle))
+    local ok, res = pcall(function()
+        return c:MoveToActor(t, radius or 300,
+            false,   -- stop on overlap
+            false,   -- no pathfinding: there is rarely navmesh out here
+            false,   -- no strafing
+            nil,
+            true)
+    end)
+    if not ok then return false end
+    return accepted_result(res)
+end
+
+-- Walking speed actually in effect, read back from the movement component.
+function B.walk_speed(handle)
+    local a = B.actor(handle)
+    if not a then return nil end
+    local ok, v = pcall(function() return a.CharacterMovement.MaxWalkSpeed end)
+    if ok and type(v) == "number" then return v end
+    return nil
 end
 
 function B.handle_count()

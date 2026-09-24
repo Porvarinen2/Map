@@ -375,7 +375,21 @@ function D:move_physical(group, dt)
         if Movement.update_index(mv, pos, Movement.tuning.arrive_physical) then
             st.target = nil
         else
-            local status = Movement.check_progress(mv, pos, now)
+            -- A physical leader that is walking is not stalled, however slow
+            -- SCUM lets it walk: skipping waypoints and replanning under a
+            -- slow walker is what made the squad zig-zag. Only a leader that
+            -- has stood still counts.
+            st.still = st.still or { at = now, pos = U.copy_vec(pos) }
+            if U.dist2d(st.still.pos, pos) > 150 then
+                st.still = { at = now, pos = U.copy_vec(pos) }
+                mv.stalls = 0
+            end
+            local status = "OK"
+            if now - st.still.at >= Movement.tuning.stall_sec then
+                st.still.at = now
+                mv.stalls = mv.stalls + 1
+                status = "STALL"
+            end
             if status ~= "OK" then
                 local action = Movement.handle_stall(mv, pos)
                 Log.event("STALL", group.gid, action .. " stalls=" .. tostring(mv.stalls))
@@ -426,26 +440,65 @@ function D:move_physical(group, dt)
         end
     end
 
-    -- ---- followers walk the leader's footprints
+    -- ---- followers: a column, each member following the one ahead of it.
+    -- The engine tracks a moving goal actor itself, so a follower walks one
+    -- continuous curve instead of stopping at footprint points and being
+    -- sent on again (the stop-go of 1.4.1). Where the engine refuses to
+    -- follow, the footprint hop is the fallback.
+    local ahead = lead
     local k = 0
     for _, m in ipairs(group.members) do
         if m.alive and m.runtime_id and m ~= lead then
             k = k + 1
-            local spot = footprint_back(st.trail, pos, k * STEER.spacing)
-            if spot and m.position then
-                spot.Z = m.position.Z
-                local f = st.follow[m.npcId]
-                local far = U.dist2d(m.position, spot) > STEER.follow_slack
-                local resend = not f
-                    or U.dist2d(f.target, spot) > STEER.follow_resend
-                    or now - f.at >= STEER.follow_sec
-                if far and resend then
+            local f = st.follow[m.npcId]
+            local gap = (ahead.position and m.position) and U.dist2d(ahead.position, m.position) or 0
+            local target_changed = not f or f.ahead ~= ahead.npcId
+            -- A follow request ends when the follower arrives; renew it as
+            -- soon as the one ahead has walked away again.
+            local renew = target_changed
+                or (gap > STEER.spacing + 180 and now - f.at >= 1)
+                or now - f.at >= 12
+            if renew and self.bridge.follow
+                and self.bridge.follow(m.runtime_id, ahead.runtime_id, STEER.spacing) then
+                st.follow[m.npcId] = { ahead = ahead.npcId, at = now }
+                self.counters.commands = self.counters.commands + 1
+            elseif renew and gap > STEER.follow_slack then
+                local spot = footprint_back(st.trail, pos, k * STEER.spacing)
+                if spot and m.position then
+                    spot.Z = m.position.Z
                     if self.bridge.move_to(m.runtime_id, spot, { direct = true, radius = 150 }) then
-                        st.follow[m.npcId] = { target = spot, at = now }
+                        st.follow[m.npcId] = { ahead = "trail", at = now }
                         self.counters.commands = self.counters.commands + 1
                     end
                 end
             end
+            ahead = m
+        end
+    end
+
+    -- SCUM's own AI must stay stopped outside a fight, or it steers too.
+    if group.act.state ~= S.COMBAT and self.bridge.keep_ownership
+        and now - (st.owned_at or 0) >= 4 then
+        st.owned_at = now
+        for _, m in ipairs(group.members) do
+            if m.alive and m.runtime_id then self.bridge.keep_ownership(m.runtime_id) end
+        end
+    end
+
+    -- Pace actually walked by the leader, logged now and then: the only way
+    -- to see from a log whether the speed the director asks for is the speed
+    -- SCUM uses.
+    st.pace = st.pace or { at = now, pos = U.copy_vec(pos) }
+    if now - st.pace.at >= 10 then
+        local v = U.dist2d(st.pace.pos, pos) / (now - st.pace.at)
+        st.pace = { at = now, pos = U.copy_vec(pos) }
+        D.pace_logs = D.pace_logs or 0
+        if D.pace_logs < 12 and self.bridge.on_debug and group.act.state == S.TRAVEL then
+            D.pace_logs = D.pace_logs + 1
+            local ws = self.bridge.walk_speed and self.bridge.walk_speed(lead.runtime_id)
+            pcall(self.bridge.on_debug, string.format(
+                "pace %s: %.0f UU/s walked, MaxWalkSpeed %s, asked %s",
+                group.gid, v, tostring(ws and math.floor(ws) or "?"), tostring(group.speed_set)))
         end
     end
 end

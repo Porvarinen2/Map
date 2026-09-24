@@ -60,9 +60,32 @@ end
 function B.move_to(h, dest)
     local a = B.actors[h]
     if not a then return false end
+    a.follow = nil
     local ok = a:command(dest)
     if ok then B.stats.moves = B.stats.moves + 1 else B.stats.rejects = B.stats.rejects + 1 end
     return ok
+end
+
+-- Follow a moving actor until within radius, like MoveToActor: the request
+-- ends on arrival.
+function B.follow(h, target, radius)
+    local a, t = B.actors[h], B.actors[target]
+    if not (a and t) then return false end
+    if B.rng:float() < B.move_reject_rate then return false end
+    a.follow = { h = target, r = radius or 300 }
+    B.stats.moves = B.stats.moves + 1
+    return true
+end
+
+B.brain_checks = 0
+function B.keep_ownership(h)
+    B.brain_checks = B.brain_checks + 1
+    return false
+end
+
+function B.walk_speed(h)
+    local a = B.actors[h]
+    return a and a.speed or nil
 end
 
 function B.stop(h)
@@ -95,6 +118,15 @@ function B.step(dt)
     local n = math.max(1, math.floor(dt / sub))
     for _ = 1, n do
         for _, a in pairs(B.actors) do
+            if a.alive and a.follow then
+                local t = B.actors[a.follow.h]
+                if not t then a.follow = nil
+                elseif U.dist2d(a.pos, t.pos) <= a.follow.r then
+                    a.follow, a.target = nil, nil
+                else
+                    a.target = U.copy_vec(t.pos)
+                end
+            end
             if a.alive then a:step(sub) end
         end
     end
