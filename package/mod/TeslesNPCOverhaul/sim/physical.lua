@@ -92,6 +92,28 @@ function Ph.member_spawn_point(group, index, count)
     return p
 end
 
+-- Which SCUM body an NPC wears. Uniformed and trained archetypes use the
+-- Guard bodies, everyone else the Drifter bodies; the variant follows where
+-- the group is and what the NPC is. The bridge falls back to the plain body,
+-- then to Drifter, when this build lacks a combination.
+local GUARD_ARCHETYPES = {
+    police = true, security = true, ex_military = true, veteran = true,
+    bunker_specialist = true, elite = true,
+}
+function Ph.body_family(m)
+    return GUARD_ARCHETYPES[m.archetype] and "Guard" or "Drifter"
+end
+function Ph.body_variant(group, m)
+    if group.zone == "RADIATION" or m.archetype == "radiation_specialist"
+        or group.class == "radiation_group" then
+        return "Radiation"
+    end
+    if group.class == "bunker_group" or m.archetype == "bunker_specialist" then
+        return "AbandonedBunker"
+    end
+    return nil
+end
+
 -- Materialises a group through the bridge. Returns spawned, failed, reason.
 function Ph.materialize(group, bridge, ctx)
     if not bridge or not bridge.available() then
@@ -138,9 +160,8 @@ function Ph.materialize(group, bridge, ctx)
                     -- Radiation-zone groups get SCUM's hazmat body variant
                     -- where the server exposes it; the bridge falls back to
                     -- the plain class when it does not.
-                    variant = (group.zone == "RADIATION") and "Radiation"
-                        or (group.class == "bunker_group") and "AbandonedBunker"
-                        or nil,
+                    family = Ph.body_family(m),
+                    variant = Ph.body_variant(group, m),
                     yaw = ctx.yaw,
                 })
                 if handle then

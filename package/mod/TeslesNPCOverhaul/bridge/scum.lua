@@ -12,7 +12,6 @@ B.health = {}
 B.stats = { spawns = 0, spawn_fail = 0, moves = 0, move_reject = 0,
             despawns = 0, position_reads = 0 }
 
-local CLASS_ROOT = "/Game/ConZ_Files/Characters/NPCs/Armed_NPCs/Blueprint/Drifter/"
 local CONTROLLER_CLASSES = {
     "NPCDrifterAIController", "NPCGuardAIController", "ArmedNPCBaseAIController",
 }
@@ -203,49 +202,61 @@ end
 
 -- --------------------------------------------------------------- catalog ---
 
-local function level_short(level)
-    level = math.max(1, math.min(5, math.floor(tonumber(level) or 1)))
-    return "BP_Drifter_Lvl_" .. tostring(level)
+-- Two bodies, as in the build's own #SpawnArmedNPC list: BP_Drifter_Lvl_N and
+-- BP_Guard_Lvl_N, each with the same variants - plain for levels 1-5,
+-- Radiation for 3-5, AbandonedBunker for 4-5.
+local FAMILIES = { "Drifter", "Guard" }
+local ARMED_ROOT = "/Game/ConZ_Files/Characters/NPCs/Armed_NPCs/Blueprint/"
+-- The Drifter folder is proven. The Guard folder is not: the candidates are
+-- tried once, on the level 1 class, and the first that loads is kept for the
+-- whole family.
+local FOLDER_CANDIDATES = {
+    Drifter = { "Drifter/" },
+    Guard = { "Guard/", "Guards/", "Drifter/", "", "Guard_NPC/", "Bunker_Guard/" },
+}
+local family_folder = { Drifter = "Drifter/" }
+local family_dead = {}
+
+local function clamp_level(level)
+    return math.max(1, math.min(5, math.floor(tonumber(level) or 1)))
 end
 
-local function level_path(level, variant)
-    local s = level_short(level)
-    if variant then
-        return CLASS_ROOT .. s .. "_" .. variant .. "." .. s .. "_" .. variant .. "_C"
-    end
-    return CLASS_ROOT .. s .. "." .. s .. "_C"
+local function short_name(family, level, variant)
+    local s = "BP_" .. family .. "_Lvl_" .. clamp_level(level)
+    if variant then s = s .. "_" .. variant end
+    return s
+end
+
+local function class_path(family, level, variant, folder)
+    local s = short_name(family, level, variant)
+    return ARMED_ROOT .. folder .. s .. "." .. s .. "_C"
 end
 
 local function class_is_valid(c)
     if not valid(c) then return false end
     local n = full_name(c)
-    return type(n) == "string" and n ~= "" and n:find("Drifter") ~= nil
+    return type(n) == "string" and (n:find("Drifter") ~= nil or n:find("Guard") ~= nil)
 end
 
 -- Finds, and if needed loads, the NPC classes. A Blueprint class is not in
--- memory until something uses it, so StaticFindObject alone found nothing on a
--- live server and no NPC could ever be spawned. LoadAsset (UE4SS, game thread
--- only - which is where the tick runs) loads the package; the class can then
--- be found by path.
---
--- At most one load per call: loading a Blueprint is disk and CPU work on the
--- game thread, and ten of them in one tick is a visible hitch. The old
--- fallback, FindFirstOf("BP_Drifter_Lvl_N_C"), walked the whole object array
--- five times per retry - the one-second ticks every 45 s in the server logs.
--- The variants this SCUM build actually has, from its own #SpawnArmedNPC
--- list: every level plain, Radiation only for 3-5 (1 and 2 do not exist - the
--- two failed loads in every log), AbandonedBunker only for 4 and 5.
+-- memory until something uses it; LoadAsset (UE4SS, game thread only - where
+-- the tick runs) loads the package, then the class is found by path. At most
+-- one load per tick: each is disk and CPU work on the game thread.
 local catalog_order = {}
-for level = 1, 5 do
-    catalog_order[#catalog_order + 1] = { level = level }
-end
-for level = 3, 5 do
-    catalog_order[#catalog_order + 1] = { level = level, variant = "Radiation" }
-end
-for level = 4, 5 do
-    catalog_order[#catalog_order + 1] = { level = level, variant = "AbandonedBunker" }
+for _, family in ipairs(FAMILIES) do
+    for level = 1, 5 do catalog_order[#catalog_order + 1] = { family = family, level = level } end
+    for level = 3, 5 do
+        catalog_order[#catalog_order + 1] = { family = family, level = level, variant = "Radiation" }
+    end
+    for level = 4, 5 do
+        catalog_order[#catalog_order + 1] = { family = family, level = level, variant = "AbandonedBunker" }
+    end
 end
 local catalog_failed = {}
+
+local function ckey(family, level, variant)
+    return family .. clamp_level(level) .. (variant or "")
+end
 
 local function find_class(path)
     local ok, c = pcall(function() return StaticFindObject(path) end)
@@ -253,68 +264,83 @@ local function find_class(path)
     return nil
 end
 
-local function load_class(level, variant)
-    local path = level_path(level, variant)
+local function load_path(path, label)
     local c = find_class(path)
     if c then return c, "found" end
     if not have("LoadAsset") then return nil, "LoadAsset unavailable" end
     crumb("LoadAsset " .. path)
     local ok, err = pcall(function() LoadAsset(path) end)
-    if not ok then
-        note_api_error("LoadAsset(" .. level_short(level) .. (variant and ("_" .. variant) or "") .. ")", err)
-    end
+    if not ok then note_api_error("LoadAsset(" .. label .. ")", err) end
     c = find_class(path)
     if c then return c, "loaded" end
     return nil, ok and "not found after load" or tostring(err)
+end
+
+local function load_class(family, level, variant)
+    if family_dead[family] then return nil, family .. " folder not found" end
+    local label = short_name(family, level, variant)
+    local folder = family_folder[family]
+    if folder then return load_path(class_path(family, level, variant, folder), label) end
+    -- Folder unknown: probe the candidates with this class.
+    for _, f in ipairs(FOLDER_CANDIDATES[family] or {}) do
+        local c, how = load_path(class_path(family, level, variant, f), label)
+        if c then
+            family_folder[family] = f
+            if B.on_catalog then pcall(B.on_catalog, family .. " folder", ARMED_ROOT .. f) end
+            return c, how
+        end
+    end
+    family_dead[family] = true
+    return nil, "no " .. family .. " folder among " .. #(FOLDER_CANDIDATES[family] or {}) .. " candidates"
 end
 
 function B.refresh_catalog(max_loads)
     max_loads = max_loads or 1
     local loads = 0
     for _, e in ipairs(catalog_order) do
-        local key = e.level .. (e.variant or "")
+        local key = ckey(e.family, e.level, e.variant)
         local cached = class_cache[key]
         if not (cached and valid(cached)) and not catalog_failed[key] and loads < max_loads then
             loads = loads + 1
-            local c, how = load_class(e.level, e.variant)
+            local c, how = load_class(e.family, e.level, e.variant)
             if c then
                 class_cache[key] = c
-                if B.on_catalog then pcall(B.on_catalog, key, how) end
+                if B.on_catalog then pcall(B.on_catalog, short_name(e.family, e.level, e.variant), how) end
             else
                 catalog_failed[key] = how
-                if B.on_catalog then pcall(B.on_catalog, key, "FAILED: " .. tostring(how)) end
+                if B.on_catalog then
+                    pcall(B.on_catalog, short_name(e.family, e.level, e.variant), "FAILED: " .. tostring(how))
+                end
             end
         end
     end
 
-    local found, missing = 0, {}
+    local found, missing, pending = 0, {}, 0
     for level = 1, 5 do
-        if class_cache[tostring(level)] then found = found + 1
+        if class_cache[ckey("Drifter", level)] then found = found + 1
         else missing[#missing + 1] = "L" .. level end
     end
-    local pending = 0
+    local guards = 0
+    for level = 1, 5 do
+        if class_cache[ckey("Guard", level)] then guards = guards + 1 end
+    end
     for _, e in ipairs(catalog_order) do
-        local key = e.level .. (e.variant or "")
+        local key = ckey(e.family, e.level, e.variant)
         if not class_cache[key] and not catalog_failed[key] then pending = pending + 1 end
     end
     B.catalog_found = found
     B.catalog_pending = pending
-    if found >= 5 then
-        set_health("spawnCatalog", "OK", found .. " NPC classes loaded")
+    local detail = string.format("Drifter %d/5, Guard %d/5", found, guards)
+    if found >= 5 and pending == 0 then
+        set_health("spawnCatalog", guards >= 5 and "OK" or "DEGRADED", detail)
     elseif pending > 0 then
-        set_health("spawnCatalog", "PENDING", found .. " loaded, " .. pending .. " still to load")
-    elseif found > 0 then
-        set_health("spawnCatalog", "DEGRADED",
-            found .. " classes, missing " .. table.concat(missing, ","))
+        set_health("spawnCatalog", "PENDING", detail .. ", " .. pending .. " still to load")
     else
-        set_health("spawnCatalog", "DEGRADED", "no Drifter class could be loaded")
+        set_health("spawnCatalog", "DEGRADED", detail .. ", missing " .. table.concat(missing, ","))
     end
     return found
 end
 
--- One class per tick until every class is either loaded or has failed once.
--- After that the catalog is left alone: a failure is written down, not
--- retried every tick.
 function B.maybe_refresh_catalog(now)
     if (B.catalog_pending or 1) == 0 then return false end
     local before = B.catalog_found or 0
@@ -322,11 +348,15 @@ function B.maybe_refresh_catalog(now)
     return (B.catalog_found or 0) > before
 end
 
-function B.class_for(level, variant)
-    local key = math.max(1, math.min(5, math.floor(level or 1))) .. (variant or "")
-    local c = class_cache[key]
-    if c and valid(c) then return c end
-    if variant then return B.class_for(level, nil) end
+-- Picks the class for a request. A missing variant falls back to the plain
+-- body of the same family, a missing family to Drifter: an NPC in the wrong
+-- clothes beats no NPC.
+function B.class_for(level, variant, family)
+    family = family or "Drifter"
+    local c = class_cache[ckey(family, level, variant)]
+    if c and valid(c) then return c, family, variant end
+    if variant then return B.class_for(level, nil, family) end
+    if family ~= "Drifter" then return B.class_for(level, nil, "Drifter") end
     return nil
 end
 
@@ -542,7 +572,7 @@ function B.spawn_npc(req)
         return nil, "NO_WORLD"
     end
     local variant = req.variant
-    local cls = B.class_for(req.level, variant)
+    local cls, used_family, used_variant = B.class_for(req.level, variant, req.family)
     if not cls then
         set_health("physicalVirtualization", "PENDING", "NPC_CLASS_UNAVAILABLE")
         B.stats.spawn_fail = B.stats.spawn_fail + 1
@@ -568,8 +598,9 @@ function B.spawn_npc(req)
     end)
     B.spawn_logged = (B.spawn_logged or 0) + 1
     if B.spawn_logged <= 5 and B.on_debug then
-        pcall(B.on_debug, string.format("spawn L%s %s at %.0f %.0f %.0f -> %s",
-            tostring(req.level), tostring(variant or "base"), pos.X, pos.Y, pos.Z,
+        pcall(B.on_debug, string.format("spawn %s L%s %s at %.0f %.0f %.0f -> %s",
+            tostring(used_family), tostring(req.level), tostring(used_variant or "base"),
+            pos.X, pos.Y, pos.Z,
             (ok and valid(actor)) and ("actor " .. full_name(actor))
             or ("FAILED: " .. tostring(actor))))
     end

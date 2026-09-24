@@ -225,10 +225,14 @@ do
     while (SB.catalog_pending or 1) > 0 and calls < 20 do
         SB.maybe_refresh_catalog(1000 + calls); calls = calls + 1
     end
-    check(loads == 10, "every Drifter class is loaded once (" .. loads .. " loads)")
-    check(calls == 10, "one load per tick, never a burst (" .. calls .. " ticks)")
-    check(SB.catalog_found == 5, "all five levels resolve after loading")
+    check(loads == 20, "every Drifter and Guard class is loaded once (" .. loads .. " loads)")
+    check(calls == 20, "one load per tick, never a burst (" .. calls .. " ticks)")
+    check(SB.catalog_found == 5, "all five Drifter levels resolve after loading")
     check(SB.class_for(3, "Radiation") ~= nil, "a radiation variant resolves")
+    local _, fam = SB.class_for(4, "AbandonedBunker", "Guard")
+    check(fam == "Guard", "a Guard bunker variant resolves as Guard")
+    local _, fam1, var1 = SB.class_for(1, "Radiation", "Guard")
+    check(fam1 == "Guard" and var1 == nil, "a missing variant falls back to the plain body of the same family")
     local before = loads
     for k = 1, 30 do SB.maybe_refresh_catalog(2000 + k) end
     check(loads == before, "a complete catalog is never reloaded")
