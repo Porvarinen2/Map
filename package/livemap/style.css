@@ -156,3 +156,13 @@ h1 small{font-size:11px;color:var(--dim);font-weight:400;margin-left:7px}
 #toast{position:absolute;display:none;z-index:60;left:50%;bottom:22px;transform:translateX(-50%);
   background:#12301ef2;border:1px solid #5fd67f88;color:#d8ffe4;border-radius:9px;
   padding:8px 13px;font-size:12px;box-shadow:0 6px 24px #000a;white-space:nowrap}
+#ctxMenu .sep{height:1px;background:var(--line);margin:4px 2px}
+#ctxMenu button.danger{color:#ff9090}
+#ctxMenu .spawnform{padding:6px 8px 4px;border-top:1px solid var(--line);margin-top:4px}
+#ctxMenu .spawnform label{display:flex;justify-content:space-between;align-items:center;gap:8px;
+  font-size:11.5px;color:var(--muted);margin:4px 0}
+#ctxMenu .spawnform select{background:#0e1218;color:var(--text);border:1px solid var(--line-2);
+  border-radius:6px;padding:4px 6px;font-size:12px;max-width:170px}
+#ctxMenu .spawnform .go{background:#1f3a28;border:1px solid #5fd67f88;color:#d8ffe4;text-align:center;
+  margin-top:6px}
+#ctxMenu .spawnform .go:hover{background:#28503a}

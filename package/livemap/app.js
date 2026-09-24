@@ -309,7 +309,25 @@ function drawGrid() {
   ctx.restore();
 }
 
-function colorFor(g) { return CLASS_COLOR[g.class] || "#d8dde4"; }
+// Own classes (ryhmat.lua) bring their colour; without one, a stable colour
+// is made from the class name.
+function classColor(key) {
+  if (CLASS_COLOR[key]) return CLASS_COLOR[key];
+  const def = (state.classDefs || []).find(d => d.key === key);
+  if (def && def.color) return def.color;
+  let h = 0;
+  for (const ch of String(key)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return `hsl(${h % 360},70%,68%)`;
+}
+function colorFor(g) { return classColor(g.class); }
+// Colour with an alpha suffix (hex "aa"), whatever form the colour is in.
+function withAlpha(c, hex) {
+  if (/^#[0-9a-f]{6}$/i.test(c)) return c + hex;
+  if (/^#[0-9a-f]{3}$/i.test(c)) return "#" + c[1] + c[1] + c[2] + c[2] + c[3] + c[3] + hex;
+  const a = (parseInt(hex, 16) / 255).toFixed(2);
+  if (c.startsWith("hsl(")) return c.replace("hsl(", "hsla(").replace(")", `,${a})`);
+  return c;
+}
 
 function poiShape(x, y, st, k) {
   const r = st.r * k;
@@ -434,7 +452,7 @@ function drawQueue(g, isSel) {
   let from = (g.goal_x != null) ? worldToScreen(g.goal_x, g.goal_y) : worldToScreen(g.x, g.y);
   ctx.save();
   ctx.lineWidth = isSel ? 2 : 1;
-  ctx.strokeStyle = isSel ? col : col + "70";
+  ctx.strokeStyle = isSel ? col : withAlpha(col, "70");
   ctx.setLineDash(isSel ? [4, 4] : [2, 5]);
   ctx.beginPath(); ctx.moveTo(from.x, from.y);
   const pts = q.map(p => worldToScreen(p.x, p.y));
@@ -506,7 +524,7 @@ function drawTrail(g) {
   const t = trails.get(g.gid);
   if (!t || t.length < 2) return;
   ctx.save();
-  ctx.strokeStyle = colorFor(g) + (g === selected ? "cc" : "55");
+  ctx.strokeStyle = withAlpha(colorFor(g), g === selected ? "cc" : "55");
   ctx.lineWidth = g === selected ? 2 : 1;
   ctx.beginPath();
   t.forEach((p, i) => {
@@ -959,7 +977,7 @@ function renderLegend() {
   const seen = new Map();
   (state.groups || []).forEach(g => seen.set(g.class, g.class_fi));
   const rows = [...seen.entries()].map(([k, fi]) =>
-    `<span class="row"><i class="sw" style="background:${CLASS_COLOR[k] || "#ccc"}"></i>${esc(fi)}</span>`
+    `<span class="row"><i class="sw" style="background:${classColor(k)}"></i>${esc(fi)}</span>`
   ).join("");
   const kinds = Object.entries(POI_STYLE).map(([k, st]) =>
     `<span class="row"><i class="sw poi ${st.shape}" style="background:${st.c}"></i>${esc(st.fi)}</span>`
@@ -1010,6 +1028,7 @@ async function poll() {
       if (live) selected = live;
     }
     renderHud(); renderLegend(); renderPanel(); draw();
+    checkCommandResults();
   } catch (e) {
     pollFails++;
     lastError = String(e.message || e);
@@ -1108,21 +1127,125 @@ wrap.addEventListener("contextmenu", e => {
   const tp = `#Teleport ${x} ${y} 0`;
   const g = pick(sx, sy);
   const gtp = g ? `#Teleport ${Math.round(g.x)} ${Math.round(g.y)} 0` : null;
+  ctxMenu.dataset.x = x; ctxMenu.dataset.y = y;
   ctxMenu.innerHTML = `
     <div class="hd">${esc(sectorOf(w.x, w.y))} · X ${x} / Y ${y}</div>
     <button data-copy="${esc(tp)}">Kopioi teleport-komento</button>
     ${gtp ? `<button data-copy="${esc(gtp)}">Teleporttaa ryhmän ${esc(g.gid)} luo</button>` : ""}
-    <button data-copy="${x} ${y} 0">Kopioi koordinaatit</button>`;
+    <button data-copy="${x} ${y} 0">Kopioi koordinaatit</button>
+    <div class="sep"></div>
+    <button data-open-spawn="1">Spawnaa ryhmä tähän…</button>
+    ${g ? `<button class="danger" data-remove="${esc(g.gid)}">Poista ryhmä ${esc(g.gid)}</button>` : ""}
+    <div class="spawnform" id="spawnForm" style="display:none"></div>`;
   ctxMenu.style.display = "block";
   ctxMenu.style.left = Math.min(sx, wrap.clientWidth - 250) + "px";
-  ctxMenu.style.top = Math.min(sy, wrap.clientHeight - 140) + "px";
+  ctxMenu.style.top = Math.max(4, Math.min(sy, wrap.clientHeight - 330)) + "px";
   hideTip();
 });
 ctxMenu.addEventListener("mousedown", e => e.stopPropagation());
 ctxMenu.addEventListener("click", e => {
   const b = e.target.closest("[data-copy]");
-  if (b) { copyText(b.dataset.copy); hideCtx(); }
+  if (b) { copyText(b.dataset.copy); hideCtx(); return; }
+  if (e.target.closest("[data-open-spawn]")) { openSpawnForm(); return; }
+  const r = e.target.closest("[data-remove]");
+  if (r) {
+    if (confirm(`Poistetaanko ryhmä ${r.dataset.remove} pysyvästi?`)) {
+      sendCommand({ op: "remove", gid: r.dataset.remove });
+    }
+    hideCtx();
+    return;
+  }
+  if (e.target.closest("[data-do-spawn]")) {
+    const cls = document.getElementById("spawnClass").value;
+    const size = document.getElementById("spawnSize").value;
+    sendCommand({ op: "spawn", class: cls, size, x: ctxMenu.dataset.x, y: ctxMenu.dataset.y });
+    hideCtx();
+  }
 });
+ctxMenu.addEventListener("change", e => {
+  if (e.target.id === "spawnClass") fillSizes();
+});
+
+/* ------------------------------------------------- spawn / remove squads */
+
+// The server hands its session token only to this page; commands carry it.
+let cmdToken = null;
+const pendingCmds = new Map();
+async function fetchToken() {
+  try {
+    const r = await fetch("api/status?t=" + Date.now(), { cache: "no-store" });
+    const j = await r.json();
+    cmdToken = j.token || null;
+  } catch (e) { cmdToken = null; }
+}
+fetchToken();
+
+function classDefs() {
+  return (state.classDefs && state.classDefs.length) ? state.classDefs : [];
+}
+
+function openSpawnForm() {
+  const f = document.getElementById("spawnForm");
+  const defs = classDefs();
+  if (!defs.length) { showToast("Luokkatiedot puuttuvat - odota että kartta on LIVE"); return; }
+  const last = localStorageGet("spawnClass") || "police_patrol";
+  f.innerHTML = `
+    <label>Luokka<select id="spawnClass">${defs.map(d =>
+      `<option value="${esc(d.key)}"${d.key === last ? " selected" : ""}>${esc(d.fi)}</option>`).join("")}</select></label>
+    <label>Koko<select id="spawnSize"></select></label>
+    <button class="go" data-do-spawn="1">Spawnaa</button>`;
+  f.style.display = "block";
+  fillSizes();
+}
+
+function fillSizes() {
+  const cls = document.getElementById("spawnClass");
+  const sel = document.getElementById("spawnSize");
+  if (!cls || !sel) return;
+  const d = classDefs().find(x => x.key === cls.value) || { min: 1, max: 5 };
+  let html = "";
+  for (let i = d.min; i <= d.max; i++) html += `<option${i === d.max ? " selected" : ""}>${i}</option>`;
+  sel.innerHTML = html;
+  localStorageSet("spawnClass", cls.value);
+}
+
+function localStorageGet(k) { try { return localStorage.getItem("tesles." + k); } catch (e) { return null; } }
+function localStorageSet(k, v) { try { localStorage.setItem("tesles." + k, v); } catch (e) {} }
+
+async function sendCommand(params) {
+  if (!cmdToken) await fetchToken();
+  if (!cmdToken) { showToast("Karttapalvelin ei vastaa - onko START_LIVEMAP.bat auki?"); return; }
+  const q = new URLSearchParams(Object.assign({}, params, { token: cmdToken }));
+  try {
+    const r = await fetch("api/command?" + q.toString(), { cache: "no-store" });
+    const j = await r.json();
+    if (j.ok) {
+      pendingCmds.set(j.id, Date.now());
+      showToast("Pyyntö lähetetty modille…");
+    } else {
+      if ((j.error || "").includes("token")) cmdToken = null;
+      showToast("Ei onnistunut: " + (j.error || "tuntematon virhe"));
+    }
+  } catch (e) {
+    showToast("Ei yhteyttä karttapalvelimeen");
+  }
+}
+
+// The mod reports each command's outcome in the live state.
+function checkCommandResults() {
+  for (const r of (state.commandResults || [])) {
+    if (pendingCmds.has(r.id)) {
+      pendingCmds.delete(r.id);
+      showToast((r.ok ? "✔ " : "✖ ") + r.text);
+    }
+  }
+  for (const [id, t] of pendingCmds) {
+    if (Date.now() - t > 20000) {
+      pendingCmds.delete(id);
+      showToast("Modi ei vastannut - onko palvelin käynnissä?");
+    }
+  }
+}
 window.addEventListener("mousedown", e => { if (e.button !== 2) hideCtx(); });
 window.addEventListener("keydown", e => { if (e.key === "Escape") hideCtx(); });
 wrap.addEventListener("wheel", hideCtx, { passive: true });

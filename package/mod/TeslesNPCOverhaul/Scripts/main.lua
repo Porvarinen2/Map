@@ -162,8 +162,29 @@ end
 
 -- Push the config's tunables into the modules that own them.
 Physical.tuning.render_uu = CFG.RenderRadiusUU or Physical.tuning.render_uu
+need("sim.commands").configure(OUTPUT_DIR, SEP)
 need("npc.stress").tuning.recovery_per_5min = CFG.StressRecoveryPer5Min
     or need("npc.stress").tuning.recovery_per_5min
+-- The owner's own squad classes (ryhmat.lua, kept across updates).
+do
+    local okr, defs = pcall(require, "ryhmat")
+    if okr and type(defs) == "table" then
+        local Groups = need("npc.groups")
+        local Diplomacy = need("npc.diplomacy")
+        for _, line in ipairs(Groups.register_custom(defs)) do boot(line) end
+        for _, cls in ipairs(Groups.list) do
+            if cls.custom then
+                if cls.authority then Diplomacy.add_authority(cls.key) end
+                for _, other in ipairs(cls.hostile_to or {}) do
+                    Diplomacy.set_default(cls.key, other, -0.7)
+                end
+            end
+        end
+    elseif not okr then
+        boot("ryhmat.lua could not be read: " .. tostring(defs))
+    end
+end
+
 -- Squad gear lives in its own file so an update never overwrites it.
 do
     local okv, gear = pcall(require, "varusteet")

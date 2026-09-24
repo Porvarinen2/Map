@@ -359,19 +359,22 @@ Step 4 "Asennetaan TESLES NPC OVERHAUL"
 $target = Join-Path $mods $MOD
 $keepState = $null
 $keepOutput = $null
-$keepGear = $null
+$keepUser = @{}
 if (Test-Path -LiteralPath $target) {
   Copy-Item -LiteralPath $target -Destination (Join-Path $backup $MOD) -Recurse -Force
   Say "Vanha versio varmuuskopioitiin." "Gray"
   # Two folders have to survive an update: the saved world, and the output the
   # live map reads. Wiping output\ made the map say "live_state.json does not
   # exist yet" after every reinstall, which looked like the mod had never run.
-  # The owner's own squad gear survives every update.
-  $gearFile = Join-Path $target 'varusteet.lua'
-  $keepGear = $null
-  if (Test-Path -LiteralPath $gearFile) {
-    $keepGear = Join-Path ([System.IO.Path]::GetTempPath()) "tesles_varusteet_$stamp.lua"
-    Copy-Item -LiteralPath $gearFile -Destination $keepGear -Force
+  # The owner's own files survive every update: squad gear and own classes.
+  $keepUser = @{}
+  foreach ($uf in @('varusteet.lua', 'ryhmat.lua')) {
+    $ufPath = Join-Path $target $uf
+    if (Test-Path -LiteralPath $ufPath) {
+      $tmp = Join-Path ([System.IO.Path]::GetTempPath()) "tesles_${stamp}_$uf"
+      Copy-Item -LiteralPath $ufPath -Destination $tmp -Force
+      $keepUser[$uf] = $tmp
+    }
   }
   foreach ($keep in @('state', 'output')) {
     $src = Join-Path $target $keep
@@ -397,10 +400,13 @@ if ($keepState) {
   Remove-Item -LiteralPath $keepState -Recurse -Force
   Say "Maailman tila palautettiin." "Green"
 }
-if ($keepGear -and (Test-Path -LiteralPath $keepGear)) {
-  Copy-Item -LiteralPath $keepGear -Destination (Join-Path $target 'varusteet.lua') -Force
-  Remove-Item -LiteralPath $keepGear -Force
-  Say "Omat varusteet (varusteet.lua) sailytettiin." "Green"
+foreach ($uf in $keepUser.Keys) {
+  $tmp = $keepUser[$uf]
+  if (Test-Path -LiteralPath $tmp) {
+    Copy-Item -LiteralPath $tmp -Destination (Join-Path $target $uf) -Force
+    Remove-Item -LiteralPath $tmp -Force
+    Say "Omat asetukset sailytettiin: $uf" "Green"
+  }
 }
 if ($keepOutput) {
   Copy-Item -Path (Join-Path $keepOutput '*') -Destination $outDirEarly -Recurse -Force `
@@ -548,5 +554,6 @@ Write-Host ""
 Say "Jos jokin ei toimi, aja DIAGNOSE.bat." "DarkGray"
 Say "Asetukset: $target\config.lua" "DarkGray"
 Say "Omat varusteet: $target\varusteet.lua" "DarkGray"
+Say "Omat ryhmatyypit: $target\ryhmat.lua" "DarkGray"
 Write-Host ""
 if (-not $NoPause) { Read-Host "  Enter sulkee" }

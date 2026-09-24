@@ -1,0 +1,124 @@
+-- Commands from the live map: spawn a squad at a spot, remove a squad.
+--
+-- The map's server appends one command per line to output/commands.txt:
+--   <id> spawn <class> <size> <x> <y>
+--   <id> remove <gid>
+-- Every couple of seconds the director takes the file (rename first, so a
+-- line written meanwhile lands in a fresh file and is not lost), runs each
+-- command, and reports the outcome in the live state for the map to show.
+local U = require("core.util")
+local Grid = require("world.navgrid")
+local Zones = require("world.zones")
+local POI = require("world.pois")
+local GroupClasses = require("npc.groups")
+local Factory = require("npc.factory")
+local Population = require("sim.population")
+local Physical = require("sim.physical")
+local Log = require("core.log")
+
+local C = {}
+
+C.dir = nil
+C.sep = "/"
+C.interval = 2
+C.MAX_RESULTS = 12
+
+function C.configure(dir, sep)
+    C.dir, C.sep = dir, sep or "/"
+end
+
+local function result(director, id, ok, text)
+    director.command_results = director.command_results or {}
+    local list = director.command_results
+    list[#list + 1] = { id = id, ok = ok, text = text, t = director.now }
+    while #list > C.MAX_RESULTS do table.remove(list, 1) end
+    Log.event(ok and "COMMAND" or "COMMAND_FAIL", "MAP", text)
+end
+
+-- Spawns a squad of `class` at x, y. Refuses what the world's rules forbid:
+-- water, the outposts, and the C0 radiation zone for anyone but the radiation
+-- squads (and those outside it).
+function C.spawn(director, id, class, size, x, y)
+    local cls = GroupClasses.get(class)
+    if not cls then return result(director, id, false, "tuntematon luokka: " .. tostring(class)) end
+    local pos = { X = x, Y = y, Z = 0 }
+    if not (U.finite_vec(pos) and Zones.sector(pos) ~= "OUT") then
+        return result(director, id, false, "piste on kartan ulkopuolella")
+    end
+    if not Grid.is_passable(pos) then
+        local land = Grid.snap_to_land(pos)
+        if not land or U.dist2d(land, pos) > 20000 then
+            return result(director, id, false, "piste on vedessä")
+        end
+        pos = land
+    end
+    if POI.near_outpost and POI.near_outpost(pos) then
+        return result(director, id, false, "outpostin lähellä ei saa olla NPC:itä")
+    end
+    local in_c0 = Zones.sector(pos) == "C0"
+    if in_c0 and class ~= "radiation_group" then
+        return result(director, id, false, "C0 on vain säteilyryhmille")
+    end
+    if class == "radiation_group" and not in_c0 then
+        return result(director, id, false, "säteilyryhmä pysyy C0:ssa")
+    end
+    local world = director.world
+    size = math.floor(tonumber(size) or cls.size[1])
+    size = math.max(cls.size[1], math.min(cls.size[2], size))
+    local g = Factory.new_group({
+        id = world.next_group_id, class = class,
+        seed = director.rng:int(1, 2 ^ 30), position = pos, home = pos, size = size,
+        zone = in_c0 and "RADIATION" or nil,
+    })
+    Population.add_group(world, g)
+    result(director, id, true, string.format("%s (%s, %d NPC) spawnattu %s", g.gid, cls.fi,
+        #g.members, Zones.sector(pos)))
+    return g
+end
+
+function C.remove(director, id, gid)
+    local world = director.world
+    local g = world.by_gid[gid]
+    if not g then return result(director, id, false, "ryhmää " .. tostring(gid) .. " ei ole") end
+    if g.physical then Physical.virtualize(g, director.bridge, {}) end
+    for i, x in ipairs(world.groups) do
+        if x == g then table.remove(world.groups, i); break end
+    end
+    world.by_gid[gid] = nil
+    result(director, id, true, gid .. " poistettu")
+    return true
+end
+
+function C.run_line(director, line)
+    local parts = {}
+    for w in tostring(line):gmatch("%S+") do parts[#parts + 1] = w end
+    local id, op = parts[1], parts[2]
+    if not (id and op) then return end
+    if op == "spawn" then
+        C.spawn(director, id, parts[3], tonumber(parts[4]), tonumber(parts[5]), tonumber(parts[6]))
+    elseif op == "remove" then
+        C.remove(director, id, parts[3])
+    else
+        result(director, id, false, "tuntematon komento " .. op)
+    end
+end
+
+function C.poll(director, now)
+    if not C.dir then return end
+    if now - (director.commands_at or 0) < C.interval then return end
+    director.commands_at = now
+    local file = C.dir .. C.sep .. "commands.txt"
+    local work = C.dir .. C.sep .. "commands.processing"
+    if not os.rename(file, work) then return end
+    local f = io.open(work, "r")
+    if not f then return end
+    local text = f:read("*a") or ""
+    f:close()
+    os.remove(work)
+    for line in text:gmatch("[^\r\n]+") do
+        local ok, err = pcall(C.run_line, director, line)
+        if not ok then result(director, "?", false, "komento epäonnistui: " .. tostring(err)) end
+    end
+end
+
+return C

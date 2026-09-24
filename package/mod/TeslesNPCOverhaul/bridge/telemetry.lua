@@ -288,7 +288,14 @@ function T.snapshot(world, bridge, director, extra)
             nearest_m = best and math.floor(best.d / 100) or nil }
     end
 
+    local classDefs = {}
+    for _, c in ipairs(GroupClasses.list) do
+        classDefs[#classDefs + 1] = { key = c.key, fi = c.fi, min = c.size[1], max = c.size[2],
+                                      color = c.color, custom = c.custom or nil }
+    end
     return {
+        classDefs = classDefs,
+        commandResults = director and director.command_results or {},
         players = players,
         version = extra and extra.version or "1.0.0",
         traitDefs = traitDefs,

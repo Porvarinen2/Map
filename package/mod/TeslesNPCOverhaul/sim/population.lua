@@ -160,6 +160,35 @@ function P.generate(world, log)
     return world
 end
 
+-- The owner's own classes (ryhmat.lua) keep their promised number of squads
+-- on the map: missing ones are created at a place the class cares about.
+function P.ensure_custom(world, log)
+    local added = 0
+    local rng = RNG.new((world.seed or 1) + (world.next_group_id or 0) * 104729)
+    for _, cls in ipairs(GroupClasses.list) do
+        if cls.custom and (cls.guaranteed or 0) > 0 then
+            local have = 0
+            for _, g in ipairs(world.groups) do
+                if g.class == cls.key and P.group_alive(g) then have = have + 1 end
+            end
+            for _ = have + 1, cls.guaranteed do
+                local pos = anchor_point(rng, function(poi)
+                    return cls.poi_weights[poi.kind] ~= nil and not Zones.reserved_by_sector[poi.sector]
+                end) or anchor_point(rng, function(poi) return not Zones.reserved_by_sector[poi.sector] end)
+                if not pos then break end
+                local g = Factory.new_group({
+                    id = world.next_group_id, class = cls.key, seed = rng:next(),
+                    position = pos, home = pos,
+                })
+                P.add_group(world, g)
+                added = added + 1
+                if log then log("own class " .. cls.key .. ": added " .. g.gid) end
+            end
+        end
+    end
+    return added
+end
+
 -- Keeps the exclusive zones exactly as the design says, for a new world and
 -- for a saved one from an older version: the zone's class has its fixed
 -- number of squads, all of them inside, and no other squad stands in it.

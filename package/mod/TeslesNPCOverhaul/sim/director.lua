@@ -27,6 +27,7 @@ local Leadership = require("npc.leadership")
 local Diplomacy = require("npc.diplomacy")
 local Stress = require("npc.stress")
 local Behaviour = require("sim.behaviour")
+local Commands = require("sim.commands")
 
 local D = {}
 D.__index = D
@@ -600,6 +601,23 @@ end
 
 -- ---------------------------------------------------------------- combat ---
 
+-- Gear for a squad: everything under KAIKKI (all squads) plus the class's
+-- own list, from varusteet.lua.
+function D:loadout_for(group)
+    local all = self.cfg.Loadouts
+    if not all then return nil end
+    local common, own = all.KAIKKI or all.ALL, all[group.class]
+    if not common and not own then return nil end
+    local out = {}
+    for _, k in ipairs({ "Clothes", "Weapons", "Items" }) do
+        out[k] = {}
+        for _, src in ipairs({ common or {}, own or {} }) do
+            for _, n in ipairs(src[k] or {}) do out[k][#out[k] + 1] = n end
+        end
+    end
+    return out
+end
+
 local function now_ge(now, t, sec) return t == nil or now - t >= sec end
 
 function D:run_combat(group, contact, zpressure)
@@ -760,11 +778,14 @@ function D:tick(now)
     end
 
     self:run_kill_checks()
+    -- Spawn / remove requests from the live map.
+    Commands.poll(self, now)
 
     -- The radiation zone keeps its fixed squads, inside, and nobody else.
     if self.now >= (self.reserve_check_at or 0) then
         self.reserve_check_at = self.now + 60
         Population.ensure_reserved(world, function(m) Log.event("RESERVED", "", m) end)
+        Population.ensure_custom(world, function(m) Log.event("OWN_CLASS", "", m) end)
     end
 
     -- Survivors band together before the empty group is pruned away.
@@ -853,7 +874,7 @@ function D:tick_group(group, players, physical_groups, dt)
         local spawned, failed, why = Physical.materialize(group, self.bridge, {
             now = now,
             take_ownership = self.cfg.TakeOwnership ~= false,
-            loadout = self.cfg.Loadouts and self.cfg.Loadouts[group.class] or nil,
+            loadout = self:loadout_for(group),
             yaw = math.floor(U.deg((group.mv and group.mv.smooth_heading) or 0)) % 360,
             on_spawn = function(g, m, pos)
                 Log.event("MATERIALIZE", g.gid, m.npcId)

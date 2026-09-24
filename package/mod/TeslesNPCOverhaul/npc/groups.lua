@@ -97,6 +97,68 @@ G.count = #G.list
 
 function G.get(key) return G.by_key[key] end
 
+-- --------------------------------------------------------- own classes ---
+
+-- Squad classes the owner adds in ryhmat.lua (kept across updates). Finnish
+-- keys, checked and filled with sensible defaults; every problem is reported
+-- back as a line for boot.log instead of stopping the mod.
+local POI_KINDS = { CITY = true, VILLAGE = true, HUNTING = true, MILITARY = true,
+    BUNKER = true, ABANDONED_BUNKER = true, RESEARCH = true, INDUSTRIAL = true,
+    MEDICAL = true, LANDMARK = true }
+
+function G.register_custom(defs)
+    local notes = {}
+    local Archetypes = require("npc.archetypes")
+    for i, d in ipairs(defs or {}) do
+        local key = d.key or d.avain
+        if type(key) ~= "string" or not key:match("^[a-z][a-z0-9_]*$") then
+            notes[#notes + 1] = "ryhmat.lua #" .. i .. ": avain puuttuu tai on virheellinen (pienet kirjaimet ja _)"
+        elseif G.by_key[key] and not G.by_key[key].custom then
+            notes[#notes + 1] = "ryhmat.lua: " .. key .. " on jo modin oma luokka - valitse toinen avain"
+        else
+            local size = d.koko or d.size or { 2, 4 }
+            local lo = math.max(1, math.min(5, math.floor(tonumber(size[1]) or 2)))
+            local hi = math.max(lo, math.min(5, math.floor(tonumber(size[2] or size[1]) or lo)))
+            local arche = {}
+            for _, a in ipairs(d.tausta or d.archetypes or { "survivor" }) do
+                if Archetypes.get(a) then arche[#arche + 1] = a
+                else notes[#notes + 1] = "ryhmat.lua: " .. key .. ": tuntematon tausta " .. tostring(a) end
+            end
+            if #arche == 0 then arche = { "survivor" } end
+            local weights = {}
+            for kind, w in pairs(d.kohteet or d.poi_weights or { VILLAGE = 3, CITY = 2 }) do
+                if POI_KINDS[kind] and tonumber(w) and tonumber(w) > 0 then weights[kind] = tonumber(w)
+                else notes[#notes + 1] = "ryhmat.lua: " .. key .. ": tuntematon kohde " .. tostring(kind) end
+            end
+            if next(weights) == nil then weights = { VILLAGE = 3, CITY = 2 } end
+            local body = d.runko or d.body
+            if body ~= "Guard" and body ~= "Drifter" then body = nil end
+            local cls = {
+                key = key, fi = d.nimi or d.fi or key, size = { lo, hi },
+                archetypes = arche, tactics = d.taktiikka or d.tactics or "mixed",
+                weight = tonumber(d.yleisyys or d.weight) or 0,
+                poi_weights = weights,
+                custom = true,
+                guaranteed = math.max(0, math.floor(tonumber(d.maara or d.count) or 1)),
+                body = body,
+                color = d.vari or d.color,
+                hostile_to = d.vihamieliset or d.hostile_to or {},
+                authority = d.viranomainen == true or d.authority == true,
+            }
+            if G.by_key[key] then
+                for j, c in ipairs(G.list) do if c.key == key then G.list[j] = cls end end
+            else
+                G.list[#G.list + 1] = cls
+            end
+            G.by_key[key] = cls
+            notes[#notes + 1] = string.format("ryhmat.lua: %s (%s) %d-%d NPC, %d ryhmaa kartalla",
+                key, cls.fi, lo, hi, cls.guaranteed)
+        end
+    end
+    G.count = #G.list
+    return notes
+end
+
 -- Group classes that may be placed anywhere (reserved-zone classes are placed
 -- by the population module's zone pass instead).
 function G.general()

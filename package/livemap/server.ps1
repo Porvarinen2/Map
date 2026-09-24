@@ -9,6 +9,8 @@
     /                 the live map page
     /api/state        the director's snapshot, read from the mod's output dir
     /api/status       what the server can see, for troubleshooting
+    /api/command      spawn / remove a squad (forwarded to the mod through
+                      output\commands.txt; needs the session token)
     everything else   files from this folder
 #>
 param(
@@ -115,6 +117,25 @@ if (-not $NoBrowser) {
 }
 
 $served = 0
+# A page on some other site could make the browser request
+# http://127.0.0.1:8777/api/command too. Commands need this token, which only
+# the map's own page can read (from /api/status; no CORS, so a foreign page
+# cannot read the answer).
+$token = [guid]::NewGuid().ToString("N")
+$cmdSeq = 0
+
+function Get-Query([string]$raw) {
+  $q = @{}
+  foreach ($pair in $raw.TrimStart("?").Split("&")) {
+    if (-not $pair) { continue }
+    $kv = $pair.Split("=", 2)
+    $k = [System.Uri]::UnescapeDataString($kv[0])
+    $v = if ($kv.Count -gt 1) { [System.Uri]::UnescapeDataString($kv[1]) } else { "" }
+    $q[$k] = $v
+  }
+  return $q
+}
+
 while ($true) {
   $client = $null
   try {
@@ -137,7 +158,8 @@ while ($true) {
 
     $url = $parts[1]
     $qs = $url.IndexOf("?")
-    if ($qs -ge 0) { $url = $url.Substring(0, $qs) }
+    $query = ""
+    if ($qs -ge 0) { $query = $url.Substring($qs); $url = $url.Substring(0, $qs) }
     try { $url = [System.Uri]::UnescapeDataString($url) } catch {}
     if ($url -eq "/") { $url = "/index.html" }
     if ($Verbose) { Say "GET $url" "DarkGray" }
@@ -180,6 +202,35 @@ while ($true) {
       $client.Close(); continue
     }
 
+    if ($url -eq "/api/command") {
+      $q = Get-Query $query
+      $reply = $null
+      if ($q["token"] -ne $token) {
+        $reply = @{ ok = $false; error = "bad token - reload the map page" }
+      } elseif (-not $ModOutput -or -not (Test-Path $ModOutput)) {
+        $reply = @{ ok = $false; error = "mod output folder not found" }
+      } else {
+        $line = $null
+        $cmdSeq++
+        $id = "c" + [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() + "_" + $cmdSeq
+        if ($q["op"] -eq "spawn" -and $q["class"] -match '^[a-z_]{2,40}$' -and $q["size"] -match '^[1-9]$' `
+            -and $q["x"] -match '^-?\d{1,8}$' -and $q["y"] -match '^-?\d{1,8}$') {
+          $line = "$id spawn $($q['class']) $($q['size']) $($q['x']) $($q['y'])"
+        } elseif ($q["op"] -eq "remove" -and $q["gid"] -match '^SQD_\d{1,6}$') {
+          $line = "$id remove $($q['gid'])"
+        }
+        if ($line) {
+          [System.IO.File]::AppendAllText((Join-Path $ModOutput "commands.txt"), $line + "`n")
+          $reply = @{ ok = $true; id = $id }
+          if ($Verbose) { Say "komento: $line" "Cyan" }
+        } else {
+          $reply = @{ ok = $false; error = "invalid command" }
+        }
+      }
+      Send-Json -Stream $stream -Code 200 -Status "OK" -Json ($reply | ConvertTo-Json -Compress)
+      $client.Close(); continue
+    }
+
     if ($url -eq "/api/status") {
       $files = @()
       $mapDir = Join-Path $root "map"
@@ -192,6 +243,7 @@ while ($true) {
         stateExists = [bool]($ModOutput -and (Test-Path (Join-Path $ModOutput "live_state.json")))
         mapFiles = $files
         served = $served
+        token = $token
       } | ConvertTo-Json -Compress
       Send-Json -Stream $stream -Code 200 -Status "OK" -Json $payload
       $client.Close(); continue

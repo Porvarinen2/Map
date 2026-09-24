@@ -11,6 +11,7 @@
 -- this module reports honestly when they do not.
 local U = require("core.util")
 local Grid = require("world.navgrid")
+local GroupClasses = require("npc.groups")
 
 local Ph = {}
 
@@ -99,7 +100,9 @@ local GUARD_ARCHETYPES = {
     police = true, security = true, ex_military = true, veteran = true,
     bunker_specialist = true, elite = true,
 }
-function Ph.body_family(m)
+function Ph.body_family(m, group)
+    local cls = group and GroupClasses.get(group.class)
+    if cls and cls.body then return cls.body end
     return GUARD_ARCHETYPES[m.archetype] and "Guard" or "Drifter"
 end
 function Ph.body_variant(group, m)
@@ -175,7 +178,7 @@ function Ph.materialize(group, bridge, ctx)
                     -- Radiation-zone groups get SCUM's hazmat body variant
                     -- where the server exposes it; the bridge falls back to
                     -- the plain class when it does not.
-                    family = Ph.body_family(m),
+                    family = Ph.body_family(m, group),
                     variant = variant,
                     yaw = ctx.yaw,
                 })

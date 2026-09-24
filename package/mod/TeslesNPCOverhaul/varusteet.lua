@@ -11,8 +11,9 @@
 --       Items   = { "Emergency_bandage" },
 --   },
 --
--- Tyhjat listat = SCUMin omat varusteet. Muut ryhmat lisataan samalla
--- tavalla omalla avaimellaan:
+-- Tyhjat listat = SCUMin omat varusteet. KAIKKI koskee jokaista ryhmaa.
+-- Muut ryhmat lisataan samalla tavalla omalla avaimellaan (myos ryhmat.lua:n
+-- omat ryhmat, esim. palomiehet, laakarit):
 --   lone_wanderer, pair, hunters, scavengers, police_patrol, military_group,
 --   radiation_group, bunker_group, bandit_gang, survivor_group, militia_cell,
 --   elite_unit, island_residents
@@ -20,6 +21,11 @@
 -- Jokainen yritys kirjataan tiedostoon output\npc_loadout.txt: siita nakee,
 -- loytyiko esine ja saatiinko se NPC:n paalle.
 return {
+    -- KAIKKI: nama saa jokainen NPC jokaisessa ryhmassa (lisaksi ryhman omat).
+    -- Testi: joulushortsit kaikille, jotta nahdaan toimiiko pukeminen.
+    KAIKKI = {
+        Clothes = { "Christmas_Pants_02" },
+    },
     police_patrol = {
         Clothes = {},
         Weapons = {},

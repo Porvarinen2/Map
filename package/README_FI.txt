@@ -1,4 +1,4 @@
-TESLES NPC OVERHAUL 1.6.0
+TESLES NPC OVERHAUL 1.7.0
 =========================
 
 Pysyva NPC-populaatio SCUM-palvelimelle. NPC-hahmot ja niiden ryhmat ovat
@@ -238,6 +238,7 @@ Mods\TeslesNPCOverhaul\config.lua
   RenderRadiusUU          ryhma on fyysinen taman sateen sisalla pelaajasta (100000 = 1 km, kartalla, korkeus ei vaikuta)
   StressRecoveryPer5Min   kuinka paljon stressi laskee 5 minuutissa rauhassa (0.01 = yksi piste)
 
+OMAT RYHMATYYPIT: mod-kansion ryhmat.lua (esim. palomiehet, laakarit).
 OMAT VARUSTEET: mod-kansion varusteet.lua (sailyy paivityksissa). Ohjeet
 tiedoston alussa; tulokset output\npc_loadout.txt.
   ReissueSec              kuinka harvoin liikekasky uusitaan (22 s)

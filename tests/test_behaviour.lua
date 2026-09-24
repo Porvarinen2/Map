@@ -265,5 +265,103 @@ do
     check(peak > 0.3, string.format("a squad searching a city runs into zombies (peak stress %.2f)", peak))
 end
 
+-- -------------------------------------------------------------------------
+section("spawning and removing squads from the map")
+do
+    local Commands = require("sim.commands")
+    local Zones = require("world.zones")
+    local world, d = fresh(21)
+    local dir = os.tmpname()
+    os.remove(dir)
+    os.execute("mkdir -p " .. dir)
+    Commands.configure(dir, "/")
+    local land = nil
+    for _, p in ipairs(POI.points) do
+        if p.kind == "VILLAGE" and not p.blocked and Zones.sector(p.pos) ~= "C0" then land = p.pos; break end
+    end
+    local c0 = Zones.random_point_in("C0")
+    local f = io.open(dir .. "/commands.txt", "w")
+    f:write(string.format("c1 spawn police_patrol 3 %d %d\n", math.floor(land.X), math.floor(land.Y)))
+    f:write(string.format("c2 spawn police_patrol 3 %d %d\n", math.floor(c0.X), math.floor(c0.Y)))
+    f:write(string.format("c3 spawn radiation_group 3 %d %d\n", math.floor(c0.X), math.floor(c0.Y)))
+    f:write("c4 spawn no_such_class 3 0 0\n")
+    f:close()
+    local before = #world.groups
+    d:tick(os.time() + 10)
+    local res = {}
+    for _, r in ipairs(d.command_results or {}) do res[r.id] = r end
+    check(res.c1 and res.c1.ok, "a police patrol is spawned where the map was clicked: " .. tostring(res.c1 and res.c1.text))
+    local g = nil
+    for _, x in ipairs(world.groups) do
+        if x.class == "police_patrol" and (not g or x.id > g.id) then g = x end
+    end
+    check(g.class == "police_patrol" and #g.members == 3 and U.dist2d(g.position, land) < 20000,
+          "with the chosen size, at that spot")
+    check(res.c2 and not res.c2.ok, "nobody but radiation squads may be put in C0: " .. tostring(res.c2 and res.c2.text))
+    check(res.c3 and res.c3.ok, "a radiation squad may")
+    check(res.c4 and not res.c4.ok, "an unknown class is refused")
+    check(#world.groups == before + 2, "exactly the two allowed squads were added")
+    check(io.open(dir .. "/commands.txt", "r") == nil, "the command file was taken")
+    -- Remove it again.
+    f = io.open(dir .. "/commands.txt", "w")
+    f:write("c5 remove " .. g.gid .. "\n")
+    f:close()
+    d:tick(os.time() + 20)
+    res = {}
+    for _, r in ipairs(d.command_results or {}) do res[r.id] = r end
+    check(res.c5 and res.c5.ok and world.by_gid[g.gid] == nil, "and removed from the map")
+    Commands.configure(nil)
+    os.execute("rm -rf " .. dir)
+end
+
+-- -------------------------------------------------------------------------
+section("own squad classes and shared gear")
+do
+    local Groups = require("npc.groups")
+    local Diplomacy = require("npc.diplomacy")
+    local Physical = require("sim.physical")
+    local notes = Groups.register_custom({
+        { avain = "palomiehet", nimi = "Palomiehet", koko = { 2, 4 }, tausta = { "security" },
+          kohteet = { CITY = 4, INDUSTRIAL = 3 }, maara = 2, runko = "Guard", vihamieliset = { "bandit_gang" } },
+        { avain = "laakarit", nimi = "Lääkärit", tausta = { "civilian", "nobody" }, kohteet = { MEDICAL = 6, MOON = 1 } },
+        { avain = "Bad Key" },
+        { avain = "police_patrol" },
+    })
+    local text = table.concat(notes, " / ")
+    check(Groups.get("palomiehet") and Groups.get("palomiehet").fi == "Palomiehet", "a new class is registered from ryhmat.lua")
+    check(text:find("nobody", 1, true) and text:find("MOON", 1, true), "unknown backgrounds and places are reported, not fatal")
+    check(text:find("Bad Key", 1, true) == nil and text:find("#3", 1, true), "a bad key is reported")
+    check(not Groups.get("police_patrol").custom, "the mod's own classes cannot be overwritten")
+    for _, cls in ipairs(Groups.list) do
+        if cls.custom then for _, o in ipairs(cls.hostile_to) do Diplomacy.set_default(cls.key, o, -0.7) end end
+    end
+    check(Diplomacy.default_standing("palomiehet", "bandit_gang") <= -0.35, "declared enemies start hostile")
+
+    local world, d = fresh(31)
+    Population.ensure_custom(world)
+    local n = { palomiehet = 0, laakarit = 0 }
+    for _, g in ipairs(world.groups) do if n[g.class] then n[g.class] = n[g.class] + 1 end end
+    check(n.palomiehet == 2 and n.laakarit == 1, string.format(
+        "each own class has its promised squads on the map (%d firefighters, %d doctors)", n.palomiehet, n.laakarit))
+    local ff
+    for _, g in ipairs(world.groups) do if g.class == "palomiehet" then ff = g end end
+    check(Physical.body_family(ff.members[1], ff) == "Guard", "and wears the chosen body")
+    local sizes_ok = #ff.members >= 2 and #ff.members <= 4
+    check(sizes_ok, "and has the chosen size")
+
+    d.cfg.Loadouts = { KAIKKI = { Clothes = { "Christmas_Pants_02" } },
+                       palomiehet = { Clothes = { "Firefighter_Jacket" }, Weapons = { "Weapon_Axe" } } }
+    local lo = d:loadout_for(ff)
+    check(lo.Clothes[1] == "Christmas_Pants_02" and lo.Clothes[2] == "Firefighter_Jacket"
+          and lo.Weapons[1] == "Weapon_Axe", "KAIKKI gear goes to every squad, on top of its own")
+    local other = world.groups[1]
+    local lo2 = d:loadout_for(other)
+    check(lo2 and lo2.Clothes[1] == "Christmas_Pants_02", "including squads with no gear of their own")
+    -- Put things back for any later test in this file.
+    for i = #Groups.list, 1, -1 do
+        if Groups.list[i].custom then Groups.by_key[Groups.list[i].key] = nil; table.remove(Groups.list, i) end
+    end
+end
+
 print("")
 os.exit(fails == 0 and 0 or 1)

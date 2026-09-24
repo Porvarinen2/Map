@@ -37,7 +37,18 @@ function D.tier(value)
     return "FRIENDLY", "Ystavallinen"
 end
 
+-- Standings the owner's own classes bring (ryhmat.lua: vihamieliset,
+-- viranomainen).
+local custom_pairs = {}
+function D.set_default(class_a, class_b, value)
+    custom_pairs[class_a .. "|" .. class_b] = value
+    custom_pairs[class_b .. "|" .. class_a] = value
+end
+function D.add_authority(class_key) AUTHORITY[class_key] = true end
+
 function D.default_standing(class_a, class_b)
+    local c = custom_pairs[class_a .. "|" .. class_b]
+    if c then return c end
     if class_a == "bandit_gang" and class_b == "bandit_gang" then return 0 end
     if class_a == "bandit_gang" or class_b == "bandit_gang" then
         local other = (class_a == "bandit_gang") and class_b or class_a
