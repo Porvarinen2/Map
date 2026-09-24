@@ -865,6 +865,7 @@ function B.despawn(handle)
     local c = B.controller(rec.actor)
     if c then pcall(function() c:StopMovement() end) end
     pcall(function() rec.actor:K2_DestroyActor() end)
+    B.pending_weapons[handle] = nil
     -- Gear the mod put on this NPC goes with it.
     for _, x in ipairs(rec.extras or {}) do pcall(function() x:K2_DestroyActor() end) end
     if rec.name then owned_names[rec.name] = nil end
@@ -2166,15 +2167,9 @@ end
 
 -- A weapon: the new one goes where SCUM had put the NPC's own (same parent
 -- and socket), becomes the item in hands, and the old one is removed.
-local function hold_weapon(a, handle, name, label, pos)
+local function hold_weapon(a, handle, name, label, pos, olds)
     local cls = B.find_item_class(name)
     if not cls then return false end
-    local an = full_name(a)
-    local olds = {}
-    for _, it in ipairs(find_all("Item", nil, true) or {}) do
-        local ok, own = pcall(function() return it:GetOwner() end)
-        if ok and own and full_name(own) == an then olds[#olds + 1] = it end
-    end
     local item, why = spawn_actor(cls, pos)
     if not item then
         lnote(string.format("%s: %s - spawn failed: %s", label, name, tostring(why)))
@@ -2197,6 +2192,49 @@ local function hold_weapon(a, handle, name, label, pos)
     lnote(string.format("%s: %s - weapon placed (attach=%s, in hands=%s, replaced %d)",
         label, name, tostring(att), tostring(inhands), #olds))
     return att
+end
+
+-- SCUM gives an NPC its own weapon a moment after the spawn. 1.8.1 put the
+-- new weapon on at once: when the NPC had no weapon yet, the new one hung in
+-- the air (no hand socket to copy) and the NPC got its own anyway. So the
+-- swap waits until the NPC's own weapon exists and takes its place.
+B.pending_weapons = {}
+B.weapon_wait_sec = 20
+function B.tick_weapons(now)
+    if next(B.pending_weapons) == nil then return end
+    now = now or os.time()
+    local by_owner = nil
+    for h, p in pairs(B.pending_weapons) do
+        local a = B.actor(h)
+        if not a then
+            B.pending_weapons[h] = nil
+        else
+            if not by_owner then
+                by_owner = {}
+                for _, it in ipairs(find_all("Item", nil, true) or {}) do
+                    local ok, own = pcall(function() return it:GetOwner() end)
+                    if ok and own then
+                        local on = full_name(own)
+                        by_owner[on] = by_owner[on] or {}
+                        table.insert(by_owner[on], it)
+                    end
+                end
+            end
+            local olds = by_owner[full_name(a)] or {}
+            if #olds > 0 then
+                B.pending_weapons[h] = nil
+                local pos = nil
+                pcall(function() pos = vec(a:K2_GetActorLocation()) end)
+                if pos then
+                    local ok, res = pcall(hold_weapon, a, h, p.name, p.label, pos, olds)
+                    if not ok then lnote(p.label .. ": " .. p.name .. " - error: " .. tostring(res)) end
+                end
+            elseif now > p.deadline then
+                B.pending_weapons[h] = nil
+                lnote(p.label .. ": " .. p.name .. " - NPC:n omaa asetta ei tullut " .. B.weapon_wait_sec .. " s:ssa, ase jatettiin vaihtamatta")
+            end
+        end
+    end
 end
 
 function B.apply_loadout(handle, loadout, label)
@@ -2222,9 +2260,9 @@ function B.apply_loadout(handle, loadout, label)
     end
     local w = (loadout.Weapons or {})[1]
     if w then
-        local ok, res = pcall(hold_weapon, a, handle, w, label, pos)
-        if ok and res then given = given + 1
-        elseif not ok then lnote(label .. ": " .. w .. " - error: " .. tostring(res)) end
+        B.pending_weapons[handle] = { name = w, label = label, deadline = os.time() + B.weapon_wait_sec }
+        pcall(B.tick_weapons, os.time())
+        given = given + 1
     end
     if #(loadout.Items or {}) > 0 and not B.items_note then
         B.items_note = true
