@@ -27,7 +27,7 @@ return {
     -- KAIKKI: koskee jokaista NPC:ta jokaisessa ryhmassa.
     -- Testi: kaikille sama ase, jotta nahdaan toimiiko aseen vaihto.
     KAIKKI = {
-        Weapons = { "Weapon_M1911" },
+        Weapons = { "Weapon_SCAR_DMR" },
     },
     police_patrol = {
         Runko = "Guard",

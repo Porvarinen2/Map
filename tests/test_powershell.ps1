@@ -168,7 +168,7 @@ Set-Content -LiteralPath (Join-Path $modDir "ryhmat.lua") -Value 'return { { ava
   -SkipUE4SS -NoMap -Yes -NoPause | Out-Null
 $gear = Get-Content -Raw (Join-Path $modDir "varusteet.lua")
 Check ($gear -match 'My_Own_Shirt') "a reinstall keeps the owner's own gear lines"
-Check ($gear -match 'KAIKKI' -and $gear -match 'Weapon_M1911') `
+Check ($gear -match 'KAIKKI' -and $gear -match 'Weapon_SCAR_DMR') `
       "an old varusteet.lua gets the KAIKKI section with the test weapon"
 Check ((Get-Content -Raw (Join-Path $modDir "ryhmat.lua")) -match 'omat_testit') `
       "a reinstall keeps the owner's own squad classes"
@@ -194,14 +194,14 @@ return {
 & (Join-Path $pkg "INSTALL.ps1") -ServerRoot (Join-Path $lab "server") `
   -SkipUE4SS -NoMap -Yes -NoPause | Out-Null
 $gear = Get-Content -Raw (Join-Path $modDir "varusteet.lua")
-Check ($gear -match 'Weapon_M1911' -and $gear -notmatch 'Ghillie' -and $gear -match 'My_Own_Shirt') `
+Check ($gear -match 'Weapon_SCAR_DMR' -and $gear -notmatch 'Ghillie' -and $gear -match 'My_Own_Shirt') `
       "the ghillie test in an owner's gear file moves to the weapon test, their own lines stay"
 function Get-LuaKaikkiWeapon($path) {
-  if (-not (Get-Command lua5.4 -ErrorAction SilentlyContinue)) { return "Weapon_M1911" }
+  if (-not (Get-Command lua5.4 -ErrorAction SilentlyContinue)) { return "Weapon_SCAR_DMR" }
   $p = $path -replace '\\','/'
   return (& lua5.4 -e "local t = dofile('$p'); print(t.KAIKKI.Weapons[1])")
 }
-Check ((Get-LuaKaikkiWeapon (Join-Path $modDir "varusteet.lua")) -eq "Weapon_M1911") `
+Check ((Get-LuaKaikkiWeapon (Join-Path $modDir "varusteet.lua")) -eq "Weapon_SCAR_DMR") `
       "and Lua really sees the test weapon (no empty Weapons list after it)"
 # The file 1.8.0 left behind: test weapon cancelled by an empty list.
 Set-Content -LiteralPath (Join-Path $modDir "varusteet.lua") -Value @"
@@ -216,7 +216,7 @@ return {
 "@
 & (Join-Path $pkg "INSTALL.ps1") -ServerRoot (Join-Path $lab "server") `
   -SkipUE4SS -NoMap -Yes -NoPause | Out-Null
-Check ((Get-LuaKaikkiWeapon (Join-Path $modDir "varusteet.lua")) -eq "Weapon_M1911" -and
+Check ((Get-LuaKaikkiWeapon (Join-Path $modDir "varusteet.lua")) -eq "Weapon_SCAR_DMR" -and
        ((Get-Content -Raw (Join-Path $modDir "varusteet.lua")) -match 'My_Own_Shirt')) `
       "the gear file 1.8.0 broke is repaired, the owner's lines stay"
 

@@ -411,7 +411,8 @@ foreach ($uf in $keepUser.Keys) {
 # The earlier outfit tests (Christmas / ghillie pants, Asu = 0) proved a
 # server cannot dress SCUM's NPCs: the KAIKKI test block becomes the weapon
 # test as a whole (1.8.0 replaced only the pants line and left an empty
-# Weapons = {} after it, which cancelled the test weapon).
+# Weapons = {} after it, which cancelled the test weapon). The test weapon is
+# the SCAR DMR: the M1911 is a stock NPC weapon, so it proved nothing.
 $gearPath0 = Join-Path $target 'varusteet.lua'
 if (Test-Path -LiteralPath $gearPath0) {
   $g0 = [System.IO.File]::ReadAllText($gearPath0)
@@ -420,11 +421,11 @@ if (Test-Path -LiteralPath $gearPath0) {
   if ($m0.Success) {
     $blk = $m0.Value
     $old = ($blk -match 'Christmas_Pants_02|Ghillie_Suit_Pants_01|Asu\s*=\s*0') -or
-           (($blk -match 'Weapon_M1911') -and ($blk -match 'Weapons\s*=\s*\{\s*\}'))
+           ($blk -match 'Weapons\s*=\s*\{\s*"Weapon_M1911"\s*\}')
     if ($old) {
-      $new = "KAIKKI = {`r`n        Weapons = { `"Weapon_M1911`" },`r`n    }"
+      $new = "KAIKKI = {`r`n        Weapons = { `"Weapon_SCAR_DMR`" },`r`n    }"
       [System.IO.File]::WriteAllText($gearPath0, $g0.Substring(0, $m0.Index) + $new + $g0.Substring($m0.Index + $m0.Length))
-      Say "varusteet.lua: KAIKKI-testi -> Weapons = Weapon_M1911 (sama ase kaikille)." "Green"
+      Say "varusteet.lua: KAIKKI-testi -> Weapons = Weapon_SCAR_DMR (sama ase kaikille)." "Green"
     }
   }
 }
@@ -434,10 +435,10 @@ $gearPath = Join-Path $target 'varusteet.lua'
 if ((Test-Path -LiteralPath $gearPath)) {
   $gearText = [System.IO.File]::ReadAllText($gearPath)
   if ($gearText -notmatch 'KAIKKI' -and $gearText -match 'return\s*\{') {
-    $block = "return {`r`n    -- KAIKKI: nama saa jokainen NPC jokaisessa ryhmassa (lisaksi ryhman omat).`r`n    KAIKKI = {`r`n        Weapons = { `"Weapon_M1911`" },`r`n    },"
+    $block = "return {`r`n    -- KAIKKI: nama saa jokainen NPC jokaisessa ryhmassa (lisaksi ryhman omat).`r`n    KAIKKI = {`r`n        Weapons = { `"Weapon_SCAR_DMR`" },`r`n    },"
     $gearText = ([regex]'return\s*\{').Replace($gearText, $block, 1)
     [System.IO.File]::WriteAllText($gearPath, $gearText)
-    Say "varusteet.lua: lisattiin KAIKKI-kohta (testi: Weapon_M1911)." "Green"
+    Say "varusteet.lua: lisattiin KAIKKI-kohta (testi: Weapon_SCAR_DMR)." "Green"
   }
 }
 if ($keepOutput) {

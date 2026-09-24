@@ -93,7 +93,7 @@ do
     local lf = io.open(MOD .. "/output/npc_loadout.txt", "r")
     local lt = lf and lf:read("*a") or ""
     if lf then lf:close() end
-    check(lt:find("KAIKKI", 1, true) and lt:find("Weapon_M1911", 1, true),
+    check(lt:find("KAIKKI", 1, true) and lt:find("Weapon_SCAR_DMR", 1, true),
           "npc_loadout.txt exists from boot and lists the configured gear")
 end
 check(exists(MOD .. "/output/director.log"), "director.log written to output/")
