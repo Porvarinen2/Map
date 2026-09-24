@@ -727,6 +727,8 @@ function B.despawn(handle)
     local c = B.controller(rec.actor)
     if c then pcall(function() c:StopMovement() end) end
     pcall(function() rec.actor:K2_DestroyActor() end)
+    -- Gear the mod put on this NPC goes with it.
+    for _, x in ipairs(rec.extras or {}) do pcall(function() x:K2_DestroyActor() end) end
     if rec.name then owned_names[rec.name] = nil end
     if rec.addr then owned_addr[rec.addr] = nil end
     handles[handle] = nil
@@ -1503,6 +1505,14 @@ end
 -- list is kept in output/item_classes.txt and read back at boot, so a class
 -- learned once is known in later sessions too.
 B.item_paths = B.item_paths or {}
+local guess_failed = {}
+local GUESS_FOLDERS = {
+    "Clothes/Underwear_Pants", "Clothes/Tops_And_T_Shirts", "Clothes/Jackets_Coats",
+    "Clothes/Footwear", "Clothes/Headgear", "Clothes/Helmets", "Clothes/Vests_Armor",
+    "Clothes/Gloves", "Clothes/Masks", "Clothes/Backpacks", "Clothes/Belts",
+    "Clothes/Ghillie_Suits/Military", "Clothes/Sweaters", "Clothes/Glasses", "Clothes",
+    "Weapons/Ranged_Weapons", "Weapons/New_Melee", "Weapons",
+}
 local function remember_item_class(cls)
     local cn = full_name(cls)
     local path = cn:match("%s(%S+)$") or cn
@@ -1564,6 +1574,30 @@ function B.find_item_class(spawn_name)
             return c
         end
         lnote(spawn_name .. ": known class path " .. path .. " would not load")
+    end
+    -- Not seen in the world yet: SCUM keeps items in
+    -- /Game/ConZ_Files/Items/<category>/<Name>.<Name>_C (item_classes.txt,
+    -- 1.7.4), so the usual categories are tried once each.
+    if not guess_failed[key] then
+        local name = tostring(spawn_name)
+        for _, folder in ipairs(GUESS_FOLDERS) do
+            local pkg = "/Game/ConZ_Files/Items/" .. folder .. "/" .. name
+            local op = pkg .. "." .. name .. "_C"
+            local found = nil
+            pcall(function() found = StaticFindObject(op) end)
+            if not (found and valid(found)) and have("LoadAsset") then
+                pcall(function() LoadAsset(pkg) end)
+                pcall(function() found = StaticFindObject(op) end)
+            end
+            if found and valid(found) then
+                item_class_cache[key] = found
+                remember_item_class(found)
+                lnote(name .. ": class found at " .. op)
+                return found
+            end
+        end
+        guess_failed[key] = true
+        lnote(name .. ": not found in " .. #GUESS_FOLDERS .. " item folders - drop one with #SpawnItem so the mod learns it")
     end
     if not item_index then build_item_index() end
     c = item_index[key] or item_index["bp_" .. key]
@@ -1797,14 +1831,13 @@ function B.survey_outfit(actor, wanted)
         if #kids == 0 then kids = to_list(out) end
         lines[#lines + 1] = "body mesh children: " .. #kids
         for _, k in ipairs(kids) do
-            local nm = "?"
+            local nm, cl, m, ow = "?", "?", "", ""
             pcall(function() nm = k:GetFName():ToString() end)
-            local m = ""
+            pcall(function() cl = full_name(k:GetClass()) end)
             pcall(function() m = full_name(k.SkeletalMesh) end)
             if m == "" or m == "nil" then pcall(function() m = full_name(k.StaticMesh) end) end
-            local ow = ""
             pcall(function() ow = full_name(k:GetOwner()) end)
-            lines[#lines + 1] = string.format("  %s [%s] mesh=%s owner=%s", nm, full_name(k:GetClass()), m, ow)
+            lines[#lines + 1] = string.format("  %s [%s] mesh=%s owner=%s", tostring(nm), tostring(cl), tostring(m), tostring(ow))
         end
     end)
     -- 1. Attached actors, asked two ways (UE4SS out-parameter styles differ).
@@ -1864,9 +1897,107 @@ function B.survey_outfit(actor, wanted)
     lnote(table.concat(lines, "\n"))
 end
 
+-- Components of one actor by class (a scan of that component class).
+local function components_of(actor, cname)
+    local out = {}
+    local an = full_name(actor)
+    for _, c in ipairs(find_all(cname, nil, true) or {}) do
+        local ok, own = pcall(function() return c:GetOwner() end)
+        if ok and own and full_name(own) == an then out[#out + 1] = c end
+    end
+    return out
+end
+
+local function keep_extra(handle, obj)
+    local rec = handles[handle]
+    if rec then
+        rec.extras = rec.extras or {}
+        rec.extras[#rec.extras + 1] = obj
+    end
+end
+
+-- A clothing item worn on an NPC: the item is spawned, made the NPC's, and
+-- its mesh is fastened to the NPC's body mesh and driven by the body's
+-- skeleton (leader pose), so it moves with the NPC like worn clothing.
+local function wear_item(a, handle, name, label, pos)
+    local cls = B.find_item_class(name)
+    if not cls then return false end
+    local item, why = spawn_actor(cls, pos)
+    if not item then
+        lnote(string.format("%s: %s - spawn failed: %s", label, name, tostring(why)))
+        return false
+    end
+    keep_extra(handle, item)
+    pcall(function() item:SetOwner(a) end)
+    pcall(function() item:SetActorEnableCollision(false) end)
+    local body = nil
+    pcall(function() body = a.Mesh end)
+    if not (body and valid(body)) then
+        lnote(string.format("%s: %s - NPC body mesh not reachable", label, name))
+        return false
+    end
+    local meshes = components_of(item, "SkeletalMeshComponent")
+    local steps = {}
+    for _, m in ipairs(meshes) do
+        pcall(function() m:SetSimulatePhysics(false) end)
+        local att = pcall(function() m:K2_AttachToComponent(body, fname("None"), 2, 2, 2, false) end)
+        local pose = pcall(function() m:SetLeaderPoseComponent(body, true) end)
+            or pcall(function() m:SetMasterPoseComponent(body, true) end)
+        local mn = "?"
+        pcall(function() mn = full_name(m.SkeletalMesh) end)
+        steps[#steps + 1] = string.format("%s attach=%s pose=%s", mn, tostring(att), tostring(pose))
+    end
+    if #meshes == 0 then
+        -- No skeletal mesh: fasten the whole item to the body as it is.
+        local att = pcall(function()
+            item:K2_AttachToComponent(body, fname("pelvis"), 2, 2, 2, false)
+        end)
+        lnote(string.format("%s: %s - item has no skeletal mesh; attached whole item: %s", label, name, tostring(att)))
+        return att
+    end
+    lnote(string.format("%s: %s - worn (%s)", label, name, table.concat(steps, "; ")))
+    return true
+end
+
+-- A weapon: the new one goes where SCUM had put the NPC's own (same parent
+-- and socket), becomes the item in hands, and the old one is removed.
+local function hold_weapon(a, handle, name, label, pos)
+    local cls = B.find_item_class(name)
+    if not cls then return false end
+    local an = full_name(a)
+    local olds = {}
+    for _, it in ipairs(find_all("Item", nil, true) or {}) do
+        local ok, own = pcall(function() return it:GetOwner() end)
+        if ok and own and full_name(own) == an then olds[#olds + 1] = it end
+    end
+    local item, why = spawn_actor(cls, pos)
+    if not item then
+        lnote(string.format("%s: %s - spawn failed: %s", label, name, tostring(why)))
+        return false
+    end
+    keep_extra(handle, item)
+    pcall(function() item:SetOwner(a) end)
+    pcall(function() item:SetActorEnableCollision(false) end)
+    local parent, socket = nil, nil
+    if olds[1] then
+        pcall(function() parent = olds[1]:K2_GetRootComponent():GetAttachParent() end)
+        pcall(function() socket = olds[1]:GetAttachParentSocketName() end)
+    end
+    if not (parent and valid(parent)) then pcall(function() parent = a.Mesh end) end
+    local att = pcall(function()
+        item:K2_GetRootComponent():K2_AttachToComponent(parent, socket or fname("hand_r"), 2, 2, 2, false)
+    end)
+    local inhands = pcall(function() a._itemInHands = item end)
+    for _, o in ipairs(olds) do pcall(function() o:K2_DestroyActor() end) end
+    lnote(string.format("%s: %s - weapon placed (attach=%s, in hands=%s, replaced %d)",
+        label, name, tostring(att), tostring(inhands), #olds))
+    return att
+end
+
 function B.apply_loadout(handle, loadout, label)
     local a = B.actor(handle)
     if not (a and loadout) then return 0 end
+    label = label or "?"
     local names = {}
     for _, key in ipairs({ "Clothes", "Weapons", "Items" }) do
         for _, n in ipairs(loadout[key] or {}) do names[#names + 1] = n end
@@ -1875,39 +2006,24 @@ function B.apply_loadout(handle, loadout, label)
     local okl, loc = pcall(function() return a:K2_GetActorLocation() end)
     local pos = okl and vec(loc) or nil
     if not pos then return 0 end
-    local given = 0
-    -- The survey runs a few seconds later: SCUM may dress the NPC after spawn.
     if not B.outfit_surveyed and not B.survey_handle then
         B.survey_handle, B.survey_names, B.survey_at = handle, names, os.time() + 6
     end
-    -- Clothes first by model part swap.
-    local worn = {}
+    local given = 0
     for _, name in ipairs(loadout.Clothes or {}) do
-        local okw, res = pcall(wear_by_mesh, a, name, label or "?")
-        if okw and res then worn[name] = true; given = given + 1
-        elseif not okw then lnote((label or "?") .. ": " .. name .. " - error: " .. tostring(res)) end
+        local ok, res = pcall(wear_item, a, handle, name, label, pos)
+        if ok and res then given = given + 1
+        elseif not ok then lnote(label .. ": " .. name .. " - error: " .. tostring(res)) end
     end
-    for _, name in ipairs(names) do
-        if worn[name] then goto continue end
-        local cls = B.find_item_class(name)
-        if not cls then
-            lnote(string.format("%s: %s - item class not found (not loaded, or a different name)", label or "?", name))
-        else
-            local item, why = spawn_actor(cls, pos)
-            if not item then
-                lnote(string.format("%s: %s - spawn failed: %s", label or "?", name, tostring(why)))
-            else
-                local ok, fn = try_equip(a, item)
-                if ok then
-                    given = given + 1
-                    lnote(string.format("%s: %s - equipped via %s", label or "?", name, fn))
-                else
-                    lnote(string.format("%s: %s - spawned, but no equip call worked; removed", label or "?", name))
-                    pcall(function() item:K2_DestroyActor() end)
-                end
-            end
-        end
-        ::continue::
+    local w = (loadout.Weapons or {})[1]
+    if w then
+        local ok, res = pcall(hold_weapon, a, handle, w, label, pos)
+        if ok and res then given = given + 1
+        elseif not ok then lnote(label .. ": " .. w .. " - error: " .. tostring(res)) end
+    end
+    if #(loadout.Items or {}) > 0 and not B.items_note then
+        B.items_note = true
+        lnote("Items: carried items are not supported yet (SCUM's NPCs have no inventory)")
     end
     return given
 end

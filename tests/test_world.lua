@@ -264,13 +264,17 @@ do
         end
         local seq = Activity._planned_walk(act)
         local nq = #(act.queue or {})
-        for k = #seq - nq + 1, #seq do
+        -- A reserved territory (island, radiation zone) has fewer places than
+        -- a full memory; there the oldest memories give way by design.
+        local cls = require("npc.groups").get(g.class)
+        local small = cls and cls.reserved_zone
+        for k = small and (#seq + 1) or (#seq - nq + 1), #seq do
             for j = math.max(1, k - mem), k - 1 do
                 if seq[j] == seq[k] then early = early + 1; if os.getenv("DEBUG_QUEUE") then print("  early", g.gid, g.class, table.concat(seq, ",")) end end
             end
         end
         -- A squad in flight has dropped its plan; it redraws it on arrival.
-        if act.state ~= "RETREAT" then
+        if act.state ~= "RETREAT" and not small then
             open_groups = open_groups + 1
             if nq == Activity.QUEUE_LENGTH then full = full + 1 end
         end

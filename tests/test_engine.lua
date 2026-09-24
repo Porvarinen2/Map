@@ -443,6 +443,30 @@ do
 end
 
 print("")
+print("== item class by SCUM's folder layout ==")
+do
+    local loaded = {}
+    local op = "/Game/ConZ_Files/Items/Clothes/Underwear_Pants/Christmas_Pants_02.Christmas_Pants_02_C"
+    local cls = { IsValid = function() return true end, GetFullName = function() return "BlueprintGeneratedClass " .. op end }
+    local loads = 0
+    _G.LoadAsset = function(p) loads = loads + 1; loaded[p] = true end
+    _G.StaticFindObject = function(p)
+        if p == op and loaded["/Game/ConZ_Files/Items/Clothes/Underwear_Pants/Christmas_Pants_02"] then return cls end
+    end
+    package.loaded["bridge.scum"] = nil
+    local SB = require("bridge.scum")
+    SB.cfg = {}
+    check(SB.find_item_class("Christmas_Pants_02") == cls, "an item never seen is found in its usual folder")
+    check(SB.item_paths["christmas_pants_02"] == op, "and learned for next time")
+    local before = loads
+    check(SB.find_item_class("No_Such_Thing_77") == nil, "a name that is nowhere is not found")
+    local tried = loads - before
+    SB.find_item_class("No_Such_Thing_77")
+    check(loads - before == tried, "and not searched for again (" .. tried .. " folders tried once)")
+    _G.LoadAsset, _G.StaticFindObject = nil, nil
+end
+
+print("")
 print("== radiation zone ==")
 do
     local Ph = require("sim.physical")
