@@ -421,25 +421,53 @@ local function get_navsys()
     return nav
 end
 
+-- The simulation is 2D: a virtual group's Z is 0. The island's ground is
+-- tens of thousands of UU above that (the player stood at Z 36,726), and the
+-- probe only searched +-4,000 UU around the given height, so every probe
+-- missed and every spawn was refused as NO_GROUND_PROOF - the reason nothing
+-- materialised next to a player in 1.1.7.
+--
+-- A group only materialises within a few hundred metres of a player, so the
+-- nearest player's height is a good starting guess; the vertical search is
+-- then +-30,000 UU, enough for any hill between the two.
+local ground_logged = 0
+
+local function height_hint(pos)
+    if pos.Z and math.abs(pos.Z) > 1 then return pos.Z end
+    local best, bd = nil, nil
+    for _, p in ipairs(scan_cache.players.v or {}) do
+        local dx, dy = p.X - pos.X, p.Y - pos.Y
+        local d = dx * dx + dy * dy
+        if not bd or d < bd then best, bd = p, d end
+    end
+    return best and best.Z or 20000
+end
+
 function B.ground_at(pos)
     if not sane(pos) then return nil end
     local nav = get_navsys()
     if not nav then return nil end
-    crumb(string.format("K2_ProjectPointToNavigation %.0f %.0f %.0f", pos.X, pos.Y, pos.Z))
-    local okp, projected = pcall(function()
+    local z0 = height_hint(pos)
+    crumb(string.format("K2_ProjectPointToNavigation %.0f %.0f %.0f", pos.X, pos.Y, z0))
+    local okp, projected, hit = pcall(function()
         local out = {}
-        nav:K2_ProjectPointToNavigation(
+        local r = nav:K2_ProjectPointToNavigation(
             B.get_world(),
-            { X = pos.X, Y = pos.Y, Z = pos.Z },
+            { X = pos.X, Y = pos.Y, Z = z0 },
             out, nil, nil,
-            { X = 600.0, Y = 600.0, Z = 4000.0 })
-        return out
+            { X = 800.0, Y = 800.0, Z = 30000.0 })
+        return out, r
     end)
-    if okp then
-        local v = vec(projected)
-        if sane(v) then return v.Z end
+    local v = okp and vec(projected) or nil
+    local z = (sane(v) and v) and v.Z or nil
+    if ground_logged < 5 and B.on_debug then
+        ground_logged = ground_logged + 1
+        pcall(B.on_debug, string.format("ground probe at %.0f %.0f from Z %.0f -> %s (hit=%s)",
+            pos.X, pos.Y, z0,
+            z and string.format("%.0f", z) or (okp and "no navmesh" or ("error: " .. tostring(projected))),
+            tostring(hit)))
     end
-    return nil
+    return z
 end
 
 -- Spawns one NPC. Exactly one native attempt per request: a failed return does
@@ -476,6 +504,13 @@ function B.spawn_npc(req)
         return helper:SpawnAIFromClass(world, cls, nil,
             { X = pos.X, Y = pos.Y, Z = pos.Z }, rot, true, nil)
     end)
+    B.spawn_logged = (B.spawn_logged or 0) + 1
+    if B.spawn_logged <= 5 and B.on_debug then
+        pcall(B.on_debug, string.format("spawn L%s %s at %.0f %.0f %.0f -> %s",
+            tostring(req.level), tostring(variant or "base"), pos.X, pos.Y, pos.Z,
+            (ok and valid(actor)) and ("actor " .. full_name(actor))
+            or ("FAILED: " .. tostring(actor))))
+    end
     if not ok or not valid(actor) then
         B.stats.spawn_fail = B.stats.spawn_fail + 1
         set_health("physicalVirtualization", "DEGRADED",
