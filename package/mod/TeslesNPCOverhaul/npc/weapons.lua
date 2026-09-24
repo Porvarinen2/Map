@@ -1,7 +1,9 @@
 -- NPC weapons: every spawnable SCUM weapon (no DLC, no explosives or
--- launchers), in five tiers by how strong it is. An NPC gets a weapon from
--- the tier of its skill level (1-5), sometimes one tier lower, so weak NPCs
--- carry improvised melee weapons and bows and the elite the best rifles.
+-- launchers), each with a tier (1 weakest - 5 best) and a kind. A squad class
+-- carries the kinds that fit it (hunters bows and hunting rifles, police
+-- pistols and SMGs, soldiers assault rifles...), and an NPC the ones of the
+-- tier of its skill level (sometimes one lower), so weak NPCs carry
+-- improvised melee weapons and the elite the best rifles.
 -- Spawn names from the SCUM item list (ribbongaming.com/scum-wiki/items).
 --
 -- varusteet.lua can override per squad class (or KAIKKI for all):
@@ -10,67 +12,130 @@
 --   Tahtaimet - own scope list; TahtainOsuus - share of scoped rifles (0..1)
 local W = {}
 
-W.TIERS = {
-    -- 1: improvised melee, spears, crude bows
-    {
-        "1H_ImprovisedKnife", "1H_Improvised_Glass_Shiv", "1H_Improvised_Hammer",
-        "1H_Improvised_Tomahawk", "1H_Improvised_metal_knife", "1H_Wooden_club",
-        "1H_Wooden_club_with_spikes", "1H_Wooden_club_with_wire", "1H_Stone_Axe", "2H_Stone_Axe",
-        "2H_Improvised_Gardening_Hoe", "2H_Improvised_shovel", "2H_Wooden_Sword", "1H_Metal_Pipe",
-        "1H_Brass_knuckles", "2H_Pitchfork", "2H_Pitchfork_Bent",
-        "Improvised_Wooden_Spear", "Improvised_Stone_Spear", "Bone_Spear",
-        "Improvised_Bow", "Improvised_Bow_25", "Improvised_Bow_30", "Crutch", "Razor_Blade", "1H_Scalpel",
-    },
-    -- 2: real melee weapons, improvised firearms, simple bows
-    {
-        "1H_Cleaver", "1H_Crowbar", "1H_Hatchet", "1H_Small_Axe", "1H_Pipe_Wrench", "1H_Little_Spade",
-        "1H_SkinningKnife", "1H_Skinning_Knife_02", "1H_Hunters_Skinning_Knife_01", "1H_Metal_Sword",
-        "1H_Medieval_Sword", "2H_Axe", "2H_Baseball_Bat", "2H_Baseball_Bat_with_spikes",
-        "2H_Baseball_Bat_with_wire", "2H_Metal_Baseball_Bat", "2H_Improvised_metal_shovel",
-        "2H_Shovel_01", "2H_Shovel_02", "2H_Pickaxe", "2H_Industrial_Gardening_Hoe",
-        "Improvised_Metal_Spear", "Improvised_Bow_35", "Recurve_Bow", "Recurve_Bow_50", "Penobscot_Bow_40",
-        "Weapon_Improvised_Handgun", "Weapon_Improvised_Rifle", "Weapon_Improvised_Crossbow",
-        "1H_Police_Baton", "1H_Hunter", "Blacksmith_Axe", "Sledgehammer",
-    },
-    -- 3: handguns, shotguns, old bolt-action rifles, good melee and bows
-    {
-        "Weapon_M1911", "Weapon_M9", "Weapon_HS9", "Weapon_Block21", "Weapon_Judge44",
-        "Weapon_PeaceKeeper38", "Weapon_Serpent357", "Weapon_Viper_M357", "Weapon_SF19",
-        "Weapon_Krueger", "Weapon_M1887", "Weapon_M1887_Sawed_off", "Weapon_DT11B",
-        "Weapon_DT11B_Sawed_Off", "Weapon_SDASS", "Weapon_590A11", "Weapon_Trench_Gun",
-        "Weapon_98k_Karabiner", "Weapon_MosinNagant", "Weapon_Hunter85_V2",
-        "1H_Military_Survival_Knife", "1H_Military_Tomahawk", "1H_Military_Shovel", "2H_Metal_Axe",
-        "2H_Katana", "2H_Tang_Dao", "Chainsaw", "Recurve_Bow_60", "Recurve_Bow_70", "Manchu_Bow_50",
-        "Snake_Skin_Bow", "Takedown_Bow",
-    },
-    -- 4: submachine guns, assault rifles, strong handguns
-    {
-        "Weapon_MP5", "Weapon_MP5_K", "Weapon_MP5_SD", "Weapon_UMP45", "Weapon_MAC10",
-        "Weapon_TommyGun", "Weapon_AKS_74U", "Weapon_AKM", "Weapon_AK47", "Weapon_VHS2",
-        "Weapon_M1_Garand", "Weapon_DEagle_50", "Weapon_Deagle_357", "Weapon_CarbonHunter",
-        "Weapon_M16A4", "Weapon_SKS", "Recurve_Bow_80", "Recurve_Bow_90", "Recurve_Bow_100",
-        "Recurve_Bow_Hunter", "Compound_Bow", "Weapon_BlackHawk_Crossbow",
-    },
-    -- 5: the best: modern assault and marksman rifles, snipers, machine guns
-    {
-        "Weapon_AK15", "Weapon_MK18", "Weapon_SCAR_L", "Weapon_SCAR_DMR", "Weapon_AS_Val",
-        "Weapon_VSS_VZ", "Weapon_SVD_Dragunov", "Weapon_RPK", "Weapon_M249", "Weapon_M82A1_Black",
-        "Weapon_AWM", "Weapon_AWP", "Weapon_VHS2_Rail",
-    },
+-- Every weapon: spawn name, tier (1 weakest - 5 best) and kind.
+W.LIST = {
+    -- improvised melee
+    { "1H_ImprovisedKnife", 1, "impro" }, { "1H_Improvised_Glass_Shiv", 1, "impro" },
+    { "1H_Improvised_Hammer", 1, "impro" }, { "1H_Improvised_Tomahawk", 1, "impro" },
+    { "1H_Improvised_metal_knife", 1, "impro" }, { "1H_Wooden_club", 1, "impro" },
+    { "1H_Wooden_club_with_spikes", 1, "impro" }, { "1H_Wooden_club_with_wire", 1, "impro" },
+    { "1H_Stone_Axe", 1, "impro" }, { "2H_Stone_Axe", 1, "impro" }, { "2H_Wooden_Sword", 1, "impro" },
+    { "2H_Improvised_Gardening_Hoe", 1, "impro" }, { "2H_Improvised_shovel", 1, "impro" },
+    { "1H_Metal_Pipe", 1, "impro" }, { "1H_Brass_knuckles", 1, "impro" }, { "Crutch", 1, "impro" },
+    { "Razor_Blade", 1, "impro" }, { "2H_Pitchfork", 1, "impro" }, { "2H_Pitchfork_Bent", 1, "impro" },
+    -- spears
+    { "Improvised_Wooden_Spear", 1, "spear" }, { "Improvised_Stone_Spear", 1, "spear" },
+    { "Bone_Spear", 1, "spear" }, { "Improvised_Metal_Spear", 2, "spear" },
+    -- tools
+    { "1H_Scalpel", 1, "tool" }, { "1H_Crowbar", 2, "tool" }, { "1H_Pipe_Wrench", 2, "tool" },
+    { "1H_Little_Spade", 2, "tool" }, { "2H_Shovel_01", 2, "tool" }, { "2H_Shovel_02", 2, "tool" },
+    { "2H_Improvised_metal_shovel", 2, "tool" }, { "2H_Pickaxe", 2, "tool" },
+    { "2H_Industrial_Gardening_Hoe", 2, "tool" }, { "Sledgehammer", 2, "tool" }, { "Chainsaw", 3, "tool" },
+    -- knives and swords
+    { "1H_Cleaver", 2, "blade" }, { "1H_SkinningKnife", 2, "hunt_blade" },
+    { "1H_Skinning_Knife_02", 2, "hunt_blade" }, { "1H_Hunters_Skinning_Knife_01", 2, "hunt_blade" },
+    { "1H_Hunter", 2, "hunt_blade" }, { "1H_Metal_Sword", 2, "blade" }, { "1H_Medieval_Sword", 2, "blade" },
+    { "2H_Katana", 3, "blade" }, { "2H_Tang_Dao", 3, "blade" },
+    -- axes and bats
+    { "1H_Hatchet", 2, "axe" }, { "1H_Small_Axe", 2, "axe" }, { "2H_Axe", 2, "axe" },
+    { "Blacksmith_Axe", 2, "axe" }, { "2H_Metal_Axe", 3, "axe" },
+    { "2H_Baseball_Bat", 2, "bat" }, { "2H_Baseball_Bat_with_spikes", 2, "bat" },
+    { "2H_Baseball_Bat_with_wire", 2, "bat" }, { "2H_Metal_Baseball_Bat", 2, "bat" },
+    { "1H_Police_Baton", 2, "baton" },
+    { "1H_Military_Survival_Knife", 3, "mil_melee" }, { "1H_Military_Tomahawk", 3, "mil_melee" },
+    { "1H_Military_Shovel", 3, "mil_melee" },
+    -- bows and crossbows
+    { "Improvised_Bow", 1, "bow_crude" }, { "Improvised_Bow_25", 1, "bow_crude" },
+    { "Improvised_Bow_30", 1, "bow_crude" }, { "Improvised_Bow_35", 2, "bow_crude" },
+    { "Recurve_Bow", 2, "bow" }, { "Recurve_Bow_50", 2, "bow" }, { "Penobscot_Bow_40", 2, "bow" },
+    { "Recurve_Bow_60", 3, "bow" }, { "Recurve_Bow_70", 3, "bow" }, { "Manchu_Bow_50", 3, "bow" },
+    { "Snake_Skin_Bow", 3, "bow" }, { "Takedown_Bow", 3, "bow" }, { "Recurve_Bow_80", 4, "bow" },
+    { "Recurve_Bow_90", 4, "bow" }, { "Recurve_Bow_100", 4, "bow" }, { "Recurve_Bow_Hunter", 4, "bow" },
+    { "Compound_Bow", 4, "compound" },
+    { "Weapon_Improvised_Crossbow", 2, "xbow_impro" }, { "Weapon_BlackHawk_Crossbow", 4, "xbow" },
+    -- firearms
+    { "Weapon_Improvised_Handgun", 2, "gun_impro" }, { "Weapon_Improvised_Rifle", 2, "gun_impro" },
+    { "Weapon_M1911", 3, "pistol" }, { "Weapon_M9", 3, "pistol" }, { "Weapon_HS9", 3, "pistol" },
+    { "Weapon_Block21", 3, "pistol" }, { "Weapon_SF19", 3, "pistol" }, { "Weapon_Krueger", 3, "pistol" },
+    { "Weapon_DEagle_50", 4, "pistol" },
+    { "Weapon_Judge44", 3, "revolver" }, { "Weapon_PeaceKeeper38", 3, "revolver" },
+    { "Weapon_Serpent357", 3, "revolver" }, { "Weapon_Viper_M357", 3, "revolver" },
+    { "Weapon_Deagle_357", 4, "revolver" },
+    { "Weapon_M1887_Sawed_off", 3, "sawed" }, { "Weapon_DT11B_Sawed_Off", 3, "sawed" },
+    { "Weapon_M1887", 3, "shotgun" }, { "Weapon_DT11B", 3, "shotgun" }, { "Weapon_SDASS", 3, "shotgun" },
+    { "Weapon_590A11", 3, "shotgun" }, { "Weapon_Trench_Gun", 3, "shotgun" },
+    { "Weapon_98k_Karabiner", 3, "bolt" }, { "Weapon_MosinNagant", 3, "bolt" },
+    { "Weapon_Hunter85_V2", 3, "bolt" }, { "Weapon_CarbonHunter", 4, "bolt" },
+    { "Weapon_SKS", 4, "semi" }, { "Weapon_M1_Garand", 4, "semi" },
+    { "Weapon_MAC10", 4, "smg" }, { "Weapon_TommyGun", 4, "smg" }, { "Weapon_UMP45", 4, "smg" },
+    { "Weapon_MP5", 4, "smg" }, { "Weapon_MP5_K", 4, "smg" }, { "Weapon_MP5_SD", 5, "smg" },
+    { "Weapon_AKS_74U", 4, "ak" }, { "Weapon_AKM", 4, "ak" }, { "Weapon_AK47", 4, "ak" },
+    { "Weapon_AK15", 5, "ak" }, { "Weapon_VHS2", 4, "assault" }, { "Weapon_M16A4", 4, "assault" },
+    { "Weapon_MK18", 5, "assault" }, { "Weapon_SCAR_L", 5, "assault" }, { "Weapon_VHS2_Rail", 5, "assault" },
+    { "Weapon_SCAR_DMR", 5, "dmr" }, { "Weapon_AS_Val", 5, "dmr" }, { "Weapon_VSS_VZ", 5, "dmr" },
+    { "Weapon_SVD_Dragunov", 5, "dmr" },
+    { "Weapon_M82A1_Black", 5, "sniper" }, { "Weapon_AWM", 5, "sniper" }, { "Weapon_AWP", 5, "sniper" },
+    { "Weapon_RPK", 5, "lmg" }, { "Weapon_M249", 5, "lmg" },
 }
 
--- Squad classes with a weapon list of their own, and the tier floor/cap of
--- the rest (military never below assault rifles, the elite at the top).
+local CIVIL = { "impro", "spear", "tool", "blade", "hunt_blade", "axe", "bat", "bow_crude", "bow",
+                "xbow_impro", "gun_impro", "pistol", "revolver", "sawed", "shotgun", "bolt" }
+local function with(base, more)
+    local t = {}
+    for _, k in ipairs(base) do t[#t + 1] = k end
+    for _, k in ipairs(more or {}) do t[#t + 1] = k end
+    return t
+end
+
+-- What each squad class carries: the kinds of weapon that fit it, a few
+-- single weapons on top (names), and its tier floor and ceiling.
 W.CLASS = {
-    police_patrol  = { Weapons = { "Weapon_MP5", "Weapon_M1911", "Weapon_Block21" } },
-    hunters        = { Weapons = { "Weapon_Hunter85_V2", "Weapon_CarbonHunter" }, TahtainOsuus = 0.4 },
-    military_group = { min = 4, TahtainOsuus = 0.35 },
-    elite_unit     = { min = 5, TahtainOsuus = 0.5 },
-    militia_cell   = { min = 3 },
-    bunker_group   = { min = 3 },
-    radiation_group = { min = 3 },
+    lone_wanderer   = { kinds = CIVIL, max = 4 },
+    pair            = { kinds = with(CIVIL, { "compound", "semi" }), names = { "Weapon_AK47", "Weapon_AKM" }, max = 4 },
+    survivor_group  = { kinds = with(CIVIL, { "compound", "semi" }), names = { "Weapon_AK47", "Weapon_AKM" }, max = 4 },
+    island_residents = { kinds = CIVIL, max = 4 },
+    scavengers      = { kinds = { "impro", "spear", "tool", "bat", "blade", "bow_crude", "xbow_impro", "gun_impro",
+                                  "pistol", "revolver", "sawed" }, max = 3 },
+    hunters         = { kinds = { "hunt_blade", "axe", "spear", "bow_crude", "bow", "compound", "xbow_impro", "xbow",
+                                  "bolt", "semi" }, names = { "Weapon_M1887", "Weapon_DT11B", "Weapon_Deagle_357",
+                                  "Weapon_Viper_M357" },
+                        min = 2, TahtainOsuus = 0.4 },
+    police_patrol   = { names = { "1H_Police_Baton", "Weapon_M1911", "Weapon_M9", "Weapon_HS9", "Weapon_Block21",
+                                  "Weapon_SF19", "Weapon_590A11", "Weapon_SDASS", "Weapon_MP5", "Weapon_MP5_K",
+                                  "Weapon_UMP45", "Weapon_M16A4", "Weapon_MP5_SD" }, min = 2 },
+    bandit_gang     = { kinds = { "impro", "bat", "axe", "blade", "tool", "gun_impro", "pistol", "revolver", "sawed",
+                                  "shotgun", "ak" }, names = { "Weapon_MAC10", "Weapon_TommyGun" }, max = 4 },
+    militia_cell    = { kinds = { "mil_melee", "axe", "pistol", "revolver", "shotgun", "bolt", "semi", "ak" },
+                        names = { "Weapon_RPK", "Weapon_SVD_Dragunov" }, min = 3, TahtainOsuus = 0.2 },
+    radiation_group = { kinds = { "mil_melee", "pistol", "shotgun", "smg", "ak", "assault", "dmr" }, min = 3 },
+    bunker_group    = { kinds = { "mil_melee", "pistol", "shotgun", "smg", "ak", "assault", "dmr", "lmg" }, min = 3 },
+    military_group  = { kinds = { "mil_melee", "pistol", "smg", "ak", "assault", "dmr", "sniper", "lmg" },
+                        min = 4, TahtainOsuus = 0.35 },
+    elite_unit      = { kinds = { "smg", "ak", "assault", "dmr", "sniper", "lmg" }, min = 5, TahtainOsuus = 0.5 },
 }
 W.DEFAULT_SCOPE_SHARE = 0.1
+
+-- Tier lists over every weapon (for squads with no theme, e.g. ryhmat.lua's).
+W.TIERS = { {}, {}, {}, {}, {} }
+for _, e in ipairs(W.LIST) do table.insert(W.TIERS[e[2]], e[1]) end
+
+-- The weapons a squad class carries at each tier.
+local pools = {}
+function W.pool(class, tier)
+    local c = W.CLASS[class]
+    if not c then return W.TIERS[tier] end
+    pools[class] = pools[class] or {}
+    if not pools[class][tier] then
+        local kinds, names, out = {}, {}, {}
+        for _, k in ipairs(c.kinds or {}) do kinds[k] = true end
+        for _, n in ipairs(c.names or {}) do names[n] = true end
+        for _, e in ipairs(W.LIST) do
+            if e[2] == tier and (kinds[e[3]] or names[e[1]]) then out[#out + 1] = e[1] end
+        end
+        pools[class][tier] = out
+    end
+    return pools[class][tier]
+end
 
 -- The magazine each weapon takes (weapons with a built-in magazine - revolvers,
 -- shotguns, bolt-action rifles, bows - are not listed).
@@ -110,16 +175,29 @@ end
 local function nonempty(t) return type(t) == "table" and #t > 0 end
 
 -- The tier of an NPC: its skill level, one lower now and then, within its
--- squad class's floor.
+-- squad class's floor and ceiling.
 function W.tier(class, level, roll)
     local t = math.max(1, math.min(5, math.floor(tonumber(level) or 1)))
     if (roll or math.random()) < 0.25 then t = t - 1 end
     local c = W.CLASS[class] or {}
-    return math.max(c.min or 1, math.min(5, t))
+    return math.max(c.min or 1, math.min(c.max or 5, t))
+end
+
+-- The weapons of a class at a tier, or at the nearest tier that has any.
+function W.pool_near(class, tier)
+    for d = 0, 4 do
+        for _, t in ipairs({ tier - d, tier + d }) do
+            if t >= 1 and t <= 5 then
+                local p = W.pool(class, t)
+                if #p > 0 then return p, t end
+            end
+        end
+    end
+    return {}, tier
 end
 
 -- The weapon setup of one NPC: varusteet.lua's own class entry wins, then
--- KAIKKI, then the class list above, then the tier of its level.
+-- KAIKKI, then the class's weapons at the NPC's tier.
 function W.for_member(class, level, gear, roll)
     gear = gear or {}
     local own, all, cls = gear[class] or {}, gear.KAIKKI or gear.ALL or {}, W.CLASS[class] or {}
@@ -127,7 +205,7 @@ function W.for_member(class, level, gear, roll)
         for _, src in ipairs({ own, all, cls }) do
             local v = src[key]
             if key == "Weapons" or key == "Tahtaimet" then
-                if nonempty(v) then return v end
+                if nonempty(v) and src ~= cls then return v end
             elseif v ~= nil then
                 return v
             end
@@ -135,7 +213,7 @@ function W.for_member(class, level, gear, roll)
         return nil
     end
     return {
-        Weapons = pick("Weapons") or W.TIERS[W.tier(class, level, roll)],
+        Weapons = pick("Weapons") or (W.pool_near(class, W.tier(class, level, roll))),
         Lipas = pick("Lipas"),
         Tahtaimet = pick("Tahtaimet"),
         TahtainOsuus = tonumber(pick("TahtainOsuus")) or W.DEFAULT_SCOPE_SHARE,
