@@ -22,9 +22,9 @@
 -- loytyiko esine ja saatiinko se NPC:n paalle.
 return {
     -- KAIKKI: nama saa jokainen NPC jokaisessa ryhmassa (lisaksi ryhman omat).
-    -- Testi: joulushortsit kaikille, jotta nahdaan toimiiko pukeminen.
+    -- Testi: maastopukuhousut kaikille, jotta nahdaan toimiiko pukeminen.
     KAIKKI = {
-        Clothes = { "Christmas_Pants_02" },
+        Clothes = { "Ghillie_Suit_Pants_01" },
     },
     police_patrol = {
         Clothes = {},

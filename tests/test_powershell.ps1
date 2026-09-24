@@ -168,7 +168,7 @@ Set-Content -LiteralPath (Join-Path $modDir "ryhmat.lua") -Value 'return { { ava
   -SkipUE4SS -NoMap -Yes -NoPause | Out-Null
 $gear = Get-Content -Raw (Join-Path $modDir "varusteet.lua")
 Check ($gear -match 'My_Own_Shirt') "a reinstall keeps the owner's own gear lines"
-Check ($gear -match 'KAIKKI' -and $gear -match 'Christmas_Pants_02') `
+Check ($gear -match 'KAIKKI' -and $gear -match 'Ghillie_Suit_Pants_01') `
       "an old varusteet.lua gets the KAIKKI section with the test item"
 Check ((Get-Content -Raw (Join-Path $modDir "ryhmat.lua")) -match 'omat_testit') `
       "a reinstall keeps the owner's own squad classes"
