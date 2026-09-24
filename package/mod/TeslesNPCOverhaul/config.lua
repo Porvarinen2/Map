@@ -1,7 +1,7 @@
 -- TESLES NPC OVERHAUL - server configuration.
 -- Distances are Unreal units unless a name says otherwise. 100 UU = 1 metre.
 return {
-    Version = "1.2.0",
+    Version = "1.2.1",
 
     -- ---------------------------------------------------------- population --
     Enabled = true,
@@ -64,7 +64,9 @@ return {
     -- Reflection scans are the expensive part of a tick, so their results are
     -- reused for this many seconds instead of being repeated per group.
     PlayerScanIntervalSec = 2,
-    JoinGraceSec = 30,              -- a joining player counts after this long in-world
+    -- A joining player counts once their pawn has stood in the world this
+    -- long. The join crash was UE4SS's own hooks, not this, so it is short.
+    JoinGraceSec = 3,
     ZombieScanIntervalSec = 4,
 
     -- ------------------------------------------------------------- combat --

@@ -90,18 +90,20 @@ function B.begin_tick(now)
     B.tick_now = now or os.time()
 end
 
-local function find_all(cname, now)
+local function find_all(cname, now, always)
     now = now or B.tick_now or os.time()
     local m = scan_misses[cname]
-    if m and now < m.next_try then
-        B.scan.skipped_backoff = B.scan.skipped_backoff + 1
-        return nil
+    if not always then
+        if m and now < m.next_try then
+            B.scan.skipped_backoff = B.scan.skipped_backoff + 1
+            return nil
+        end
+        if scan_budget <= 0 then
+            B.scan.skipped_budget = B.scan.skipped_budget + 1
+            return nil
+        end
+        scan_budget = scan_budget - 1
     end
-    if scan_budget <= 0 then
-        B.scan.skipped_budget = B.scan.skipped_budget + 1
-        return nil
-    end
-    scan_budget = scan_budget - 1
     B.scan.calls = B.scan.calls + 1
 
     local t0 = os.clock()
@@ -119,6 +121,7 @@ local function find_all(cname, now)
         scan_misses[cname] = nil
         return list
     end
+    if always then return nil end
     local n = (m and m.misses or 0) + 1
     scan_misses[cname] = {
         misses = n,
@@ -385,17 +388,26 @@ function B.player_positions()
         return c.v
     end
     local out = {}
-    local list = find_all("ConZPlayerController", now) or find_all("PlayerController", now)
+    -- Players are scanned every PlayerScanIntervalSec, always, outside the
+    -- scan budget and without the empty-result backoff. With the backoff an
+    -- empty server taught the bridge to wait up to 15 minutes before asking
+    -- again, so a player who joined was not seen for that long - the reason
+    -- the 1.2.0 log has no player line at all. The scan costs ~2 ms.
+    local list = find_all("ConZPlayerController", now, true)
     if not list then
-        -- Keep the previous answer rather than reporting an empty server: a
-        -- skipped scan is not proof that nobody is online.
-        return c.v or out
+        c.t, c.v = now, out
+        local shape = "0/0/0/0"
+        if shape ~= B.last_player_shape then
+            B.last_player_shape = shape
+            if B.on_debug then pcall(B.on_debug, "player scan: no player controllers") end
+        end
+        return out
     end
     -- A player counts only after their pawn has stood at a sane position for
     -- JoinGraceSec. The server died the moment a player joined: during the
     -- join the controller exists while the pawn is still being built in the
     -- transition map, and that is no moment to spawn NPCs next to it.
-    local grace = (B.cfg and B.cfg.JoinGraceSec) or 30
+    local grace = (B.cfg and B.cfg.JoinGraceSec) or 3
     local seen = {}
     local n_pc, n_pawn, n_sane = 0, 0, 0
     local sample = nil

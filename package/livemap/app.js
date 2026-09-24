@@ -291,19 +291,24 @@ function drawRoute(g) {
   const isSel = selected && g.gid === selected.gid;
   ctx.strokeStyle = isSel ? "rgba(255,206,130,.98)" : "rgba(224,182,115,.62)";
   ctx.lineWidth = isSel ? 2.6 : 1.5;
-  ctx.setLineDash(isSel ? [] : [7, 5]);
-  ctx.shadowColor = "rgba(0,0,0,.8)";
-  ctx.shadowBlur = 3;
+  // shadowBlur was the single most expensive thing on this canvas: a blur
+  // pass per route per frame. A dark under-stroke gives the same contrast.
   ctx.beginPath();
   g.route.forEach((p, i) => {
     const s = worldToScreen(p[0], p[1]);
     if (i === 0) ctx.moveTo(s.x, s.y); else ctx.lineTo(s.x, s.y);
   });
+  if (isSel) {
+    const c = ctx.strokeStyle, w = ctx.lineWidth;
+    ctx.strokeStyle = "rgba(0,0,0,.55)"; ctx.lineWidth = w + 2.5;
+    ctx.stroke();
+    ctx.strokeStyle = c; ctx.lineWidth = w;
+  }
+  ctx.setLineDash(isSel ? [] : [7, 5]);
   ctx.stroke();
   const end = g.route[g.route.length - 1];
   const e = worldToScreen(end[0], end[1]);
   ctx.setLineDash([]);
-  ctx.shadowBlur = 0;
   // Destination marker: hollow diamond, so it never reads as a group.
   ctx.strokeStyle = "rgba(255,206,130,.95)";
   ctx.lineWidth = 1.6;
@@ -381,6 +386,7 @@ function drawGroup(g) {
 // Every mouse move, wheel step, tile load and poll used to repaint the whole
 // canvas on the spot. Requests are now merged into one paint per frame.
 let drawQueued = false;
+let lastInteraction = 0;
 function draw() {
   if (drawQueued) return;
   drawQueued = true;
@@ -392,9 +398,13 @@ function drawNow() {
   drawBase(r);
   if (show.grid) drawGrid();
 
+  // While the map is being dragged or zoomed only the markers are drawn; the
+  // trails and every group's route come back as soon as it stops.
+  const moving = performance.now() - lastInteraction < 180;
+  if (moving) setTimeout(draw, 200);
   const list = visibleGroups();
-  if (show.trails) list.forEach(drawTrail);
-  if (show.routes) list.forEach(g => { if (g !== selected) drawRoute(g); });
+  if (show.trails && !moving) list.forEach(drawTrail);
+  if (show.routes && !moving) list.forEach(g => { if (g !== selected) drawRoute(g); });
   list.forEach(g => { if (!selected || g.gid !== selected.gid) drawGroup(g); });
   if (selected) {
     const live = state.groups.find(g => g.gid === selected.gid);
@@ -470,7 +480,7 @@ function renderWorld() {
   const playersSection = `
     <div class="section"><h2>Pelaajat</h2><div class="health">${players ||
       '<div class="h"><div><div class="k">Ei pelaajia</div><div class="d">Pelaaja näkyy ' +
-      '30 s liittymisen jälkeen.</div></div><div class="s PENDING">-</div></div>'}</div></div>`;
+      'muutama sekunti liittymisen jälkeen.</div></div><div class="s PENDING">-</div></div>'}</div></div>`;
   const waiting = state.waiting ? `
     <div class="section">
       <h2>Odottaa dataa</h2>
@@ -692,13 +702,19 @@ function renderFeed() {
   return `<div class="pad">${rows || '<div class="empty">Ei tapahtumia vielä</div>'}</div>`;
 }
 
+// The panel is rebuilt on every poll. Replacing identical HTML still makes the
+// browser tear down and lay out hundreds of trait rows, so skip it.
+let lastPanelHtml = "";
 function renderPanel() {
   const el = document.getElementById("panel");
-  const keep = el.scrollTop;
-  el.innerHTML = tab === "world" ? renderWorld()
+  const html = tab === "world" ? renderWorld()
     : tab === "groups" ? renderGroups()
     : tab === "detail" ? renderDetail()
     : renderFeed();
+  if (html === lastPanelHtml) return;
+  lastPanelHtml = html;
+  const keep = el.scrollTop;
+  el.innerHTML = html;
   el.scrollTop = keep;
   const s = document.getElementById("search");
   if (s) {
@@ -781,6 +797,7 @@ window.addEventListener("mousemove", e => {
     if (Math.abs(dx) + Math.abs(dy) > 3) dragging.moved = true;
     view.ox = dragging.ox + dx;
     view.oy = dragging.oy + dy;
+    lastInteraction = performance.now();
     draw();
     return;
   }
@@ -802,6 +819,7 @@ window.addEventListener("mouseup", e => {
   wrap.classList.remove("dragging");
 });
 wrap.addEventListener("wheel", e => {
+  lastInteraction = performance.now();
   e.preventDefault();
   const r = canvas.getBoundingClientRect();
   zoomAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.18 : 1 / 1.18);
