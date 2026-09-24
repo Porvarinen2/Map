@@ -2,29 +2,29 @@
 --
 -- Tama tiedosto SAILYY paivityksissa: INSTALL.bat ei kirjoita sen yli.
 --
--- Modissa on valmiit aseet naille ryhmille (tyhja tiedosto = ne kaytossa):
---   police_patrol  - Weapon_MP5, Weapon_M1911, Weapon_Block21
---   military_group - AK47, AK15, M16A4, AS Val, SVD, UMP45 (+ joskus tahtain)
---   elite_unit     - samat, useammin tahtain
---   hunters        - Weapon_Hunter85, Weapon_Hunter85_V2 (+ joskus tahtain)
--- Muut ryhmat pitavat SCUMin omat aseet.
+-- Oletuksena NPC:t kayttavat kaikkia SCUMin aseita (ei DLC-aseita, ei
+-- rajahteita tai sinkoja) taitotasonsa mukaan:
+--   taso 1 - itse tehdyt lyomaaseet, keihaat, heikot jouset
+--   taso 2 - kirveet, mailat, miekat, itse tehdyt pistoolit ja kivaarit
+--   taso 3 - pistoolit, haulikot, vanhat pulttilukkokivaarit, hyvat jouset
+--   taso 4 - konepistoolit, rynnakkokivaarit
+--   taso 5 - parhaat: AK15, SCAR, AS Val, SVD, M249, M82A1, AWM ...
+-- Poliisit: MP5 / M1911 / Block21. Metsastajat: Hunter85 / CarbonHunter.
+-- Sotilaat vahintaan taso 4, eliitti aina taso 5.
+-- Lippaalliseen aseeseen tulee lipas ja vahan panoksia; tarkkuus- ja
+-- pulttilukkokivaareissa on joskus tahtain (metsastajat, sotilaat, eliitti).
 --
--- Oma lista korvaa valmiin, esim.:
+-- Oma lista korvaa oletuksen, esim.:
 --   police_patrol = {
 --       Weapons = { "Weapon_MP5", "Weapon_M1911" },  -- arvotaan yksi
 --   },
 --   hunters = {
---       Weapons = { "Weapon_Hunter85" },
---       Tahtaimet = { "WeaponScope_Hunter85" },
---       TahtainOsuus = 0.5,        -- puolella kivaareista tahtain
+--       TahtainOsuus = 0.8,        -- 80 %:lla tahtain
 --   },
 --   bandit_gang = {
---       Lipas = false,             -- ei lipasta aseeseen
+--       Lipas = false,             -- ei lipasta
 --   },
---
--- Nimet ovat samat kuin #SpawnItem-komennossa. Aseeseen laitetaan aina lipas
--- ja vahan panoksia (Magazine_<aseen nimi>), ellei Lipas = false.
--- Tahtain tulee vain pulttilukko- ja tarkkuuskivaareihin.
+-- Nimet ovat samat kuin #SpawnItem-komennossa.
 -- Jokainen yritys kirjataan tiedostoon output\npc_loadout.txt.
 return {
     KAIKKI = {

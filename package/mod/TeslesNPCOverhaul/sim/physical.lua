@@ -198,8 +198,9 @@ function Ph.materialize(group, bridge, ctx)
                         bridge.take_ownership(handle)
                     end
                     -- The squad's own gear (config Loadouts), when set.
-                    if ctx.loadout and bridge.apply_loadout then
-                        pcall(bridge.apply_loadout, handle, ctx.loadout, group.gid .. "/" .. tostring(m.npcId))
+                    local lo = ctx.loadout_for and ctx.loadout_for(m) or ctx.loadout
+                    if lo and bridge.apply_loadout then
+                        pcall(bridge.apply_loadout, handle, lo, group.gid .. "/" .. tostring(m.npcId))
                     end
                     if ctx.on_spawn then ctx.on_spawn(group, m, pos) end
                 else

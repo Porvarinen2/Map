@@ -359,19 +359,36 @@ do
     check(lo2 and lo2.Clothes[1] == "Christmas_Pants_02", "including squads with no gear of their own")
     local W = require("npc.weapons")
     d.cfg.Loadouts = {}
-    local pol = d:loadout_for({ class = "police_patrol" })
-    check(pol and pol.Weapons[1] == "Weapon_MP5" and #pol.Weapons == 3, "police carry MP5 / M1911 / Block21 by default")
-    local hun = d:loadout_for({ class = "hunters" })
-    check(hun.Weapons[1] == "Weapon_Hunter85" and hun.TahtainOsuus > 0 and #hun.Tahtaimet > 0,
-          "hunters carry Hunter 85s, some with a scope")
-    check(d:loadout_for({ class = "bandit_gang" }) == nil, "other squads keep SCUM's own weapons")
+    local pol = d:loadout_for({ class = "police_patrol", members = {} })
+    check(pol.Weapons[1] == "Weapon_MP5" and #pol.Weapons == 3, "police carry MP5 / M1911 / Block21")
+    local hun = d:loadout_for({ class = "hunters", members = {} })
+    check(hun.Weapons[1] == "Weapon_Hunter85_V2" and hun.TahtainOsuus > 0, "hunters carry Hunter 85 / Carbon Hunter, some scoped")
+    local weak = W.for_member("bandit_gang", 1, {}, 0.9)
+    local best = W.for_member("bandit_gang", 5, {}, 0.9)
+    check(weak.Weapons == W.TIERS[1] and best.Weapons == W.TIERS[5], "a weak NPC gets tier 1, a skilled one tier 5")
+    check(W.for_member("elite_unit", 1, {}, 0.1).Weapons == W.TIERS[5]
+          and W.for_member("military_group", 1, {}, 0.1).Weapons == W.TIERS[4],
+          "the elite always carry the best, soldiers never below assault rifles")
+    check(W.tier("bandit_gang", 3, 0.1) == 2 and W.tier("bandit_gang", 3, 0.9) == 3, "now and then one tier lower")
+    local lvl1 = d:loadout_for({ class = "bandit_gang", members = {} }, { level = 1 })
+    check(lvl1.Weapons == W.TIERS[1] or lvl1.Weapons == W.TIERS[1], "the member's own level picks the tier")
+    local all = {}
+    for _, t in ipairs(W.TIERS) do for _, n in ipairs(t) do all[#all + 1] = n end end
+    local bad = 0
+    for _, n in ipairs(all) do
+        local l = n:lower()
+        if l:find("_gold") or l:find("_engraved") or l:find("_premium") or l:find("_jayw") or l:find("ivory")
+            or l:find("rpg") or l:find("at4") or l:find("grenade") or l:find("dannymachete") then bad = bad + 1 end
+    end
+    check(#all > 100 and bad == 0, string.format("%d weapons in the tiers, no DLC or launchers", #all))
     d.cfg.Loadouts = { police_patrol = { Weapons = {} }, hunters = { Weapons = { "Weapon_98k_Karabiner" }, Lipas = false } }
-    check(d:loadout_for({ class = "police_patrol" }).Weapons[1] == "Weapon_MP5", "an empty list in varusteet.lua keeps the defaults")
-    local h2 = d:loadout_for({ class = "hunters" })
+    check(d:loadout_for({ class = "police_patrol", members = {} }).Weapons[1] == "Weapon_MP5", "an empty list in varusteet.lua keeps the defaults")
+    local h2 = d:loadout_for({ class = "hunters", members = {} })
     check(h2.Weapons[1] == "Weapon_98k_Karabiner" and #h2.Weapons == 1 and h2.Lipas == false,
           "an own list replaces the defaults, Lipas = false is kept")
-    check(W.magazine_for("Weapon_M1911") == "Magazine_M1911" and W.SCOPED.weapon_hunter85,
-          "a weapon's magazine is found by name, and hunting rifles may take a scope")
+    check(W.magazine_for("Weapon_AKM") == "Magazine_AK47" and W.magazine_for("Weapon_M1887") == nil
+          and W.scopes_for("Weapon_Hunter85_V2")[1] == "WeaponScope_HuntingScope",
+          "each weapon has its own magazine (none for built-in ones) and scope")
     d.cfg.Loadouts = { KAIKKI = { Asu = 0 }, palomiehet = { Asu = { 2, 5 } } }
     check(d:loadout_for(ff).Asu[2] == 5 and d:loadout_for(other).Asu == 0,
           "an outfit number: the squad's own wins over KAIKKI")

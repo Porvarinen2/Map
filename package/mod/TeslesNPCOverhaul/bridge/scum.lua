@@ -1738,7 +1738,18 @@ function B.find_item_class(spawn_name)
     -- 1.7.4), so the usual categories are tried once each.
     if not guess_failed[key] then
         local name = tostring(spawn_name)
-        for _, folder in ipairs(GUESS_FOLDERS) do
+        -- Weapons and their parts live in a handful of folders (item_classes.txt
+        -- of the test server): only those are tried for them.
+        local folders = GUESS_FOLDERS
+        local low = name:lower()
+        if low:find("^magazine_") then folders = { "Weapons/Weapon_Clips" }
+        elseif low:find("^weaponscope_") or low:find("^weaponsights_") then folders = { "Weapons/Attachments/Scope" }
+        elseif low:find("^scoperail_") then folders = { "Weapons/Attachments/Rail" }
+        elseif low:find("^[12]h_") then folders = { "Weapons/New_Melee", "Weapons" }
+        elseif low:find("^weapon_") or low:find("bow") or low:find("spear") then
+            folders = { "Weapons/Ranged_Weapons", "Weapons", "Weapons/New_Melee" }
+        end
+        for _, folder in ipairs(folders) do
             local pkg = "/Game/ConZ_Files/Items/" .. folder .. "/" .. name
             local op = pkg .. "." .. name .. "_C"
             local found = load_item_class(op)
@@ -1750,7 +1761,7 @@ function B.find_item_class(spawn_name)
             end
         end
         guess_failed[key] = true
-        lnote(name .. ": not found in " .. #GUESS_FOLDERS .. " item folders - drop one with #SpawnItem so the mod learns it")
+        lnote(name .. ": not found in " .. #folders .. " item folders - drop one with #SpawnItem so the mod learns it")
     end
     if not item_index then build_item_index() end
     c = item_index[key] or item_index["bp_" .. key]
@@ -2328,13 +2339,13 @@ local function fill_magazine(mag, label)
 end
 function B.fit_weapon(w, weapon_name, loadout, label, pos)
     B.log_weapon_api(w, "WEAPON " .. weapon_name)
-    if loadout.Lipas ~= false then
-        local mname = type(loadout.Lipas) == "string" and loadout.Lipas or Weapons.magazine_for(weapon_name)
+    local mname = type(loadout.Lipas) == "string" and loadout.Lipas or Weapons.magazine_for(weapon_name)
+    if loadout.Lipas ~= false and mname then
         local mag = put_on_weapon(w, mname, "MagazineSocket", { "magazine", "clip" }, label, pos)
         if mag then pcall(fill_magazine, mag, label) end
     end
-    local scopes = loadout.Tahtaimet or {}
-    if Weapons.SCOPED[tostring(weapon_name):lower()] and #scopes > 0
+    local scopes = loadout.Tahtaimet or Weapons.scopes_for(weapon_name)
+    if #Weapons.scopes_for(weapon_name) > 0 and #scopes > 0
         and math.random() < (tonumber(loadout.TahtainOsuus) or 0) then
         for _, sname in ipairs(scopes) do
             if B.find_item_class(sname) then
@@ -2532,9 +2543,18 @@ function B.apply_loadout(handle, loadout, label)
         local j = math.random(i)
         order[i], order[j] = order[j], order[i]
     end
+    -- At most a few unknown names are probed per NPC (a miss costs a few
+    -- LoadAsset calls once; misses are remembered).
+    local probes = 0
     for _, name in ipairs(order) do
-        local okc, c = pcall(B.find_item_class, name)
-        if okc and c then w = name; break end
+        local known = item_class_cache[name:lower()] ~= nil
+        if not known and guess_failed[name:lower()] then
+            -- already missed
+        elseif known or probes < 3 then
+            if not known then probes = probes + 1 end
+            local okc, c = pcall(B.find_item_class, name)
+            if okc and c then w = name; break end
+        end
     end
     if w then
         B.pending_weapons[handle] = { name = w, label = label, loadout = loadout,

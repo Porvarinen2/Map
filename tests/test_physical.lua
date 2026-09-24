@@ -231,11 +231,17 @@ do
     local before = #Bridge.loadouts_applied
     squad = g
     run(20, 3000)
-    local n = #Bridge.loadouts_applied - before
+    local n = 0
+    for i = before + 1, #Bridge.loadouts_applied do
+        if tostring(Bridge.loadouts_applied[i].label):find(g.gid .. "/", 1, true) == 1 then n = n + 1 end
+    end
     local bodies = 0
     for _, m in ipairs(g.members) do if m.materialized then bodies = bodies + 1 end end
     check(g.physical and n == bodies, string.format("each materialised member gets the squad's gear (%d of %d)", n, bodies))
-    local lo = Bridge.loadouts_applied[#Bridge.loadouts_applied]
+    local lo = nil
+    for i = before + 1, #Bridge.loadouts_applied do
+        if tostring(Bridge.loadouts_applied[i].label):find(g.gid .. "/", 1, true) == 1 then lo = Bridge.loadouts_applied[i] end
+    end
     check(lo and lo.loadout.Weapons[1] == "Weapon_M9", "the configured items are the ones handed over")
 end
 

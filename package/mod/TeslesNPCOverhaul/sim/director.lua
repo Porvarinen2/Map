@@ -604,11 +604,14 @@ end
 
 -- Gear for a squad: everything under KAIKKI (all squads) plus the class's
 -- own list, from varusteet.lua.
-function D:loadout_for(group)
+function D:loadout_for(group, m)
     local all = self.cfg.Loadouts or {}
     local common, own = all.KAIKKI or all.ALL, all[group.class]
-    local weap = Weapons.for_class(group.class, all)
-    if not common and not own and #weap.Weapons == 0 then return nil end
+    local level = m and m.level
+    if not level then
+        for _, x in ipairs(group.members or {}) do level = math.max(level or 0, x.level or 1) end
+    end
+    local weap = Weapons.for_member(group.class, level, all)
     local out = {}
     for _, k in ipairs({ "Clothes", "Items" }) do
         out[k] = {}
@@ -897,6 +900,7 @@ function D:tick_group(group, players, physical_groups, dt)
             now = now,
             take_ownership = self.cfg.TakeOwnership ~= false,
             loadout = self:loadout_for(group),
+            loadout_for = function(m) return self:loadout_for(group, m) end,
             yaw = math.floor(U.deg((group.mv and group.mv.smooth_heading) or 0)) % 360,
             on_spawn = function(g, m, pos)
                 Log.event("MATERIALIZE", g.gid, m.npcId)
