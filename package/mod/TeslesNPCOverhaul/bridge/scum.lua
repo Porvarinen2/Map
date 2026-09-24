@@ -5,6 +5,7 @@
 -- capability reports OK / PENDING / DEGRADED so the live map can say what is
 -- actually proven on this server instead of implying success.
 local U = require("core.util")
+local Weapons = require("npc.weapons")
 
 local B = {}
 
@@ -1652,7 +1653,26 @@ local GUESS_FOLDERS = {
     "Clothes/Gloves", "Clothes/Masks", "Clothes/Backpacks", "Clothes/Belts",
     "Clothes/Ghillie_Suits/Military", "Clothes/Sweaters", "Clothes/Glasses", "Clothes",
     "Weapons/Ranged_Weapons", "Weapons/New_Melee", "Weapons",
+    "Weapons/Weapon_Clips", "Weapons/Attachments/Scope", "Weapons/Attachments/Rail",
+    "Ammunition",
 }
+-- LoadAsset wants the object path: /Game/.../Name.Name_C (as the NPC classes
+-- are loaded). Up to 1.8.4 it got the package path only, which never loaded
+-- anything: an item class was found only while one existed in the world.
+local function load_item_class(op)
+    local c = nil
+    pcall(function() c = StaticFindObject(op) end)
+    if c and valid(c) then return c end
+    if not have("LoadAsset") then return nil end
+    local pkg = op:match("^(.-)%.") or op
+    local short = pkg:match("([^/]+)$") or ""
+    for _, p in ipairs({ op, pkg .. "." .. short, pkg }) do
+        pcall(function() LoadAsset(p) end)
+        pcall(function() c = StaticFindObject(op) end)
+        if c and valid(c) then return c end
+    end
+    return nil
+end
 local function remember_item_class(cls)
     local cn = full_name(cls)
     local path = cn:match("%s(%S+)$") or cn
@@ -1703,17 +1723,15 @@ function B.find_item_class(spawn_name)
     if c and valid(c) then return c end
     local path = B.item_paths[key]
     if path then
-        pcall(function() c = StaticFindObject(path) end)
-        if not (c and valid(c)) and have("LoadAsset") then
-            local pkg = path:match("^(.-)%.") or path
-            pcall(function() LoadAsset(pkg) end)
-            pcall(function() c = StaticFindObject(path) end)
-        end
+        c = load_item_class(path)
         if c and valid(c) then
             item_class_cache[key] = c
             return c
         end
-        lnote(spawn_name .. ": known class path " .. path .. " would not load")
+        if not guess_failed["path:" .. key] then
+            guess_failed["path:" .. key] = true
+            lnote(spawn_name .. ": known class path " .. path .. " would not load")
+        end
     end
     -- Not seen in the world yet: SCUM keeps items in
     -- /Game/ConZ_Files/Items/<category>/<Name>.<Name>_C (item_classes.txt,
@@ -1723,12 +1741,7 @@ function B.find_item_class(spawn_name)
         for _, folder in ipairs(GUESS_FOLDERS) do
             local pkg = "/Game/ConZ_Files/Items/" .. folder .. "/" .. name
             local op = pkg .. "." .. name .. "_C"
-            local found = nil
-            pcall(function() found = StaticFindObject(op) end)
-            if not (found and valid(found)) and have("LoadAsset") then
-                pcall(function() LoadAsset(pkg) end)
-                pcall(function() found = StaticFindObject(op) end)
-            end
+            local found = load_item_class(op)
             if found and valid(found) then
                 item_class_cache[key] = found
                 remember_item_class(found)
@@ -2074,6 +2087,7 @@ function B.maybe_player_survey(now)
     if not pawn then return end
     local lines = {}
     local worn = {}
+    pcall(B.log_player_weapon, pawn)
     local ok, w = pcall(inspect_character, pawn, "PLAYER", lines, 2)
     if ok and w then worn = w end
     local names = {}
@@ -2166,6 +2180,171 @@ local function wear_item(a, handle, name, label, pos)
     return true
 end
 
+-- ------------------------------------------------ weapon internals log ---
+-- weapon_api.txt: every property (with value) and function of a weapon, a
+-- magazine and a scope, once per class, plus the player's own loaded weapon -
+-- how SCUM links a magazine and rounds to a weapon.
+local weapon_api, weapon_api_seen = {}, {}
+local function write_weapon_api()
+    if B.write_file then pcall(B.write_file, "weapon_api.txt", table.concat(weapon_api, "\n") .. "\n") end
+end
+local function functions_of(obj, stop_at)
+    local out = {}
+    local okc, cls = pcall(function() return obj:GetClass() end)
+    local depth = 0
+    while okc and cls and valid(cls) and depth < 10 do
+        depth = depth + 1
+        local cn = full_name(cls)
+        if stop_at and cn:find(stop_at, 1, true) then break end
+        pcall(function()
+            cls:ForEachFunction(function(f)
+                pcall(function() out[#out + 1] = f:GetFName():ToString() end)
+            end)
+        end)
+        local oks, sup = pcall(function() return cls:GetSuperStruct() end)
+        if not (oks and sup) then break end
+        cls = sup
+    end
+    return out
+end
+B.functions_of = functions_of
+function B.log_weapon_api(obj, label, force)
+    if not (obj and valid(obj)) or #weapon_api > 6000 then return end
+    local key = ""
+    pcall(function() key = full_name(obj:GetClass()) end)
+    if weapon_api_seen[key] and not force then return end
+    weapon_api_seen[key] = true
+    weapon_api[#weapon_api + 1] = "=== " .. label .. " " .. full_name(obj) .. " (" .. os.date("%H:%M:%S") .. ")"
+    pcall(dump_props, obj, weapon_api, "  props", "/Script/Engine.Actor")
+    weapon_api[#weapon_api + 1] = "  functions: " .. table.concat(functions_of(obj, "/Script/Engine.Actor"), ", ")
+    write_weapon_api()
+end
+local function items_owned_by(owner)
+    local out, on = {}, full_name(owner)
+    for _, it in ipairs(find_all("Item", nil, true) or {}) do
+        local ok, o = pcall(function() return it:GetOwner() end)
+        if ok and o and full_name(o) == on then out[#out + 1] = it end
+    end
+    return out
+end
+-- The player's weapon in hands, with whatever hangs on it (magazine, rail,
+-- scope): SCUM's own way of putting them together.
+local player_weapon_logged = false
+function B.log_player_weapon(pawn)
+    if player_weapon_logged then return end
+    local w = nil
+    pcall(function() w = pawn._itemInHands end)
+    if not (w and valid(w)) then return end
+    local parts = items_owned_by(w)
+    if #parts == 0 then return end
+    player_weapon_logged = true
+    B.log_weapon_api(w, "PLAYER WEAPON", true)
+    for _, it in ipairs(parts) do
+        B.log_weapon_api(it, "PLAYER WEAPON PART", true)
+        for _, sub in ipairs(items_owned_by(it)) do B.log_weapon_api(sub, "PLAYER WEAPON PART PART", true) end
+    end
+end
+
+-- Puts an item on a weapon: spawned, owned by the weapon, fastened to the
+-- weapon's mesh at the socket, then handed to whichever of the weapon's own
+-- functions takes it (names found at run time, see weapon_api.txt).
+local function weapon_mesh(w)
+    local m = nil
+    for _, pn in ipairs({ "_skeletalMeshComponent", "Mesh" }) do
+        pcall(function() local c = w[pn]; if c and valid(c) and not m then m = c end end)
+    end
+    return m
+end
+local SKIP_FN = { "^OnRep", "^Get", "^Is", "^Can", "^Has", "^NetMulticast", "^Client", "^Receive", "^K2_", "^BP_" }
+local function try_weapon_calls(w, part, words, label)
+    local tried = {}
+    for _, fn in ipairs(functions_of(w, "/Script/Engine.Actor")) do
+        local low = fn:lower()
+        local match = false
+        for _, wd in ipairs(words) do if low:find(wd, 1, true) then match = true end end
+        local skip = false
+        for _, pat in ipairs(SKIP_FN) do if fn:find(pat) then skip = true end end
+        if match and not skip and (low:find("attach") or low:find("insert") or low:find("set")
+            or low:find("load") or low:find("equip") or low:find("add") or low:find("mount")) then
+            local ok, err = pcall(function() return w[fn](w, part) end)
+            tried[#tried + 1] = fn .. "=" .. (ok and "ok" or ("x:" .. tostring(err):sub(1, 60)))
+        end
+    end
+    return tried
+end
+local function put_on_weapon(w, name, socket, words, label, pos)
+    local cls = B.find_item_class(name)
+    if not cls then return nil end
+    local part = spawn_actor(cls, pos)
+    if not part then return nil end
+    pcall(function() part:SetOwner(w) end)
+    pcall(function() part:SetActorEnableCollision(false) end)
+    local mesh = weapon_mesh(w)
+    local att = false
+    if mesh then
+        att = pcall(function() part:K2_GetRootComponent():K2_AttachToComponent(mesh, fname(socket), 2, 2, 2, false) end)
+    end
+    local tried = try_weapon_calls(w, part, words, label)
+    B.log_weapon_api(part, "PART " .. name)
+    lnote(string.format("%s: %s -> %s (attach %s @%s, calls: %s)", label, name, full_name(w):match("([%w_]+)_C_") or "?",
+        tostring(att), socket, #tried > 0 and table.concat(tried, ", ") or "none"))
+    return part
+end
+-- Rounds in a magazine: numeric properties named like a round count are set
+-- to 40-90% of a capacity property (both found at run time and logged).
+local function fill_magazine(mag, label)
+    local count_p, cap_p, cap = nil, nil, nil
+    local names = {}
+    local okc, cls = pcall(function() return mag:GetClass() end)
+    local depth = 0
+    while okc and cls and valid(cls) and depth < 8 do
+        depth = depth + 1
+        if full_name(cls):find("/Script/Engine.Actor", 1, true) then break end
+        pcall(function()
+            cls:ForEachProperty(function(p)
+                local n = p:GetFName():ToString()
+                local v = mag[n]
+                if type(v) == "number" then names[#names + 1] = n end
+            end)
+        end)
+        local oks, sup = pcall(function() return cls:GetSuperStruct() end)
+        if not (oks and sup) then break end
+        cls = sup
+    end
+    for _, n in ipairs(names) do
+        local low = n:lower()
+        if not cap_p and (low:find("capacity") or low:find("max")) then cap_p = n end
+        if not count_p and (low:find("ammo") or low:find("round") or low:find("bullet") or low:find("cartridge")
+            or low:find("count")) and not low:find("max") and not low:find("capacity") then count_p = n end
+    end
+    if cap_p then pcall(function() cap = mag[cap_p] end) end
+    local set = nil
+    if count_p then
+        local want = math.floor((tonumber(cap) or 10) * (0.4 + math.random() * 0.5) + 0.5)
+        if pcall(function() mag[count_p] = want end) then set = want end
+    end
+    lnote(string.format("%s: lipas: numerot [%s], panokset %s = %s (kapasiteetti %s = %s)", label,
+        table.concat(names, ", "), tostring(count_p), tostring(set), tostring(cap_p), tostring(cap)))
+end
+function B.fit_weapon(w, weapon_name, loadout, label, pos)
+    B.log_weapon_api(w, "WEAPON " .. weapon_name)
+    if loadout.Lipas ~= false then
+        local mname = type(loadout.Lipas) == "string" and loadout.Lipas or Weapons.magazine_for(weapon_name)
+        local mag = put_on_weapon(w, mname, "MagazineSocket", { "magazine", "clip" }, label, pos)
+        if mag then pcall(fill_magazine, mag, label) end
+    end
+    local scopes = loadout.Tahtaimet or {}
+    if Weapons.SCOPED[tostring(weapon_name):lower()] and #scopes > 0
+        and math.random() < (tonumber(loadout.TahtainOsuus) or 0) then
+        for _, sname in ipairs(scopes) do
+            if B.find_item_class(sname) then
+                put_on_weapon(w, sname, "Scope", { "scope", "attachment", "sight" }, label, pos)
+                break
+            end
+        end
+    end
+end
+
 -- A weapon: the new one goes where SCUM had put the NPC's own (same parent
 -- and socket), becomes the item in hands, and the old one is removed.
 local function hold_weapon(a, handle, name, label, pos, olds)
@@ -2192,7 +2371,7 @@ local function hold_weapon(a, handle, name, label, pos, olds)
     for _, o in ipairs(olds) do pcall(function() o:K2_DestroyActor() end) end
     lnote(string.format("%s: %s - weapon placed (attach=%s, in hands=%s, replaced %d)",
         label, name, tostring(att), tostring(inhands), #olds))
-    return att
+    return att, item
 end
 
 -- SCUM gives an NPC its own weapon a moment after the spawn. 1.8.1 put the
@@ -2227,8 +2406,12 @@ function B.tick_weapons(now)
                 local pos = nil
                 pcall(function() pos = vec(a:K2_GetActorLocation()) end)
                 if pos then
-                    local ok, res = pcall(hold_weapon, a, h, p.name, p.label, pos, olds)
-                    if not ok then lnote(p.label .. ": " .. p.name .. " - error: " .. tostring(res)) end
+                    local ok, res, item = pcall(hold_weapon, a, h, p.name, p.label, pos, olds)
+                    if not ok then lnote(p.label .. ": " .. p.name .. " - error: " .. tostring(res))
+                    elseif res and item then
+                        local okf, err = pcall(B.fit_weapon, item, p.name, p.loadout or {}, p.label, pos)
+                        if not okf then lnote(p.label .. ": varustus - error: " .. tostring(err)) end
+                    end
                 end
             elseif now > p.deadline then
                 B.pending_weapons[h] = nil
@@ -2341,14 +2524,21 @@ function B.apply_loadout(handle, loadout, label)
         if ok and res then given = given + 1
         elseif not ok then lnote(label .. ": " .. name .. " - error: " .. tostring(res)) end
     end
-    -- Weapons is a wish list: the first one this server has is used.
+    -- One weapon at random among those in the list this server has.
     local w = nil
-    for _, name in ipairs(loadout.Weapons or {}) do
+    local order = {}
+    for _, name in ipairs(loadout.Weapons or {}) do order[#order + 1] = name end
+    for i = #order, 2, -1 do
+        local j = math.random(i)
+        order[i], order[j] = order[j], order[i]
+    end
+    for _, name in ipairs(order) do
         local okc, c = pcall(B.find_item_class, name)
         if okc and c then w = name; break end
     end
     if w then
-        B.pending_weapons[handle] = { name = w, label = label, deadline = os.time() + B.weapon_wait_sec }
+        B.pending_weapons[handle] = { name = w, label = label, loadout = loadout,
+                                      deadline = os.time() + B.weapon_wait_sec }
         pcall(B.tick_weapons, os.time())
         given = given + 1
     end

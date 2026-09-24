@@ -13,6 +13,7 @@
 local U = require("core.util")
 local RNG = require("core.rng")
 local Log = require("core.log")
+local Weapons = require("npc.weapons")
 local Router = require("world.router")
 local Grid = require("world.navgrid")
 local POI = require("world.pois")
@@ -604,17 +605,21 @@ end
 -- Gear for a squad: everything under KAIKKI (all squads) plus the class's
 -- own list, from varusteet.lua.
 function D:loadout_for(group)
-    local all = self.cfg.Loadouts
-    if not all then return nil end
+    local all = self.cfg.Loadouts or {}
     local common, own = all.KAIKKI or all.ALL, all[group.class]
-    if not common and not own then return nil end
+    local weap = Weapons.for_class(group.class, all)
+    if not common and not own and #weap.Weapons == 0 then return nil end
     local out = {}
-    for _, k in ipairs({ "Clothes", "Weapons", "Items" }) do
+    for _, k in ipairs({ "Clothes", "Items" }) do
         out[k] = {}
         for _, src in ipairs({ common or {}, own or {} }) do
             for _, n in ipairs(src[k] or {}) do out[k][#out[k] + 1] = n end
         end
     end
+    out.Weapons = weap.Weapons
+    out.Lipas = weap.Lipas
+    out.Tahtaimet = weap.Tahtaimet
+    out.TahtainOsuus = weap.TahtainOsuus
     -- Outfit number: the squad's own wins over KAIKKI.
     if own and own.Asu ~= nil then out.Asu = own.Asu
     elseif common and common.Asu ~= nil then out.Asu = common.Asu end

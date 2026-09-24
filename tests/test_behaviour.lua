@@ -357,6 +357,21 @@ do
     local other = world.groups[1]
     local lo2 = d:loadout_for(other)
     check(lo2 and lo2.Clothes[1] == "Christmas_Pants_02", "including squads with no gear of their own")
+    local W = require("npc.weapons")
+    d.cfg.Loadouts = {}
+    local pol = d:loadout_for({ class = "police_patrol" })
+    check(pol and pol.Weapons[1] == "Weapon_MP5" and #pol.Weapons == 3, "police carry MP5 / M1911 / Block21 by default")
+    local hun = d:loadout_for({ class = "hunters" })
+    check(hun.Weapons[1] == "Weapon_Hunter85" and hun.TahtainOsuus > 0 and #hun.Tahtaimet > 0,
+          "hunters carry Hunter 85s, some with a scope")
+    check(d:loadout_for({ class = "bandit_gang" }) == nil, "other squads keep SCUM's own weapons")
+    d.cfg.Loadouts = { police_patrol = { Weapons = {} }, hunters = { Weapons = { "Weapon_98k_Karabiner" }, Lipas = false } }
+    check(d:loadout_for({ class = "police_patrol" }).Weapons[1] == "Weapon_MP5", "an empty list in varusteet.lua keeps the defaults")
+    local h2 = d:loadout_for({ class = "hunters" })
+    check(h2.Weapons[1] == "Weapon_98k_Karabiner" and #h2.Weapons == 1 and h2.Lipas == false,
+          "an own list replaces the defaults, Lipas = false is kept")
+    check(W.magazine_for("Weapon_M1911") == "Magazine_M1911" and W.SCOPED.weapon_hunter85,
+          "a weapon's magazine is found by name, and hunting rifles may take a scope")
     d.cfg.Loadouts = { KAIKKI = { Asu = 0 }, palomiehet = { Asu = { 2, 5 } } }
     check(d:loadout_for(ff).Asu[2] == 5 and d:loadout_for(other).Asu == 0,
           "an outfit number: the squad's own wins over KAIKKI")

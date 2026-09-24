@@ -168,8 +168,8 @@ Set-Content -LiteralPath (Join-Path $modDir "ryhmat.lua") -Value 'return { { ava
   -SkipUE4SS -NoMap -Yes -NoPause | Out-Null
 $gear = Get-Content -Raw (Join-Path $modDir "varusteet.lua")
 Check ($gear -match 'My_Own_Shirt') "a reinstall keeps the owner's own gear lines"
-Check ($gear -match 'KAIKKI' -and $gear -match 'Weapon_SCAR_DMR') `
-      "an old varusteet.lua gets the KAIKKI section with the test weapon"
+Check ($gear -match 'KAIKKI') `
+      "an old varusteet.lua gets the (empty) KAIKKI section"
 Check ((Get-Content -Raw (Join-Path $modDir "ryhmat.lua")) -match 'omat_testit') `
       "a reinstall keeps the owner's own squad classes"
 # The gear file must still be valid Lua after the insert.
@@ -179,70 +179,26 @@ if (Get-Command lua5.4 -ErrorAction SilentlyContinue) {
   $luaOk = ($LASTEXITCODE -eq 0)
 }
 Check $luaOk "and the patched varusteet.lua still loads"
-# The 1.7.x clothes test (ghillie pants, next to the empty lists the KAIKKI
-# insert wrote) becomes the weapon test.
-Set-Content -LiteralPath (Join-Path $modDir "varusteet.lua") -Value @"
-return {
-    KAIKKI = {
-        Clothes = { "Ghillie_Suit_Pants_01" },
-        Weapons = {},
-        Items = {},
-    },
-    police_patrol = { Clothes = { "My_Own_Shirt" } },
-}
-"@
-& (Join-Path $pkg "INSTALL.ps1") -ServerRoot (Join-Path $lab "server") `
-  -SkipUE4SS -NoMap -Yes -NoPause | Out-Null
-$gear = Get-Content -Raw (Join-Path $modDir "varusteet.lua")
-Check ($gear -match 'Weapon_SCAR_DMR' -and $gear -notmatch 'Ghillie' -and $gear -match 'My_Own_Shirt') `
-      "the ghillie test in an owner's gear file moves to the weapon test, their own lines stay"
-function Get-LuaKaikkiWeapon($path) {
-  if (-not (Get-Command lua5.4 -ErrorAction SilentlyContinue)) { return "Weapon_SCAR_DMR" }
+# Every earlier test block (ghillie, M1911 with an empty list after it,
+# SCAR + Asu) is emptied; the owner's own lines stay.
+function Get-LuaKaikkiCount($path) {
+  if (-not (Get-Command lua5.4 -ErrorAction SilentlyContinue)) { return "0" }
   $p = $path -replace '\\','/'
-  return (& lua5.4 -e "local t = dofile('$p'); print(t.KAIKKI.Weapons[1])")
+  return (& lua5.4 -e "local n = 0 for _ in pairs(dofile('$p').KAIKKI) do n = n + 1 end print(n)")
 }
-Check ((Get-LuaKaikkiWeapon (Join-Path $modDir "varusteet.lua")) -eq "Weapon_SCAR_DMR") `
-      "and Lua really sees the test weapon (no empty Weapons list after it)"
-# The file 1.8.0 left behind: test weapon cancelled by an empty list.
-Set-Content -LiteralPath (Join-Path $modDir "varusteet.lua") -Value @"
-return {
-    KAIKKI = {
-        Weapons = { "Weapon_M1911" },
-        Weapons = {},
-        Items = {},
-    },
-    police_patrol = { Clothes = { "My_Own_Shirt" } },
+foreach ($kaikki in @(
+    '        Clothes = { "Ghillie_Suit_Pants_01" },`n        Weapons = {},`n        Items = {},',
+    '        Weapons = { "Weapon_M1911" },`n        Weapons = {},`n        Items = {},',
+    '        Asu = 0,`n        Weapons = { "Weapon_SCAR_DMR", "Weapon_AS_Val" },')) {
+  $body = $kaikki -replace '`n', "`n"
+  Set-Content -LiteralPath (Join-Path $modDir "varusteet.lua") -Value ("return {`n    KAIKKI = {`n" + $body + "`n    },`n    police_patrol = { Clothes = { `"My_Own_Shirt`" } },`n}")
+  & (Join-Path $pkg "INSTALL.ps1") -ServerRoot (Join-Path $lab "server") `
+    -SkipUE4SS -NoMap -Yes -NoPause | Out-Null
+  $gear = Get-Content -Raw (Join-Path $modDir "varusteet.lua")
+  Check ((Get-LuaKaikkiCount (Join-Path $modDir "varusteet.lua")) -eq "0" -and $gear -match 'My_Own_Shirt' -and
+         $gear -notmatch 'Ghillie|SCAR|M1911|Asu') `
+        ("an old test block is emptied, the owner's lines stay: " + ($body -split "`n")[0].Trim())
 }
-"@
-& (Join-Path $pkg "INSTALL.ps1") -ServerRoot (Join-Path $lab "server") `
-  -SkipUE4SS -NoMap -Yes -NoPause | Out-Null
-Check ((Get-LuaKaikkiWeapon (Join-Path $modDir "varusteet.lua")) -eq "Weapon_SCAR_DMR" -and
-       ((Get-Content -Raw (Join-Path $modDir "varusteet.lua")) -match 'My_Own_Shirt')) `
-      "the gear file 1.8.0 broke is repaired, the owner's lines stay"
-# 1.8.3's SCAR-only test with a police block lacking Runko.
-Set-Content -LiteralPath (Join-Path $modDir "varusteet.lua") -Value @"
-return {
-    KAIKKI = {
-        Weapons = { "Weapon_SCAR_DMR" },
-    },
-    police_patrol = {
-        Clothes = {},
-        Weapons = {},
-        Items = {},
-    },
-}
-"@
-& (Join-Path $pkg "INSTALL.ps1") -ServerRoot (Join-Path $lab "server") `
-  -SkipUE4SS -NoMap -Yes -NoPause | Out-Null
-$gear = Get-Content -Raw (Join-Path $modDir "varusteet.lua")
-Check ($gear -match 'Weapon_AS_Val' -and $gear -match 'Asu = 0' -and $gear -match 'Runko = "Guard"') `
-      "the SCAR test gets a fallback weapon and the police patrol the guard body"
-$pr = "Guard"
-if (Get-Command lua5.4 -ErrorAction SilentlyContinue) {
-  $pp = (Join-Path $modDir "varusteet.lua") -replace '\\','/'
-  $pr = (& lua5.4 -e "print(dofile('$pp').police_patrol.Runko)")
-}
-Check ($pr -eq "Guard") "and Lua reads the police Runko"
 & (Join-Path $pkg "INSTALL.ps1") -ServerRoot (Join-Path $lab "server") `
   -SkipUE4SS -NoMap -Yes -NoPause | Out-Null
 $gear2 = Get-Content -Raw (Join-Path $modDir "varusteet.lua")
