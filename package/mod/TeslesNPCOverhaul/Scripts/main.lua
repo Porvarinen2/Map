@@ -406,6 +406,15 @@ local function start()
         f:close()
     end
     if Bridge.write_loadout_log then pcall(Bridge.write_loadout_log) end
+    -- Item classes learned in earlier sessions.
+    do
+        local f = io.open(OUTPUT_DIR .. SEP .. "item_classes.txt", "r")
+        if f then
+            local text = f:read("*a")
+            f:close()
+            if Bridge.load_item_paths then pcall(Bridge.load_item_paths, text) end
+        end
+    end
     Bridge.on_debug = function(text)
         Log.info(text)
         boot(text)

@@ -158,6 +158,30 @@ local function full_name(o)
     return tostring(o)
 end
 
+-- UE4SS hands arrays back in several shapes: a Lua table, a TArray, or a
+-- RemoteUnrealParam wrapping one (1.7.3's survey printed the wrapper itself).
+local function to_list(x)
+    local out = {}
+    if x == nil then return out end
+    if type(x) == "table" and x.get == nil and x.ForEach == nil then
+        for i = 1, #x do out[#out + 1] = x[i] end
+        return out
+    end
+    local okg, inner = pcall(function() return x:get() end)
+    if okg and inner ~= nil and inner ~= x then x = inner end
+    local okf = pcall(function()
+        x:ForEach(function(_, elem)
+            local oke, v = pcall(function() return elem:get() end)
+            out[#out + 1] = oke and v or elem
+        end)
+    end)
+    if not okf and type(x) == "userdata" then
+        pcall(function() for i = 1, #x do out[#out + 1] = x[i] end end)
+    end
+    return out
+end
+B.to_list = to_list
+
 local function address_of(o)
     local ok, a = pcall(function() return o:GetAddress() end)
     if ok and a then return tostring(a) end
@@ -1472,10 +1496,75 @@ local function build_item_index()
     lnote("item index: " .. n .. " loaded item classes")
 end
 
+-- Item classes learned from items seen in the world: spawn name (lower
+-- case) -> object path of the class. The Blueprint class list cannot be
+-- searched on this build (1.7.3: "loaded Blueprint classes: 0"), but every
+-- item lying in the world, or spawned with #SpawnItem, tells its class. The
+-- list is kept in output/item_classes.txt and read back at boot, so a class
+-- learned once is known in later sessions too.
+B.item_paths = B.item_paths or {}
+local function remember_item_class(cls)
+    local cn = full_name(cls)
+    local path = cn:match("%s(%S+)$") or cn
+    local short = (path:match("%.([^%.]+)$") or path):gsub("_C$", "")
+    local key = short:lower()
+    if B.item_paths[key] ~= path then
+        B.item_paths[key] = path
+        B.item_paths_dirty = true
+        return true
+    end
+    return false
+end
+
+function B.learn_items(now)
+    now = now or os.time()
+    if B.learn_at and now < B.learn_at then return end
+    B.learn_at = now + 30
+    if #B.player_positions() == 0 then return end
+    local learned = 0
+    for _, base in ipairs({ "Item" }) do
+        for _, it in ipairs(find_all(base, now, true) or {}) do
+            local okc, cls = pcall(function() return it:GetClass() end)
+            if okc and cls and valid(cls) and remember_item_class(cls) then learned = learned + 1 end
+        end
+    end
+    if B.item_paths_dirty and B.write_file then
+        B.item_paths_dirty = false
+        local keys = {}
+        for k in pairs(B.item_paths) do keys[#keys + 1] = k end
+        table.sort(keys)
+        local lines = {}
+        for _, k in ipairs(keys) do lines[#lines + 1] = k .. "\t" .. B.item_paths[k] end
+        pcall(B.write_file, "item_classes.txt", table.concat(lines, "\n") .. "\n")
+    end
+    if learned > 0 then lnote("learned " .. learned .. " item classes from the world (item_classes.txt)") end
+end
+
+function B.load_item_paths(text)
+    for line in tostring(text or ""):gmatch("[^\r\n]+") do
+        local k, p = line:match("^(%S+)\t(%S+)$")
+        if k then B.item_paths[k] = p end
+    end
+end
+
 function B.find_item_class(spawn_name)
     local key = tostring(spawn_name):lower()
     local c = item_class_cache[key]
     if c and valid(c) then return c end
+    local path = B.item_paths[key]
+    if path then
+        pcall(function() c = StaticFindObject(path) end)
+        if not (c and valid(c)) and have("LoadAsset") then
+            local pkg = path:match("^(.-)%.") or path
+            pcall(function() LoadAsset(pkg) end)
+            pcall(function() c = StaticFindObject(path) end)
+        end
+        if c and valid(c) then
+            item_class_cache[key] = c
+            return c
+        end
+        lnote(spawn_name .. ": known class path " .. path .. " would not load")
+    end
     if not item_index then build_item_index() end
     c = item_index[key] or item_index["bp_" .. key]
     if c and valid(c) then
@@ -1698,13 +1787,33 @@ function B.survey_outfit(actor, wanted)
     B.outfit_surveyed = true
     local lines = { "OUTFIT SURVEY" }
     local an = full_name(actor)
+    -- 0. What hangs off the body mesh: clothes are most likely child mesh
+    --    components of CharacterMesh0.
+    pcall(function()
+        local mesh = actor.Mesh
+        local out = {}
+        local r = mesh:GetChildrenComponents(true, out)
+        local kids = to_list(r)
+        if #kids == 0 then kids = to_list(out) end
+        lines[#lines + 1] = "body mesh children: " .. #kids
+        for _, k in ipairs(kids) do
+            local nm = "?"
+            pcall(function() nm = k:GetFName():ToString() end)
+            local m = ""
+            pcall(function() m = full_name(k.SkeletalMesh) end)
+            if m == "" or m == "nil" then pcall(function() m = full_name(k.StaticMesh) end) end
+            local ow = ""
+            pcall(function() ow = full_name(k:GetOwner()) end)
+            lines[#lines + 1] = string.format("  %s [%s] mesh=%s owner=%s", nm, full_name(k:GetClass()), m, ow)
+        end
+    end)
     -- 1. Attached actors, asked two ways (UE4SS out-parameter styles differ).
     local attached = {}
     pcall(function()
         local out = {}
         local r = actor:GetAttachedActors(out, true)
-        local src = (type(r) == "table" or type(r) == "userdata") and r or out
-        for i = 1, #src do attached[#attached + 1] = src[i] end
+        attached = to_list(r)
+        if #attached == 0 then attached = to_list(out) end
     end)
     lines[#lines + 1] = "GetAttachedActors: " .. #attached
     for _, a in ipairs(attached) do
@@ -1713,35 +1822,42 @@ function B.survey_outfit(actor, wanted)
         lines[#lines + 1] = "  " .. full_name(a) .. (sock ~= "" and ("  @" .. sock) or "")
         pcall(function() lines[#lines + 1] = "    class " .. full_name(a:GetClass()) end)
     end
-    -- 2. Item actors whose attach parent is this NPC, by base class.
-    for _, base in ipairs({ "Item", "ClothesItem", "ConZItem", "WearableItem", "Clothes" }) do
+    -- 2. Item actors on or next to this NPC, by base class.
+    local npos = nil
+    pcall(function() npos = vec(actor:K2_GetActorLocation()) end)
+    for _, base in ipairs({ "Item", "ClothesItem" }) do
         local list = find_all(base, nil, true)
         local n, mine = list and #list or 0, 0
         for _, it in ipairs(list or {}) do
             local okp, par = pcall(function() return it:GetAttachParentActor() end)
-            if okp and par and full_name(par) == an then
+            local okw, own = pcall(function() return it:GetOwner() end)
+            local ipos = nil
+            pcall(function() ipos = vec(it:K2_GetActorLocation()) end)
+            local near = npos and ipos and U.dist2d(npos, ipos) < 400
+            if (okp and par and full_name(par) == an) or (okw and own and full_name(own) == an) or near then
                 mine = mine + 1
                 local sock = ""
                 pcall(function() sock = it:GetAttachParentSocketName():ToString() end)
-                lines[#lines + 1] = string.format("  [%s on NPC] %s @%s", base, full_name(it), sock)
+                lines[#lines + 1] = string.format("  [%s on/near NPC] %s @%s parent=%s owner=%s", base,
+                    full_name(it), sock, (okp and par) and full_name(par) or "-", (okw and own) and full_name(own) or "-")
                 pcall(function() lines[#lines + 1] = "    class " .. full_name(it:GetClass()) end)
             end
         end
         lines[#lines + 1] = string.format("FindAllOf(%s): %d in world, %d on this NPC", base, n, mine)
     end
-    -- 3. Loaded classes that match the wanted items (or look like pants).
-    local classes = find_all("BlueprintGeneratedClass", nil, true) or {}
-    lines[#lines + 1] = "loaded Blueprint classes: " .. #classes
+    -- 3. Item classes learned from the world so far, and the wanted ones.
+    pcall(B.learn_items, 0)
+    local n = 0
+    for _ in pairs(B.item_paths) do n = n + 1 end
+    lines[#lines + 1] = "item classes learned from the world: " .. n
+    for _, w in ipairs(wanted or {}) do
+        local p = B.item_paths[tostring(w):lower()]
+        lines[#lines + 1] = "  " .. tostring(w) .. ": " .. (p or "not seen yet - drop one with #SpawnItem near you")
+    end
     local shown = 0
-    for _, c in ipairs(classes) do
-        local nm = full_name(c)
-        local l = nm:lower()
-        local hit = l:find("pants", 1, true) or l:find("christmas", 1, true)
-        for _, w in ipairs(wanted or {}) do
-            if l:find(tostring(w):lower(), 1, true) then hit = true end
-        end
-        if hit and shown < 40 then
-            lines[#lines + 1] = "  " .. nm
+    for k, p in pairs(B.item_paths) do
+        if shown < 25 and (k:find("pants", 1, true) or k:find("shirt", 1, true)) then
+            lines[#lines + 1] = "  e.g. " .. k .. " = " .. p
             shown = shown + 1
         end
     end

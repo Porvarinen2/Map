@@ -410,6 +410,39 @@ do
 end
 
 print("")
+print("== item classes learned from the world ==")
+do
+    local path = "/Game/ConZ_Files/Items/Clothes/Pants/Christmas_Pants_02.Christmas_Pants_02_C"
+    local cls = { IsValid = function() return true end,
+                  GetFullName = function() return "BlueprintGeneratedClass " .. path end }
+    local item = { IsValid = function() return true end, GetFullName = function() return "Christmas_Pants_02_C x" end,
+                   GetClass = function() return cls end }
+    _G.FindAllOf = function(c) if c == "Item" then return { item } end end
+    _G.StaticFindObject = function(p) if p == path then return cls end end
+    package.loaded["bridge.scum"] = nil
+    local SB = require("bridge.scum")
+    SB.cfg = {}
+    local written = {}
+    SB.write_file = function(name, text) written[name] = text end
+    SB.player_positions = function() return { { X = 0, Y = 0, Z = 0 } } end
+    SB.learn_items(1000)
+    check(SB.item_paths["christmas_pants_02"] == path, "an item lying in the world teaches its class path")
+    check(written["item_classes.txt"] and written["item_classes.txt"]:find("christmas_pants_02", 1, true),
+          "and it is kept in item_classes.txt for later sessions")
+    check(SB.find_item_class("Christmas_Pants_02") == cls, "the spawn name then finds the class")
+    package.loaded["bridge.scum"] = nil
+    local SB2 = require("bridge.scum")
+    SB2.load_item_paths(written["item_classes.txt"])
+    check(SB2.find_item_class("Christmas_Pants_02") == cls, "a new session reads the learned classes back")
+    -- UE4SS array shapes.
+    local tarr = { ForEach = function(self, f) f(1, { get = function() return "a" end }); f(2, { get = function() return "b" end }) end }
+    local remote = { get = function() return tarr end }
+    local l = SB2.to_list(remote)
+    check(#l == 2 and l[1] == "a" and l[2] == "b", "a RemoteUnrealParam around a TArray is unpacked")
+    _G.FindAllOf, _G.StaticFindObject = nil, nil
+end
+
+print("")
 print("== radiation zone ==")
 do
     local Ph = require("sim.physical")

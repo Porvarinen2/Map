@@ -779,6 +779,7 @@ function D:tick(now)
 
     self:run_kill_checks()
     if self.bridge.maybe_survey then pcall(self.bridge.maybe_survey, now) end
+    if self.bridge.learn_items then pcall(self.bridge.learn_items, now) end
     -- Spawn / remove requests from the live map.
     Commands.poll(self, now)
 
