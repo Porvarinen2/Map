@@ -347,6 +347,10 @@ local function start()
         f:write(table.concat(lines, "\n"), "\n")
         f:close()
     end
+    Bridge.on_debug = function(text)
+        Log.info(text)
+        boot(text)
+    end
     Bridge.on_catalog = function(key, how)
         Log.info("NPC class " .. key .. ": " .. how)
         boot("npc class " .. key .. ": " .. how)

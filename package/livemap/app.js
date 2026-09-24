@@ -61,8 +61,27 @@ const MAP_CANDIDATES = [
   "map/scum_map_hires.jpeg", "map/scum_map_hires.webp", "map/scum_map_hires",
 ];
 let mapCandidate = 0;
+// Drawing a multi-thousand-pixel image scaled down, every frame, is what made
+// panning lag. Halved copies are made once; each frame draws the smallest one
+// that still has at least one image pixel per screen pixel.
+let mapMips = [];
+function buildMips() {
+  mapMips = [{ img: mapImg, w: mapImg.naturalWidth }];
+  let src = mapImg, w = mapImg.naturalWidth, h = mapImg.naturalHeight;
+  while (w > 768) {
+    w = Math.round(w / 2); h = Math.round(h / 2);
+    const c = document.createElement("canvas");
+    c.width = w; c.height = h;
+    const g = c.getContext("2d");
+    g.imageSmoothingEnabled = true; g.imageSmoothingQuality = "high";
+    g.drawImage(src, 0, 0, w, h);
+    mapMips.push({ img: c, w });
+    src = c;
+  }
+}
 mapImg.onload = () => {
   mapReady = true; mapMissing = false;
+  try { buildMips(); } catch (e) { mapMips = [{ img: mapImg, w: mapImg.naturalWidth }]; }
   if (!view.scale) fit(); else draw();
 };
 mapImg.onerror = () => {
@@ -171,8 +190,11 @@ function drawBase(r) {
     drawTiles(r, s);
   } else if (mapReady && mapImg.naturalWidth) {
     const o = imgToScreen(0, 0);
+    const need = s.w * view.scale;
+    let pick = mapMips[0] || { img: mapImg, w: s.w };
+    for (const m of mapMips) if (m.w >= need) pick = m;
     ctx.imageSmoothingEnabled = view.scale < 2;
-    ctx.drawImage(mapImg, o.x, o.y, s.w * view.scale, s.h * view.scale);
+    ctx.drawImage(pick.img, o.x, o.y, s.w * view.scale, s.h * view.scale);
   } else if (mapMissing) {
     drawMissingMap(r);
   } else {
@@ -356,7 +378,16 @@ function drawGroup(g) {
   ctx.restore();
 }
 
+// Every mouse move, wheel step, tile load and poll used to repaint the whole
+// canvas on the spot. Requests are now merged into one paint per frame.
+let drawQueued = false;
 function draw() {
+  if (drawQueued) return;
+  drawQueued = true;
+  requestAnimationFrame(() => { drawQueued = false; drawNow(); });
+}
+
+function drawNow() {
   const r = canvas.getBoundingClientRect();
   drawBase(r);
   if (show.grid) drawGrid();

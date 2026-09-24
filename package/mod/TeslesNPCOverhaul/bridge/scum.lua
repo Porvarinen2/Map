@@ -361,14 +361,27 @@ function B.player_positions()
     -- transition map, and that is no moment to spawn NPCs next to it.
     local grace = (B.cfg and B.cfg.JoinGraceSec) or 30
     local seen = {}
+    local n_pc, n_pawn, n_sane = 0, 0, 0
+    local sample = nil
     for _, pc in ipairs(list) do
         if valid(pc) then
+            n_pc = n_pc + 1
             local okp, pawn = pcall(function() return pc:K2_GetPawn() end)
             if okp and valid(pawn) then
+                n_pawn = n_pawn + 1
                 local okl, loc = pcall(function() return pawn:K2_GetActorLocation() end)
                 local v = okl and vec(loc) or nil
+                if not sample then
+                    sample = v and string.format("%.0f %.0f %.0f", v.X, v.Y, v.Z)
+                             or ("unreadable: " .. tostring(okl and loc))
+                end
                 if sane(v) then
-                    local key = tostring(pc)
+                    n_sane = n_sane + 1
+                    -- Keyed by the controller's full name. tostring() of a
+                    -- UE4SS object is the address of a fresh Lua wrapper on
+                    -- every FindAllOf, so a key built from it never
+                    -- survived one scan and the grace period never ended.
+                    local key = full_name(pc)
                     seen[key] = true
                     local first = join_seen[key] or now
                     join_seen[key] = first
@@ -379,6 +392,15 @@ function B.player_positions()
     end
     for key in pairs(join_seen) do
         if not seen[key] then join_seen[key] = nil end
+    end
+    -- Say what the scan saw whenever the answer changes, so "no players" can
+    -- be told apart from "no pawn", "position unreadable" and "still in grace".
+    local summary = string.format("player scan: %d controllers, %d pawns, %d in-world, %d counted%s",
+        n_pc, n_pawn, n_sane, #out, sample and (" (first pawn at " .. sample .. ")") or "")
+    local shape = n_pc .. "/" .. n_pawn .. "/" .. n_sane .. "/" .. #out
+    if shape ~= B.last_player_shape then
+        B.last_player_shape = shape
+        if B.on_debug then pcall(B.on_debug, summary) end
     end
     c.t, c.v = now, out
     return out
