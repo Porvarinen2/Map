@@ -19,7 +19,7 @@ W.TIERS = {
         "2H_Improvised_Gardening_Hoe", "2H_Improvised_shovel", "2H_Wooden_Sword", "1H_Metal_Pipe",
         "1H_Brass_knuckles", "2H_Pitchfork", "2H_Pitchfork_Bent",
         "Improvised_Wooden_Spear", "Improvised_Stone_Spear", "Bone_Spear",
-        "Improvised_Bow", "Improvised_Bow_25", "Improvised_Bow_30",
+        "Improvised_Bow", "Improvised_Bow_25", "Improvised_Bow_30", "Crutch", "Razor_Blade", "1H_Scalpel",
     },
     -- 2: real melee weapons, improvised firearms, simple bows
     {
@@ -28,8 +28,9 @@ W.TIERS = {
         "1H_Medieval_Sword", "2H_Axe", "2H_Baseball_Bat", "2H_Baseball_Bat_with_spikes",
         "2H_Baseball_Bat_with_wire", "2H_Metal_Baseball_Bat", "2H_Improvised_metal_shovel",
         "2H_Shovel_01", "2H_Shovel_02", "2H_Pickaxe", "2H_Industrial_Gardening_Hoe",
-        "Improvised_Metal_Spear", "Improvised_Bow_35", "Recurve_Bow", "Recurve_Bow_50",
+        "Improvised_Metal_Spear", "Improvised_Bow_35", "Recurve_Bow", "Recurve_Bow_50", "Penobscot_Bow_40",
         "Weapon_Improvised_Handgun", "Weapon_Improvised_Rifle", "Weapon_Improvised_Crossbow",
+        "1H_Police_Baton", "1H_Hunter", "Blacksmith_Axe", "Sledgehammer",
     },
     -- 3: handguns, shotguns, old bolt-action rifles, good melee and bows
     {
@@ -37,16 +38,18 @@ W.TIERS = {
         "Weapon_PeaceKeeper38", "Weapon_Serpent357", "Weapon_Viper_M357", "Weapon_SF19",
         "Weapon_Krueger", "Weapon_M1887", "Weapon_M1887_Sawed_off", "Weapon_DT11B",
         "Weapon_DT11B_Sawed_Off", "Weapon_SDASS", "Weapon_590A11", "Weapon_Trench_Gun",
-        "Weapon_98k_Karabiner", "Weapon_MosinNagant", "Weapon_SKS", "Weapon_Hunter85_V2",
+        "Weapon_98k_Karabiner", "Weapon_MosinNagant", "Weapon_Hunter85_V2",
         "1H_Military_Survival_Knife", "1H_Military_Tomahawk", "1H_Military_Shovel", "2H_Metal_Axe",
-        "2H_Katana", "2H_Tang_Dao", "Recurve_Bow_60", "Recurve_Bow_70", "Compound_Bow",
+        "2H_Katana", "2H_Tang_Dao", "Chainsaw", "Recurve_Bow_60", "Recurve_Bow_70", "Manchu_Bow_50",
+        "Snake_Skin_Bow", "Takedown_Bow",
     },
     -- 4: submachine guns, assault rifles, strong handguns
     {
         "Weapon_MP5", "Weapon_MP5_K", "Weapon_MP5_SD", "Weapon_UMP45", "Weapon_MAC10",
         "Weapon_TommyGun", "Weapon_AKS_74U", "Weapon_AKM", "Weapon_AK47", "Weapon_VHS2",
         "Weapon_M1_Garand", "Weapon_DEagle_50", "Weapon_Deagle_357", "Weapon_CarbonHunter",
-        "Weapon_M16A4",
+        "Weapon_M16A4", "Weapon_SKS", "Recurve_Bow_80", "Recurve_Bow_90", "Recurve_Bow_100",
+        "Recurve_Bow_Hunter", "Compound_Bow", "Weapon_BlackHawk_Crossbow",
     },
     -- 5: the best: modern assault and marksman rifles, snipers, machine guns
     {

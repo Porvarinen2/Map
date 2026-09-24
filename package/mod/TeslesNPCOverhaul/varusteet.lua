@@ -5,9 +5,9 @@
 -- Oletuksena NPC:t kayttavat kaikkia SCUMin aseita (ei DLC-aseita, ei
 -- rajahteita tai sinkoja) taitotasonsa mukaan:
 --   taso 1 - itse tehdyt lyomaaseet, keihaat, heikot jouset
---   taso 2 - kirveet, mailat, miekat, itse tehdyt pistoolit ja kivaarit
---   taso 3 - pistoolit, haulikot, vanhat pulttilukkokivaarit, hyvat jouset
---   taso 4 - konepistoolit, rynnakkokivaarit
+--   taso 2 - kirveet, mailat, miekat, pamppu, itse tehdyt pistoolit ja kivaarit
+--   taso 3 - pistoolit, haulikot, Kar98, Mosin, Hunter85, hyvat jouset
+--   taso 4 - konepistoolit, rynnakkokivaarit, SKS, parhaat jouset, varsijousi
 --   taso 5 - parhaat: AK15, SCAR, AS Val, SVD, M249, M82A1, AWM ...
 -- Poliisit: MP5 / M1911 / Block21. Metsastajat: Hunter85 / CarbonHunter.
 -- Sotilaat vahintaan taso 4, eliitti aina taso 5.
