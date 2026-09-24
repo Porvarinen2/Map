@@ -1,4 +1,4 @@
-TESLES NPC OVERHAUL 1.1.2
+TESLES NPC OVERHAUL 1.1.3
 =========================
 
 Pysyva NPC-populaatio SCUM-palvelimelle. NPC-hahmot ja niiden ryhmat ovat
@@ -70,12 +70,15 @@ Se kertoo mihin asti mod paasi. Lue se ensin.
        tickauksen samassa tilassa. Paivita modi.
 
   palvelin jumittuu: "Hang detected on GameThread ... UE4SS.dll"
-    -> tama oli version 1.1.0 vika. Se pyysi uutta ajastinta sisalta
-       pelisaikeen kutsua, ja ajastinsaie odotti samaan aikaan pelisaikeen
-       valmistumista - kumpikin piti sita mita toinen tarvitsi. 1.1.1
-       pyytaa ajastimen vasta kun pelisaie on vapaa. Paivita modi.
-       Jos jumi silti toistuu, avaa config.lua ja aseta
-       RunTicksOnGameThread = false, ja kerro siita.
+  tai lokissa on mahdottomia virheita ("invalid key to 'next'",
+  "function ... in table for 'concat'", "_UBOX*")
+    -> versioiden 1.1.2 ja vanhempien vika, kaksi syyta:
+       1. live_state.json:n kirjoitus kesti ~8 s pelisaikeella joka
+          toinen sekunti (JSON-kirjoittaja oli neliollinen). Nyt ~15 ms.
+       2. Modin Lua-koodia ajettiin kahdella saikeella yhta aikaa
+          (UE4SS:n ajastinsaie + pelisaie). 1.1.3 kayttaa UE4SS:n
+          pelisaieajastimia, joten koodi ajetaan vain pelisaikeella.
+       Boot.logissa lukee "tick driver: LoopInGameThreadWithDelay".
 
 DIAGNOSE.bat kerää boot.log:n, director.log:n, mods.txt:n, UE4SS.log:n ja
 UE4SS-asennuksen tilan yhteen zip-tiedostoon.

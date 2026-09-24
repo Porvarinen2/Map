@@ -167,4 +167,46 @@ for _ = 1, 200 do catalog.maybe_refresh_catalog(t); t = t + 1 end
 check(catalog.scans == before_scans, "scanning stops once the catalog is complete")
 
 print("")
+print("== telemetry cost ==")
+
+-- live_state.json is written on the game thread every two seconds. Before
+-- 1.1.3 the encoder re-joined the whole buffer at every level of recursion:
+-- 2.5 s for a real snapshot here, about 8 s on the server, and the engine
+-- called that a hung game thread. The budget below is generous for a desktop
+-- and still two orders of magnitude under what broke.
+do
+    local Population = require("sim.population")
+    local Director = require("sim.director")
+    local Telemetry = require("bridge.telemetry")
+    local MockBridge = dofile("mock_bridge.lua")
+    local CFG = dofile("../package/mod/TeslesNPCOverhaul/config.lua")
+    local w = Population.new_world({ seed = 42, target_npcs = 100 })
+    Population.generate(w, function() end)
+    local d = Director.new({ world = w, bridge = MockBridge, config = CFG, seed = 42 })
+    local snap = Telemetry.snapshot(w, MockBridge, d, { version = "t", uptime = 0 })
+
+    local t0 = os.clock()
+    local json = U.json(snap)
+    local ms = (os.clock() - t0) * 1000
+    check(#json > 100000, string.format("a full snapshot is realistic in size (%d bytes)", #json))
+    check(ms < 150, string.format("encoding it takes %.0f ms (< 150)", ms))
+
+    -- Doubling the input must not quadruple the time.
+    local big = { a = snap, b = snap }
+    local t1 = os.clock()
+    local json2 = U.json(big)
+    local ms2 = (os.clock() - t1) * 1000
+    check(#json2 > 2 * #json, "the doubled document is encoded in full")
+    check(ms2 < math.max(40, ms * 3.5),
+          string.format("cost grows linearly: %.0f ms for 1x, %.0f ms for 2x", ms, ms2))
+
+    -- The encoder is only a speed fix if it still writes the same thing.
+    check(json:sub(1, 1) == "{" and json:sub(-1) == "}", "the document is one JSON object")
+    check(U.json({ 1, "a", true, { x = 1.5 } }) == '[1,"a",true,{"x":1.500}]',
+          "arrays, strings, booleans and nested objects encode exactly")
+    check(U.json({ f = function() end, n = 2 }) == '{"n":2}',
+          "functions are left out of objects")
+end
+
+print("")
 os.exit(fails == 0 and 0 or 1)

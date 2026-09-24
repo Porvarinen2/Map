@@ -161,50 +161,63 @@ local function is_array(t)
     return n == #t
 end
 
-function U.json(v, buf)
-    buf = buf or {}
+-- Appends only. The whole document is joined once, by U.json, at the end.
+--
+-- Until 1.1.3 every recursive call ended with table.concat(buf), so each of the
+-- ~15,000 fragments of a live_state.json re-copied everything written before
+-- it: 2.5 seconds for 130 KB on a desktop, about 8 seconds inside the server.
+-- That ran on the game thread every two seconds, and it is what the engine
+-- reported as a hung game thread.
+local function encode(v, buf)
+    local n = #buf
     local tv = type(v)
     if v == nil then
-        buf[#buf + 1] = "null"
+        buf[n + 1] = "null"
     elseif tv == "boolean" then
-        buf[#buf + 1] = v and "true" or "false"
+        buf[n + 1] = v and "true" or "false"
     elseif tv == "number" then
         if v ~= v or v == huge or v == -huge then
-            buf[#buf + 1] = "0"
+            buf[n + 1] = "0"
         elseif v == floor(v) and math.abs(v) < 1e15 then
-            buf[#buf + 1] = string.format("%d", v)
+            buf[n + 1] = string.format("%d", v)
         else
-            buf[#buf + 1] = string.format("%.3f", v)
+            buf[n + 1] = string.format("%.3f", v)
         end
     elseif tv == "string" then
-        buf[#buf + 1] = '"' .. esc(v) .. '"'
+        buf[n + 1] = '"' .. esc(v) .. '"'
     elseif tv == "table" then
         if is_array(v) then
-            buf[#buf + 1] = "["
+            buf[n + 1] = "["
             for i = 1, #v do
                 if i > 1 then buf[#buf + 1] = "," end
-                U.json(v[i], buf)
+                encode(v[i], buf)
             end
             buf[#buf + 1] = "]"
         else
-            buf[#buf + 1] = "{"
+            buf[n + 1] = "{"
             local first = true
             local ks = U.keys(v)
             table.sort(ks, function(a, b) return tostring(a) < tostring(b) end)
             for _, k in ipairs(ks) do
                 local val = v[k]
-                if type(val) ~= "function" and type(val) ~= "userdata" then
+                local tval = type(val)
+                if tval ~= "function" and tval ~= "userdata" and tval ~= "thread" then
                     if not first then buf[#buf + 1] = "," end
                     first = false
                     buf[#buf + 1] = '"' .. esc(k) .. '":'
-                    U.json(val, buf)
+                    encode(val, buf)
                 end
             end
             buf[#buf + 1] = "}"
         end
     else
-        buf[#buf + 1] = "null"
+        buf[n + 1] = "null"
     end
+end
+
+function U.json(v)
+    local buf = {}
+    encode(v, buf)
     return table.concat(buf)
 end
 

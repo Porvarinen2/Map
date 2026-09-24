@@ -19,30 +19,32 @@ end
 
 -- UE4SS stubs. Nothing in the mod may require these to exist.
 --
--- LoopAsync is stubbed only so the test can prove the mod never calls it: its
--- callback runs in a separate Lua state, and handing that state a closure from
--- this one corrupts UE4SS's function registry and crashes the server.
-local scheduled = nil      -- the most recently scheduled ExecuteWithDelay call
-local schedules = {}       -- every one of them, in order
-local loops = {}
-_G.ExecuteWithDelay = function(ms, fn)
-    if in_game_thread then armed_inside_game_thread = true end
-    scheduled = { ms = ms, fn = fn }
-    schedules[#schedules + 1] = scheduled
-end
-_G.LoopAsync = function(ms, fn) loops[#loops + 1] = { ms = ms, fn = fn } end
+-- The stubs model the one property every server failure came down to: which
+-- OS thread a callback runs on. "game" callbacks set on_game; "timer"
+-- callbacks set on_timer. ExecuteInGameThread only queues - that is what the
+-- real one does - so anything the caller does after it runs at the same time
+-- as the queued work. If mod code ever runs on the timer thread while game
+-- thread work is queued or running, the Lua state has two threads in it.
+local game_queue = {}
+local game_timers = {}
+local startups = {}
+local async_used = {}
+local ran_on_timer_thread = false
 
--- ExecuteInGameThread does not return until the game thread has run the
--- callback. Asking for a new timer while that wait is in progress is what
--- froze a server on 1.1.0: the timer thread holds the queue and waits for the
--- game thread, the game thread wants the queue. The stub records any such
--- overlap so the test can refuse it.
-local in_game_thread = false
-local armed_inside_game_thread = false
-_G.ExecuteInGameThread = function(fn)
-    in_game_thread = true
-    fn()
-    in_game_thread = false
+_G.ExecuteInGameThread = function(fn) game_queue[#game_queue + 1] = fn end
+_G.ExecuteWithDelay = function(ms, fn)
+    async_used[#async_used + 1] = "ExecuteWithDelay"
+    startups[#startups + 1] = { ms = ms, fn = fn, thread = "timer" }
+end
+_G.LoopAsync = function(ms, fn)
+    async_used[#async_used + 1] = "LoopAsync"
+end
+_G.ExecuteInGameThreadWithDelay = function(ms, fn)
+    startups[#startups + 1] = { ms = ms, fn = fn, thread = "game" }
+end
+_G.LoopInGameThreadWithDelay = function(ms, fn)
+    game_timers[#game_timers + 1] = { ms = ms, fn = fn }
+    return #game_timers
 end
 -- Deliberately no FindFirstOf / StaticFindObject: the bridge must degrade
 -- gracefully when the engine API is not there.
@@ -55,30 +57,29 @@ local ok, M = pcall(chunk)
 check(ok, "main.lua runs without error: " .. tostring(M))
 if not ok then os.exit(1) end
 
-check(scheduled ~= nil, "startup is deferred, not run inside the load callback")
-local startup = scheduled
-local ok2, err2 = pcall(startup.fn)
+check(#startups == 1, "startup is deferred, not run inside the load callback")
+check(startups[1] and startups[1].thread == "game",
+      "startup is scheduled on the game thread (ExecuteInGameThreadWithDelay)")
+local ok2, err2 = pcall(startups[1].fn)
 check(ok2, "deferred startup completes: " .. tostring(err2))
 
-check(#loops == 0, "LoopAsync is never used: its callback runs in another Lua state")
-check(scheduled ~= startup, "startup schedules the first tick")
-check(scheduled and scheduled.ms == 1000, "tick period comes from config.lua")
+check(#game_timers == 1, "the director registers exactly one game-thread timer")
+check(game_timers[1] and game_timers[1].ms == 1000, "tick period comes from config.lua")
+check(#async_used == 0,
+      "no timer-thread API is used when game-thread timers exist (" ..
+      table.concat(async_used, ", ") .. ")")
+check(#game_queue == 0, "nothing is handed across threads with ExecuteInGameThread")
 
--- Drive a few ticks. Each one has to schedule the next itself, from inside the
--- game-thread callback, so ticks can never overlap.
 local ticked = true
-local rearmed = true
 for _ = 1, 5 do
-    local this_tick = scheduled
-    local okt, errt = pcall(this_tick.fn)
+    local okt, errt = pcall(game_timers[1].fn)
     if not okt then ticked = false; print("     tick error: " .. tostring(errt)) end
-    if scheduled == this_tick then rearmed = false end
 end
 check(ticked, "five director ticks run with no engine available")
-check(rearmed, "every tick schedules the next one")
-check(not armed_inside_game_thread,
-      "the next tick is armed outside the game-thread call, not inside it")
-check(#loops == 0, "still no LoopAsync after ticking")
+check(#async_used == 0 and #game_queue == 0,
+      "still single-threaded after ticking")
+check(M.tick_driver and M.tick_driver:find("game thread"),
+      "the tick driver is reported: " .. tostring(M.tick_driver))
 
 local function exists(p)
     local f = io.open(p, "r")

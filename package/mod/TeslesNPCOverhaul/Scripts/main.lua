@@ -260,89 +260,71 @@ local function safe_tick()
     end
 end
 
--- Engine work must run on the game thread: UObject operations are not safe
--- from an arbitrary background thread, and UE4SS documents that asset loading
--- in particular must happen there. Outside the game (tests, syntax checks)
--- the function is simply called directly.
-local function on_game_thread(fn)
-    if type(ExecuteInGameThread) == "function" then
-        ExecuteInGameThread(fn)
-    else
-        fn()
-    end
-end
+-- ---------------------------------------------------------------- threads --
+--
+-- One rule: this mod's Lua runs on exactly one OS thread, and that thread is
+-- the game thread.
+--
+-- Every earlier version broke it. ExecuteWithDelay and LoopAsync call back on
+-- UE4SS's timer thread; ExecuteInGameThread only queues work for the game
+-- thread and returns at once. So the timer thread went on running our code
+-- (logging, re-arming the timer) while the game thread ran the tick - two
+-- threads inside one Lua state. That is what every "impossible" error in the
+-- server logs was: a function inside a string buffer, "invalid key to 'next'",
+-- "attempt to index a _UBOX* value", timestamps printed as 00:00:57, and
+-- eventually a hang or an access violation inside UE4SS.dll.
+--
+-- The UE4SS build shipped with this mod has timers that fire ON the game
+-- thread: LoopInGameThreadWithDelay and ExecuteInGameThreadWithDelay. With
+-- those, no callback of ours ever runs anywhere else, and ticks cannot overlap
+-- because the game thread runs them one after another.
+--
+-- An older UE4SS without them gets the timer thread for everything instead.
+-- That keeps the Lua state single-threaded, which is the part that corrupts;
+-- engine calls from off the game thread are the lesser risk.
+local function has(name) return type(_G[name]) == "function" end
 
--- Two things have to be true at once, and 1.0.9 and 1.1.0 each got one of them
--- wrong.
---
--- 1.0.9 drove the tick with LoopAsync. Its callback runs in a SEPARATE Lua
--- state, so the closure it handed ExecuteInGameThread was registered against
--- the wrong state: "[Lua::Registry::get_function_ref] Ref was not function" on
--- every tick, stray userdata appearing inside unrelated tables, and finally an
--- access violation inside UE4SS.dll.
---
--- 1.1.0 moved to a self-arming ExecuteWithDelay, which fixed that - no registry
--- errors, no tick errors - but re-armed the next delay from INSIDE the
--- game-thread callback. One second after "startup complete" the game thread
--- stopped, blocked in a wait reached through UE4SS. The delay thread was inside
--- ExecuteInGameThread waiting for the game thread, while the game thread was in
--- our callback asking ExecuteWithDelay for a new timer: each holds what the
--- other needs.
---
--- So the timer is armed only from the delay thread, never from inside the
--- game-thread work. ExecuteInGameThread does not return until the tick has run,
--- so ticks still cannot overlap, and by the time the next timer is requested
--- the game thread is free again.
-local schedule_tick
-
--- A tick that runs on the game thread and takes ten seconds is reported by the
--- engine as a hang. Timing every tick and writing down the slow ones turns that
--- into a number, and names the engine scan that cost the most.
 local SLOW_TICK_MS = 250
 
-local function report_tick(elapsed_ms)
-    local slow = elapsed_ms >= SLOW_TICK_MS
-    if M.ticks <= 3 or slow then
-        local line = string.format("tick %d: %.0f ms", M.ticks, elapsed_ms)
+local function timed_tick()
+    local t0 = os.clock()
+    safe_tick()
+    local ms = (os.clock() - t0) * 1000
+    M.last_tick_at = os.time()
+    M.last_tick_ms = ms
+
+    local slow = ms >= SLOW_TICK_MS
+    if M.ticks <= 3 or (slow and ms > (M.worst_tick_ms or 0)) then
+        local line = string.format("tick %d: %.0f ms", M.ticks, ms)
         if Bridge.scan then
             line = line .. string.format(" (scans %d, slowest %.0f ms %s)",
                 Bridge.scan.calls, Bridge.scan.slowest_ms,
                 Bridge.scan.slowest_name ~= "" and Bridge.scan.slowest_name or "-")
         end
         if slow then
-            if not M.slow_tick_logged or elapsed_ms > (M.worst_tick_ms or 0) then
-                M.slow_tick_logged = true
-                M.worst_tick_ms = elapsed_ms
-                Log.warn("SLOW " .. line)
-                boot("SLOW " .. line)
-            end
+            M.worst_tick_ms = ms
+            Log.warn("SLOW " .. line)
+            boot("SLOW " .. line)
         else
             boot(line)
         end
     end
 end
 
-schedule_tick = function()
-    if type(ExecuteWithDelay) ~= "function" then
-        if not M.tick_warned then
-            M.tick_warned = true
-            Log.warn("ExecuteWithDelay unavailable: the director cannot tick")
-            boot("ExecuteWithDelay NOT AVAILABLE - the director cannot tick")
-        end
-        return
+local function start_ticking()
+    local ms = CFG.TickMs or 1000
+    if CFG.RunTicksOnGameThread ~= false and has("LoopInGameThreadWithDelay") then
+        M.tick_driver = "LoopInGameThreadWithDelay (game thread)"
+        LoopInGameThreadWithDelay(ms, function() timed_tick() end)
+    elseif has("LoopAsync") then
+        M.tick_driver = "LoopAsync (UE4SS timer thread only)"
+        LoopAsync(ms, function() timed_tick(); return false end)
+    else
+        M.tick_driver = "none"
+        Log.warn("no UE4SS timer available: the director cannot tick")
     end
-    ExecuteWithDelay(CFG.TickMs or 1000, function()
-        local t0 = os.clock()
-        if CFG.RunTicksOnGameThread == false then
-            safe_tick()
-        else
-            on_game_thread(safe_tick)
-        end
-        report_tick((os.clock() - t0) * 1000)
-        M.last_tick_at = os.time()
-        -- Re-armed here, on the delay thread, with the game thread free.
-        schedule_tick()
-    end)
+    Log.info("director loop: " .. M.tick_driver .. ", every " .. ms .. " ms")
+    boot("tick driver: " .. M.tick_driver .. ", every " .. ms .. " ms")
 end
 
 local function start()
@@ -386,8 +368,7 @@ local function start()
         boot("live_state.json COULD NOT BE WRITTEN to " .. OUTPUT_DIR)
     end
 
-    schedule_tick()
-    Log.info("director loop running at " .. tostring(CFG.TickMs) .. " ms")
+    start_ticking()
     boot("director loop registered at " .. tostring(CFG.TickMs) .. " ms")
     boot("startup complete")
 end
@@ -407,15 +388,18 @@ local function guarded_start()
     end
 end
 
--- Startup itself touches the engine (class catalog, world lookup), so it runs
--- on the game thread too. ExecuteWithDelay's callback does not.
-if type(ExecuteWithDelay) == "function" then
-    local delay = (CFG.StartupDelaySec or 25) * 1000
-    boot("startup deferred by " .. tostring(delay) .. " ms, then run on the game thread")
-    ExecuteWithDelay(delay, function() on_game_thread(guarded_start) end)
+-- Startup touches the engine (class catalog, world lookup), so it belongs on
+-- the game thread too, and it must not share the Lua state with anything else.
+local delay = (CFG.StartupDelaySec or 25) * 1000
+if has("ExecuteInGameThreadWithDelay") then
+    boot("startup deferred by " .. delay .. " ms, on the game thread")
+    ExecuteInGameThreadWithDelay(delay, guarded_start)
+elseif has("ExecuteWithDelay") then
+    boot("startup deferred by " .. delay .. " ms (no game-thread timer in this UE4SS)")
+    ExecuteWithDelay(delay, guarded_start)
 else
-    boot("ExecuteWithDelay not available - starting immediately")
-    on_game_thread(guarded_start)
+    boot("no UE4SS timer available - starting immediately")
+    guarded_start()
 end
 
 return M
