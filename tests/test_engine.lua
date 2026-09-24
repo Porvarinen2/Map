@@ -240,4 +240,48 @@ do
 end
 
 print("")
+print("== vanilla NPC cleanup ==")
+-- Only the mod's groups may be on the island: SCUM's own armed encounter NPCs
+-- are destroyed, the mod's actors and corpses are left alone.
+do
+    local function pawn(name, hp)
+        return { name = name, Health = hp, destroyed = false,
+                 IsValid = function() return true end,
+                 GetFullName = function(self) return self.name end,
+                 K2_DestroyActor = function(self) self.destroyed = true end }
+    end
+    local mine, foreign, corpse = pawn("BP_Drifter_Lvl_2_C mine", 100),
+        pawn("BP_Guard_Lvl_3_C vanilla", 100), pawn("BP_Drifter_Lvl_1_C corpse", 0)
+    local function ctrl(p)
+        return { IsValid = function() return true end, GetFullName = function() return "c" end,
+                 K2_GetPawn = function() return p end, StopMovement = function() end,
+                 K2_DestroyActor = function() end }
+    end
+    local scanned = 0
+    _G.FindAllOf = function(cname)
+        scanned = scanned + 1
+        if cname == "ArmedNPCBaseAIController" then
+            return { ctrl(mine), ctrl(foreign), ctrl(corpse) }
+        end
+        return nil
+    end
+    package.loaded["bridge.scum"] = nil
+    local SB = require("bridge.scum")
+    SB.cfg = { RemoveVanillaArmedNPCs = true, VanillaCleanupIntervalSec = 3 }
+    SB.owned_names["BP_Drifter_Lvl_2_C mine"] = true
+    SB.player_positions = function() return { { X = 0, Y = 0, Z = 0 } } end
+    local removed = SB.cleanup_vanilla(5000)
+    check(removed == 1 and foreign.destroyed, "a SCUM armed NPC near a player is removed")
+    check(not mine.destroyed, "the mod's own actor is never touched")
+    check(not corpse.destroyed, "a corpse is left for looting")
+    local before = scanned
+    SB.cleanup_vanilla(5001)
+    check(scanned == before, "at most one scan per cleanup interval")
+    SB.player_positions = function() return {} end
+    SB.cleanup_vanilla(5010)
+    check(scanned == before, "no scans while nobody is online")
+    _G.FindAllOf = nil
+end
+
+print("")
 os.exit(fails == 0 and 0 or 1)

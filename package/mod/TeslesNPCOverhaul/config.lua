@@ -1,7 +1,7 @@
 -- TESLES NPC OVERHAUL - server configuration.
 -- Distances are Unreal units unless a name says otherwise. 100 UU = 1 metre.
 return {
-    Version = "1.2.1",
+    Version = "1.3.0",
 
     -- ---------------------------------------------------------- population --
     Enabled = true,
@@ -68,6 +68,10 @@ return {
     -- long. The join crash was UE4SS's own hooks, not this, so it is short.
     JoinGraceSec = 3,
     ZombieScanIntervalSec = 4,
+    -- Only the mod's groups walk the island: SCUM's own armed NPCs (Drifter
+    -- and Guard encounter spawns) are removed near players. Zombies stay.
+    RemoveVanillaArmedNPCs = true,
+    VanillaCleanupIntervalSec = 3,
 
     -- ------------------------------------------------------------- combat --
     EnableCombat = true,

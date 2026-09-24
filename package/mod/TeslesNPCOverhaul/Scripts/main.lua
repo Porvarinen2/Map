@@ -225,6 +225,7 @@ local function safe_tick()
     local ok, err = pcall(function()
         M.director:tick(now)
         M.ticks = M.ticks + 1
+        if Bridge.cleanup_vanilla then Bridge.cleanup_vanilla(now) end
 
         if Persist.due(now) then
             Persist.rotate()

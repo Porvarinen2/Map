@@ -108,13 +108,22 @@ function D:start_travel(group, poi, opts)
     return true
 end
 
+-- A nearby hunting tower is walked to across country. A far one is reached
+-- the way a person would: by road, then the last stretch through the forest.
+-- A terrain search across half the island is also the one route search that
+-- can eat a whole tick's budget and still come back empty.
+local CROSS_COUNTRY_MAX = 150000
+function D:prefer_roads(group, poi)
+    if poi.kind ~= "HUNTING" then return true end
+    return not (group.position and U.dist2d(group.position, poi.pos) <= CROSS_COUNTRY_MAX)
+end
+
 function D:pick_new_goal(group)
     local act = group.act
     -- A goal that was only deferred by a busy frame gets another go first.
     if act.pending_goal then
         local poi = act.pending_goal
-        local prefer = not (poi.kind == "WILDERNESS" or poi.kind == "HUNTING")
-        if self:start_travel(group, poi, { prefer_roads = prefer }) then return end
+        if self:start_travel(group, poi, { prefer_roads = self:prefer_roads(group, poi) }) then return end
         if act.pending_goal then return end
     end
     if Activity.needs_rest(act) then
@@ -130,9 +139,7 @@ function D:pick_new_goal(group)
         act.until_t = self.now + 20
         return
     end
-    -- Hunting and camping groups cut across country; everyone else uses roads.
-    local prefer_roads = not (poi.kind == "WILDERNESS" or poi.kind == "HUNTING")
-    self:start_travel(group, poi, { prefer_roads = prefer_roads })
+    self:start_travel(group, poi, { prefer_roads = self:prefer_roads(group, poi) })
 end
 
 function D:on_arrival(group)
@@ -145,7 +152,7 @@ function D:on_arrival(group)
     Activity.mark_visited(act, poi, self.now)
     local next_state = Activity.activity_for(poi, group, act)
     act.state = next_state
-    act.until_t = self.now + Activity.duration_for(next_state, act)
+    act.until_t = self.now + Activity.duration_for(next_state, act, poi)
     act.local_target = nil
     Movement.clear(group.mv, Movement.ARRIVED)
     if next_state == S.SEARCH then
@@ -250,94 +257,176 @@ end
 
 -- --------------------------------------------------------------- movement --
 
+-- The actor that drives a physical squad: the leader if it has a body,
+-- otherwise the first member who does.
+function D:driver(group)
+    local leader = Leadership.leader(group)
+    if leader and leader.alive and leader.runtime_id then return leader end
+    for _, m in ipairs(group.members) do
+        if m.alive and m.runtime_id then return m end
+    end
+    return nil
+end
+
+-- Steering for a squad that has real bodies.
+--
+-- What the 1.2.1 server log showed: the leader was sent to route waypoints
+-- up to 570 m away, at Z 0, with pathfinding. The server had no navmesh there,
+-- so every order was refused and re-sent every second; meanwhile each
+-- follower got a fresh formation slot whenever the heading wobbled, and the
+-- squad's position was the average of all members, so the leader was steered
+-- from a point behind itself. Together that is the zig-zag.
+--
+-- Now: the leader walks short hops (a carrot 30 m ahead on the route, at its
+-- own height) and gets a new hop only when it is nearly at the last one, the
+-- route bent away, or the order went stale. If the engine refuses a
+-- pathfinding request the hop is walked straight - it is short and on a
+-- terrain-checked route. Followers do not get slots at all: each walks the
+-- leader's own footprints, a fixed distance behind, so the squad moves as a
+-- column along the path the leader actually took.
+local STEER = {
+    look = 3000,          -- carrot distance ahead of the leader
+    reached = 1100,       -- close enough to the carrot to hand out the next
+    retarget = 1600,      -- carrot moved this far from the order: re-send
+    retarget_sec = 2,
+    stale_sec = 8,
+    crumb_step = 250,     -- leader footprint spacing
+    crumbs = 80,
+    spacing = 420,        -- distance between members in the column
+    follow_slack = 450,   -- a follower this close to its spot is left alone
+    follow_resend = 650,
+    follow_sec = 5,
+}
+D.STEER = STEER
+
+local function footprint_back(trail, from, dist)
+    -- Walk the leader's footprints backwards from its current position.
+    local cur, rem = from, dist
+    for i = #trail, 1, -1 do
+        local p = trail[i]
+        local d = U.dist2d(cur, p)
+        if d >= rem and d > 0 then
+            local f = rem / d
+            return { X = cur.X + (p.X - cur.X) * f, Y = cur.Y + (p.Y - cur.Y) * f, Z = p.Z }
+        end
+        rem = rem - d
+        cur = p
+    end
+    return trail[1] and U.copy_vec(trail[1]) or nil
+end
+
 function D:move_physical(group, dt)
     local mv = group.mv
-    if not Movement.has_route(mv) then return end
-    local pos = group.position
+    local lead = self:driver(group)
+    if not lead then return end
+    local pos = lead.position or group.position
     if not pos then return end
-
-    if Movement.update_index(mv, pos, Movement.tuning.arrive_physical) then
-        return
+    local now = self.now
+    local st = group.steer
+    if not st or st.lead ~= lead.npcId then
+        st = { lead = lead.npcId, trail = {}, follow = {} }
+        group.steer = st
     end
 
-    local status = Movement.check_progress(mv, pos, self.now)
-    if status ~= "OK" then
-        local action = Movement.handle_stall(mv, pos)
-        Log.event("STALL", group.gid, action .. " stalls=" .. tostring(mv.stalls))
-        if action == "REPLAN" then
-            self.counters.replans = self.counters.replans + 1
-            local goal = mv.goal
-            Movement.clear(mv)
-            if goal then self:solve_route(group, goal, {}) end
-            return
-        elseif action == "ABANDON" then
-            Movement.clear(mv)
-            group.act.state = S.IDLE
-            group.act.until_t = self.now + 15
-            return
-        end
+    -- Leader footprints, for the column behind it.
+    local last = st.trail[#st.trail]
+    if not last or U.dist2d(last, pos) >= STEER.crumb_step then
+        st.trail[#st.trail + 1] = U.copy_vec(pos)
+        if #st.trail > STEER.crumbs then table.remove(st.trail, 1) end
     end
 
-    local heading = Movement.update_heading(mv, pos, self.now)
-
-    -- The leader owns the long path; followers hold slots on it. One actor
-    -- solving the route means one line of travel instead of five. If the
-    -- actual leader has no actor yet - spawn budget, a failed spawn - the
-    -- first materialized member drives instead, so the squad never stands
-    -- still waiting for someone who is not there.
-    local leader = Leadership.leader(group)
-    if not (leader and leader.runtime_id) then
-        for _, m in ipairs(group.members) do
-            if m.alive and m.runtime_id then leader = m; break end
-        end
-    end
-
-    -- Pace: a squad crossing the map moves at travel speed, a squad working a
-    -- village walks. Set once per change, not every tick.
-    local want_speed = (group.act.state == S.TRAVEL)
+    -- Pace: travelling squads walk briskly, a squad working a place strolls.
+    -- Followers get a little more so the column closes up instead of
+    -- stretching.
+    local want = (group.act.state == S.TRAVEL)
         and (self.cfg.PhysicalTravelSpeedUU or 420)
         or (self.cfg.PhysicalWalkSpeedUU or 300)
-    if group.speed_set ~= want_speed and self.bridge.set_speed then
+    if group.speed_set ~= want and self.bridge.set_speed then
         for _, m in ipairs(group.members) do
-            if m.alive and m.runtime_id then self.bridge.set_speed(m.runtime_id, want_speed) end
-        end
-        group.speed_set = want_speed
-    end
-
-    local target, reason = Movement.next_command(mv, pos, self.now)
-    if target and leader and leader.runtime_id then
-        local accepted = self.bridge.move_to(leader.runtime_id, target)
-        Movement.mark_issued(mv, target, pos, self.now, accepted)
-        if accepted then
-            self.counters.commands = self.counters.commands + 1
-            if self.cfg.EnableMovementDebug then
-                Log.move_trace(string.format("%d\t%s\t%s\t%.0f\t%.0f\t%.0f\t%.0f\t%s",
-                    self.now, group.gid, reason, pos.X, pos.Y, target.X, target.Y,
-                    mv.route and mv.route.kind or "-"))
+            if m.alive and m.runtime_id then
+                self.bridge.set_speed(m.runtime_id, m == lead and want or want * 1.12)
             end
+        end
+        group.speed_set = want
+    end
+
+    -- ---- leader
+    if Movement.has_route(mv) then
+        if Movement.update_index(mv, pos, Movement.tuning.arrive_physical) then
+            st.target = nil
         else
-            Log.event("MOVE_REJECTED", group.gid, reason)
+            local status = Movement.check_progress(mv, pos, now)
+            if status ~= "OK" then
+                local action = Movement.handle_stall(mv, pos)
+                Log.event("STALL", group.gid, action .. " stalls=" .. tostring(mv.stalls))
+                if action == "REPLAN" then
+                    self.counters.replans = self.counters.replans + 1
+                    local goal = mv.goal
+                    Movement.clear(mv)
+                    st.target = nil
+                    if goal then self:solve_route(group, goal, {}) end
+                    return
+                elseif action == "ABANDON" then
+                    Movement.clear(mv)
+                    st.target = nil
+                    group.act.state = S.IDLE
+                    group.act.until_t = now + 15
+                    return
+                end
+                st.force = true
+            end
+
+            local carrot = Movement.carrot(mv, pos, STEER.look)
+            local need = carrot and (
+                not st.target or st.force
+                or U.dist2d(pos, st.target) < STEER.reached
+                or (U.dist2d(carrot, st.target) > STEER.retarget
+                    and now - (st.at or 0) >= STEER.retarget_sec)
+                or now - (st.at or 0) >= STEER.stale_sec)
+            if need and now >= (st.backoff_until or 0) then
+                local direct = st.direct_until and now < st.direct_until
+                local ok = self.bridge.move_to(lead.runtime_id, carrot, { direct = direct, radius = 120 })
+                if not ok and not direct then
+                    ok = self.bridge.move_to(lead.runtime_id, carrot, { direct = true, radius = 120 })
+                    if ok then st.direct_until = now + 30 end
+                end
+                if ok then
+                    st.target, st.at, st.force, st.fails = carrot, now, false, 0
+                    self.counters.commands = self.counters.commands + 1
+                    mv.issued_target, mv.issued_at = carrot, now
+                else
+                    st.fails = (st.fails or 0) + 1
+                    st.backoff_until = now + math.min(2 * st.fails, 8)
+                    if now - (st.reject_logged or 0) >= 20 then
+                        st.reject_logged = now
+                        Log.event("MOVE_REJECTED", group.gid, "fails=" .. st.fails)
+                    end
+                end
+            end
         end
     end
 
-    if leader and Movement.formation_due(mv, heading, self.now) then
-        local slot_index = 0
-        for _, m in ipairs(group.members) do
-            if m.alive and m ~= leader and m.runtime_id then
-                slot_index = slot_index + 1
-                local leader_pos = leader.position or pos
-                local slot = Movement.formation_slot(leader_pos, heading, slot_index + 1,
-                    self.cfg.FormationSpreadUU or 900,
-                    self.cfg.FormationDepthUU or 1000)
-                local cur = m.position
-                if not cur or U.dist2d(cur, slot) > Movement.tuning.formation_slot_tolerance then
-                    if self.bridge.move_to(m.runtime_id, slot) then
+    -- ---- followers walk the leader's footprints
+    local k = 0
+    for _, m in ipairs(group.members) do
+        if m.alive and m.runtime_id and m ~= lead then
+            k = k + 1
+            local spot = footprint_back(st.trail, pos, k * STEER.spacing)
+            if spot and m.position then
+                spot.Z = m.position.Z
+                local f = st.follow[m.npcId]
+                local far = U.dist2d(m.position, spot) > STEER.follow_slack
+                local resend = not f
+                    or U.dist2d(f.target, spot) > STEER.follow_resend
+                    or now - f.at >= STEER.follow_sec
+                if far and resend then
+                    if self.bridge.move_to(m.runtime_id, spot, { direct = true, radius = 150 }) then
+                        st.follow[m.npcId] = { target = spot, at = now }
                         self.counters.commands = self.counters.commands + 1
                     end
                 end
             end
         end
-        Movement.mark_formation(mv, heading, self.now)
     end
 end
 
@@ -536,6 +625,11 @@ function D:tick_group(group, players, physical_groups, dt)
         if lead0 then before_leader_hp = lead0.health end
 
         local _, lost = Physical.sync_positions(group, self.bridge)
+        -- The squad is where its driver is. The average of all members sat
+        -- behind the leader, and steering the leader from there sent it back
+        -- and forth along its own path.
+        local drv = self:driver(group)
+        if drv and drv.position then group.position = U.copy_vec(drv.position) end
 
         -- A wounded leader shakes the group even when they survive.
         if lead0 and before_leader_hp and lead0.alive
@@ -585,6 +679,7 @@ function D:tick_group(group, players, physical_groups, dt)
         end
     elseif not want and group.physical then
         local released = Physical.virtualize(group, self.bridge, {})
+        group.steer = nil
         self.counters.virtualized = self.counters.virtualized + released
         Log.event("VIRTUALIZE", group.gid, tostring(released))
         group.mv.issued_target = nil

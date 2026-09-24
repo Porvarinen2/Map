@@ -28,6 +28,10 @@ local controller_cache = setmetatable({}, { __mode = "k" })
 local class_cache = {}
 local handles = {}
 local next_handle = 1
+-- Full names of the actors this mod spawned. Everything else of an armed NPC
+-- class is SCUM's own encounter spawn and is removed by cleanup_vanilla.
+local owned_names = {}
+B.owned_names = owned_names
 
 -- -------------------------------------------------------------- helpers ----
 
@@ -625,8 +629,10 @@ function B.spawn_npc(req)
 
     local h = next_handle
     next_handle = next_handle + 1
+    local name = full_name(actor)
+    owned_names[name] = true
     handles[h] = { actor = actor, npcId = req.npcId, group = req.group,
-                   spawned_at = os.time() }
+                   spawned_at = os.time(), name = name }
     B.stats.spawns = B.stats.spawns + 1
     set_health("physicalVirtualization", "OK",
         B.stats.spawns .. " actors materialized this session")
@@ -640,6 +646,7 @@ function B.despawn(handle)
     local c = B.controller(rec.actor)
     if c then pcall(function() c:StopMovement() end) end
     pcall(function() rec.actor:K2_DestroyActor() end)
+    if rec.name then owned_names[rec.name] = nil end
     handles[handle] = nil
     B.stats.despawns = B.stats.despawns + 1
     return true
@@ -724,23 +731,31 @@ local function accepted_result(r)
     return n == 1 or n == 2
 end
 
-function B.move_to(handle, dest)
+-- opts.direct: walk straight at the point without asking for a navmesh path.
+-- This server builds navigation only around AI that already exists, and the
+-- 1.2.1 log shows every pathfinding request toward a route waypoint rejected.
+-- The director only ever asks for short hops along a route that was already
+-- checked against the terrain, so a straight walk is exactly what it wants.
+function B.move_to(handle, dest, opts)
+    opts = opts or {}
     local a = B.actor(handle)
     if not a or not dest then return false end
     local c = B.controller(a)
     if not c then return false end
     if not sane(dest) then return false end
-    crumb(string.format("MoveToLocation h%s %.0f %.0f %.0f", tostring(handle), dest.X, dest.Y, dest.Z))
+    local direct = opts.direct == true
+    crumb(string.format("MoveToLocation h%s %.0f %.0f %.0f%s", tostring(handle),
+        dest.X, dest.Y, dest.Z, direct and " direct" or ""))
     local ok, res = pcall(function()
         return c:MoveToLocation(
             { X = dest.X, Y = dest.Y, Z = dest.Z },
-            B.cfg.MoveAcceptanceRadiusUU or 220.0,
-            true,     -- stop on overlap
-            true,     -- use pathfinding
-            true,     -- project destination to navigation
-            true,     -- can strafe
-            nil,      -- filter class
-            true)     -- allow partial path: a reachable prefix beats refusing
+            opts.radius or B.cfg.MoveAcceptanceRadiusUU or 150.0,
+            false,          -- stop on overlap: no, followers brush each other
+            not direct,     -- use pathfinding
+            not direct,     -- project destination to navigation
+            false,          -- can strafe: no, walk facing the way they go
+            nil,            -- filter class
+            true)           -- allow partial path
     end)
     if not ok then
         B.stats.move_reject = B.stats.move_reject + 1
@@ -831,7 +846,7 @@ end
 -- the director falls back to open-area behaviour.
 function B.find_buildings(pos, radius)
     if not B.cfg.EnableBuildingSearch then
-        set_health("buildingSearch", "PENDING", "disabled in config")
+set_health("buildingSearch", "PENDING", "disabled in config")
         return nil
     end
     local list = find_all("ConZBuilding")
@@ -915,6 +930,97 @@ function B.take_ownership(handle)
     return true
 end
 
+-- ------------------------------------------------------ vanilla cleanup --
+
+-- Only the mod's own groups may walk the island. SCUM's encounter manager keeps
+-- spawning its own armed NPCs next to players; no server setting turns those
+-- off without also touching zombies, so they are removed here. One class is
+-- scanned per interval (each FindAllOf walks the whole object array), only
+-- while someone is online - with nobody online nothing is spawned anyway.
+local VANILLA_CLASSES = { "ArmedNPCBaseAIController", "NPCDrifterAIController",
+                          "NPCGuardAIController" }
+for _, family in ipairs(FAMILIES) do
+    for _, e in ipairs(catalog_order) do
+        if e.family == family then
+            VANILLA_CLASSES[#VANILLA_CLASSES + 1] = short_name(family, e.level, e.variant) .. "_C"
+        end
+    end
+end
+local vanilla = { i = 0, next_at = 0, miss = {} }
+B.vanilla = { removed = 0, scans = 0 }
+
+local function is_dead(a)
+    local ok, hp = pcall(function() return a.Health end)
+    return ok and type(hp) == "number" and hp <= 0
+end
+
+local function remove_foreign(obj, is_controller)
+    local pawn, ctrl = obj, nil
+    if is_controller then
+        -- A controller: judge the pawn it drives.
+        ctrl = obj
+        local okp, p = pcall(function() return obj:K2_GetPawn() end)
+        pawn = (okp and valid(p)) and p or nil
+    end
+    if pawn then
+        if owned_names[full_name(pawn)] then return false end
+        -- A corpse may be someone's loot; leave it to SCUM's own cleanup.
+        if is_dead(pawn) then return false end
+        crumb("vanilla cleanup: K2_DestroyActor " .. full_name(pawn))
+        if ctrl then pcall(function() ctrl:StopMovement() end) end
+        pcall(function() pawn:K2_DestroyActor() end)
+        if ctrl then pcall(function() ctrl:K2_DestroyActor() end) end
+        return true
+    end
+    return false
+end
+
+function B.cleanup_vanilla(now)
+    if not (B.cfg and B.cfg.RemoveVanillaArmedNPCs) then
+        set_health("vanillaCleanup", "PENDING", "disabled in config")
+        return 0
+    end
+    now = now or os.time()
+    if now < vanilla.next_at then return 0 end
+    vanilla.next_at = now + (B.cfg.VanillaCleanupIntervalSec or 3)
+    if #B.player_positions() == 0 then return 0 end
+
+    -- Next class that is not resting after an empty scan. A class that is not
+    -- loaded yet rests at most a minute: an encounter can load it any time.
+    -- Once a controller base class has answered, it covers every armed NPC
+    -- in one scan; the per-Blueprint rotation is only the fallback.
+    local cname = vanilla.base
+    for _ = 1, cname and 0 or #VANILLA_CLASSES do
+        vanilla.i = vanilla.i % #VANILLA_CLASSES + 1
+        local c = VANILLA_CLASSES[vanilla.i]
+        if (vanilla.miss[c] or 0) <= now then cname = c break end
+    end
+    if not cname then return 0 end
+    B.vanilla.scans = B.vanilla.scans + 1
+    local list = find_all(cname, now, true)
+    if not list then
+        vanilla.miss[cname] = now + 60
+        if vanilla.base == cname then vanilla.base = nil end
+        return 0
+    end
+    if cname:find("Controller", 1, true) and not vanilla.base then vanilla.base = cname end
+    local n = 0
+    local is_controller = cname:find("Controller", 1, true) ~= nil
+    for _, obj in ipairs(list) do
+        if valid(obj) and remove_foreign(obj, is_controller) then n = n + 1 end
+    end
+    if n > 0 then
+        B.vanilla.removed = B.vanilla.removed + n
+        if B.on_debug then
+            pcall(B.on_debug, string.format("vanilla cleanup: removed %d via %s (%d total)",
+                n, cname, B.vanilla.removed))
+        end
+    end
+    set_health("vanillaCleanup", "OK", string.format("%d SCUM armed NPCs removed, %d scans",
+        B.vanilla.removed, B.vanilla.scans))
+    return n
+end
+
 function B.handle_count()
     local n = 0
     for _ in pairs(handles) do n = n + 1 end
@@ -926,6 +1032,7 @@ set_health("spawnCatalog", "PENDING", "not scanned yet")
 set_health("physicalVirtualization", "PENDING", "no materialization proof yet")
 set_health("takeover", "PENDING", "waiting for a Tesles-owned physical actor")
 set_health("physicalCombat", "PENDING", "waiting for an armed Tesles-owned actor")
+set_health("vanillaCleanup", "PENDING", "waiting for a player")
 set_health("buildingSearch", "PENDING",
     "waiting for live proof: building_discovery, door_discovery, door_interaction, interior_navigation")
 

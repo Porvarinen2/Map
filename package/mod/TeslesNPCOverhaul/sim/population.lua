@@ -40,7 +40,7 @@ end
 local function anchor_point(rng, allow_sector)
     for _ = 1, 80 do
         local poi = POI.points[rng:int(1, POI.count)]
-        if poi and (not allow_sector or allow_sector(poi)) then
+        if poi and not poi.blocked and (not allow_sector or allow_sector(poi)) then
             local ang = rng:float() * math.pi * 2
             local d = rng:range(0, poi.radius or 9000)
             local p = {
@@ -300,6 +300,8 @@ function P.serialize(world)
                 fatigue = g.act.fatigue,
                 supply = g.act.supply,
                 visited = g.act.visited,
+                queue = g.act.queue,
+                recent = g.act.recent,
                 journeys = g.act.journeys,
                 distance = g.act.distance,
                 searched = g.act.searched,
@@ -369,6 +371,8 @@ function P.deserialize(saved)
                 g.act.fatigue = sg.act.fatigue or 0
                 g.act.supply = sg.act.supply or 100
                 g.act.visited = sg.act.visited or {}
+                g.act.queue = sg.act.queue or {}
+                g.act.recent = sg.act.recent or {}
                 g.act.journeys = sg.act.journeys or 0
                 g.act.distance = sg.act.distance or 0
                 g.act.searched = sg.act.searched or 0

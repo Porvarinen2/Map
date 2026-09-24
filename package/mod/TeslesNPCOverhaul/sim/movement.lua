@@ -158,6 +158,29 @@ function M.update_index(mv, pos, arrive)
     return false
 end
 
+-- A point `look` UU further along the route than `pos`, walking forward from
+-- the current waypoint. Physical actors are steered at this "carrot" in short
+-- hops instead of being sent to route waypoints hundreds of metres away: a
+-- far waypoint had no navmesh around it and every order to it was refused.
+function M.carrot(mv, pos, look)
+    if not M.has_route(mv) then return nil end
+    local pts = mv.route.points
+    local cur = { X = pos.X, Y = pos.Y }
+    local rem = look
+    for i = math.min(mv.index, #pts), #pts do
+        local p = pts[i]
+        local d = U.dist2d(cur, p)
+        if d >= rem and d > 0 then
+            local f = rem / d
+            return { X = cur.X + (p.X - cur.X) * f, Y = cur.Y + (p.Y - cur.Y) * f,
+                     Z = pos.Z }
+        end
+        rem = rem - d
+        cur = { X = p.X, Y = p.Y }
+    end
+    return { X = cur.X, Y = cur.Y, Z = pos.Z }
+end
+
 -- ------------------------------------------------------------ progress ------
 
 local function remaining(mv, pos)

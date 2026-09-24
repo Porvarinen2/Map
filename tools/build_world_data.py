@@ -553,7 +553,7 @@ def main():
 
     pois.sort(key=lambda p: (p["kind"], p["id"]))
     print("pois=%d" % len(pois))
-    write_pois(pois)
+    # world/poi_data.lua now comes from tools/build_pois.py (hand-marked map).
 
     # Debug overlay so the generated data can be eyeballed against the map.
     dbg = Image.open(src).convert("RGB").resize((1024, 1024))

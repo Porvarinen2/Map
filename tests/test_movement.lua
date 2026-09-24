@@ -19,7 +19,7 @@ local POI = require("world.poi_data")
 
 local DT = 0.25          -- actor physics step
 local TICK = 1.0         -- director tick
-local MAX_SEC = 5400
+local MAX_SEC = 9000      -- the longest island crossings on the real map
 
 local function run_fixed(from, to, seed)
     local rng = RNG.new(seed)

@@ -19,6 +19,7 @@ local Utility = require("npc.utility")
 local Archetypes = require("npc.archetypes")
 local GroupClasses = require("npc.groups")
 local Buildings = require("sim.buildings")
+local POI = require("world.pois")
 
 local T = {}
 
@@ -146,6 +147,17 @@ local function group_row(group, world)
     local history = {}
     for _, h in ipairs(act.history or {}) do history[#history + 1] = h.text end
 
+    -- The places planned after the current goal, in order.
+    local queue = {}
+    for _, id in ipairs(act.queue or {}) do
+        local p = POI.by_id[id]
+        if p then
+            queue[#queue + 1] = { id = p.id, label = p.label, kind = p.kind,
+                                  x = round(p.pos.X, 0), y = round(p.pos.Y, 0) }
+        end
+    end
+    local goal_pos = act.goal_poi and act.goal_poi.pos
+
     return {
         gid = group.gid,
         name = group.name,
@@ -173,6 +185,10 @@ local function group_row(group, world)
         goal = act.goal_poi and act.goal_poi.label or nil,
         goal_id = act.goal_poi and act.goal_poi.id or nil,
         goal_kind = act.goal_poi and act.goal_poi.kind or nil,
+        goal_x = goal_pos and round(goal_pos.X, 0) or nil,
+        goal_y = goal_pos and round(goal_pos.Y, 0) or nil,
+        queue = queue,
+        recent = #(act.recent or {}),
         intent = Activity.describe(group, act),
         route = route,
         route_kind = mv.route and mv.route.kind or nil,

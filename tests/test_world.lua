@@ -157,7 +157,7 @@ for gid, tr in pairs(trails) do
         if dist > 150000 then
             moved_groups = moved_groups + 1
             jit_sum = jit_sum + Movement.trail_jitter_spatial(tr, 2500)
-            rev_sum = rev_sum + Movement.trail_reversals(tr, 2500, 55)
+            rev_sum = rev_sum + Movement.trail_reversals(tr, 2500, 150)
             n = n + 1
         end
     end
@@ -207,11 +207,13 @@ check(travel_jitter < 5.5,
       string.format("travel turn per 250 m = %.1f deg < 5.5", travel_jitter))
 check(100 * travel_rev < 2.5,
       string.format("travel reversals = %.1f%% < 2.5%%", 100 * travel_rev))
-check(n > 0 and jit_sum / n < 11.0,
-      string.format("all-movement turn per 250 m = %.1f deg < 11 (working a POI turns more)",
+-- Working a POI walks house to house, so corners there are by design; the
+-- all-movement check only guards against genuine back-and-forth (U-turns).
+check(n > 0 and jit_sum / n < 20.0,
+      string.format("all-movement turn per 250 m = %.1f deg < 20 (working a POI turns more)",
                     n > 0 and jit_sum / n or 99))
-check(n > 0 and 100 * rev_sum / n < 6.0,
-      string.format("all-movement reversals = %.1f%% < 6%%", n > 0 and 100 * rev_sum / n or 99))
+check(n > 0 and 100 * rev_sum / n < 3.0,
+      string.format("all-movement U-turns = %.1f%% < 3%%", n > 0 and 100 * rev_sum / n or 99))
 check(c.spawns > 0, string.format("actors materialized near the player (%d)", c.spawns))
 check(Bridge.owned > 0,
       string.format("the director took ownership of the actors it spawned (%d)", Bridge.owned))
@@ -225,6 +227,39 @@ check(p99 < 12, string.format("p99 tick %.2f ms < 12", p99))
 check(max_tick_ms < 120, string.format("peak tick %.1f ms < 120", max_tick_ms))
 check(total_tick_ms / (SIM_SECONDS / TICK) < 6,
       string.format("average tick %.2f ms < 6", total_tick_ms / (SIM_SECONDS / TICK)))
+
+-- Destination queue and place memory. A reserved territory (the radiation
+-- zone) has fewer places than the memory holds, so there the oldest memories
+-- give way by design; everywhere else the rules hold exactly.
+do
+    local open_groups, full, dup, requeued, starved = 0, 0, 0, 0, 0
+    for _, g in ipairs(world.groups) do
+        local act = g.act or {}
+        local cls = require("npc.groups").get(g.class)
+        local seen = {}
+        for _, id in ipairs(act.recent or {}) do
+            if seen[id] then dup = dup + 1 end
+            seen[id] = true
+        end
+        if cls and cls.reserved_zone then
+            if #(act.queue or {}) == 0 then starved = starved + 1 end
+        else
+            open_groups = open_groups + 1
+            if #(act.queue or {}) == Activity.QUEUE_LENGTH then full = full + 1 end
+            for _, id in ipairs(act.queue or {}) do
+                if seen[id] then requeued = requeued + 1 end
+            end
+            if os.getenv("DEBUG_QUEUE") and #(act.queue or {}) < Activity.QUEUE_LENGTH then
+                print("  queue", g.gid, g.class, act.state, table.concat(act.queue or {}, ","))
+            end
+        end
+    end
+    check(full == open_groups,
+          string.format("%d of %d groups have %d places queued", full, open_groups, Activity.QUEUE_LENGTH))
+    check(starved == 0, string.format("reserved-territory groups always have a next place (%d without)", starved))
+    check(dup == 0, string.format("no place repeats inside the %d-place memory (%d)", Activity.MEMORY, dup))
+    check(requeued == 0, string.format("nothing in memory is queued again (%d)", requeued))
+end
 
 -- Save / load fidelity after a live run.
 local ser = Population.serialize(world)

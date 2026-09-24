@@ -291,6 +291,7 @@ function Router.route(from, to, opts)
     end
 
     -- 2. Road network for long hauls.
+    local road_fallback = nil
     if opts.prefer_roads ~= false then
         local ca = Road.snap_candidates(from, Router.ROAD_SNAP)
         local cb = Road.snap_candidates(to, Router.ROAD_SNAP)
@@ -340,6 +341,7 @@ function Router.route(from, to, opts)
                         or not Grid.same_landmass(from, to) then
                         return finish(pts, "ROAD", from, to)
                     end
+                    road_fallback = pts
                 end
             end
         end
@@ -354,10 +356,14 @@ function Router.route(from, to, opts)
             path = Router.simplify(path, Router.SIMPLIFY_EPS * 0.6)
             return finish(path, "GRID", from, to)
         end
+        -- A bay or a lake between the two can make the straight line short
+        -- and the walk long. Then the long way round by road is the route.
+        if road_fallback then return finish(road_fallback, "ROAD", from, to) end
         Router.stats.failed = Router.stats.failed + 1
         return nil, why or "NO_PATH"
     end
 
+    if road_fallback then return finish(road_fallback, "ROAD", from, to) end
     Router.stats.failed = Router.stats.failed + 1
     return nil, "NO_ROUTE"
 end

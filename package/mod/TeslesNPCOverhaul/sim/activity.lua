@@ -53,13 +53,25 @@ A.tuning = {
     supply_recovery_per_min = 1.6,
 }
 
--- Kinds that a group actually searches buildings in.
+-- Kinds a group searches buildings in, and how long it stays to loot one.
 local SEARCHABLE = {
-    VILLAGE = true, TOWN = true, CITY = true, SETTLEMENT = true,
-    MILITARY = true, BUNKER = true, INDUSTRIAL = true,
+    VILLAGE = true, CITY = true, MILITARY = true, BUNKER = true,
+    ABANDONED_BUNKER = true, RESEARCH = true, INDUSTRIAL = true, MEDICAL = true,
 }
-local HUNTABLE = { HUNTING = true, WILDERNESS = true }
-local CAMPABLE = { SHORE = true, WILDERNESS = true, HUNTING = true }
+local HUNTABLE = { HUNTING = true }
+local CAMPABLE = { LANDMARK = true, HUNTING = true }
+
+-- Seconds spent working a place, by kind: a city takes a squad the best part
+-- of an hour to go through, a hunting tower a few minutes.
+A.DWELL = {
+    CITY = { 1500, 2400 }, VILLAGE = { 480, 900 }, MILITARY = { 720, 1320 },
+    BUNKER = { 600, 1080 }, ABANDONED_BUNKER = { 600, 1080 }, RESEARCH = { 600, 1080 },
+    INDUSTRIAL = { 480, 840 }, MEDICAL = { 480, 840 }, LANDMARK = { 180, 420 },
+    HUNTING = { 240, 540 },
+}
+
+A.QUEUE_LENGTH = 3      -- destinations planned ahead, shown on the live map
+A.MEMORY = 10           -- places a group will not return to until 10 others
 
 function A.new_state(seed)
     return {
@@ -69,6 +81,8 @@ function A.new_state(seed)
         fatigue = 0,
         supply = 100,
         visited = {},
+        queue = {},
+        recent = {},
         history = {},
         rng = RNG.new(seed or os.time()),
         journeys = 0,
@@ -110,63 +124,116 @@ local function homesickness(group)
     return sum / n
 end
 
--- Picks the next destination for a group.
-function A.choose_destination(group, act, now)
+-- Where a group may go at all: its class must care about the kind, the place
+-- must not be an outpost, reserved sectors keep their own groups in and
+-- everyone else out, and home-bound groups stay near home.
+local function eligible(group, cls, poi)
+    if poi.blocked then return false end
+    local w = cls.poi_weights[poi.kind]
+    if not w or w <= 0 then return false end
+    local r = Zones.reserved_by_sector[poi.sector]
+    if r then return r.class == group.class end
+    if cls.reserved_zone then
+        if poi.sector == cls.reserved_zone then return true end
+        -- The Z4 corner has two marked places, one of them on an islet. A
+        -- home-bound group ranges into the neighbouring sectors around home.
+        return group.home_bound == true and group.home ~= nil
+            and U.dist2d(group.home, poi.pos) <= 330000
+    end
+    if group.home_bound and group.home then
+        return U.dist2d(group.home, poi.pos) <= 520000
+    end
+    return true
+end
+
+local function contains(list, id)
+    for _, v in ipairs(list or {}) do if v == id then return true end end
+    return false
+end
+
+-- Next place after `from`: the nearest places the class cares about win.
+-- Distance dominates - (1 + d/0.9 km)^2 - so a group works its way across
+-- the island neighbourhood by neighbourhood instead of criss-crossing it; the
+-- class weight decides between places at similar distance, and a little
+-- randomness among the best three keeps two identical groups from marching
+-- in lockstep. The last MEMORY places and anything already queued are out.
+function A.pick_next(group, act, from, exclude)
     local cls = GroupClasses.get(group.class)
-    if not cls then return nil end
-    local pos = group.position
-    if not pos then return nil end
-
-    local wander = wanderlust(group)
-    local home = homesickness(group)
-    local t = A.tuning
-
-    local max_d = t.travel_min + (t.travel_max - t.travel_min) * (0.25 + wander * 0.75)
-    if group.home_bound then max_d = math.min(max_d, 420000) end
-
-    -- Reserved sectors: their own groups stay inside, everyone else stays out.
-    local res = Zones.reserved_by_sector
-    local allow = function(poi)
-        local r = res[poi.sector]
-        if r then return r.class == group.class end
-        if group.home_bound and group.home then
-            return U.dist2d(group.home, poi.pos) <= 520000
+    if not (cls and from) then return nil end
+    -- Places are judged by the land the group stands on: a queued place on
+    -- an islet must not make every later pick impossible.
+    local mass = Grid.landmass_at(group.position or from)
+    local scored = {}
+    for _, poi in ipairs(POI.points) do
+        if eligible(group, cls, poi)
+            and not contains(act.recent, poi.id)
+            and not contains(act.queue, poi.id)
+            and not (exclude and exclude[poi.id])
+            and (not mass or not poi.landmass or poi.landmass == mass) then
+            local d = U.dist2d(from, poi.pos)
+            if d > 6000 then
+                local w = cls.poi_weights[poi.kind] * (poi.weight or 1)
+                scored[#scored + 1] = { poi = poi, score = w / (1 + d / 90000) ^ 2 }
+            end
         end
-        return true
     end
+    if #scored == 0 then return nil end
+    table.sort(scored, function(x, y) return x.score > y.score end)
+    local top = {}
+    for i = 1, math.min(3, #scored) do
+        top[i] = { poi = scored[i].poi, weight = scored[i].score }
+    end
+    local pick = U.weighted_pick(top, act.rng)
+    return pick and pick.poi or scored[1].poi
+end
 
-    local bias = function(poi)
-        local b = 1.0
-        if group.home and home > 0.55 then
-            -- Homebodies weight destinations near their anchor.
-            local d = U.dist2d(group.home, poi.pos)
-            b = b * (1.0 + (home - 0.5) * 1.6 / (1 + d / 300000))
+-- Keeps A.QUEUE_LENGTH places planned ahead. Each is chosen from the one
+-- before it, so the queue is a sensible walk, not three unrelated picks.
+function A.refill_queue(group, act, heading_to)
+    act.queue = act.queue or {}
+    act.recent = act.recent or {}
+    -- Places that stopped being valid (a changed map, a reserved sector)
+    -- are dropped rather than walked to.
+    local cls = GroupClasses.get(group.class)
+    for i = #act.queue, 1, -1 do
+        local poi = POI.by_id[act.queue[i]]
+        if not (poi and cls and eligible(group, cls, poi)) then table.remove(act.queue, i) end
+    end
+    local guard = 0
+    while #act.queue < A.QUEUE_LENGTH and guard < 6 do
+        guard = guard + 1
+        local last = act.queue[#act.queue]
+        local from = (last and POI.by_id[last] and POI.by_id[last].pos)
+            or (heading_to and heading_to.pos)
+            or (act.goal_poi and act.goal_poi.pos) or group.position
+        local exclude = {}
+        if act.goal_poi then exclude[act.goal_poi.id] = true end
+        if act.pending_goal then exclude[act.pending_goal.id] = true end
+        if heading_to then exclude[heading_to.id] = true end
+        local poi = A.pick_next(group, act, from, exclude)
+        if not poi and #(act.recent or {}) > 0 then
+            -- A small territory (an island, a reserved sector) can run out of
+            -- unvisited places. Then the oldest memory gives way first.
+            local saved = act.recent
+            act.recent = {}
+            for i = math.floor(#saved / 2) + 1, #saved do act.recent[#act.recent + 1] = saved[i] end
+            poi = A.pick_next(group, act, from, exclude)
+            act.recent = saved
         end
-        return b
+        if not poi then break end
+        act.queue[#act.queue + 1] = poi.id
     end
+    return act.queue
+end
 
-    local poi = POI.choose({
-        from = pos,
-        weights = cls.poi_weights,
-        visited = act.visited,
-        now = now,
-        rng = act.rng,
-        min_distance = t.travel_min * 0.35,
-        max_distance = max_d,
-        avoid_id = act.goal_poi and act.goal_poi.id or nil,
-        allow = allow,
-        bias = bias,
-        visit_memory = t.visit_memory_sec,
-    })
-    if not poi then
-        -- Nothing weighted matched: fall back to anything reachable nearby.
-        poi = POI.choose({
-            from = pos, weights = { VILLAGE = 1, TOWN = 1, WILDERNESS = 1,
-                                     SHORE = 1, JUNCTION = 1, SETTLEMENT = 1 },
-            visited = act.visited, now = now, rng = act.rng,
-            min_distance = 40000, max_distance = 500000, allow = allow,
-        })
-    end
+-- The next destination is simply the head of the queue.
+function A.choose_destination(group, act, now)
+    A.refill_queue(group, act)
+    local id = table.remove(act.queue, 1)
+    local poi = id and POI.by_id[id] or nil
+    -- The place just taken off the queue is not the goal yet, so it is
+    -- named explicitly: without that it could be queued again behind itself.
+    A.refill_queue(group, act, poi)
     return poi
 end
 
@@ -178,24 +245,21 @@ function A.activity_for(poi, group, act)
         and U.dist2d(group.home, poi.pos) < 120000 and r:chance(0.35) then
         return A.STATES.HOLD
     end
-    if SEARCHABLE[poi.kind] then
-        if poi.kind == "MILITARY" or poi.kind == "BUNKER" then
-            return r:chance(0.75) and A.STATES.SEARCH or A.STATES.PATROL
-        end
-        return r:chance(0.78) and A.STATES.SEARCH or A.STATES.PATROL
-    end
-    if HUNTABLE[poi.kind] then
-        return r:chance(0.68) and A.STATES.HUNT or A.STATES.CAMP
-    end
-    if poi.kind == "JUNCTION" then
-        return r:chance(0.6) and A.STATES.PATROL or A.STATES.CAMP
-    end
-    if CAMPABLE[poi.kind] then return A.STATES.CAMP end
+    -- Places with buildings are looted: the squad goes through them house by
+    -- house. Hunting towers are hunted from, landmarks are a short stop.
+    if SEARCHABLE[poi.kind] then return A.STATES.SEARCH end
+    if HUNTABLE[poi.kind] then return A.STATES.HUNT end
+    if CAMPABLE[poi.kind] then return r:chance(0.5) and A.STATES.PATROL or A.STATES.CAMP end
     return A.STATES.PATROL
 end
 
-function A.duration_for(state, act)
+function A.duration_for(state, act, poi)
     local t, r = A.tuning, act.rng
+    local dw = poi and A.DWELL[poi.kind]
+    if dw and (state == A.STATES.SEARCH or state == A.STATES.HUNT
+               or state == A.STATES.PATROL or state == A.STATES.CAMP) then
+        return r:range(dw[1], dw[2])
+    end
     if state == A.STATES.REST then
         -- Rest long enough to actually be rested. A fixed-length nap left
         -- groups permanently exhausted and never able to travel far.
@@ -212,6 +276,16 @@ end
 
 function A.mark_visited(act, poi, now)
     if not poi then return end
+    act.recent = act.recent or {}
+    for i = #act.recent, 1, -1 do
+        if act.recent[i] == poi.id then table.remove(act.recent, i) end
+    end
+    act.recent[#act.recent + 1] = poi.id
+    while #act.recent > A.MEMORY do table.remove(act.recent, 1) end
+    -- A place just visited is no longer a plan.
+    for i = #(act.queue or {}), 1, -1 do
+        if act.queue[i] == poi.id then table.remove(act.queue, i) end
+    end
     act.visited[poi.id] = now
     local n = 0
     for _ in pairs(act.visited) do n = n + 1 end
@@ -251,14 +325,17 @@ end
 function A.build_tour(poi, act, spread, count)
     local r = act.rng
     local radius = spread or poi.radius or 9000
-    count = count or r:int(4, 8)
+    -- A circuit: stops on a ring at nearly constant distance, walked in one
+    -- direction. Random in-and-out distances made the squad zig-zag across
+    -- the middle of a village on every leg.
+    count = count or U.clamp(math.floor(radius / 3200), 4, 9)
     local start = r:float() * math.pi * 2
     local dir = r:chance(0.5) and 1 or -1
     local stops = {}
     for i = 1, count do
         local ang = start + dir * (i - 1) * (2 * math.pi / count)
-            + (r:float() - 0.5) * 0.45
-        local dist = radius * (0.35 + 0.6 * r:float())
+            + (r:float() - 0.5) * 0.25
+        local dist = radius * (0.58 + 0.16 * r:float())
         local p = {
             X = poi.pos.X + math.cos(ang) * dist,
             Y = poi.pos.Y + math.sin(ang) * dist,

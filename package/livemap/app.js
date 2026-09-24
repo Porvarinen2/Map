@@ -29,6 +29,25 @@ const CLASS_COLOR = {
   island_residents:"#7ee0b8",
 };
 
+// Point-of-interest kinds on the hand-marked map (tools/poi_source.json).
+const POI_STYLE = {
+  CITY:             { c: "#ffd166", fi: "Kaupunki",          shape: "square",  r: 6.5 },
+  MILITARY:         { c: "#ff6b5b", fi: "Sotilasalue",       shape: "tri",     r: 6.5 },
+  BUNKER:           { c: "#ff3b3b", fi: "Bunkkeri",          shape: "square",  r: 5 },
+  ABANDONED_BUNKER: { c: "#a07cff", fi: "Hylätty bunkkeri",  shape: "square",  r: 5 },
+  RESEARCH:         { c: "#4fd1a5", fi: "Tutkimuslaitos",    shape: "hex",     r: 5.5 },
+  INDUSTRIAL:       { c: "#c9a27a", fi: "Teollisuus",        shape: "square",  r: 4.5 },
+  MEDICAL:          { c: "#ff8fc2", fi: "Sairaala",          shape: "cross",   r: 5.5 },
+  LANDMARK:         { c: "#f4a340", fi: "Maamerkki",         shape: "dot",     r: 4 },
+  VILLAGE:          { c: "#6cc070", fi: "Kylä",              shape: "dot",     r: 3.2 },
+  HUNTING:          { c: "#b5d86a", fi: "Metsästystorni",    shape: "tick",    r: 3 },
+  OUTPOST:          { c: "#3ee07a", fi: "Outpost (ei NPC:itä)", shape: "ring", r: 7 },
+};
+// The mod keeps its groups this far from every outpost (world/pois.lua).
+const OUTPOST_MARGIN_UU = 45000;
+const POIS = (window.TESLES_POIS || []).map(p => Object.assign({
+  named: !/^[A-Z][0-4] /.test(p.n) }, p));
+
 const STATE_FI = {
   IDLE: "Odottaa", TRAVEL: "Matkalla", SEARCH: "Tutkii rakennuksia",
   HUNT: "Metsästää", CAMP: "Leiriytyy", PATROL: "Partioi", REST: "Lepää",
@@ -44,7 +63,7 @@ let state = { groups: [], events: [], health: [], stats: {}, calibration: CAL_DE
 let selected = null, selectedMember = null;
 let tab = "world", filter = "all", query = "";
 let view = { scale: 0, ox: 0, oy: 0 };
-let show = { routes: true, trails: true, labels: false, grid: true };
+let show = { routes: true, trails: true, labels: false, grid: true, pois: true, queue: true };
 let trails = new Map();
 let hover = null, dragging = null;
 let pollFails = 0, lastError = "";
@@ -188,6 +207,9 @@ function drawBase(r) {
   const s = mapSize();
   if (tiles) {
     drawTiles(r, s);
+    const o = imgToScreen(0, 0);
+    ctx.fillStyle = "rgba(6,8,12,.22)";
+    ctx.fillRect(o.x, o.y, s.w * view.scale, s.h * view.scale);
   } else if (mapReady && mapImg.naturalWidth) {
     const o = imgToScreen(0, 0);
     const need = s.w * view.scale;
@@ -195,6 +217,8 @@ function drawBase(r) {
     for (const m of mapMips) if (m.w >= need) pick = m;
     ctx.imageSmoothingEnabled = view.scale < 2;
     ctx.drawImage(pick.img, o.x, o.y, s.w * view.scale, s.h * view.scale);
+    ctx.fillStyle = "rgba(6,8,12,.22)";
+    ctx.fillRect(o.x, o.y, s.w * view.scale, s.h * view.scale);
   } else if (mapMissing) {
     drawMissingMap(r);
   } else {
@@ -266,8 +290,9 @@ function drawGrid() {
   ctx.save();
   ctx.strokeStyle = "rgba(255,255,255,.13)";
   ctx.lineWidth = 1;
-  ctx.font = "11px Inter, sans-serif";
-  ctx.fillStyle = "rgba(255,255,255,.35)";
+  ctx.font = "600 12px Inter, sans-serif";
+  ctx.fillStyle = "rgba(255,255,255,.5)";
+  ctx.shadowColor = "rgba(0,0,0,.8)"; ctx.shadowBlur = 0;
   for (let i = 0; i <= 5; i++) {
     const a = imgToScreen(i / 5 * s.w, 0), b = imgToScreen(i / 5 * s.w, s.h);
     ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
@@ -284,6 +309,108 @@ function drawGrid() {
 }
 
 function colorFor(g) { return CLASS_COLOR[g.class] || "#d8dde4"; }
+
+function poiShape(x, y, st, k) {
+  const r = st.r * k;
+  ctx.beginPath();
+  switch (st.shape) {
+    case "square": ctx.rect(x - r, y - r, r * 2, r * 2); break;
+    case "tri": ctx.moveTo(x, y - r * 1.15); ctx.lineTo(x + r, y + r * 0.8);
+      ctx.lineTo(x - r, y + r * 0.8); ctx.closePath(); break;
+    case "hex": for (let i = 0; i < 6; i++) {
+        const a = Math.PI / 3 * i + Math.PI / 6;
+        ctx[i ? "lineTo" : "moveTo"](x + r * Math.cos(a), y + r * Math.sin(a));
+      } ctx.closePath(); break;
+    case "cross": { const t = r * 0.38;
+      ctx.rect(x - t, y - r, t * 2, r * 2); ctx.rect(x - r, y - t, r * 2, t * 2); break; }
+    case "tick": ctx.moveTo(x, y - r * 1.3); ctx.lineTo(x + r, y + r * 0.7);
+      ctx.lineTo(x - r, y + r * 0.7); ctx.closePath(); break;
+    default: ctx.arc(x, y, r, 0, Math.PI * 2);
+  }
+}
+
+// The places groups actually travel to. Minor places (villages, hunting
+// towers) appear as the map is zoomed in; names follow at closer zoom.
+function drawPois(moving) {
+  if (!POIS.length) return;
+  const r = canvas.getBoundingClientRect();
+  const z = view.scale;
+  const k = Math.max(0.75, Math.min(1.6, 0.7 + z * 0.35));
+  ctx.save();
+  for (const p of POIS) {
+    if (p.k === "HUNTING" && z < 0.75) continue;
+    if (p.k === "VILLAGE" && z < 0.45) continue;
+    const s = worldToScreen(p.x, p.y);
+    if (s.x < -60 || s.y < -60 || s.x > r.width + 60 || s.y > r.height + 60) continue;
+    const st = POI_STYLE[p.k] || POI_STYLE.LANDMARK;
+    if (p.k === "OUTPOST") {
+      const e = worldToScreen(p.x + OUTPOST_MARGIN_UU, p.y);
+      const rr = Math.abs(e.x - s.x);
+      ctx.fillStyle = "rgba(62,224,122,.07)";
+      ctx.strokeStyle = "rgba(62,224,122,.55)";
+      ctx.setLineDash([5, 4]); ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.arc(s.x, s.y, rr, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.lineWidth = 2.2; ctx.strokeStyle = st.c;
+      ctx.beginPath(); ctx.arc(s.x, s.y, st.r * k, 0, Math.PI * 2); ctx.stroke();
+    } else {
+      poiShape(s.x, s.y, st, k);
+      ctx.fillStyle = st.c; ctx.fill();
+      ctx.lineWidth = 1.2; ctx.strokeStyle = "rgba(0,0,0,.75)"; ctx.stroke();
+    }
+    if (moving) continue;
+    if ((p.named && z >= 0.7) || z >= 2.2) {
+      ctx.font = (p.named ? "600 " : "") + "11px Inter, sans-serif";
+      ctx.textAlign = "left"; ctx.textBaseline = "middle";
+      ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,.8)";
+      ctx.strokeText(p.n, s.x + st.r * k + 4, s.y);
+      ctx.fillStyle = p.named ? "#f2f4f7" : "#c3c9d2";
+      ctx.fillText(p.n, s.x + st.r * k + 4, s.y);
+    }
+  }
+  ctx.restore();
+}
+
+// The three places planned after the current goal: a thin chain from the goal
+// through numbered stops. The selected group gets the full version.
+function drawQueue(g, isSel) {
+  const q = g.queue || [];
+  if (!q.length) return;
+  const col = colorFor(g);
+  let from = (g.goal_x != null) ? worldToScreen(g.goal_x, g.goal_y) : worldToScreen(g.x, g.y);
+  ctx.save();
+  ctx.lineWidth = isSel ? 2 : 1;
+  ctx.strokeStyle = isSel ? col : col + "70";
+  ctx.setLineDash(isSel ? [4, 4] : [2, 5]);
+  ctx.beginPath(); ctx.moveTo(from.x, from.y);
+  const pts = q.map(p => worldToScreen(p.x, p.y));
+  pts.forEach(p => ctx.lineTo(p.x, p.y));
+  ctx.stroke();
+  ctx.setLineDash([]);
+  // Zoomed out, other groups' stops are plain dots: thirty sets of numbers
+  // at once only hide the map.
+  const small = !isSel && view.scale < 0.8;
+  const rad = isSel ? 8 : small ? 2.5 : 5.5;
+  pts.forEach((p, i) => {
+    ctx.beginPath(); ctx.arc(p.x, p.y, rad, 0, Math.PI * 2);
+    ctx.fillStyle = isSel ? "rgba(10,12,16,.92)" : "rgba(10,12,16,.75)";
+    ctx.fill();
+    ctx.lineWidth = isSel ? 2 : 1.2; ctx.strokeStyle = col; ctx.stroke();
+    if (small) return;
+    ctx.fillStyle = col;
+    ctx.font = `bold ${isSel ? 10 : 8}px Inter, sans-serif`;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(String(i + 1), p.x, p.y + 0.5);
+    if (isSel) {
+      const label = q[i].label || q[i].id;
+      ctx.font = "11px Inter, sans-serif"; ctx.textAlign = "left";
+      ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,.85)";
+      ctx.strokeText(label, p.x + 11, p.y);
+      ctx.fillStyle = "#fff"; ctx.fillText(label, p.x + 11, p.y);
+    }
+  });
+  ctx.restore();
+}
 
 function drawRoute(g) {
   if (!g.route || g.route.length < 2) return;
@@ -355,6 +482,26 @@ function drawGroup(g) {
     ctx.lineWidth = 2;
     ctx.stroke();
   }
+  // Heading from the last trail step: a small wedge in front of the marker.
+  const t = trails.get(g.gid);
+  if (t && t.length >= 2) {
+    const a = t[t.length - 2], b = t[t.length - 1];
+    const sa = worldToScreen(a[0], a[1]), sb = worldToScreen(b[0], b[1]);
+    const ang = Math.atan2(sb.y - sa.y, sb.x - sa.x);
+    if (Math.hypot(sb.x - sa.x, sb.y - sa.y) > 0.3) {
+      ctx.beginPath();
+      ctx.moveTo(p.x + Math.cos(ang) * (r + 7), p.y + Math.sin(ang) * (r + 7));
+      ctx.lineTo(p.x + Math.cos(ang + 2.5) * (r + 1), p.y + Math.sin(ang + 2.5) * (r + 1));
+      ctx.lineTo(p.x + Math.cos(ang - 2.5) * (r + 1), p.y + Math.sin(ang - 2.5) * (r + 1));
+      ctx.closePath();
+      ctx.fillStyle = col; ctx.fill();
+      ctx.lineWidth = 1; ctx.strokeStyle = "rgba(0,0,0,.7)"; ctx.stroke();
+    }
+  }
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, r + 2, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(0,0,0,.45)";
+  ctx.fill();
   ctx.beginPath();
   ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
   ctx.fillStyle = col;
@@ -402,13 +549,21 @@ function drawNow() {
   // trails and every group's route come back as soon as it stops.
   const moving = performance.now() - lastInteraction < 180;
   if (moving) setTimeout(draw, 200);
+  if (show.pois) drawPois(moving);
   const list = visibleGroups();
   if (show.trails && !moving) list.forEach(drawTrail);
+  if (show.queue && !moving) list.forEach(g => {
+    if (!selected || g.gid !== selected.gid) drawQueue(g, false);
+  });
   if (show.routes && !moving) list.forEach(g => { if (g !== selected) drawRoute(g); });
   list.forEach(g => { if (!selected || g.gid !== selected.gid) drawGroup(g); });
   if (selected) {
     const live = state.groups.find(g => g.gid === selected.gid);
-    if (live) { if (show.routes) drawRoute(live); drawGroup(live); }
+    if (live) {
+      if (show.queue) drawQueue(live, true);
+      if (show.routes) drawRoute(live);
+      drawGroup(live);
+    }
   }
   (state.players || []).forEach(drawPlayer);
 }
@@ -564,6 +719,7 @@ function groupCard(g) {
       ${esc(g.class_fi)} · taso ${g.level} · ${g.members_alive}/${g.members_total} NPC · ${esc(g.sector)}<br>
       ${esc(g.intent || STATE_FI[g.state] || g.state)}
       ${g.route_km ? ` · ${g.route_km} km (${esc(g.route_kind || "")})` : ""}
+      ${(g.queue || []).length ? `<br><span class="q">Seuraavaksi: ${g.queue.map(q => esc(q.label)).join(" → ")}</span>` : ""}
     </div>
     ${bar(g.morale, 1)}
   </div>`;
@@ -660,7 +816,11 @@ function renderDetail() {
       <div class="kv">
         <b>Tila</b><span>${esc(g.intent || g.state)}</span>
         <b>Kohde</b><span>${esc(g.goal || "ei valittua kohdetta")}
-          ${g.goal_kind ? `(${esc(g.goal_kind)})` : ""}</span>
+          ${g.goal_kind ? `(${esc((POI_STYLE[g.goal_kind] || {}).fi || g.goal_kind)})` : ""}</span>
+        <b>Jonossa</b><span>${(g.queue || []).length
+          ? g.queue.map((q, i) => `${i + 1}. ${esc(q.label)} <i style="color:${(POI_STYLE[q.kind] || {}).c || "#ccc"}">${esc((POI_STYLE[q.kind] || {}).fi || q.kind)}</i>`).join("<br>")
+          : "–"}</span>
+        <b>Muisti</b><span>${g.recent ?? 0} / 10 viimeksi käytyä paikkaa</span>
         <b>Reitti</b><span>${g.route_km || 0} km · ${esc(g.route_kind || "–")}
           · piste ${g.route_index}</span>
         <b>Sijainti</b><span>${g.x}, ${g.y} · ${esc(g.sector)}</span>
@@ -728,8 +888,11 @@ function renderLegend() {
   const rows = [...seen.entries()].map(([k, fi]) =>
     `<span class="row"><i class="sw" style="background:${CLASS_COLOR[k] || "#ccc"}"></i>${esc(fi)}</span>`
   ).join("");
-  document.getElementById("legend").innerHTML = rows ||
-    "Odotetaan ryhmätietoja…";
+  const kinds = Object.entries(POI_STYLE).map(([k, st]) =>
+    `<span class="row"><i class="sw poi ${st.shape}" style="background:${st.c}"></i>${esc(st.fi)}</span>`
+  ).join("");
+  document.getElementById("legend").innerHTML = (rows || "Odotetaan ryhmätietoja…") +
+    (show.pois ? `<div class="lg2">${kinds}</div>` : "");
 }
 
 function renderHud() {
@@ -807,7 +970,9 @@ window.addEventListener("mousemove", e => {
   document.getElementById("chipCoords").textContent =
     `X ${Math.round(w.x)} / Y ${Math.round(w.y)} / ${sectorOf(w.x, w.y)}`;
   const g = pick(sx, sy);
-  if (g) showTip(g, e.clientX - r.left, e.clientY - r.top); else hideTip();
+  if (g) { showTip(g, e.clientX - r.left, e.clientY - r.top); return; }
+  const p = show.pois ? pickPoi(sx, sy) : null;
+  if (p) showPoiTip(p, sx, sy); else hideTip();
 });
 window.addEventListener("mouseup", e => {
   if (dragging && !dragging.moved) {
@@ -836,12 +1001,37 @@ function pick(sx, sy) {
   return best;
 }
 
+function pickPoi(sx, sy) {
+  let best = null, bestD = 10;
+  const z = view.scale;
+  for (const p of POIS) {
+    if ((p.k === "HUNTING" && z < 0.75) || (p.k === "VILLAGE" && z < 0.45)) continue;
+    const s = worldToScreen(p.x, p.y);
+    const d = Math.hypot(s.x - sx, s.y - sy);
+    if (d < bestD) { best = p; bestD = d; }
+  }
+  return best;
+}
+
+function showPoiTip(p, x, y) {
+  const st = POI_STYLE[p.k] || {};
+  const heading = (state.groups || []).filter(g =>
+    g.goal_id === p.id || (g.queue || []).some(q => q.id === p.id)).map(g => g.gid);
+  tipEl.innerHTML = `<b>${esc(p.n)}</b><br>
+    <span style="color:${st.c}">${esc(st.fi || p.k)}</span> · ${esc(sectorOf(p.x, p.y))}<br>
+    ${heading.length ? "Tulossa: " + heading.map(esc).join(", ") : "Ei ryhmiä matkalla"}`;
+  tipEl.style.display = "block";
+  tipEl.style.left = Math.min(x + 16, wrap.clientWidth - 330) + "px";
+  tipEl.style.top = Math.min(y + 16, wrap.clientHeight - 120) + "px";
+}
+
 function showTip(g, x, y) {
   const lead = (g.members || []).find(m => m.leader);
   tipEl.innerHTML = `<b>${esc(g.gid)} · ${esc(g.class_fi)}</b><br>
     ${g.members_alive}/${g.members_total} NPC · taso ${g.level} ·
     ${g.physical_members > 0 ? "fyysinen" : "virtuaalinen"}<br>
     ${esc(g.intent || g.state)}<br>
+    ${(g.queue || []).length ? "Jono: " + g.queue.map(q => esc(q.label)).join(" → ") + "<br>" : ""}
     ${lead ? "Johtaja: " + esc(lead.name) + " (" + esc(lead.archetype_fi) + ")<br>" : ""}
     Moraali ${g.morale} · stressi ${g.stress} · voima ${g.power}`;
   tipEl.style.display = "block";
@@ -877,6 +1067,9 @@ toggle("btnRoutes", "routes");
 toggle("btnTrails", "trails");
 toggle("btnLabels", "labels");
 toggle("btnGrid", "grid");
+toggle("btnPois", "pois");
+toggle("btnQueue", "queue");
+document.getElementById("btnPois").addEventListener("click", renderLegend);
 document.getElementById("btnFit").addEventListener("click", () => { fit(); renderHud(); });
 
 window.addEventListener("resize", resize);

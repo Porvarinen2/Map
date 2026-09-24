@@ -40,6 +40,22 @@ end
 
 P.count = #P.points
 
+-- Trader outposts are safe zones: nobody armed belongs there. They stay in
+-- the data so the live map can show them, but nothing picks them, or anything
+-- within OUTPOST_MARGIN of them, as a destination.
+P.outposts = P.by_kind.OUTPOST or {}
+P.OUTPOST_MARGIN = 45000
+function P.near_outpost(pos, margin)
+    margin = margin or P.OUTPOST_MARGIN
+    for _, o in ipairs(P.outposts) do
+        if U.dist2d(pos, o.pos) < (o.radius or 0) + margin then return o end
+    end
+    return nil
+end
+for _, poi in ipairs(P.points) do
+    poi.blocked = poi.kind == "OUTPOST" or (P.near_outpost(poi.pos) ~= nil)
+end
+
 -- Spatial buckets for nearest lookups.
 local BUCKET = 60000
 local buckets = {}

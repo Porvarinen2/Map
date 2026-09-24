@@ -1,0 +1,2504 @@
+[
+{
+"sector": "D4",
+"kind": "MILITARY",
+"name": "Military Airfield",
+"px": 642.0,
+"py": 191.5,
+"W": 1672,
+"H": 1670
+},
+{
+"sector": "D3",
+"kind": "CITY",
+"name": "Samobor City",
+"px": 20.0,
+"py": 1433.0,
+"W": 1671,
+"H": 1668
+},
+{
+"sector": "D2",
+"kind": "INDUSTRIAL",
+"name": "Lumber Mill",
+"px": 566.0,
+"py": 680.5,
+"W": 1673,
+"H": 1671
+},
+{
+"sector": "D2",
+"kind": "LANDMARK",
+"name": "D2 Castle",
+"px": 405.0,
+"py": 1428.0,
+"W": 1673,
+"H": 1671
+},
+{
+"sector": "D2",
+"kind": "LANDMARK",
+"name": "MMA Fight Club",
+"px": 1526.0,
+"py": 1634.0,
+"W": 1673,
+"H": 1671
+},
+{
+"sector": "D1",
+"kind": "LANDMARK",
+"name": "North Ridge",
+"px": 1033.0,
+"py": 16.5,
+"W": 1673,
+"H": 1669
+},
+{
+"sector": "D1",
+"kind": "LANDMARK",
+"name": "Dvorac Gradec",
+"px": 1231.5,
+"py": 1029.5,
+"W": 1673,
+"H": 1669
+},
+{
+"sector": "D1",
+"kind": "INDUSTRIAL",
+"name": "Coal Mine",
+"px": 897.0,
+"py": 1037.0,
+"W": 1673,
+"H": 1669
+},
+{
+"sector": "D1",
+"kind": "LANDMARK",
+"name": "Dvorac Gradec Manor",
+"px": 1375.0,
+"py": 1078.0,
+"W": 1673,
+"H": 1669
+},
+{
+"sector": "D0",
+"kind": "MILITARY",
+"name": "Military Barracks",
+"px": 1464.0,
+"py": 495.0,
+"W": 1671,
+"H": 1664
+},
+{
+"sector": "D0",
+"kind": "MILITARY",
+"name": "Duga Radar",
+"px": 1438.0,
+"py": 1575.0,
+"W": 1671,
+"H": 1664
+},
+{
+"sector": "C4",
+"kind": "MEDICAL",
+"name": "Sanitarium",
+"px": 1342.5,
+"py": 86.0,
+"W": 1668,
+"H": 1669
+},
+{
+"sector": "C3",
+"kind": "MILITARY",
+"name": "Military Radar & Trenches",
+"px": 430.0,
+"py": 1173.0,
+"W": 1672,
+"H": 1665
+},
+{
+"sector": "C3",
+"kind": "LANDMARK",
+"name": "Big Vern Monument",
+"px": 878.0,
+"py": 1531.0,
+"W": 1672,
+"H": 1665
+},
+{
+"sector": "C2",
+"kind": "OUTPOST",
+"name": "C2 Outpost",
+"px": 888.0,
+"py": 140.0,
+"W": 1669,
+"H": 1671
+},
+{
+"sector": "C2",
+"kind": "INDUSTRIAL",
+"name": "Dam",
+"px": 195.5,
+"py": 322.0,
+"W": 1669,
+"H": 1671
+},
+{
+"sector": "C2",
+"kind": "MILITARY",
+"name": "Prison",
+"px": 392.0,
+"py": 874.0,
+"W": 1669,
+"H": 1671
+},
+{
+"sector": "C2",
+"kind": "INDUSTRIAL",
+"name": "Radio Station",
+"px": 1142.0,
+"py": 1028.0,
+"W": 1669,
+"H": 1671
+},
+{
+"sector": "C1",
+"kind": "LANDMARK",
+"name": "Observatory",
+"px": 194.0,
+"py": 576.0,
+"W": 1673,
+"H": 1669
+},
+{
+"sector": "C1",
+"kind": "LANDMARK",
+"name": "Waterfall",
+"px": 492.0,
+"py": 1059.0,
+"W": 1673,
+"H": 1669
+},
+{
+"sector": "C0",
+"kind": "INDUSTRIAL",
+"name": "Nuclear Power Plant",
+"px": 629.0,
+"py": 538.0,
+"W": 1671,
+"H": 1665
+},
+{
+"sector": "C0",
+"kind": "LANDMARK",
+"name": "Camping Site",
+"px": 634.0,
+"py": 815.0,
+"W": 1671,
+"H": 1665
+},
+{
+"sector": "C0",
+"kind": "CITY",
+"name": "Krsko City",
+"px": 1294.0,
+"py": 926.0,
+"W": 1671,
+"H": 1665
+},
+{
+"sector": "B4",
+"kind": "OUTPOST",
+"name": "B4 Outpost",
+"px": 261.0,
+"py": 1281.5,
+"W": 1670,
+"H": 1669
+},
+{
+"sector": "B4",
+"kind": "OUTPOST",
+"name": "B4 Outpost Airfield",
+"px": 185.0,
+"py": 1272.0,
+"W": 1670,
+"H": 1669
+},
+{
+"sector": "B3",
+"kind": "LANDMARK",
+"name": "B3 Castle",
+"px": 1456.0,
+"py": 49.5,
+"W": 1672,
+"H": 1665
+},
+{
+"sector": "B3",
+"kind": "MILITARY",
+"name": "Boot Camp",
+"px": 321.0,
+"py": 234.0,
+"W": 1672,
+"H": 1665
+},
+{
+"sector": "B3",
+"kind": "LANDMARK",
+"name": "Monolith",
+"px": 1627.0,
+"py": 649.5,
+"W": 1672,
+"H": 1665
+},
+{
+"sector": "B3",
+"kind": "INDUSTRIAL",
+"name": "Train Yard",
+"px": 1186.0,
+"py": 956.5,
+"W": 1672,
+"H": 1665
+},
+{
+"sector": "B3",
+"kind": "INDUSTRIAL",
+"name": "North Quarry",
+"px": 974.0,
+"py": 1626.0,
+"W": 1672,
+"H": 1665
+},
+{
+"sector": "B2",
+"kind": "MILITARY",
+"name": "Airport",
+"px": 1477.5,
+"py": 212.0,
+"W": 1673,
+"H": 1670
+},
+{
+"sector": "B2",
+"kind": "MILITARY",
+"name": "Gun Range",
+"px": 1265.0,
+"py": 655.0,
+"W": 1673,
+"H": 1670
+},
+{
+"sector": "B1",
+"kind": "INDUSTRIAL",
+"name": "Factory",
+"px": 617.0,
+"py": 75.5,
+"W": 1670,
+"H": 1670
+},
+{
+"sector": "B0",
+"kind": "LANDMARK",
+"name": "Ramsons Hill",
+"px": 1406.0,
+"py": 766.0,
+"W": 1670,
+"H": 1663
+},
+{
+"sector": "B0",
+"kind": "MEDICAL",
+"name": "Klenovnik Hospital",
+"px": 178.0,
+"py": 833.0,
+"W": 1670,
+"H": 1663
+},
+{
+"sector": "B0",
+"kind": "INDUSTRIAL",
+"name": "Junkyard",
+"px": 1491.0,
+"py": 1047.5,
+"W": 1670,
+"H": 1663
+},
+{
+"sector": "B0",
+"kind": "INDUSTRIAL",
+"name": "Brick Factory",
+"px": 995.0,
+"py": 1599.0,
+"W": 1670,
+"H": 1663
+},
+{
+"sector": "A4",
+"kind": "MILITARY",
+"name": "A4 Airfield",
+"px": 1455.0,
+"py": 1236.0,
+"W": 1670,
+"H": 1663
+},
+{
+"sector": "A4",
+"kind": "MILITARY",
+"name": "Naval Base",
+"px": 664.0,
+"py": 1386.0,
+"W": 1670,
+"H": 1663
+},
+{
+"sector": "A3",
+"kind": "INDUSTRIAL",
+"name": "South Quarry",
+"px": 936.0,
+"py": 307.0,
+"W": 1671,
+"H": 1666
+},
+{
+"sector": "A2",
+"kind": "INDUSTRIAL",
+"name": "Cheese Factory",
+"px": 682.0,
+"py": 308.0,
+"W": 1671,
+"H": 1668
+},
+{
+"sector": "A1",
+"kind": "INDUSTRIAL",
+"name": "Fish Factory",
+"px": 283.0,
+"py": 385.0,
+"W": 1674,
+"H": 1668
+},
+{
+"sector": "A0",
+"kind": "OUTPOST",
+"name": "A0 Outpost",
+"px": 104.0,
+"py": 1426.0,
+"W": 1669,
+"H": 1666
+},
+{
+"sector": "A0",
+"kind": "OUTPOST",
+"name": "A0 Outpost Airfield",
+"px": 25.5,
+"py": 1445.5,
+"W": 1669,
+"H": 1666
+},
+{
+"sector": "Z3",
+"kind": "OUTPOST",
+"name": "Z3 Outpost",
+"px": 1596.0,
+"py": 402.0,
+"W": 1669,
+"H": 1665
+},
+{
+"sector": "Z3",
+"kind": "LANDMARK",
+"name": "Motorbike Track",
+"px": 267.0,
+"py": 843.0,
+"W": 1669,
+"H": 1665
+},
+{
+"sector": "Z3",
+"kind": "INDUSTRIAL",
+"name": "Small Shipyard",
+"px": 885.0,
+"py": 887.0,
+"W": 1669,
+"H": 1665
+},
+{
+"sector": "Z3",
+"kind": "LANDMARK",
+"name": "Windmills",
+"px": 1220.0,
+"py": 1274.5,
+"W": 1669,
+"H": 1665
+},
+{
+"sector": "Z2",
+"kind": "CITY",
+"name": "Novigrad",
+"px": 955.0,
+"py": 424.0,
+"W": 1674,
+"H": 1666
+},
+{
+"sector": "Z2",
+"kind": "OUTPOST",
+"name": "Z2 Outpost Airfield",
+"px": 50.0,
+"py": 503.0,
+"W": 1674,
+"H": 1666
+},
+{
+"sector": "Z2",
+"kind": "INDUSTRIAL",
+"name": "Salt Ponds",
+"px": 248.5,
+"py": 870.0,
+"W": 1674,
+"H": 1666
+},
+{
+"sector": "Z2",
+"kind": "LANDMARK",
+"name": "Windmills",
+"px": 1331.0,
+"py": 1214.0,
+"W": 1674,
+"H": 1666
+},
+{
+"sector": "Z1",
+"kind": "MILITARY",
+"name": "Weapons Factory",
+"px": 765.5,
+"py": 475.0,
+"W": 1673,
+"H": 1666
+},
+{
+"sector": "Z1",
+"kind": "INDUSTRIAL",
+"name": "Trainyard",
+"px": 103.0,
+"py": 784.0,
+"W": 1673,
+"H": 1666
+},
+{
+"sector": "Z0",
+"kind": "MILITARY",
+"name": "Z0 Airfield",
+"px": 871.5,
+"py": 431.0,
+"W": 1670,
+"H": 1674
+},
+{
+"sector": "D4",
+"kind": "VILLAGE",
+"name": null,
+"px": 1445.0,
+"py": 163.0,
+"W": 1672,
+"H": 1670
+},
+{
+"sector": "D4",
+"kind": "VILLAGE",
+"name": null,
+"px": 330.0,
+"py": 410.0,
+"W": 1672,
+"H": 1670
+},
+{
+"sector": "D4",
+"kind": "VILLAGE",
+"name": null,
+"px": 836.0,
+"py": 759.0,
+"W": 1672,
+"H": 1670
+},
+{
+"sector": "D4",
+"kind": "VILLAGE",
+"name": null,
+"px": 362.0,
+"py": 934.0,
+"W": 1672,
+"H": 1670
+},
+{
+"sector": "D4",
+"kind": "VILLAGE",
+"name": null,
+"px": 198.5,
+"py": 1525.0,
+"W": 1672,
+"H": 1670
+},
+{
+"sector": "D4",
+"kind": "HUNTING",
+"name": null,
+"px": 383.0,
+"py": 648.0,
+"W": 1672,
+"H": 1670
+},
+{
+"sector": "D4",
+"kind": "HUNTING",
+"name": null,
+"px": 928.0,
+"py": 1310.0,
+"W": 1672,
+"H": 1670
+},
+{
+"sector": "D4",
+"kind": "HUNTING",
+"name": null,
+"px": 1175.0,
+"py": 1525.0,
+"W": 1672,
+"H": 1670
+},
+{
+"sector": "D4",
+"kind": "HUNTING",
+"name": null,
+"px": 517.0,
+"py": 1654.0,
+"W": 1672,
+"H": 1670
+},
+{
+"sector": "D3",
+"kind": "VILLAGE",
+"name": null,
+"px": 1613.5,
+"py": 89.0,
+"W": 1671,
+"H": 1668
+},
+{
+"sector": "D3",
+"kind": "VILLAGE",
+"name": null,
+"px": 242.0,
+"py": 590.0,
+"W": 1671,
+"H": 1668
+},
+{
+"sector": "D3",
+"kind": "VILLAGE",
+"name": null,
+"px": 1257.0,
+"py": 724.0,
+"W": 1671,
+"H": 1668
+},
+{
+"sector": "D3",
+"kind": "VILLAGE",
+"name": null,
+"px": 782.0,
+"py": 1135.0,
+"W": 1671,
+"H": 1668
+},
+{
+"sector": "D3",
+"kind": "HUNTING",
+"name": null,
+"px": 1100.0,
+"py": 184.0,
+"W": 1671,
+"H": 1668
+},
+{
+"sector": "D3",
+"kind": "HUNTING",
+"name": null,
+"px": 410.0,
+"py": 214.0,
+"W": 1671,
+"H": 1668
+},
+{
+"sector": "D3",
+"kind": "HUNTING",
+"name": null,
+"px": 49.5,
+"py": 341.0,
+"W": 1671,
+"H": 1668
+},
+{
+"sector": "D3",
+"kind": "HUNTING",
+"name": null,
+"px": 1479.5,
+"py": 417.0,
+"W": 1671,
+"H": 1668
+},
+{
+"sector": "D3",
+"kind": "HUNTING",
+"name": null,
+"px": 130.5,
+"py": 823.0,
+"W": 1671,
+"H": 1668
+},
+{
+"sector": "D3",
+"kind": "HUNTING",
+"name": null,
+"px": 1444.5,
+"py": 851.0,
+"W": 1671,
+"H": 1668
+},
+{
+"sector": "D3",
+"kind": "HUNTING",
+"name": null,
+"px": 874.0,
+"py": 881.0,
+"W": 1671,
+"H": 1668
+},
+{
+"sector": "D3",
+"kind": "HUNTING",
+"name": null,
+"px": 433.0,
+"py": 1162.0,
+"W": 1671,
+"H": 1668
+},
+{
+"sector": "D3",
+"kind": "HUNTING",
+"name": null,
+"px": 1560.5,
+"py": 1262.0,
+"W": 1671,
+"H": 1668
+},
+{
+"sector": "D3",
+"kind": "HUNTING",
+"name": null,
+"px": 572.0,
+"py": 1612.0,
+"W": 1671,
+"H": 1668
+},
+{
+"sector": "D3",
+"kind": "HUNTING",
+"name": null,
+"px": 727.0,
+"py": 1667.0,
+"W": 1671,
+"H": 1668
+},
+{
+"sector": "D3",
+"kind": "HUNTING",
+"name": null,
+"px": 451.7,
+"py": 1667.0,
+"W": 1671,
+"H": 1668
+},
+{
+"sector": "D3",
+"kind": "BUNKER",
+"name": null,
+"px": 943.0,
+"py": 392.0,
+"W": 1671,
+"H": 1668
+},
+{
+"sector": "D2",
+"kind": "VILLAGE",
+"name": null,
+"px": 206.0,
+"py": 449.0,
+"W": 1673,
+"H": 1671
+},
+{
+"sector": "D2",
+"kind": "VILLAGE",
+"name": null,
+"px": 368.0,
+"py": 941.0,
+"W": 1673,
+"H": 1671
+},
+{
+"sector": "D2",
+"kind": "VILLAGE",
+"name": null,
+"px": 679.0,
+"py": 1497.0,
+"W": 1673,
+"H": 1671
+},
+{
+"sector": "D2",
+"kind": "HUNTING",
+"name": null,
+"px": 772.0,
+"py": 292.0,
+"W": 1673,
+"H": 1671
+},
+{
+"sector": "D2",
+"kind": "HUNTING",
+"name": null,
+"px": 1616.5,
+"py": 470.0,
+"W": 1673,
+"H": 1671
+},
+{
+"sector": "D2",
+"kind": "HUNTING",
+"name": null,
+"px": 223.0,
+"py": 744.0,
+"W": 1673,
+"H": 1671
+},
+{
+"sector": "D2",
+"kind": "HUNTING",
+"name": null,
+"px": 1314.0,
+"py": 1088.0,
+"W": 1673,
+"H": 1671
+},
+{
+"sector": "D2",
+"kind": "HUNTING",
+"name": null,
+"px": 108.5,
+"py": 1160.0,
+"W": 1673,
+"H": 1671
+},
+{
+"sector": "D2",
+"kind": "HUNTING",
+"name": null,
+"px": 656.0,
+"py": 1344.0,
+"W": 1673,
+"H": 1671
+},
+{
+"sector": "D2",
+"kind": "HUNTING",
+"name": null,
+"px": 834.0,
+"py": 1522.0,
+"W": 1673,
+"H": 1671
+},
+{
+"sector": "D2",
+"kind": "HUNTING",
+"name": null,
+"px": 1489.0,
+"py": 1576.0,
+"W": 1673,
+"H": 1671
+},
+{
+"sector": "D2",
+"kind": "RESEARCH",
+"name": null,
+"px": 1379.0,
+"py": 271.0,
+"W": 1673,
+"H": 1671
+},
+{
+"sector": "D1",
+"kind": "VILLAGE",
+"name": null,
+"px": 165.5,
+"py": 270.0,
+"W": 1673,
+"H": 1669
+},
+{
+"sector": "D1",
+"kind": "VILLAGE",
+"name": null,
+"px": 1301.0,
+"py": 754.0,
+"W": 1673,
+"H": 1669
+},
+{
+"sector": "D1",
+"kind": "VILLAGE",
+"name": null,
+"px": 890.0,
+"py": 1553.0,
+"W": 1673,
+"H": 1669
+},
+{
+"sector": "D1",
+"kind": "HUNTING",
+"name": null,
+"px": 334.0,
+"py": 316.0,
+"W": 1673,
+"H": 1669
+},
+{
+"sector": "D1",
+"kind": "HUNTING",
+"name": null,
+"px": 1479.5,
+"py": 367.0,
+"W": 1673,
+"H": 1669
+},
+{
+"sector": "D1",
+"kind": "HUNTING",
+"name": null,
+"px": 429.0,
+"py": 761.0,
+"W": 1673,
+"H": 1669
+},
+{
+"sector": "D1",
+"kind": "HUNTING",
+"name": null,
+"px": 922.5,
+"py": 978.0,
+"W": 1673,
+"H": 1669
+},
+{
+"sector": "D1",
+"kind": "HUNTING",
+"name": null,
+"px": 121.5,
+"py": 1521.0,
+"W": 1673,
+"H": 1669
+},
+{
+"sector": "D1",
+"kind": "ABANDONED_BUNKER",
+"name": null,
+"px": 1333.0,
+"py": 429.0,
+"W": 1673,
+"H": 1669
+},
+{
+"sector": "D0",
+"kind": "HUNTING",
+"name": null,
+"px": 1205.0,
+"py": 227.0,
+"W": 1671,
+"H": 1664
+},
+{
+"sector": "D0",
+"kind": "HUNTING",
+"name": null,
+"px": 280.0,
+"py": 522.0,
+"W": 1671,
+"H": 1664
+},
+{
+"sector": "D0",
+"kind": "HUNTING",
+"name": null,
+"px": 1302.5,
+"py": 885.0,
+"W": 1671,
+"H": 1664
+},
+{
+"sector": "D0",
+"kind": "HUNTING",
+"name": null,
+"px": 291.0,
+"py": 1161.0,
+"W": 1671,
+"H": 1664
+},
+{
+"sector": "D0",
+"kind": "HUNTING",
+"name": null,
+"px": 785.0,
+"py": 1263.0,
+"W": 1671,
+"H": 1664
+},
+{
+"sector": "D0",
+"kind": "BUNKER",
+"name": null,
+"px": 1491.5,
+"py": 118.0,
+"W": 1671,
+"H": 1664
+},
+{
+"sector": "C4",
+"kind": "VILLAGE",
+"name": null,
+"px": 258.0,
+"py": 349.0,
+"W": 1668,
+"H": 1669
+},
+{
+"sector": "C4",
+"kind": "VILLAGE",
+"name": null,
+"px": 1451.5,
+"py": 487.0,
+"W": 1668,
+"H": 1669
+},
+{
+"sector": "C4",
+"kind": "VILLAGE",
+"name": null,
+"px": 814.0,
+"py": 1032.0,
+"W": 1668,
+"H": 1669
+},
+{
+"sector": "C4",
+"kind": "VILLAGE",
+"name": null,
+"px": 401.0,
+"py": 1253.0,
+"W": 1668,
+"H": 1669
+},
+{
+"sector": "C4",
+"kind": "VILLAGE",
+"name": null,
+"px": 1273.0,
+"py": 1413.0,
+"W": 1668,
+"H": 1669
+},
+{
+"sector": "C4",
+"kind": "HUNTING",
+"name": null,
+"px": 424.0,
+"py": 79.0,
+"W": 1668,
+"H": 1669
+},
+{
+"sector": "C4",
+"kind": "HUNTING",
+"name": null,
+"px": 1571.5,
+"py": 90.0,
+"W": 1668,
+"H": 1669
+},
+{
+"sector": "C4",
+"kind": "HUNTING",
+"name": null,
+"px": 426.0,
+"py": 236.0,
+"W": 1668,
+"H": 1669
+},
+{
+"sector": "C4",
+"kind": "HUNTING",
+"name": null,
+"px": 1555.5,
+"py": 573.0,
+"W": 1668,
+"H": 1669
+},
+{
+"sector": "C4",
+"kind": "HUNTING",
+"name": null,
+"px": 244.0,
+"py": 586.0,
+"W": 1668,
+"H": 1669
+},
+{
+"sector": "C4",
+"kind": "HUNTING",
+"name": null,
+"px": 1488.5,
+"py": 676.0,
+"W": 1668,
+"H": 1669
+},
+{
+"sector": "C4",
+"kind": "HUNTING",
+"name": null,
+"px": 1049.0,
+"py": 736.0,
+"W": 1668,
+"H": 1669
+},
+{
+"sector": "C4",
+"kind": "HUNTING",
+"name": null,
+"px": 1400.5,
+"py": 1200.0,
+"W": 1668,
+"H": 1669
+},
+{
+"sector": "C4",
+"kind": "HUNTING",
+"name": null,
+"px": 438.0,
+"py": 1401.0,
+"W": 1668,
+"H": 1669
+},
+{
+"sector": "C4",
+"kind": "HUNTING",
+"name": null,
+"px": 1462.5,
+"py": 1611.0,
+"W": 1668,
+"H": 1669
+},
+{
+"sector": "C4",
+"kind": "ABANDONED_BUNKER",
+"name": null,
+"px": 945.0,
+"py": 277.0,
+"W": 1668,
+"H": 1669
+},
+{
+"sector": "C3",
+"kind": "VILLAGE",
+"name": null,
+"px": 716.0,
+"py": 381.0,
+"W": 1672,
+"H": 1665
+},
+{
+"sector": "C3",
+"kind": "VILLAGE",
+"name": null,
+"px": 942.0,
+"py": 831.0,
+"W": 1672,
+"H": 1665
+},
+{
+"sector": "C3",
+"kind": "VILLAGE",
+"name": null,
+"px": 1346.0,
+"py": 1290.0,
+"W": 1672,
+"H": 1665
+},
+{
+"sector": "C3",
+"kind": "VILLAGE",
+"name": null,
+"px": 815.7,
+"py": 1477.0,
+"W": 1672,
+"H": 1665
+},
+{
+"sector": "C3",
+"kind": "VILLAGE",
+"name": null,
+"px": 818.0,
+"py": 1519.0,
+"W": 1672,
+"H": 1665
+},
+{
+"sector": "C3",
+"kind": "HUNTING",
+"name": null,
+"px": 451.0,
+"py": 42.0,
+"W": 1672,
+"H": 1665
+},
+{
+"sector": "C3",
+"kind": "HUNTING",
+"name": null,
+"px": 106.5,
+"py": 494.0,
+"W": 1672,
+"H": 1665
+},
+{
+"sector": "C3",
+"kind": "HUNTING",
+"name": null,
+"px": 1316.0,
+"py": 667.0,
+"W": 1672,
+"H": 1665
+},
+{
+"sector": "C3",
+"kind": "HUNTING",
+"name": null,
+"px": 470.0,
+"py": 1107.0,
+"W": 1672,
+"H": 1665
+},
+{
+"sector": "C3",
+"kind": "HUNTING",
+"name": null,
+"px": 1309.0,
+"py": 1119.0,
+"W": 1672,
+"H": 1665
+},
+{
+"sector": "C3",
+"kind": "HUNTING",
+"name": null,
+"px": 434.5,
+"py": 1118.0,
+"W": 1672,
+"H": 1665
+},
+{
+"sector": "C3",
+"kind": "HUNTING",
+"name": null,
+"px": 499.0,
+"py": 1152.0,
+"W": 1672,
+"H": 1665
+},
+{
+"sector": "C3",
+"kind": "HUNTING",
+"name": null,
+"px": 441.0,
+"py": 1219.0,
+"W": 1672,
+"H": 1665
+},
+{
+"sector": "C3",
+"kind": "HUNTING",
+"name": null,
+"px": 388.0,
+"py": 1216.0,
+"W": 1672,
+"H": 1665
+},
+{
+"sector": "C3",
+"kind": "HUNTING",
+"name": null,
+"px": 681.0,
+"py": 1272.0,
+"W": 1672,
+"H": 1665
+},
+{
+"sector": "C3",
+"kind": "HUNTING",
+"name": null,
+"px": 508.0,
+"py": 1438.0,
+"W": 1672,
+"H": 1665
+},
+{
+"sector": "C3",
+"kind": "HUNTING",
+"name": null,
+"px": 541.0,
+"py": 1495.0,
+"W": 1672,
+"H": 1665
+},
+{
+"sector": "C2",
+"kind": "VILLAGE",
+"name": null,
+"px": 1606.5,
+"py": 716.0,
+"W": 1669,
+"H": 1671
+},
+{
+"sector": "C2",
+"kind": "VILLAGE",
+"name": null,
+"px": 1061.0,
+"py": 1284.0,
+"W": 1669,
+"H": 1671
+},
+{
+"sector": "C2",
+"kind": "HUNTING",
+"name": null,
+"px": 1612.5,
+"py": 139.0,
+"W": 1669,
+"H": 1671
+},
+{
+"sector": "C2",
+"kind": "HUNTING",
+"name": null,
+"px": 556.0,
+"py": 178.0,
+"W": 1669,
+"H": 1671
+},
+{
+"sector": "C2",
+"kind": "HUNTING",
+"name": null,
+"px": 51.5,
+"py": 790.0,
+"W": 1669,
+"H": 1671
+},
+{
+"sector": "C2",
+"kind": "HUNTING",
+"name": null,
+"px": 528.0,
+"py": 848.0,
+"W": 1669,
+"H": 1671
+},
+{
+"sector": "C2",
+"kind": "HUNTING",
+"name": null,
+"px": 1287.0,
+"py": 1092.0,
+"W": 1669,
+"H": 1671
+},
+{
+"sector": "C2",
+"kind": "HUNTING",
+"name": null,
+"px": 231.5,
+"py": 1127.0,
+"W": 1669,
+"H": 1671
+},
+{
+"sector": "C2",
+"kind": "HUNTING",
+"name": null,
+"px": 641.0,
+"py": 1198.0,
+"W": 1669,
+"H": 1671
+},
+{
+"sector": "C2",
+"kind": "HUNTING",
+"name": null,
+"px": 373.0,
+"py": 1404.0,
+"W": 1669,
+"H": 1671
+},
+{
+"sector": "C2",
+"kind": "HUNTING",
+"name": null,
+"px": 1315.0,
+"py": 1542.0,
+"W": 1669,
+"H": 1671
+},
+{
+"sector": "C1",
+"kind": "VILLAGE",
+"name": null,
+"px": 1408.0,
+"py": 68.0,
+"W": 1673,
+"H": 1669
+},
+{
+"sector": "C1",
+"kind": "VILLAGE",
+"name": null,
+"px": 1103.0,
+"py": 663.0,
+"W": 1673,
+"H": 1669
+},
+{
+"sector": "C1",
+"kind": "HUNTING",
+"name": null,
+"px": 1339.0,
+"py": 294.0,
+"W": 1673,
+"H": 1669
+},
+{
+"sector": "C1",
+"kind": "HUNTING",
+"name": null,
+"px": 441.0,
+"py": 1099.0,
+"W": 1673,
+"H": 1669
+},
+{
+"sector": "C1",
+"kind": "HUNTING",
+"name": null,
+"px": 1581.5,
+"py": 1159.0,
+"W": 1673,
+"H": 1669
+},
+{
+"sector": "C1",
+"kind": "HUNTING",
+"name": null,
+"px": 990.0,
+"py": 1164.0,
+"W": 1673,
+"H": 1669
+},
+{
+"sector": "C1",
+"kind": "HUNTING",
+"name": null,
+"px": 73.5,
+"py": 1363.0,
+"W": 1673,
+"H": 1669
+},
+{
+"sector": "C1",
+"kind": "HUNTING",
+"name": null,
+"px": 420.0,
+"py": 1402.0,
+"W": 1673,
+"H": 1669
+},
+{
+"sector": "C1",
+"kind": "BUNKER",
+"name": null,
+"px": 540.0,
+"py": 529.0,
+"W": 1673,
+"H": 1669
+},
+{
+"sector": "C0",
+"kind": "HUNTING",
+"name": null,
+"px": 151.0,
+"py": 251.0,
+"W": 1671,
+"H": 1665
+},
+{
+"sector": "C0",
+"kind": "HUNTING",
+"name": null,
+"px": 28.5,
+"py": 898.0,
+"W": 1671,
+"H": 1665
+},
+{
+"sector": "C0",
+"kind": "HUNTING",
+"name": null,
+"px": 1141.0,
+"py": 1461.0,
+"W": 1671,
+"H": 1665
+},
+{
+"sector": "B4",
+"kind": "VILLAGE",
+"name": null,
+"px": 1127.0,
+"py": 323.0,
+"W": 1670,
+"H": 1669
+},
+{
+"sector": "B4",
+"kind": "VILLAGE",
+"name": null,
+"px": 1468.5,
+"py": 443.0,
+"W": 1670,
+"H": 1669
+},
+{
+"sector": "B4",
+"kind": "VILLAGE",
+"name": null,
+"px": 554.0,
+"py": 558.0,
+"W": 1670,
+"H": 1669
+},
+{
+"sector": "B4",
+"kind": "VILLAGE",
+"name": null,
+"px": 658.0,
+"py": 699.0,
+"W": 1670,
+"H": 1669
+},
+{
+"sector": "B4",
+"kind": "VILLAGE",
+"name": null,
+"px": 681.0,
+"py": 1066.0,
+"W": 1670,
+"H": 1669
+},
+{
+"sector": "B4",
+"kind": "VILLAGE",
+"name": null,
+"px": 1182.0,
+"py": 1341.0,
+"W": 1670,
+"H": 1669
+},
+{
+"sector": "B4",
+"kind": "HUNTING",
+"name": null,
+"px": 1390.5,
+"py": 111.0,
+"W": 1670,
+"H": 1669
+},
+{
+"sector": "B4",
+"kind": "HUNTING",
+"name": null,
+"px": 312.0,
+"py": 127.0,
+"W": 1670,
+"H": 1669
+},
+{
+"sector": "B4",
+"kind": "HUNTING",
+"name": null,
+"px": 880.0,
+"py": 162.0,
+"W": 1670,
+"H": 1669
+},
+{
+"sector": "B4",
+"kind": "HUNTING",
+"name": null,
+"px": 850.0,
+"py": 540.0,
+"W": 1670,
+"H": 1669
+},
+{
+"sector": "B4",
+"kind": "HUNTING",
+"name": null,
+"px": 1618.5,
+"py": 734.0,
+"W": 1670,
+"H": 1669
+},
+{
+"sector": "B4",
+"kind": "HUNTING",
+"name": null,
+"px": 1124.0,
+"py": 785.0,
+"W": 1670,
+"H": 1669
+},
+{
+"sector": "B4",
+"kind": "HUNTING",
+"name": null,
+"px": 582.0,
+"py": 1297.0,
+"W": 1670,
+"H": 1669
+},
+{
+"sector": "B4",
+"kind": "HUNTING",
+"name": null,
+"px": 947.0,
+"py": 1502.0,
+"W": 1670,
+"H": 1669
+},
+{
+"sector": "B4",
+"kind": "BUNKER",
+"name": null,
+"px": 963.5,
+"py": 122.0,
+"W": 1670,
+"H": 1669
+},
+{
+"sector": "B3",
+"kind": "VILLAGE",
+"name": null,
+"px": 121.5,
+"py": 1009.0,
+"W": 1672,
+"H": 1665
+},
+{
+"sector": "B3",
+"kind": "HUNTING",
+"name": null,
+"px": 658.0,
+"py": 102.0,
+"W": 1672,
+"H": 1665
+},
+{
+"sector": "B3",
+"kind": "HUNTING",
+"name": null,
+"px": 1235.0,
+"py": 206.0,
+"W": 1672,
+"H": 1665
+},
+{
+"sector": "B3",
+"kind": "HUNTING",
+"name": null,
+"px": 260.0,
+"py": 179.0,
+"W": 1672,
+"H": 1665
+},
+{
+"sector": "B3",
+"kind": "HUNTING",
+"name": null,
+"px": 284.5,
+"py": 178.0,
+"W": 1672,
+"H": 1665
+},
+{
+"sector": "B3",
+"kind": "HUNTING",
+"name": null,
+"px": 133.5,
+"py": 448.0,
+"W": 1672,
+"H": 1665
+},
+{
+"sector": "B3",
+"kind": "HUNTING",
+"name": null,
+"px": 976.0,
+"py": 1041.0,
+"W": 1672,
+"H": 1665
+},
+{
+"sector": "B3",
+"kind": "HUNTING",
+"name": null,
+"px": 575.0,
+"py": 1101.0,
+"W": 1672,
+"H": 1665
+},
+{
+"sector": "B3",
+"kind": "HUNTING",
+"name": null,
+"px": 1011.0,
+"py": 1235.0,
+"W": 1672,
+"H": 1665
+},
+{
+"sector": "B3",
+"kind": "HUNTING",
+"name": null,
+"px": 1205.0,
+"py": 1378.0,
+"W": 1672,
+"H": 1665
+},
+{
+"sector": "B2",
+"kind": "VILLAGE",
+"name": null,
+"px": 381.0,
+"py": 506.0,
+"W": 1673,
+"H": 1670
+},
+{
+"sector": "B2",
+"kind": "VILLAGE",
+"name": null,
+"px": 739.0,
+"py": 959.0,
+"W": 1673,
+"H": 1670
+},
+{
+"sector": "B2",
+"kind": "VILLAGE",
+"name": null,
+"px": 185.0,
+"py": 1520.0,
+"W": 1673,
+"H": 1670
+},
+{
+"sector": "B2",
+"kind": "HUNTING",
+"name": null,
+"px": 411.0,
+"py": 181.0,
+"W": 1673,
+"H": 1670
+},
+{
+"sector": "B2",
+"kind": "HUNTING",
+"name": null,
+"px": 1236.0,
+"py": 622.0,
+"W": 1673,
+"H": 1670
+},
+{
+"sector": "B2",
+"kind": "HUNTING",
+"name": null,
+"px": 1246.5,
+"py": 651.0,
+"W": 1673,
+"H": 1670
+},
+{
+"sector": "B2",
+"kind": "HUNTING",
+"name": null,
+"px": 1281.0,
+"py": 677.0,
+"W": 1673,
+"H": 1670
+},
+{
+"sector": "B2",
+"kind": "HUNTING",
+"name": null,
+"px": 894.0,
+"py": 820.0,
+"W": 1673,
+"H": 1670
+},
+{
+"sector": "B2",
+"kind": "HUNTING",
+"name": null,
+"px": 381.0,
+"py": 940.0,
+"W": 1673,
+"H": 1670
+},
+{
+"sector": "B2",
+"kind": "HUNTING",
+"name": null,
+"px": 1120.0,
+"py": 1183.0,
+"W": 1673,
+"H": 1670
+},
+{
+"sector": "B2",
+"kind": "HUNTING",
+"name": null,
+"px": 1330.0,
+"py": 1328.0,
+"W": 1673,
+"H": 1670
+},
+{
+"sector": "B2",
+"kind": "HUNTING",
+"name": null,
+"px": 702.0,
+"py": 1386.0,
+"W": 1673,
+"H": 1670
+},
+{
+"sector": "B2",
+"kind": "RESEARCH",
+"name": null,
+"px": 335.0,
+"py": 1065.0,
+"W": 1673,
+"H": 1670
+},
+{
+"sector": "B1",
+"kind": "VILLAGE",
+"name": null,
+"px": 917.0,
+"py": 636.0,
+"W": 1670,
+"H": 1670
+},
+{
+"sector": "B1",
+"kind": "VILLAGE",
+"name": null,
+"px": 361.0,
+"py": 1106.0,
+"W": 1670,
+"H": 1670
+},
+{
+"sector": "B1",
+"kind": "VILLAGE",
+"name": null,
+"px": 712.0,
+"py": 1596.0,
+"W": 1670,
+"H": 1670
+},
+{
+"sector": "B1",
+"kind": "HUNTING",
+"name": null,
+"px": 956.0,
+"py": 79.0,
+"W": 1670,
+"H": 1670
+},
+{
+"sector": "B1",
+"kind": "HUNTING",
+"name": null,
+"px": 94.5,
+"py": 190.0,
+"W": 1670,
+"H": 1670
+},
+{
+"sector": "B1",
+"kind": "HUNTING",
+"name": null,
+"px": 1360.0,
+"py": 504.0,
+"W": 1670,
+"H": 1670
+},
+{
+"sector": "B1",
+"kind": "HUNTING",
+"name": null,
+"px": 138.5,
+"py": 642.0,
+"W": 1670,
+"H": 1670
+},
+{
+"sector": "B1",
+"kind": "HUNTING",
+"name": null,
+"px": 573.0,
+"py": 1189.0,
+"W": 1670,
+"H": 1670
+},
+{
+"sector": "B1",
+"kind": "HUNTING",
+"name": null,
+"px": 1559.5,
+"py": 1266.0,
+"W": 1670,
+"H": 1670
+},
+{
+"sector": "B0",
+"kind": "HUNTING",
+"name": null,
+"px": 1565.5,
+"py": 308.0,
+"W": 1670,
+"H": 1663
+},
+{
+"sector": "B0",
+"kind": "HUNTING",
+"name": null,
+"px": 1549.5,
+"py": 631.0,
+"W": 1670,
+"H": 1663
+},
+{
+"sector": "B0",
+"kind": "HUNTING",
+"name": null,
+"px": 215.0,
+"py": 636.0,
+"W": 1670,
+"H": 1663
+},
+{
+"sector": "B0",
+"kind": "HUNTING",
+"name": null,
+"px": 22.5,
+"py": 938.0,
+"W": 1670,
+"H": 1663
+},
+{
+"sector": "B0",
+"kind": "HUNTING",
+"name": null,
+"px": 1170.0,
+"py": 1301.0,
+"W": 1670,
+"H": 1663
+},
+{
+"sector": "B0",
+"kind": "HUNTING",
+"name": null,
+"px": 1369.5,
+"py": 1319.0,
+"W": 1670,
+"H": 1663
+},
+{
+"sector": "B0",
+"kind": "HUNTING",
+"name": null,
+"px": 1016.0,
+"py": 1662.0,
+"W": 1670,
+"H": 1663
+},
+{
+"sector": "B0",
+"kind": "BUNKER",
+"name": null,
+"px": 1143.5,
+"py": 539.0,
+"W": 1670,
+"H": 1663
+},
+{
+"sector": "A4",
+"kind": "VILLAGE",
+"name": null,
+"px": 1543.5,
+"py": 409.0,
+"W": 1670,
+"H": 1663
+},
+{
+"sector": "A4",
+"kind": "VILLAGE",
+"name": null,
+"px": 1534.5,
+"py": 1019.0,
+"W": 1670,
+"H": 1663
+},
+{
+"sector": "A4",
+"kind": "HUNTING",
+"name": null,
+"px": 1061.0,
+"py": 299.0,
+"W": 1670,
+"H": 1663
+},
+{
+"sector": "A4",
+"kind": "HUNTING",
+"name": null,
+"px": 1077.0,
+"py": 564.0,
+"W": 1670,
+"H": 1663
+},
+{
+"sector": "A4",
+"kind": "HUNTING",
+"name": null,
+"px": 1587.5,
+"py": 896.0,
+"W": 1670,
+"H": 1663
+},
+{
+"sector": "A4",
+"kind": "HUNTING",
+"name": null,
+"px": 830.0,
+"py": 1185.0,
+"W": 1670,
+"H": 1663
+},
+{
+"sector": "A4",
+"kind": "HUNTING",
+"name": null,
+"px": 659.0,
+"py": 1293.0,
+"W": 1670,
+"H": 1663
+},
+{
+"sector": "A4",
+"kind": "HUNTING",
+"name": null,
+"px": 687.0,
+"py": 1295.0,
+"W": 1670,
+"H": 1663
+},
+{
+"sector": "A4",
+"kind": "HUNTING",
+"name": null,
+"px": 1458.5,
+"py": 1302.0,
+"W": 1670,
+"H": 1663
+},
+{
+"sector": "A4",
+"kind": "HUNTING",
+"name": null,
+"px": 1171.0,
+"py": 1314.0,
+"W": 1670,
+"H": 1663
+},
+{
+"sector": "A3",
+"kind": "VILLAGE",
+"name": null,
+"px": 1612.5,
+"py": 304.0,
+"W": 1671,
+"H": 1666
+},
+{
+"sector": "A3",
+"kind": "VILLAGE",
+"name": null,
+"px": 961.0,
+"py": 851.0,
+"W": 1671,
+"H": 1666
+},
+{
+"sector": "A3",
+"kind": "VILLAGE",
+"name": null,
+"px": 647.0,
+"py": 1178.0,
+"W": 1671,
+"H": 1666
+},
+{
+"sector": "A3",
+"kind": "HUNTING",
+"name": null,
+"px": 1319.0,
+"py": 142.0,
+"W": 1671,
+"H": 1666
+},
+{
+"sector": "A3",
+"kind": "HUNTING",
+"name": null,
+"px": 543.0,
+"py": 181.0,
+"W": 1671,
+"H": 1666
+},
+{
+"sector": "A3",
+"kind": "HUNTING",
+"name": null,
+"px": 237.0,
+"py": 188.0,
+"W": 1671,
+"H": 1666
+},
+{
+"sector": "A3",
+"kind": "HUNTING",
+"name": null,
+"px": 495.0,
+"py": 643.0,
+"W": 1671,
+"H": 1666
+},
+{
+"sector": "A3",
+"kind": "HUNTING",
+"name": null,
+"px": 1517.5,
+"py": 857.0,
+"W": 1671,
+"H": 1666
+},
+{
+"sector": "A3",
+"kind": "HUNTING",
+"name": null,
+"px": 1275.0,
+"py": 876.0,
+"W": 1671,
+"H": 1666
+},
+{
+"sector": "A3",
+"kind": "HUNTING",
+"name": null,
+"px": 111.5,
+"py": 1171.0,
+"W": 1671,
+"H": 1666
+},
+{
+"sector": "A3",
+"kind": "ABANDONED_BUNKER",
+"name": null,
+"px": 460.0,
+"py": 827.0,
+"W": 1671,
+"H": 1666
+},
+{
+"sector": "A2",
+"kind": "VILLAGE",
+"name": null,
+"px": 1243.0,
+"py": 592.0,
+"W": 1671,
+"H": 1668
+},
+{
+"sector": "A2",
+"kind": "VILLAGE",
+"name": null,
+"px": 986.0,
+"py": 638.0,
+"W": 1671,
+"H": 1668
+},
+{
+"sector": "A2",
+"kind": "VILLAGE",
+"name": null,
+"px": 299.0,
+"py": 919.0,
+"W": 1671,
+"H": 1668
+},
+{
+"sector": "A2",
+"kind": "VILLAGE",
+"name": null,
+"px": 239.0,
+"py": 1051.0,
+"W": 1671,
+"H": 1668
+},
+{
+"sector": "A2",
+"kind": "HUNTING",
+"name": null,
+"px": 238.5,
+"py": 292.0,
+"W": 1671,
+"H": 1668
+},
+{
+"sector": "A2",
+"kind": "HUNTING",
+"name": null,
+"px": 1056.0,
+"py": 342.0,
+"W": 1671,
+"H": 1668
+},
+{
+"sector": "A2",
+"kind": "HUNTING",
+"name": null,
+"px": 723.0,
+"py": 377.0,
+"W": 1671,
+"H": 1668
+},
+{
+"sector": "A2",
+"kind": "HUNTING",
+"name": null,
+"px": 693.0,
+"py": 506.0,
+"W": 1671,
+"H": 1668
+},
+{
+"sector": "A2",
+"kind": "HUNTING",
+"name": null,
+"px": 102.5,
+"py": 1242.0,
+"W": 1671,
+"H": 1668
+},
+{
+"sector": "A2",
+"kind": "HUNTING",
+"name": null,
+"px": 127.5,
+"py": 1305.0,
+"W": 1671,
+"H": 1668
+},
+{
+"sector": "A2",
+"kind": "BUNKER",
+"name": null,
+"px": 275.5,
+"py": 160.0,
+"W": 1671,
+"H": 1668
+},
+{
+"sector": "A1",
+"kind": "VILLAGE",
+"name": null,
+"px": 1077.0,
+"py": 680.0,
+"W": 1674,
+"H": 1668
+},
+{
+"sector": "A1",
+"kind": "HUNTING",
+"name": null,
+"px": 608.0,
+"py": 472.0,
+"W": 1674,
+"H": 1668
+},
+{
+"sector": "A1",
+"kind": "HUNTING",
+"name": null,
+"px": 1423.5,
+"py": 500.0,
+"W": 1674,
+"H": 1668
+},
+{
+"sector": "A1",
+"kind": "HUNTING",
+"name": null,
+"px": 178.5,
+"py": 825.0,
+"W": 1674,
+"H": 1668
+},
+{
+"sector": "A1",
+"kind": "ABANDONED_BUNKER",
+"name": null,
+"px": 292.0,
+"py": 955.0,
+"W": 1674,
+"H": 1668
+},
+{
+"sector": "A0",
+"kind": "HUNTING",
+"name": null,
+"px": 1500.5,
+"py": 374.0,
+"W": 1669,
+"H": 1666
+},
+{
+"sector": "A0",
+"kind": "HUNTING",
+"name": null,
+"px": 990.0,
+"py": 810.0,
+"W": 1669,
+"H": 1666
+},
+{
+"sector": "A0",
+"kind": "HUNTING",
+"name": null,
+"px": 480.0,
+"py": 962.0,
+"W": 1669,
+"H": 1666
+},
+{
+"sector": "Z4",
+"kind": "VILLAGE",
+"name": null,
+"px": 1034.0,
+"py": 1257.0,
+"W": 1669,
+"H": 1667
+},
+{
+"sector": "Z4",
+"kind": "HUNTING",
+"name": null,
+"px": 1018.0,
+"py": 795.0,
+"W": 1669,
+"H": 1667
+},
+{
+"sector": "Z3",
+"kind": "VILLAGE",
+"name": null,
+"px": 772.0,
+"py": 480.0,
+"W": 1669,
+"H": 1665
+},
+{
+"sector": "Z3",
+"kind": "HUNTING",
+"name": null,
+"px": 1536.5,
+"py": 810.0,
+"W": 1669,
+"H": 1665
+},
+{
+"sector": "Z3",
+"kind": "HUNTING",
+"name": null,
+"px": 1264.0,
+"py": 875.0,
+"W": 1669,
+"H": 1665
+},
+{
+"sector": "Z2",
+"kind": "HUNTING",
+"name": null,
+"px": 825.0,
+"py": 114.0,
+"W": 1674,
+"H": 1666
+},
+{
+"sector": "Z2",
+"kind": "HUNTING",
+"name": null,
+"px": 1322.5,
+"py": 576.0,
+"W": 1674,
+"H": 1666
+},
+{
+"sector": "Z2",
+"kind": "HUNTING",
+"name": null,
+"px": 1421.5,
+"py": 862.0,
+"W": 1674,
+"H": 1666
+},
+{
+"sector": "Z2",
+"kind": "HUNTING",
+"name": null,
+"px": 96.0,
+"py": 1248.0,
+"W": 1674,
+"H": 1666
+},
+{
+"sector": "Z2",
+"kind": "BUNKER",
+"name": null,
+"px": 1162.5,
+"py": 246.0,
+"W": 1674,
+"H": 1666
+},
+{
+"sector": "Z1",
+"kind": "HUNTING",
+"name": null,
+"px": 68.5,
+"py": 202.0,
+"W": 1673,
+"H": 1666
+},
+{
+"sector": "Z1",
+"kind": "HUNTING",
+"name": null,
+"px": 299.0,
+"py": 668.0,
+"W": 1673,
+"H": 1666
+},
+{
+"sector": "Z1",
+"kind": "HUNTING",
+"name": null,
+"px": 1250.0,
+"py": 742.0,
+"W": 1673,
+"H": 1666
+},
+{
+"sector": "Z1",
+"kind": "HUNTING",
+"name": null,
+"px": 1428.5,
+"py": 848.0,
+"W": 1673,
+"H": 1666
+},
+{
+"sector": "Z1",
+"kind": "RESEARCH",
+"name": null,
+"px": 1481.5,
+"py": 668.0,
+"W": 1673,
+"H": 1666
+},
+{
+"sector": "Z0",
+"kind": "VILLAGE",
+"name": null,
+"px": 1481.5,
+"py": 1374.0,
+"W": 1670,
+"H": 1674
+},
+{
+"sector": "Z0",
+"kind": "HUNTING",
+"name": null,
+"px": 120.5,
+"py": 680.0,
+"W": 1670,
+"H": 1674
+},
+{
+"sector": "Z0",
+"kind": "HUNTING",
+"name": null,
+"px": 1086.0,
+"py": 1063.0,
+"W": 1670,
+"H": 1674
+},
+{
+"sector": "Z0",
+"kind": "BUNKER",
+"name": null,
+"px": 553.0,
+"py": 1056.0,
+"W": 1670,
+"H": 1674
+}
+]
