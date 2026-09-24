@@ -531,6 +531,21 @@ function drawGroup(g) {
     ctx.lineWidth = 1.6;
     ctx.stroke();
   }
+  // Mood ring: how the squad is holding up.
+  const MOOD_RING = { PANIC: "rgba(255,70,70,.95)", ROUT: "rgba(255,70,70,.95)",
+    SHAKEN: "rgba(255,150,60,.85)", TENSE: "rgba(240,200,80,.7)",
+    ZOMBIES: "rgba(150,230,120,.9)", INVESTIGATE: "rgba(120,190,255,.85)",
+    AVOID: "rgba(200,170,255,.8)", HOLD: "rgba(200,200,200,.7)", COVER: "rgba(255,120,200,.9)" };
+  const mr = MOOD_RING[g.mood];
+  if (mr) {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, r + 3.5, 0, Math.PI * 2);
+    ctx.strokeStyle = mr;
+    ctx.lineWidth = (g.mood === "PANIC" || g.mood === "ROUT") ? 3 : 2;
+    ctx.setLineDash(g.mood === "HOLD" || g.mood === "AVOID" ? [3, 3] : []);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
   if (g.state === "COMBAT") {
     ctx.beginPath();
     ctx.arc(p.x, p.y, r + 10, 0, Math.PI * 2);
@@ -574,7 +589,8 @@ function drawGroup(g) {
   ctx.fillText(String(g.members_alive), p.x, p.y + 0.5);
 
   if (show.labels || isSel) {
-    const label = g.gid + "  " + (STATE_FI[g.state] || g.state);
+    const label = g.gid + "  " + (STATE_FI[g.state] || g.state)
+      + (g.mood && g.mood !== "CALM" ? " · " + (g.mood_fi || g.mood) : "");
     ctx.font = "11px Inter, sans-serif";
     ctx.textAlign = "left";
     const w = ctx.measureText(label).width;
@@ -826,7 +842,7 @@ function memberBlock(m) {
     </div>
     <div class="kv" style="margin-top:7px">
       <b>Terveys</b><span>${m.health}</span>
-      <b>Stressi</b><span>${m.stress.toFixed(2)} · ${esc(m.stress_fi)}</span>
+      <b>Stressi</b><span>${m.stress.toFixed(2)} · ${esc(m.stress_fi)}${m.reaction ? ` <i style="color:#e8a060">(${esc(m.reaction)})</i>` : ""}</span>
       <b>Moraali</b><span>${m.morale.toFixed(2)}</span>
       ${m.traumas ? `<b>Traumat</b><span>${esc(m.traumas)}</span>` : ""}
       <b>Kokemus</b><span>${(m.xp && m.xp.fights) || 0} taistelua ·
@@ -869,6 +885,7 @@ function renderDetail() {
       <h2>${esc(g.gid)} · ${esc(g.class_fi)}</h2>
       <div class="kv">
         <b>Tila</b><span>${esc(g.intent || g.state)}</span>
+        <b>Mieliala</b><span>${esc(g.mood_fi || "–")}${g.zombie_note ? " · " + esc(g.zombie_note) : ""}</span>
         <b>Kohde</b><span>${esc(g.goal || "ei valittua kohdetta")}
           ${g.goal_kind ? `(${esc((POI_STYLE[g.goal_kind] || {}).fi || g.goal_kind)})` : ""}</span>
         <b>Jonossa</b><span>${(g.queue || []).length
@@ -1148,7 +1165,7 @@ function showTip(g, x, y) {
   tipEl.innerHTML = `<b>${esc(g.gid)} · ${esc(g.class_fi)}</b><br>
     ${g.members_alive}/${g.members_total} NPC · taso ${g.level} ·
     ${g.physical_members > 0 ? "fyysinen" : "virtuaalinen"}<br>
-    ${esc(g.intent || g.state)}<br>
+    ${esc(g.intent || g.state)}${g.mood && g.mood !== "CALM" ? " · <b>" + esc(g.mood_fi) + "</b>" : ""}<br>
     ${g.sweep_dir ? `Krsko: alue ${g.sweep_area ?? "–"} (${g.sweep_dir > 0 ? "1→5" : "5→1"}), ${g.sweep_done ?? 0} %<br>` : ""}
     ${(g.queue || []).length ? "Jono: " + g.queue.map(q => esc(q.label)).join(" → ") + "<br>" : ""}
     ${lead ? "Johtaja: " + esc(lead.name) + " (" + esc(lead.archetype_fi) + ")<br>" : ""}

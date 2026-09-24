@@ -19,6 +19,16 @@ local Utility = require("npc.utility")
 local Archetypes = require("npc.archetypes")
 local GroupClasses = require("npc.groups")
 local Buildings = require("sim.buildings")
+
+local REACTION_FI = {
+    GUNSHOT_NEAR = "laukauksia lähellä", GUNSHOT_DISTANT = "kaukaisia laukauksia",
+    ZOMBIE_CONTACT = "zombeja", ZOMBIE_HORDE = "zombilauma", INJURY = "haavoittui",
+    SEVERE_INJURY = "vakava haava", NEAR_MISS = "läheltä piti", ALLY_DOWN = "toveri kaatui",
+    LEADER_DOWN = "johtaja kaatui", LEADER_WOUNDED = "johtaja haavoittui",
+    ENEMY_SPOTTED = "vihollinen näkyvissä", OUTNUMBERED = "alakynnessä", AMBUSHED = "väijytys",
+    HUNGER = "nälkä", THIRST = "jano",
+}
+
 local POI = require("world.pois")
 
 local T = {}
@@ -83,6 +93,10 @@ local function npc_row(m, group)
         stress = round(m.stress or 0, 2),
         stress_state = stress_key,
         stress_fi = stress_fi,
+        stress_state = stress_key,
+        -- What last shook this NPC, while it is still fresh.
+        reaction = (m.reaction and m.reaction_at and os.time() - m.reaction_at < 120)
+            and (REACTION_FI[m.reaction] or m.reaction) or nil,
         morale = round(m.morale or 0, 2),
         action = m.action or "IDLE",
         action_fi = Utility.fi[m.action or ""] or "",
@@ -105,6 +119,8 @@ local function npc_row(m, group)
         end)(),
     }
 end
+
+local Behaviour = require("sim.behaviour")
 
 local function group_row(group, world)
     local act = group.act or {}
@@ -188,6 +204,9 @@ local function group_row(group, world)
         goal_x = goal_pos and round(goal_pos.X, 0) or nil,
         goal_y = goal_pos and round(goal_pos.Y, 0) or nil,
         queue = queue,
+        mood = group.mood or "CALM",
+        mood_fi = Behaviour.MOOD_FI[group.mood or "CALM"] or "",
+        zombie_note = (group.zombie_at and os.time() - group.zombie_at < 180) and group.zombie_note or nil,
         -- Krsko sweep: the area being worked and how far through the city.
         sweep_area = act.sweep_dir and act.tour_area and act.tour_area[act.tour_index or 0] or nil,
         sweep_dir = act.sweep_dir,

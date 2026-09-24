@@ -187,7 +187,7 @@ do
     local damage_before = Bridge.damage_calls
     local deaths_before = director.counters.deaths
     squad = a_grp
-    run(120, 3000)
+    for i = 1, 12 do run(10, 3000); local function st(g) local s = {} for _, m in ipairs(g.members) do s[#s+1] = string.format("%.2f%s", m.stress or 0, m.alive and "" or "x") end return table.concat(s, ",") end; if os.getenv("DBG") then print(i*10, a_grp.mood, a_grp.act.state, st(a_grp), "|", b_grp.mood, b_grp.act.state, st(b_grp), U.dist2d(a_grp.position, b_grp.position)) end end
     local lost = before - Population.alive_npc_count(world)
     print(string.format("gunfight: %d killed, %d damage calls, kill result: %s",
         lost, Bridge.damage_calls - damage_before, tostring(Bridge.kill_result)))

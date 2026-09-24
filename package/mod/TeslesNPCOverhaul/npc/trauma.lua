@@ -94,7 +94,7 @@ end
 -- through this so a traumatised NPC genuinely behaves differently.
 function Tr.trait(npc, key)
     local base = (npc.traits and npc.traits[key]) or 0.5
-    if not npc.traumas then return base end
+    if not npc.traumas or next(npc.traumas) == nil then return base end
     local delta = 0
     for kind, rec in pairs(npc.traumas) do
         local def = Tr.KINDS[kind]

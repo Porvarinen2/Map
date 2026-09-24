@@ -15,7 +15,6 @@ B.stats = { spawns = 0, spawn_fail = 0, moves = 0, move_reject = 0,
 local CONTROLLER_CLASSES = {
     "NPCDrifterAIController", "NPCGuardAIController", "ArmedNPCBaseAIController",
 }
-local ZOMBIE_CLASSES = { "BP_Puppet_C", "BP_Zombie_C", "PuppetCharacter" }
 
 local world_cache = nil
 -- Reflection scans are the expensive part of every tick. Each cache holds a
@@ -780,8 +779,11 @@ end
 function B.actor_health(handle)
     local a = B.actor(handle)
     if not a then return nil end
-    local ok, hp = pcall(function() return a.Health end)
-    if ok and type(hp) == "number" then return hp end
+    -- ArmedNPCBase keeps its health in _health (npc_api.txt, 1.4.5).
+    for _, prop in ipairs({ "_health", "Health" }) do
+        local ok, hp = pcall(function() return a[prop] end)
+        if ok and type(hp) == "number" then return hp end
+    end
     return nil
 end
 
@@ -911,35 +913,100 @@ end
 
 -- --------------------------------------------------------------- sensing ---
 
--- Zombie positions are collected once per interval and then answered from the
--- cache for every group that asks, instead of one full scan per group.
-local function zombie_positions()
-    local now = os.time()
+-- Census of the characters around players: zombies, animals and anything
+-- else SCUM has walking about. One scan of ConZCharacter (the base class of
+-- every character in SCUM) per interval, classified by the object's path.
+-- The first appearance of each class is logged, so the log tells exactly what
+-- SCUM calls its zombies on this build. Earlier versions looked for three
+-- guessed class names, found nothing, and no NPC ever felt a zombie.
+local census_seen = {}
+local function classify(name)
+    local n = name:lower()
+    if n:find("armed_npcs", 1, true) or n:find("armednpc", 1, true) then return "npc" end
+    if n:find("zombie", 1, true) or n:find("puppet", 1, true) then return "zombie" end
+    if n:find("animal", 1, true) or n:find("wolf", 1, true) or n:find("bear", 1, true)
+        or n:find("boar", 1, true) or n:find("deer", 1, true) or n:find("horse", 1, true)
+        or n:find("goat", 1, true) or n:find("chicken", 1, true) or n:find("rabbit", 1, true)
+        or n:find("donkey", 1, true) or n:find("cow", 1, true) or n:find("razorback", 1, true) then
+        return "animal"
+    end
+    if n:find("prisoner", 1, true) or n:find("player", 1, true) then return "player" end
+    return "other"
+end
+B.classify_character = classify
+
+function B.census(now)
+    now = now or os.time()
     local c = scan_cache.zombies
     if c.t and (now - c.t) < (B.cfg and B.cfg.ZombieScanIntervalSec or 4) then
         return c.v
     end
-    -- No players online means no physical NPCs, so nothing can meet a zombie.
-    if #B.player_positions() == 0 then
-        c.t, c.v = now, {}
-        return c.v
+    local out = { zombie = {}, animal = {}, other = {} }
+    local players = B.player_positions()
+    if #players == 0 then
+        c.t, c.v = now, out
+        return out
     end
-    local out = {}
-    for _, cname in ipairs(ZOMBIE_CLASSES) do
-        local list = find_all(cname, now)
-        if list and #list > 0 then
-            for _, z in ipairs(list) do
-                if valid(z) then
-                    local okl, loc = pcall(function() return z:K2_GetActorLocation() end)
-                    local v = okl and vec(loc) or nil
-                    if v then out[#out + 1] = v end
+    local list = find_all("ConZCharacter", now, true)
+    for _, o in ipairs(list or {}) do
+        if valid(o) then
+            local okl, loc = pcall(function() return o:K2_GetActorLocation() end)
+            local v = okl and vec(loc) or nil
+            if v then
+                local near = false
+                for _, p in ipairs(players) do
+                    if U.dist2d(p, v) <= 35000 then near = true; break end
+                end
+                if near then
+                    local name = full_name(o)
+                    local kind = classify(name)
+                    local cls = name:match("^(%S+)") or name
+                    if not census_seen[cls] then
+                        census_seen[cls] = true
+                        local n = 0
+                        for _ in pairs(census_seen) do n = n + 1 end
+                        if n <= 25 and B.on_debug then
+                            pcall(B.on_debug, "census: " .. cls .. " -> " .. kind)
+                        end
+                    end
+                    if (kind == "zombie" or kind == "animal") and not B.is_dead_actor(o) then
+                        table.insert(out[kind], { pos = v, actor = o })
+                    end
                 end
             end
-            break
         end
     end
     c.t, c.v = now, out
     return out
+end
+
+local function zombie_positions()
+    local out = {}
+    for _, z in ipairs(B.census().zombie) do out[#out + 1] = z.pos end
+    return out
+end
+
+-- Zombies (with their actors) within radius of a point.
+function B.zombies_near(pos, radius)
+    local out = {}
+    for _, z in ipairs(B.census().zombie) do
+        if U.dist2d(z.pos, pos) <= radius then out[#out + 1] = z end
+    end
+    return out
+end
+
+-- Damage to any actor the census found (a zombie, an animal).
+function B.damage_actor(actor, amount, from_handle)
+    if not valid(actor) then return false end
+    local gs = StaticFindObject and (function()
+        local ok, o = pcall(function() return StaticFindObject("/Script/Engine.Default__GameplayStatics") end)
+        return ok and o or nil
+    end)() or nil
+    if not (gs and valid(gs)) then return false end
+    local src = from_handle and B.actor(from_handle) or nil
+    local inst = src and B.controller(src) or nil
+    local ok = pcall(function() gs:ApplyDamage(actor, amount, inst, src, nil) end)
+    return ok
 end
 
 function B.nearby_zombies(pos, radius)

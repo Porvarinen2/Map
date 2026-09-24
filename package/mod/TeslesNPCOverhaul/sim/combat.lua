@@ -11,6 +11,8 @@ local Trauma = require("npc.trauma")
 local Diplomacy = require("npc.diplomacy")
 local Leadership = require("npc.leadership")
 local Grid = require("world.navgrid")
+local Tr = require("npc.trauma")
+local function Utility_trait(m, k) return Tr.trait(m, k) end
 
 local C = {}
 
@@ -35,11 +37,12 @@ C.tuning = {
 function C.find_contacts(group, groups, registry, now)
     local out = {}
     if not group.position then return out end
+    local range = C.contact_range(group)
     for _, other in ipairs(groups) do
         if other ~= group and (other.physical == group.physical) and other.position
             and not (other.disengaged_until and other.disengaged_until > (now or 0)) then
             local d = U.dist2d(group.position, other.position)
-            if d <= C.tuning.contact_uu then
+            if d <= range then
                 local hostile, value, tier = Diplomacy.hostile(registry, group, other)
                 if hostile then
                     out[#out + 1] = { group = other, distance = d, standing = value, tier = tier }
@@ -49,6 +52,22 @@ function C.find_contacts(group, groups, registry, now)
     end
     table.sort(out, function(a, b) return a.distance < b.distance end)
     return out
+end
+
+-- Aggressive, watchful squads pick a fight from further away.
+function C.contact_range(group)
+    local now = os.time()
+    if group._range and now - group._range_at < 15 then return group._range end
+    local sum, n = 0, 0
+    for _, m in ipairs(group.members) do
+        if m.alive then
+            sum = sum + Utility_trait(m, "aggression") * 0.5 + Utility_trait(m, "awareness") * 0.3
+            n = n + 1
+        end
+    end
+    local f = n > 0 and (0.75 + sum / n * 0.7) or 1
+    group._range, group._range_at = C.tuning.contact_uu * f, now
+    return group._range
 end
 
 function C.zombie_pressure(group, bridge)
@@ -245,7 +264,7 @@ end
 
 -- One second of shooting from `group` at `enemy`. Returns a list of hits
 -- { shooter, target, damage, killed }.
-function C.exchange_fire(group, enemy, rng)
+function C.exchange_fire(group, enemy, rng, accuracy)
     local hits = {}
     local foes = alive_members(enemy)
     if #foes == 0 then return hits end
@@ -267,6 +286,8 @@ function C.exchange_fire(group, enemy, rng)
                         + (m.level or 1) * 0.06
                     local p = f.base_hit * (0.55 + skill) * (1 - 0.6 * best / f.range_uu)
                     if target.action == "COVER" then p = p * 0.6 end
+                    if accuracy then p = p * accuracy(m) end
+                    hits.shots = (hits.shots or 0) + 1
                     if rng:chance(U.clamp(p, 0.02, 0.8)) then
                         local dmg = rng:range(f.dmg_min, f.dmg_max) * (1 + (m.level or 1) * 0.05)
                         target.health = (target.health or 100) - dmg

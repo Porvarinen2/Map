@@ -26,6 +26,7 @@ local Buildings = require("sim.buildings")
 local Leadership = require("npc.leadership")
 local Diplomacy = require("npc.diplomacy")
 local Stress = require("npc.stress")
+local Behaviour = require("sim.behaviour")
 
 local D = {}
 D.__index = D
@@ -38,6 +39,8 @@ function D.new(opts)
     self.bridge = opts.bridge
     self.cfg = opts.config or {}
     self.rng = RNG.new(opts.seed or os.time())
+    self.S = Activity.STATES
+    self.log_event = function(kind, gid, detail) Log.event(kind, gid, detail) end
     self.now = opts.now or os.time()
     self.last_tick = self.now
     self.route_budget = self.cfg.RouteSolvesPerTick or 3
@@ -257,6 +260,11 @@ function D:run_activity(group)
         return
     end
 
+    if st == S.RETREAT then
+        group.investigating = nil
+        self:pick_new_goal(group)
+        return
+    end
     if st == S.REST or st == S.IDLE or st == S.CAMP or st == S.SEARCH
         or st == S.PATROL or st == S.HUNT or st == S.HOLD then
         self:pick_new_goal(group)
@@ -595,8 +603,11 @@ end
 local function now_ge(now, t, sec) return t == nil or now - t >= sec end
 
 function D:run_combat(group, contact, zpressure)
+    -- Nothing to react to: no scoring pass (it is the costliest thing a calm
+    -- squad would do every second).
+    if not contact and (zpressure or 0) <= 0 then return false end
     local ctx = Combat.build_context(group, contact, zpressure)
-    Combat.apply_contact_stress(group, ctx, self.rng)
+    Behaviour.contact_stress(group, ctx, self.now)
     local tally = Combat.decide_group(group, ctx)
     group.combat_ctx = ctx
     group.action_tally = tally
@@ -634,7 +645,13 @@ function D:run_combat(group, contact, zpressure)
     -- Gunfire. Every hit is applied to the real body when there is one; a
     -- killed NPC is checked a few seconds later, and a body that would not
     -- die is removed so no dead man keeps walking.
-    local hits = Combat.exchange_fire(group, enemy, self.rng)
+    local fatigue = group.act.fatigue or 0
+    local hits = Combat.exchange_fire(group, enemy, self.rng,
+        function(m) return Behaviour.accuracy(m, fatigue) end)
+    if (hits.shots or 0) > 0 then
+        Behaviour.noise(self, group.position, "gunfire", U.clamp(0.7 + hits.shots * 0.15, 0.7, 1.6))
+        self.noises[#self.noises].from = group.gid
+    end
     for _, h in ipairs(hits) do
         if h.shooter.runtime_id and self.bridge.fire_once then self.bridge.fire_once(h.shooter.runtime_id) end
         local handle = h.target.runtime_id
@@ -646,6 +663,7 @@ function D:run_combat(group, contact, zpressure)
                 self.kill_checks = self.kill_checks or {}
                 self.kill_checks[#self.kill_checks + 1] = { handle = handle, at = self.now + 4 }
             end
+            enemy.loss_at = self.now
             Combat.on_member_lost(enemy, h.target, self.rng,
                 function(kind, gid, name) Log.event(kind, gid, name) end,
                 self.world.diplomacy, group)
@@ -715,6 +733,7 @@ function D:tick(now)
 
     local players = (self.bridge and self.bridge.player_positions
         and self.bridge.player_positions()) or {}
+    self.players = players
     local world = self.world
 
     -- Contacts are evaluated once for the whole world.
@@ -814,6 +833,7 @@ function D:tick_group(group, players, physical_groups, dt)
 
         if lost then
             for _, victim in ipairs(lost) do
+                group.loss_at = now
                 Combat.on_member_lost(group, victim, self.rng,
                     function(kind, gid, name) Log.event(kind, gid, name) end,
                     self.world.diplomacy, group.last_contact)
@@ -874,12 +894,31 @@ function D:tick_group(group, players, physical_groups, dt)
         local list = Combat.find_contacts(group, pool, self.world.diplomacy, now)
         contact = list[1]
     end
+    -- What the squad hears, sees and feels this second.
+    local zlist = {}
+    if group.physical and self.bridge.zombies_near then
+        zlist = self.bridge.zombies_near(group.position, Behaviour.tuning.zombie_near_uu * 1.3)
+    end
+    self.zombies_here = zlist
+    if #zlist > 0 then
+        local cx, cy = 0, 0
+        for _, z in ipairs(zlist) do cx, cy = cx + z.pos.X, cy + z.pos.Y end
+        self.zombie_centroid = { X = cx / #zlist, Y = cy / #zlist, Z = 0 }
+    else
+        self.zombie_centroid = nil
+    end
+    local sense = Behaviour.sense(self, group, now, zlist)
+    Behaviour.abstract_zombies(self, group, now, self.rng)
+    Behaviour.contagion(group, dt)
     local zpressure = 0
     if group.physical then
         zpressure = Combat.zombie_pressure(group, self.bridge)
     end
     group.last_contact = contact and contact.group or nil
     local fighting = self:run_combat(group, contact, zpressure)
+    -- Stress, morale and personality decide the reaction: flight, standing
+    -- against zombies, going to look at gunfire, holding still.
+    local reacting = Behaviour.react(self, group, now, sense, fighting)
 
     -- 4/5. Activity and movement.
     if not fighting then
@@ -897,10 +936,19 @@ function D:tick_group(group, players, physical_groups, dt)
                 end
             end
         end
-        self:run_activity(group)
+        local fleeing = group.flee_until and now < group.flee_until
+        local holding = group.hold_until and now < group.hold_until
+        if not fleeing and not holding then self:run_activity(group) end
         if group.physical then
-            self:move_physical(group, dt)
-        else
+            if holding and not group.held then
+                group.held = true
+                for _, m in ipairs(group.members) do
+                    if m.alive and m.runtime_id and self.bridge.stop then self.bridge.stop(m.runtime_id) end
+                end
+            end
+            if not holding then group.held = nil end
+            if not reacting then self:move_physical(group, dt) end
+        elseif not holding then
             self:move_virtual(group, dt)
         end
     end
@@ -911,7 +959,8 @@ function D:tick_group(group, players, physical_groups, dt)
     local st = group.act.state
     local resting = (st == S.REST or st == S.CAMP or st == S.HOLD)
     Activity.tick_upkeep(group.act, dt, not resting)
-    local in_danger = fighting or zpressure > 0.2
+    local in_danger = fighting or zpressure > 0.2 or sense.zombies_near > 0
+        or (group.flee_until and now < group.flee_until)
     for _, m in ipairs(group.members) do
         if m.alive then
             Stress.recover(m, dt, in_danger)

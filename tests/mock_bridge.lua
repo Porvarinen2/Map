@@ -94,6 +94,21 @@ function B.apply_damage(h, amount)
     if a.hp <= 0 then a.alive = false; a.target = nil; a.follow = nil end
     return true
 end
+-- Zombies placed by a test: { pos = {X,Y,Z}, actor = { hp = 100 } }.
+B.zombies = {}
+function B.zombies_near(pos, radius)
+    local out = {}
+    for _, z in ipairs(B.zombies) do
+        if (z.actor.hp or 100) > 0 and U.dist2d(z.pos, pos) <= radius then out[#out + 1] = z end
+    end
+    return out
+end
+B.zombie_damage = 0
+function B.damage_actor(actor, amount)
+    actor.hp = (actor.hp or 100) - amount
+    B.zombie_damage = B.zombie_damage + 1
+    return true
+end
 function B.face() return true end
 function B.clear_focus() return true end
 function B.fire_once() return true end
