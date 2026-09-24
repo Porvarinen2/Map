@@ -203,6 +203,9 @@ do
                 n = n + #(lo[k] or {})
                 if #(lo[k] or {}) > 0 then parts[#parts + 1] = k .. ": " .. table.concat(lo[k], ", ") end
             end
+            if lo.Asu ~= nil then
+                parts[#parts + 1] = "Asu: " .. (type(lo.Asu) == "table" and table.concat(lo.Asu, ", ") or tostring(lo.Asu))
+            end
             header[#header + 1] = "  " .. key .. " = " .. (#parts > 0 and table.concat(parts, " | ") or "(tyhja)")
         end
         if not gear.KAIKKI then

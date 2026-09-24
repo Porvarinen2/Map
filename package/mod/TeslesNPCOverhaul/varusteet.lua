@@ -2,33 +2,31 @@
 --
 -- Tama tiedosto SAILYY paivityksissa: INSTALL.bat ei kirjoita sen yli.
 --
--- Kirjoita esineet samoilla nimilla kuin #SpawnItem-komennossa,
--- lainausmerkeissa ja pilkulla erotettuina, esimerkiksi:
+-- Asu = numero: SCUMin NPC:illa on valmis lista asuja, ja numero valitsee
+-- asun. Asu = { 1, 4, 7 } arpoo jokaiselle jasenelle yhden naista.
+-- Asulista (numerot ja mita ne ovat) kirjataan tiedostoon
+-- output\npc_loadout.txt ("NPC COMMON DATA").
+--
+-- Weapons = ase #SpawnItem-nimella, esim. { "Weapon_M9" }.
+-- Clothes = yksittaiset vaatteet: SCUMin NPC:t eivat nayta niita (kokeiltu).
 --
 --   police_patrol = {
---       Clothes = { "Police_Shirt_01", "Police_Pants_01", "Police_Cap" },
+--       Asu = 2,
 --       Weapons = { "Weapon_M9" },
---       Items   = { "Emergency_bandage" },
 --   },
 --
--- Tyhjat listat = SCUMin omat varusteet. KAIKKI koskee jokaista ryhmaa.
--- Muut ryhmat lisataan samalla tavalla omalla avaimellaan (myos ryhmat.lua:n
--- omat ryhmat, esim. palomiehet, laakarit):
---   lone_wanderer, pair, hunters, scavengers, police_patrol, military_group,
---   radiation_group, bunker_group, bandit_gang, survivor_group, militia_cell,
---   elite_unit, island_residents
---
--- Jokainen yritys kirjataan tiedostoon output\npc_loadout.txt: siita nakee,
--- loytyiko esine ja saatiinko se NPC:n paalle.
+-- KAIKKI koskee jokaista ryhmaa; ryhman oma Asu voittaa KAIKKI-asun.
+-- Ryhmat: lone_wanderer, pair, hunters, scavengers, police_patrol,
+--   military_group, radiation_group, bunker_group, bandit_gang,
+--   survivor_group, militia_cell, elite_unit, island_residents
+--   (+ ryhmat.lua:n omat ryhmat, esim. palomiehet, laakarit)
 return {
-    -- KAIKKI: nama saa jokainen NPC jokaisessa ryhmassa (lisaksi ryhman omat).
-    -- Testi: maastopukuhousut kaikille, jotta nahdaan toimiiko pukeminen.
+    -- KAIKKI: koskee jokaista NPC:ta jokaisessa ryhmassa.
+    -- Testi: kaikille sama asu 0, jotta nahdaan toimiiko asun valinta.
     KAIKKI = {
-        Clothes = { "Ghillie_Suit_Pants_01" },
+        Asu = 0,
     },
     police_patrol = {
-        Clothes = {},
         Weapons = {},
-        Items = {},
     },
 }

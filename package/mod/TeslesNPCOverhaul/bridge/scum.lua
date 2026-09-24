@@ -233,6 +233,93 @@ local function dump_props(obj, out, label, stop_at)
 end
 B.dump_props = dump_props
 
+local function fmt_value(v)
+    local tv = type(v)
+    if tv == "number" or tv == "boolean" or tv == "string" then return tostring(v) end
+    if v == nil then return "nil" end
+    local okf, fnm = pcall(function() return v:GetFullName() end)
+    if okf and type(fnm) == "string" then return fnm end
+    local okt, st = pcall(function() return v:ToString() end)
+    if okt and st ~= nil then return tostring(st) end
+    return tostring(v)
+end
+
+-- A data object dumped with its arrays and structs opened up (and the data
+-- objects it points to), e.g. the NPC common data that holds the outfit list.
+local SKIP_ASSET = { "SkeletalMesh ", "StaticMesh ", "Material", "Texture", "AkAudio", "Anim",
+                     "Curve", "PhysicsAsset", "BlueprintGeneratedClass", "Class ", "Sound", "Particle" }
+local function dump_field(out, indent, name, prop, v, depth, seen)
+    if #out > 1500 then return end
+    local pt = "?"
+    pcall(function() pt = prop:GetClass():GetFName():ToString() end)
+    if pt == "ArrayProperty" then
+        local inner = nil
+        pcall(function() inner = prop:GetInner() end)
+        local items = {}
+        pcall(function() v:ForEach(function(_, e) items[#items + 1] = unwrap(e) end) end)
+        out[#out + 1] = string.format("%s%s : Array[%d]", indent, name, #items)
+        if inner and depth < 5 then
+            for i, e in ipairs(items) do
+                if i > 40 then out[#out + 1] = indent .. "  ..."; break end
+                dump_field(out, indent .. "  ", "[" .. (i - 1) .. "]", inner, e, depth + 1, seen)
+            end
+        end
+    elseif pt == "StructProperty" then
+        local st = nil
+        pcall(function() st = prop:GetStruct() end)
+        out[#out + 1] = string.format("%s%s : struct %s", indent, name, st and fmt_value(st) or "?")
+        if st and depth < 5 then
+            pcall(function()
+                st:ForEachProperty(function(fp)
+                    local fn = "?"
+                    pcall(function() fn = fp:GetFName():ToString() end)
+                    local fv = nil
+                    pcall(function() fv = v[fn] end)
+                    dump_field(out, indent .. "  ", fn, fp, fv, depth + 1, seen)
+                end)
+            end)
+        end
+    else
+        local txt = fmt_value(v)
+        if #txt > 200 then txt = txt:sub(1, 200) .. "..." end
+        out[#out + 1] = string.format("%s%s : %s = %s", indent, name, pt, txt)
+        if pt == "ObjectProperty" and depth < 3 and v ~= nil and valid(v) and not seen[txt] then
+            local skip = txt:find("PersistentLevel", 1, true) ~= nil
+            for _, k in ipairs(SKIP_ASSET) do if txt:sub(1, #k) == k then skip = true end end
+            if not skip then
+                seen[txt] = true
+                B.dump_deep(v, out, indent .. "    ", depth + 1, seen)
+            end
+        end
+    end
+end
+function B.dump_deep(obj, out, indent, depth, seen)
+    seen = seen or {}
+    indent = indent or ""
+    local okc, cls = pcall(function() return obj:GetClass() end)
+    if not (okc and cls) then return end
+    local level = 0
+    while cls and valid(cls) and level < 8 do
+        level = level + 1
+        local cn = full_name(cls)
+        if cn:find("/Script/Engine.DataAsset", 1, true) or cn:find("/Script/CoreUObject.Object", 1, true)
+            or cn:find("/Script/Engine.Actor", 1, true) then break end
+        out[#out + 1] = indent .. "class " .. cn
+        pcall(function()
+            cls:ForEachProperty(function(p)
+                local n = "?"
+                pcall(function() n = p:GetFName():ToString() end)
+                local v = nil
+                pcall(function() v = obj[n] end)
+                dump_field(out, indent .. "  ", n, p, v, depth or 0, seen)
+            end)
+        end)
+        local oks, sup = pcall(function() return cls:GetSuperStruct() end)
+        if not (oks and sup) then break end
+        cls = sup
+    end
+end
+
 local function address_of(o)
     local ok, a = pcall(function() return o:GetAddress() end)
     if ok and a then return tostring(a) end
@@ -1897,23 +1984,6 @@ local function inspect_character(actor, tag, lines, max_items)
                 tostring(nm), tostring(cl), tostring(m), tostring(mat), tostring(sock), tostring(ow))
         end
     end)
-    -- 0b. Every mesh component the actor owns (clothes may not be children).
-    for _, cname in ipairs({ "SkeletalMeshComponent", "StaticMeshComponent" }) do
-        local n = 0
-        for _, c in ipairs(find_all(cname, nil, true) or {}) do
-            local oko, o = pcall(function() return c:GetOwner() end)
-            if oko and o and full_name(o) == an then
-                n = n + 1
-                local nm, m, par = "?", "", ""
-                pcall(function() nm = c:GetFName():ToString() end)
-                pcall(function() m = full_name(c.SkeletalMesh) end)
-                if m == "" or m == "nil" then pcall(function() m = full_name(c.StaticMesh) end) end
-                pcall(function() par = full_name(c:GetAttachParent()) end)
-                lines[#lines + 1] = string.format("  own %s %s mesh=%s parent=%s", cname, tostring(nm), tostring(m), tostring(par))
-            end
-        end
-        lines[#lines + 1] = string.format("own %s: %d", cname, n)
-    end
     -- 1. Attached actors, asked two ways (UE4SS out-parameter styles differ).
     local attached = {}
     pcall(function()
@@ -1961,19 +2031,21 @@ local function inspect_character(actor, tag, lines, max_items)
     for i, it in ipairs(worn) do
         if i > (max_items or 1) then break end
         pcall(dump_props, it, lines, "CLOTHES", "/Script/Engine.Actor")
+        -- The item's own mesh components, read from its properties (a scan
+        -- of every mesh component in the world froze the server for 30 s).
         local comps = {}
-        for _, cname in ipairs({ "SkeletalMeshComponent", "StaticMeshComponent" }) do
-            for _, c in ipairs(find_all(cname, nil, true) or {}) do
-                local oko, o = pcall(function() return c:GetOwner() end)
-                if oko and o and full_name(o) == full_name(it) then
-                    local m, vis, par = "", "", ""
-                    pcall(function() m = full_name(c.SkeletalMesh) end)
-                    pcall(function() if m == "" or m == "nil" then m = full_name(c.StaticMesh) end end)
-                    pcall(function() vis = tostring(c:IsVisible()) end)
-                    pcall(function() par = full_name(c:GetAttachParent()) end)
-                    comps[#comps + 1] = string.format("  %s mesh=%s visible=%s parent=%s", cname, m, vis, par)
-                end
-            end
+        for _, pn in ipairs({ "Mesh", "_skeletalMeshComponent", "_characterMesh" }) do
+            pcall(function()
+                local c = it[pn]
+                if not (c and valid(c)) then return end
+                local m, vis, par = "", "", ""
+                pcall(function() m = full_name(c.SkeletalMesh) end)
+                pcall(function() if m == "" or m == "nil" then m = full_name(c.StaticMesh) end end)
+                pcall(function() vis = tostring(c:IsVisible()) end)
+                pcall(function() par = full_name(c:GetAttachParent()) end)
+                comps[#comps + 1] = string.format("  %s = %s mesh=%s visible=%s parent=%s", pn, full_name(c), m, vis, par)
+                pcall(dump_props, c, comps, "    " .. pn, "/Script/Engine.SceneComponent")
+            end)
         end
         lines[#lines + 1] = "CLOTHES components: " .. #comps
         for _, l in ipairs(comps) do lines[#lines + 1] = l end
@@ -1985,7 +2057,7 @@ B.inspect_character = inspect_character
 -- The player's own outfit, written to player_outfit.txt once a minute: put
 -- the clothes on yourself and the file shows how SCUM stores worn clothes on
 -- a character, to compare with the NPC survey in npc_loadout.txt.
-B.player_survey_every = 60
+B.player_survey_every = 120
 local player_history = {}
 function B.maybe_player_survey(now)
     now = now or os.time()
@@ -2000,7 +2072,7 @@ function B.maybe_player_survey(now)
     if not pawn then return end
     local lines = {}
     local worn = {}
-    local ok, w = pcall(inspect_character, pawn, "PLAYER", lines, 4)
+    local ok, w = pcall(inspect_character, pawn, "PLAYER", lines, 2)
     if ok and w then worn = w end
     local names = {}
     for _, it in ipairs(worn) do names[#names + 1] = (full_name(it):match("([%w_]+)_C_%d+") or full_name(it)) end
@@ -2037,17 +2109,6 @@ function B.survey_outfit(actor, wanted)
     lnote(table.concat(lines, "\n"))
 end
 
--- Components of one actor by class (a scan of that component class).
-local function components_of(actor, cname)
-    local out = {}
-    local an = full_name(actor)
-    for _, c in ipairs(find_all(cname, nil, true) or {}) do
-        local ok, own = pcall(function() return c:GetOwner() end)
-        if ok and own and full_name(own) == an then out[#out + 1] = c end
-    end
-    return out
-end
-
 local function keep_extra(handle, obj)
     local rec = handles[handle]
     if rec then
@@ -2076,7 +2137,11 @@ local function wear_item(a, handle, name, label, pos)
         lnote(string.format("%s: %s - NPC body mesh not reachable", label, name))
         return false
     end
-    local meshes = components_of(item, "SkeletalMeshComponent")
+    local meshes = {}
+    pcall(function()
+        local m = item._skeletalMeshComponent
+        if m and valid(m) then meshes[1] = m end
+    end)
     local steps = {}
     for _, m in ipairs(meshes) do
         pcall(function() m:SetSimulatePhysics(false) end)
@@ -2134,22 +2199,88 @@ local function hold_weapon(a, handle, name, label, pos)
     return att
 end
 
+-- SCUM dresses an armed NPC from a fixed list of outfits in its common data
+-- (_armedNPCBaseCommonData); the NPC's _bodyMeshIndex picks one. The list of
+-- each common data asset is written to npc_loadout.txt once, so varusteet.lua
+-- can pick an outfit by number (Asu = 3).
+local common_dumped, common_n = {}, 0
+B.body_counts = {}
+local function survey_common_data(a)
+    local cd = nil
+    pcall(function() cd = a._armedNPCBaseCommonData end)
+    if not (cd and valid(cd)) then return nil end
+    local key = full_name(cd)
+    if common_dumped[key] or common_n >= 8 then return key end
+    common_dumped[key] = true
+    common_n = common_n + 1
+    local lines = { "NPC COMMON DATA " .. key }
+    pcall(B.dump_deep, cd, lines, "  ", 0, {})
+    for _, l in ipairs(lines) do
+        local nm, n = l:match("^    ([%w_]+) : Array%[(%d+)%]")
+        n = tonumber(n)
+        if nm and n and n > 0 and not B.body_counts[key] then
+            local low = nm:lower()
+            if low:find("mesh") or low:find("body") or low:find("outfit") or low:find("cloth") then
+                B.body_counts[key] = n
+                lines[#lines + 1] = string.format("  -> asut: %s, Asu = 0..%d", nm, n - 1)
+            end
+        end
+    end
+    lnote(table.concat(lines, "\n"))
+    return key
+end
+B.survey_common_data = survey_common_data
+
+local body_noted = {}
+function B.set_body(a, want, label)
+    local idx = want
+    if type(want) == "table" then
+        if #want == 0 then return false end
+        idx = want[math.random(#want)]
+    end
+    idx = tonumber(idx)
+    if not idx then return false end
+    idx = math.floor(idx)
+    local key = survey_common_data(a)
+    local n = key and B.body_counts[key]
+    if n and n > 0 and (idx < 0 or idx >= n) then idx = idx % n end
+    local before, after = nil, nil
+    pcall(function() before = a._bodyMeshIndex end)
+    local ok = pcall(function() a._bodyMeshIndex = idx end)
+    pcall(function() after = a._bodyMeshIndex end)
+    local res = ok and after == idx
+    local nk = tostring(key) .. "/" .. tostring(res)
+    if not body_noted[nk] then
+        body_noted[nk] = true
+        lnote(string.format("%s: Asu %d (%s) - _bodyMeshIndex %s -> %s: %s", label, idx, tostring(key),
+            tostring(before), tostring(after), res and "asetettu" or "EI ONNISTUNUT"))
+    end
+    return res
+end
+
 function B.apply_loadout(handle, loadout, label)
     local a = B.actor(handle)
     if not (a and loadout) then return 0 end
     label = label or "?"
+    local body_set = false
+    if loadout.Asu ~= nil then
+        local ok, res = pcall(B.set_body, a, loadout.Asu, label)
+        body_set = ok and res
+    else
+        pcall(survey_common_data, a)
+    end
     local names = {}
     for _, key in ipairs({ "Clothes", "Weapons", "Items" }) do
         for _, n in ipairs(loadout[key] or {}) do names[#names + 1] = n end
     end
-    if #names == 0 then return 0 end
-    local okl, loc = pcall(function() return a:K2_GetActorLocation() end)
-    local pos = okl and vec(loc) or nil
-    if not pos then return 0 end
     if not B.outfit_surveyed and not B.survey_handle then
         B.survey_handle, B.survey_names, B.survey_at = handle, names, os.time() + 6
     end
-    local given = 0
+    if #names == 0 then return body_set and 1 or 0 end
+    local okl, loc = pcall(function() return a:K2_GetActorLocation() end)
+    local pos = okl and vec(loc) or nil
+    if not pos then return 0 end
+    local given = body_set and 1 or 0
     for _, name in ipairs(loadout.Clothes or {}) do
         local ok, res = pcall(wear_item, a, handle, name, label, pos)
         if ok and res then given = given + 1

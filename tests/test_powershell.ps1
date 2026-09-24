@@ -168,8 +168,8 @@ Set-Content -LiteralPath (Join-Path $modDir "ryhmat.lua") -Value 'return { { ava
   -SkipUE4SS -NoMap -Yes -NoPause | Out-Null
 $gear = Get-Content -Raw (Join-Path $modDir "varusteet.lua")
 Check ($gear -match 'My_Own_Shirt') "a reinstall keeps the owner's own gear lines"
-Check ($gear -match 'KAIKKI' -and $gear -match 'Ghillie_Suit_Pants_01') `
-      "an old varusteet.lua gets the KAIKKI section with the test item"
+Check ($gear -match 'KAIKKI' -and $gear -match 'Asu = 0') `
+      "an old varusteet.lua gets the KAIKKI section with the test outfit"
 Check ((Get-Content -Raw (Join-Path $modDir "ryhmat.lua")) -match 'omat_testit') `
       "a reinstall keeps the owner's own squad classes"
 # The gear file must still be valid Lua after the insert.
@@ -179,6 +179,20 @@ if (Get-Command lua5.4 -ErrorAction SilentlyContinue) {
   $luaOk = ($LASTEXITCODE -eq 0)
 }
 Check $luaOk "and the patched varusteet.lua still loads"
+# The 1.7.x clothes test (ghillie pants) becomes the outfit number test.
+Set-Content -LiteralPath (Join-Path $modDir "varusteet.lua") -Value @"
+return {
+    KAIKKI = {
+        Clothes = { "Ghillie_Suit_Pants_01" },
+    },
+    police_patrol = { Clothes = { "My_Own_Shirt" } },
+}
+"@
+& (Join-Path $pkg "INSTALL.ps1") -ServerRoot (Join-Path $lab "server") `
+  -SkipUE4SS -NoMap -Yes -NoPause | Out-Null
+$gear = Get-Content -Raw (Join-Path $modDir "varusteet.lua")
+Check ($gear -match 'Asu = 0' -and $gear -notmatch 'Ghillie' -and $gear -match 'My_Own_Shirt') `
+      "the ghillie test in an owner's gear file moves to Asu = 0, their own lines stay"
 
 # DIAGNOSE packs the gear files and the gear log.
 Set-Content -LiteralPath (Join-Path (Join-Path $modDir "output") "npc_loadout.txt") -Value "LOADOUT LOG"

@@ -408,15 +408,15 @@ foreach ($uf in $keepUser.Keys) {
     Say "Omat asetukset sailytettiin: $uf" "Green"
   }
 }
-# The owner's own gear file keeps the earlier test item (Christmas pants,
-# which this server does not have): the test moves to ghillie pants, a
-# known item, so the next test shows whether wearing works at all.
+# The earlier clothes test (Christmas / ghillie pants) proved SCUM's NPCs do
+# not show single clothes: the test moves to an outfit number (Asu = 0).
 $gearPath0 = Join-Path $target 'varusteet.lua'
 if (Test-Path -LiteralPath $gearPath0) {
   $g0 = [System.IO.File]::ReadAllText($gearPath0)
-  if ($g0 -match 'Christmas_Pants_02') {
-    [System.IO.File]::WriteAllText($gearPath0, $g0.Replace('Christmas_Pants_02', 'Ghillie_Suit_Pants_01'))
-    Say "varusteet.lua: testihousut vaihdettu -> Ghillie_Suit_Pants_01." "Green"
+  $re0 = [regex]'Clothes\s*=\s*\{\s*"(Christmas_Pants_02|Ghillie_Suit_Pants_01)"\s*\}\s*,?'
+  if ($re0.IsMatch($g0)) {
+    [System.IO.File]::WriteAllText($gearPath0, $re0.Replace($g0, 'Asu = 0,'))
+    Say "varusteet.lua: testi vaihdettu -> Asu = 0 (sama asu kaikille)." "Green"
   }
 }
 # An older varusteet.lua has no KAIKKI section (gear for every squad). Add it
@@ -425,10 +425,10 @@ $gearPath = Join-Path $target 'varusteet.lua'
 if ((Test-Path -LiteralPath $gearPath)) {
   $gearText = [System.IO.File]::ReadAllText($gearPath)
   if ($gearText -notmatch 'KAIKKI' -and $gearText -match 'return\s*\{') {
-    $block = "return {`r`n    -- KAIKKI: nama saa jokainen NPC jokaisessa ryhmassa (lisaksi ryhman omat).`r`n    KAIKKI = {`r`n        Clothes = { `"Ghillie_Suit_Pants_01`" },`r`n        Weapons = {},`r`n        Items = {},`r`n    },"
+    $block = "return {`r`n    -- KAIKKI: nama saa jokainen NPC jokaisessa ryhmassa (lisaksi ryhman omat).`r`n    KAIKKI = {`r`n        Asu = 0,`r`n    },"
     $gearText = ([regex]'return\s*\{').Replace($gearText, $block, 1)
     [System.IO.File]::WriteAllText($gearPath, $gearText)
-    Say "varusteet.lua: lisattiin KAIKKI-kohta (testi: Ghillie_Suit_Pants_01)." "Green"
+    Say "varusteet.lua: lisattiin KAIKKI-kohta (testi: Asu = 0)." "Green"
   }
 }
 if ($keepOutput) {
