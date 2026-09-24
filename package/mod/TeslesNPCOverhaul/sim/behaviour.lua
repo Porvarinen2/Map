@@ -347,6 +347,9 @@ function Bh.react(director, group, now, sense, fighting)
         group.flee_until = now + (mood == "ROUT" and 45 or 25)
         group.disengaged_until = now + 60
         group.act.state = S.RETREAT
+        -- The place they were heading for is given up; the plan is redrawn
+        -- from what they remember, so it still honours the memory.
+        group.act.goal_poi, group.act.queue = nil, {}
         group.act.until_t = group.flee_until
         director:solve_route(group, dest, { prefer_roads = false, direct_max = 400000 })
         -- Every body runs for it, not just the leader.
@@ -423,6 +426,9 @@ function Bh.react(director, group, now, sense, fighting)
             local dest = away_point(group.position, sense.noise.pos, t.flee_uu * 0.6)
             director:solve_route(group, dest, { prefer_roads = false, direct_max = 400000 })
             group.act.state = S.RETREAT
+            -- The place they were heading for is given up; the plan is redrawn
+            -- from what they remember, so it still honours the memory.
+            group.act.goal_poi, group.act.queue = nil, {}
             group.act.until_t = now + 40
             group.flee_until = now + 30
             group.flee_move = false

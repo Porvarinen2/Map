@@ -269,8 +269,11 @@ do
                 if seq[j] == seq[k] then early = early + 1; if os.getenv("DEBUG_QUEUE") then print("  early", g.gid, g.class, table.concat(seq, ",")) end end
             end
         end
-        open_groups = open_groups + 1
-        if nq == Activity.QUEUE_LENGTH then full = full + 1 end
+        -- A squad in flight has dropped its plan; it redraws it on arrival.
+        if act.state ~= "RETREAT" then
+            open_groups = open_groups + 1
+            if nq == Activity.QUEUE_LENGTH then full = full + 1 end
+        end
         if os.getenv("DEBUG_QUEUE") and nq < Activity.QUEUE_LENGTH then
             print("  queue", g.gid, g.class, act.state, table.concat(act.queue or {}, ","))
         end
