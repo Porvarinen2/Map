@@ -376,6 +376,14 @@ do
           "the elite always carry the best, soldiers never below assault rifles")
     check(W.tier("bandit_gang", 3, 0.1) == 2 and W.tier("bandit_gang", 3, 0.9) == 3, "now and then one tier lower")
     check(#W.for_member("palomiehet_x", 2, {}, 0.9).Weapons > 0, "a squad with no theme uses every weapon of its tier")
+    do
+        local saved = Population.serialize(world)
+        local n0 = #saved.groups
+        saved.groups[1].class = "poistettu_luokka"
+        local w2 = Population.deserialize(saved)
+        check(#w2.groups == n0 - 1 and w2.dropped_classes.poistettu_luokka == 1,
+              "a saved squad of a removed class is left out when the world loads")
+    end
     local all = {}
     for _, t in ipairs(W.TIERS) do for _, n in ipairs(t) do all[#all + 1] = n end end
     local bad = 0

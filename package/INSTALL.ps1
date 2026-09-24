@@ -422,6 +422,17 @@ if (Test-Path -LiteralPath $gearPath0) {
     Say "varusteet.lua: testiaseet ja -asut poistettu (KAIKKI tyhjennetty)." "Green"
   }
 }
+# The example squad classes (firefighters, doctors) are removed from the
+# owner's ryhmat.lua; their own classes stay.
+$groupsPath = Join-Path $target 'ryhmat.lua'
+if (Test-Path -LiteralPath $groupsPath) {
+  $gr = [System.IO.File]::ReadAllText($groupsPath)
+  $reG = [regex]'\{(?:[^{}]|\{[^{}]*\})*avain\s*=\s*"(palomiehet|laakarit)"(?:[^{}]|\{[^{}]*\})*\}\s*,?'
+  if ($reG.IsMatch($gr)) {
+    [System.IO.File]::WriteAllText($groupsPath, $reG.Replace($gr, ''))
+    Say "ryhmat.lua: esimerkkiryhmat (palomiehet, laakarit) poistettu." "Green"
+  }
+}
 # An older varusteet.lua has no KAIKKI section (gear for every squad). Add it
 # right after "return {" with the owner's test item - their own lines stay.
 $gearPath = Join-Path $target 'varusteet.lua'

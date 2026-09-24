@@ -424,8 +424,14 @@ function P.deserialize(saved)
     world.next_group_id = saved.next_group_id or 1
     world.diplomacy.pairs = saved.diplomacy or {}
 
+    world.dropped_classes = {}
     for _, sg in ipairs(saved.groups or {}) do
-        local cls = GroupClasses.get(sg.class) or GroupClasses.get("survivor_group")
+      -- A squad of a class that no longer exists (an own class removed from
+      -- ryhmat.lua) is left out.
+      if not GroupClasses.get(sg.class) then
+        world.dropped_classes[sg.class or "?"] = (world.dropped_classes[sg.class or "?"] or 0) + 1
+      else
+        local cls = GroupClasses.get(sg.class)
         local g = {
             id = sg.id, gid = sg.gid, class = sg.class, seed = sg.seed,
             name = sg.name or cls.fi, tactics = cls.tactics,
@@ -481,6 +487,7 @@ function P.deserialize(saved)
                 if g.act.state == "TRAVEL" then g.act.state = "IDLE" end
             end
         end
+      end
     end
     return world
 end

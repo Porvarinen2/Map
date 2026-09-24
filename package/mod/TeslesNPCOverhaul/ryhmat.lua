@@ -7,7 +7,7 @@
 -- omat varusteet varusteet.lua:ssa samalla avaimella.
 --
 -- Kentat (vain avain on pakollinen):
---   avain        tunniste, pienet kirjaimet ja _ (esim. "palomiehet")
+--   avain        tunniste, pienet kirjaimet ja _ (esim. "vartijat")
 --   nimi         nimi kartalla
 --   koko         { pienin, suurin } jasenmaara, 1-5
 --   tausta       kenesta ryhma koostuu: civilian, scavenger, survivor, hunter,
@@ -21,26 +21,14 @@
 --   vihamieliset lista ryhmatyypeista, joiden kanssa ollaan vihollisia
 --   viranomainen true = rosvot vihaavat erityisesti
 --   vari         vari kartalla, esim. "#ff8040"
+-- Esimerkki:
+--   {
+--       avain = "vartijat",
+--       nimi = "Vartijat",
+--       koko = { 2, 4 },
+--       tausta = { "security" },
+--       kohteet = { CITY = 4, INDUSTRIAL = 3 },
+--       maara = 2,
+--   },
 return {
-    {
-        avain = "palomiehet",
-        nimi = "Palomiehet",
-        koko = { 2, 4 },
-        tausta = { "security", "survivor" },
-        kohteet = { CITY = 4, INDUSTRIAL = 3, VILLAGE = 3 },
-        maara = 2,
-        runko = "Guard",
-        viranomainen = true,
-        vari = "#ff7a3c",
-    },
-    {
-        avain = "laakarit",
-        nimi = "Laakarit",
-        koko = { 2, 3 },
-        tausta = { "civilian", "survivor" },
-        kohteet = { MEDICAL = 6, CITY = 2, VILLAGE = 2 },
-        maara = 2,
-        runko = "Drifter",
-        vari = "#ffffff",
-    },
 }

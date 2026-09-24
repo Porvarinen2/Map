@@ -253,6 +253,9 @@ local function boot_world()
         if ok and world then
             Log.info(string.format("world state loaded: %d groups, %d NPCs",
                 #world.groups, Population.alive_npc_count(world)))
+            for cls, n in pairs(world.dropped_classes or {}) do
+                boot(string.format("world state: %d squads of the removed class %s left out", n, cls))
+            end
             Bridge.health.persistence = { status = "OK", detail = "world state loaded" }
             return world
         end

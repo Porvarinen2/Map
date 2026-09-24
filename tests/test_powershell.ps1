@@ -172,6 +172,31 @@ Check ($gear -match 'KAIKKI') `
       "an old varusteet.lua gets the (empty) KAIKKI section"
 Check ((Get-Content -Raw (Join-Path $modDir "ryhmat.lua")) -match 'omat_testit') `
       "a reinstall keeps the owner's own squad classes"
+# The shipped example classes (firefighters, doctors) leave the owner's file.
+Set-Content -LiteralPath (Join-Path $modDir "ryhmat.lua") -Value @"
+return {
+    {
+        avain = "palomiehet",
+        koko = { 2, 4 },
+        kohteet = { CITY = 4, INDUSTRIAL = 3 },
+    },
+    {
+        avain = "laakarit",
+        tausta = { "civilian", "survivor" },
+    },
+    { avain = "omat_testit" },
+}
+"@
+& (Join-Path $pkg "INSTALL.ps1") -ServerRoot (Join-Path $lab "server") `
+  -SkipUE4SS -NoMap -Yes -NoPause | Out-Null
+$gr = Get-Content -Raw (Join-Path $modDir "ryhmat.lua")
+$grKeys = "omat_testit"
+if (Get-Command lua5.4 -ErrorAction SilentlyContinue) {
+  $gp = (Join-Path $modDir "ryhmat.lua") -replace '\\','/'
+  $grKeys = (& lua5.4 -e "local o = {} for _, d in ipairs(dofile('$gp')) do o[#o + 1] = d.avain end print(table.concat(o, ','))")
+}
+Check ($gr -notmatch 'palomiehet|laakarit' -and $grKeys -eq "omat_testit") `
+      "the example classes leave ryhmat.lua, the owner's own class stays"
 # The gear file must still be valid Lua after the insert.
 $luaOk = $true
 if (Get-Command lua5.4 -ErrorAction SilentlyContinue) {
