@@ -409,14 +409,23 @@ foreach ($uf in $keepUser.Keys) {
   }
 }
 # The earlier outfit tests (Christmas / ghillie pants, Asu = 0) proved a
-# server cannot dress SCUM's NPCs: the test moves to a weapon swap.
+# server cannot dress SCUM's NPCs: the KAIKKI test block becomes the weapon
+# test as a whole (1.8.0 replaced only the pants line and left an empty
+# Weapons = {} after it, which cancelled the test weapon).
 $gearPath0 = Join-Path $target 'varusteet.lua'
 if (Test-Path -LiteralPath $gearPath0) {
   $g0 = [System.IO.File]::ReadAllText($gearPath0)
-  $re0 = [regex]'(Clothes\s*=\s*\{\s*"(Christmas_Pants_02|Ghillie_Suit_Pants_01)"\s*\}|Asu\s*=\s*0)\s*,?'
-  if ($re0.IsMatch($g0)) {
-    [System.IO.File]::WriteAllText($gearPath0, $re0.Replace($g0, 'Weapons = { "Weapon_M1911" },'))
-    Say "varusteet.lua: testi vaihdettu -> Weapons = Weapon_M1911 (sama ase kaikille)." "Green"
+  $reK = [regex]'KAIKKI\s*=\s*\{(?:[^{}]|\{[^{}]*\})*\}'
+  $m0 = $reK.Match($g0)
+  if ($m0.Success) {
+    $blk = $m0.Value
+    $old = ($blk -match 'Christmas_Pants_02|Ghillie_Suit_Pants_01|Asu\s*=\s*0') -or
+           (($blk -match 'Weapon_M1911') -and ($blk -match 'Weapons\s*=\s*\{\s*\}'))
+    if ($old) {
+      $new = "KAIKKI = {`r`n        Weapons = { `"Weapon_M1911`" },`r`n    }"
+      [System.IO.File]::WriteAllText($gearPath0, $g0.Substring(0, $m0.Index) + $new + $g0.Substring($m0.Index + $m0.Length))
+      Say "varusteet.lua: KAIKKI-testi -> Weapons = Weapon_M1911 (sama ase kaikille)." "Green"
+    }
   }
 }
 # An older varusteet.lua has no KAIKKI section (gear for every squad). Add it

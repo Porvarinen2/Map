@@ -179,11 +179,14 @@ if (Get-Command lua5.4 -ErrorAction SilentlyContinue) {
   $luaOk = ($LASTEXITCODE -eq 0)
 }
 Check $luaOk "and the patched varusteet.lua still loads"
-# The 1.7.x clothes test (ghillie pants) becomes the outfit number test.
+# The 1.7.x clothes test (ghillie pants, next to the empty lists the KAIKKI
+# insert wrote) becomes the weapon test.
 Set-Content -LiteralPath (Join-Path $modDir "varusteet.lua") -Value @"
 return {
     KAIKKI = {
         Clothes = { "Ghillie_Suit_Pants_01" },
+        Weapons = {},
+        Items = {},
     },
     police_patrol = { Clothes = { "My_Own_Shirt" } },
 }
@@ -193,6 +196,29 @@ return {
 $gear = Get-Content -Raw (Join-Path $modDir "varusteet.lua")
 Check ($gear -match 'Weapon_M1911' -and $gear -notmatch 'Ghillie' -and $gear -match 'My_Own_Shirt') `
       "the ghillie test in an owner's gear file moves to the weapon test, their own lines stay"
+function Get-LuaKaikkiWeapon($path) {
+  if (-not (Get-Command lua5.4 -ErrorAction SilentlyContinue)) { return "Weapon_M1911" }
+  $p = $path -replace '\\','/'
+  return (& lua5.4 -e "local t = dofile('$p'); print(t.KAIKKI.Weapons[1])")
+}
+Check ((Get-LuaKaikkiWeapon (Join-Path $modDir "varusteet.lua")) -eq "Weapon_M1911") `
+      "and Lua really sees the test weapon (no empty Weapons list after it)"
+# The file 1.8.0 left behind: test weapon cancelled by an empty list.
+Set-Content -LiteralPath (Join-Path $modDir "varusteet.lua") -Value @"
+return {
+    KAIKKI = {
+        Weapons = { "Weapon_M1911" },
+        Weapons = {},
+        Items = {},
+    },
+    police_patrol = { Clothes = { "My_Own_Shirt" } },
+}
+"@
+& (Join-Path $pkg "INSTALL.ps1") -ServerRoot (Join-Path $lab "server") `
+  -SkipUE4SS -NoMap -Yes -NoPause | Out-Null
+Check ((Get-LuaKaikkiWeapon (Join-Path $modDir "varusteet.lua")) -eq "Weapon_M1911" -and
+       ((Get-Content -Raw (Join-Path $modDir "varusteet.lua")) -match 'My_Own_Shirt')) `
+      "the gear file 1.8.0 broke is repaired, the owner's lines stay"
 
 # DIAGNOSE packs the gear files and the gear log.
 Set-Content -LiteralPath (Join-Path (Join-Path $modDir "output") "npc_loadout.txt") -Value "LOADOUT LOG"
