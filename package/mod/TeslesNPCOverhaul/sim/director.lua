@@ -753,7 +753,7 @@ function D:tick_group(group, players, physical_groups, dt)
     end
 
     -- 2. Level of detail handover.
-    local want = Physical.wants_physical(group, distance)
+    local want = Physical.wants_physical(group, distance, now)
     if want and not group.physical then
         local spawned, failed, why = Physical.materialize(group, self.bridge, {
             now = now,
@@ -763,6 +763,7 @@ function D:tick_group(group, players, physical_groups, dt)
                 Log.event("MATERIALIZE", g.gid, m.npcId)
             end,
         })
+        if spawned > 0 then group.lod_changed_at = now end
         self.counters.spawns = self.counters.spawns + spawned
         self.counters.spawn_fail = self.counters.spawn_fail + failed
         if failed > 0 and spawned == 0 then
@@ -782,6 +783,7 @@ function D:tick_group(group, players, physical_groups, dt)
         end
     elseif not want and group.physical then
         local released = Physical.virtualize(group, self.bridge, {})
+        group.lod_changed_at = now
         group.steer = nil
         self.counters.virtualized = self.counters.virtualized + released
         Log.event("VIRTUALIZE", group.gid, tostring(released))

@@ -1,4 +1,4 @@
-TESLES NPC OVERHAUL 1.4.3
+TESLES NPC OVERHAUL 1.4.4
 =========================
 
 Pysyva NPC-populaatio SCUM-palvelimelle. NPC-hahmot ja niiden ryhmat ovat
@@ -235,7 +235,7 @@ Mods\TeslesNPCOverhaul\config.lua
   PlayerScanIntervalSec   pelaajahaun valimuisti (2 s)
   ZombieScanIntervalSec   zombihaun valimuisti (4 s)
   EnableReplenish         false = kuolleita ei korvata automaattisesti
-  MaterializeDistanceUU   milloin ryhma muuttuu fyysiseksi (60000 = 600 m)
+  RenderRadiusUU          ryhma on fyysinen taman sateen sisalla pelaajasta (100000 = 1 km, kartalla, korkeus ei vaikuta)
   VirtualizeDistanceUU    milloin fyysiset hahmot vapautetaan (88000 = 880 m)
   ReissueSec              kuinka harvoin liikekasky uusitaan (22 s)
   RetargetEpsUU           kuinka paljon kohteen on siirryttava (450 UU)

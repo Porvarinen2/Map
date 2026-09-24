@@ -182,27 +182,31 @@ check(g.morale < m0 and g.leaderless, "johtajan menetys laskee moraalia ja jatta
 check(not Leadership.succession_due(g, 1005) and Leadership.succession_due(g, 1010),
       "uusi johtaja valitaan vasta viiveen jalkeen")
 
-section("distance bands")
-check(Physical.tuning.full_uu == 20000, "FULL enintaan 200 m")
-check(Physical.tuning.light_uu == 70000, "LIGHT enintaan 700 m")
-check(Physical.tuning.virtualize_uu > Physical.tuning.materialize_uu,
-      "materialisoinnilla ja virtualisoinnilla on hystereesi")
+section("render circle")
+-- The owner replaced the guide's bands with one fixed circle (1.4.4):
+-- inside 1 km on the map a squad is physical, outside it virtual.
+check(Physical.tuning.render_uu == 100000, "render-ympyra on 1 km")
 
 local grp = Factory.new_group({ id = 2, class = "pair", seed = 5,
     position = { X = 0, Y = 0, Z = 0 } })
 for _, m in ipairs(grp.members) do m.position = { X = 0, Y = 0, Z = 0 } end
--- One member close to a player must lift the whole group.
-grp.members[2].position = { X = 15000, Y = 0, Z = 0 }
-local lod = Physical.group_lod(grp, { { X = 15500, Y = 0, Z = 0 } })
-check(lod == "FULL", "yhden jasenen laheisyys nostaa koko ryhman lahitilaan")
+-- One member inside the circle lifts the whole group.
+grp.members[2].position = { X = 150000, Y = 0, Z = 0 }
+local lod = Physical.group_lod(grp, { { X = 240000, Y = 0, Z = 0 } })
+check(lod == "PHYSICAL", "yhden jasenen laheisyys tekee koko ryhmasta fyysisen")
 
--- Height counts where it is real: members with a body in the world.
-for _, m in ipairs(grp.members) do m.materialized = true end
-grp.physical = true
-local hi = Physical.group_lod(grp, { { X = 0, Y = 0, Z = 30000 } })
-check(hi == "LIGHT", "etaisyys lasketaan myos korkeudessa")
-for _, m in ipairs(grp.members) do m.materialized = false end
-grp.physical = false
+-- Height never counts: a player 900 m up, straight above, is inside.
+local hi, d = Physical.group_lod(grp, { { X = 0, Y = 0, Z = 90000 } })
+check(hi == "PHYSICAL" and d == 0, "korkeus ei vaikuta etaisyyteen")
+
+-- Exactly two states on either side of the line.
+check(Physical.wants_physical({ physical = false }, 99999), "99.99 m sisalla: fyysinen")
+check(not Physical.wants_physical({ physical = true }, 100001), "yli 1 km: virtuaalinen")
+-- A state younger than hold_sec is kept, so the edge does not flicker.
+check(Physical.wants_physical({ physical = true, lod_changed_at = 100 }, 100001, 105),
+      "juuri spawnattu ryhma ei katoa heti reunalla")
+check(not Physical.wants_physical({ physical = true, lod_changed_at = 100 }, 100001, 111),
+      "pito-ajan jalkeen ryhma virtualisoituu")
 
 section("combat and buildings")
 check(Combat.tuning.contact_uu == 12000, "vihamielinen ryhmakontakti noin 120 m")

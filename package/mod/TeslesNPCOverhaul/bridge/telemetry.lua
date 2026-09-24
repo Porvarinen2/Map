@@ -295,10 +295,7 @@ function T.snapshot(world, bridge, director, extra)
             replans = director and director.counters.replans or 0,
         },
         lod = {
-            full_m = Physical.tuning.full_uu / 100,
-            light_m = Physical.tuning.light_uu / 100,
-            materialize_m = Physical.tuning.materialize_uu / 100,
-            virtualize_m = Physical.tuning.virtualize_uu / 100,
+            render_m = Physical.tuning.render_uu / 100,
         },
         health = health,
         groups = groups,

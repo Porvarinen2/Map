@@ -1,9 +1,10 @@
 -- Level of detail and the virtual <-> physical handover.
 --
--- Distance bands from the guide (measured in 3D, height included):
---   FULL     <= 200 m   close simulation, a physical actor is wanted
---   LIGHT    <= 700 m   mid band, the actor may stay physical
---   VIRTUAL   >  700 m  the persistent NPC keeps living without an actor
+-- One fixed render circle around every player, on the map (2D, height does
+-- not matter): a squad inside it is physical, a squad outside it is virtual.
+-- No bands in between. The only guard is time: a squad that has just changed
+-- state keeps it for a few seconds, so a squad walking along the edge does
+-- not spawn and despawn every second.
 --
 -- The bands are not a visibility promise. Class availability, the spawn queue
 -- and ground suitability all decide whether an actor actually appears, and
@@ -14,10 +15,8 @@ local Grid = require("world.navgrid")
 local Ph = {}
 
 Ph.tuning = {
-    full_uu = 20000,              -- 200 m
-    light_uu = 70000,             -- 700 m
-    materialize_uu = 60000,       -- request actors inside this range
-    virtualize_uu = 88000,        -- release them past this (hysteresis)
+    render_uu = 100000,           -- 1 km render circle around each player
+    hold_sec = 10,                -- minimum time between state changes
     spawn_spacing_uu = 260,
     spawn_retry_sec = 25,
     -- One spawn per tick until this server has proven it can materialise an
@@ -30,47 +29,42 @@ Ph.tuning = {
     ground_probe_uu = 20000,
 }
 
-Ph.LOD = { FULL = "FULL", LIGHT = "LIGHT", VIRTUAL = "VIRTUAL" }
+Ph.LOD = { PHYSICAL = "PHYSICAL", VIRTUAL = "VIRTUAL" }
 
--- Distance to the nearest player. Height counts only where it is real - a
--- materialised actor. A virtual marker's Z is 0 or stale, and on high ground
--- the player's Z alone put a squad standing next to them 720 m "away": the
--- hunters at C2 that never materialised. Virtual positions use map distance.
-function Ph.nearest_player_distance(pos, players, real_height)
-    if not players or #players == 0 then return math.huge end
+-- Map distance to the nearest player. Height never counts: the render
+-- circle is a circle on the map.
+function Ph.nearest_player_distance(pos, players)
+    if not (pos and players) or #players == 0 then return math.huge end
     local best = math.huge
     for _, p in ipairs(players) do
-        local d = real_height and U.dist3d(pos, p) or U.dist2d(pos, p)
+        local d = U.dist2d(pos, p)
         if d < best then best = d end
     end
     return best
 end
 
--- LOD band for a group. The closest member decides, as the guide specifies.
+-- The squad's distance is its closest member's (or its marker's).
 function Ph.group_lod(group, players)
-    -- A physical group's marker is its driver's actor, with a real height.
-    local best = Ph.nearest_player_distance(group.position, players, group.physical == true)
+    local best = Ph.nearest_player_distance(group.position, players)
     for _, m in ipairs(group.members) do
         if m.alive and m.position then
-            local d = Ph.nearest_player_distance(m.position, players, m.materialized == true)
+            local d = Ph.nearest_player_distance(m.position, players)
             if d < best then best = d end
         end
     end
-    local t = Ph.tuning
-    local lod = Ph.LOD.VIRTUAL
-    if best <= t.full_uu then lod = Ph.LOD.FULL
-    elseif best <= t.light_uu then lod = Ph.LOD.LIGHT end
+    local lod = best <= Ph.tuning.render_uu and Ph.LOD.PHYSICAL or Ph.LOD.VIRTUAL
     return lod, best
 end
 
--- Should this group have physical actors right now? Hysteresis keeps a group
--- from flickering in and out on the band edge.
-function Ph.wants_physical(group, distance)
-    local t = Ph.tuning
-    if group.physical then
-        return distance <= t.virtualize_uu
+-- Inside the render circle: physical. Outside: virtual. A state younger than
+-- hold_sec is kept.
+function Ph.wants_physical(group, distance, now)
+    local inside = distance <= Ph.tuning.render_uu
+    if now and group.lod_changed_at and inside ~= (group.physical == true)
+        and now - group.lod_changed_at < Ph.tuning.hold_sec then
+        return group.physical == true
     end
-    return distance <= t.materialize_uu
+    return inside
 end
 
 -- Ground position for one member of a materialising group: spread around the

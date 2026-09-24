@@ -161,10 +161,7 @@ do
 end
 
 -- Push the config's tunables into the modules that own them.
-Physical.tuning.full_uu = CFG.FullDistanceUU or Physical.tuning.full_uu
-Physical.tuning.light_uu = CFG.LightDistanceUU or Physical.tuning.light_uu
-Physical.tuning.materialize_uu = CFG.MaterializeDistanceUU or Physical.tuning.materialize_uu
-Physical.tuning.virtualize_uu = CFG.VirtualizeDistanceUU or Physical.tuning.virtualize_uu
+Physical.tuning.render_uu = CFG.RenderRadiusUU or Physical.tuning.render_uu
 Physical.tuning.max_spawns_per_tick = CFG.MaxSpawnsPerTick or Physical.tuning.max_spawns_per_tick
 Physical.tuning.max_spawns_per_tick_proven = CFG.MaxSpawnsPerTickProven
     or Physical.tuning.max_spawns_per_tick_proven

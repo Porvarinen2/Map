@@ -629,7 +629,7 @@ function drawNow() {
 function drawPlayer(p) {
   const s = worldToScreen(p.x, p.y);
   const lod = state.lod || {};
-  const ring = worldToScreen(p.x + (lod.materialize_m || 600) * 100, p.y);
+  const ring = worldToScreen(p.x + (lod.render_m || 1000) * 100, p.y);
   const rr = Math.abs(ring.x - s.x);
   if (rr > 4) {
     ctx.save();
@@ -686,7 +686,7 @@ function renderWorld() {
       <div class="h"><div><div class="k">Pelaaja kartalla</div>
         <div class="d">lähin ryhmä ${esc(p.nearest_gid || "-")} · ${
           p.nearest_m != null ? (p.nearest_m / 1000).toFixed(2) + " km" : "-"} ·
-          fyysiseksi alle ${esc(lod.materialize_m || 600)} m</div></div>
+          fyysinen alle ${esc(lod.render_m || 1000)} m</div></div>
         <div class="s OK">ONLINE</div></div>`).join("");
   const playersSection = `
     <div class="section"><h2>Pelaajat</h2><div class="health">${players ||
@@ -748,12 +748,10 @@ function renderWorld() {
     </div>
 
     <div class="section">
-      <h2>Etäisyystilat</h2>
+      <h2>Render-ympyrä</h2>
       <div class="kv">
-        <b>FULL</b><span>≤ ${lod.full_m ?? "–"} m</span>
-        <b>LIGHT</b><span>≤ ${lod.light_m ?? "–"} m</span>
-        <b>Materialisointi</b><span>≤ ${lod.materialize_m ?? "–"} m</span>
-        <b>Virtualisointi</b><span>&gt; ${lod.virtualize_m ?? "–"} m</span>
+        <b>Fyysinen</b><span>≤ ${lod.render_m ?? "–"} m pelaajasta (kartalla, korkeus ei vaikuta)</span>
+        <b>Virtuaalinen</b><span>&gt; ${lod.render_m ?? "–"} m</span>
       </div>
       <div class="note">Kartan piste on virtuaalinen sijainti, ellei ryhmä ole
         merkitty fyysiseksi. Vihreä rengas = ryhmällä on pelissä oikea hahmo.</div>

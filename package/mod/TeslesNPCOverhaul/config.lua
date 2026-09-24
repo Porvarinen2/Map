@@ -1,7 +1,7 @@
 -- TESLES NPC OVERHAUL - server configuration.
 -- Distances are Unreal units unless a name says otherwise. 100 UU = 1 metre.
 return {
-    Version = "1.4.3",
+    Version = "1.4.4",
 
     -- ---------------------------------------------------------- population --
     Enabled = true,
@@ -42,13 +42,10 @@ return {
     PhysicalWalkSpeedUU = 300,
     PhysicalTravelSpeedUU = 420,
 
-    -- ------------------------------------------------- level of detail -----
-    -- Guide bands: FULL <= 200 m, LIGHT <= 700 m, VIRTUAL beyond.
-    -- Materialize / virtualize carry hysteresis so groups do not flicker.
-    FullDistanceUU = 20000,
-    LightDistanceUU = 70000,
-    MaterializeDistanceUU = 60000,
-    VirtualizeDistanceUU = 88000,
+    -- ------------------------------------------------------ render circle ---
+    -- A squad within this map distance (2D, height ignored) of any player is
+    -- physical; beyond it, virtual. Nothing in between.
+    RenderRadiusUU = 100000,        -- 1 km
     MaxPhysicalGroups = 12,
     -- One spawn per tick until this server proves it can materialise an NPC,
     -- then the larger budget. Class loading, physics, AI and replication all
