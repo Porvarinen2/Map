@@ -32,11 +32,15 @@ Ph.tuning = {
 
 Ph.LOD = { FULL = "FULL", LIGHT = "LIGHT", VIRTUAL = "VIRTUAL" }
 
-function Ph.nearest_player_distance(pos, players)
+-- Distance to the nearest player. Height counts only where it is real - a
+-- materialised actor. A virtual marker's Z is 0 or stale, and on high ground
+-- the player's Z alone put a squad standing next to them 720 m "away": the
+-- hunters at C2 that never materialised. Virtual positions use map distance.
+function Ph.nearest_player_distance(pos, players, real_height)
     if not players or #players == 0 then return math.huge end
     local best = math.huge
     for _, p in ipairs(players) do
-        local d = U.dist3d(pos, p)
+        local d = real_height and U.dist3d(pos, p) or U.dist2d(pos, p)
         if d < best then best = d end
     end
     return best
@@ -44,10 +48,11 @@ end
 
 -- LOD band for a group. The closest member decides, as the guide specifies.
 function Ph.group_lod(group, players)
-    local best = Ph.nearest_player_distance(group.position, players)
+    -- A physical group's marker is its driver's actor, with a real height.
+    local best = Ph.nearest_player_distance(group.position, players, group.physical == true)
     for _, m in ipairs(group.members) do
         if m.alive and m.position then
-            local d = Ph.nearest_player_distance(m.position, players)
+            local d = Ph.nearest_player_distance(m.position, players, m.materialized == true)
             if d < best then best = d end
         end
     end

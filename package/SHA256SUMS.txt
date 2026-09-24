@@ -5,7 +5,7 @@
 9bb8ba1e2427607eba3fef69f1c5e31d415b5fbb4a1934e0b788d4f7a800c3e8  ./INSTALL.bat
 6c53708ce40a1eda7dabcc32f3c90e20aba4779c06b566648c32a0bdd0d2b2d5  ./INSTALL.ps1
 58bc38530d9421c875eb68d10409f2542e243174ebc72273a3d95e4e264d5eac  ./INSTALL_UE4SS.ps1
-13913855f8687a020e08da0141c06bcde8c6b2ae2d0f15214da4e29ccdacb74d  ./README_FI.txt
+1139e010d16cd89153c3787f5f7b969dc1df2368979b32286cc0674d5c8524dc  ./README_FI.txt
 534fd20016c11814521d13028613feaeea1b5cd0c5af6ad34f7791e16a2567b2  ./START_LIVEMAP.bat
 dc8e6a8bca239e15299329261a662f309a9e6f61d01b6ecea9f6d7df08b80e29  ./UNINSTALL.ps1
 bc79dab5d3fe76aad359989fffaab8057df9870af27c3a09f882f96cecf6af02  ./lisatyokalut/CHECK.bat
@@ -24,7 +24,7 @@ dd7d1d1d763b90a8639721979d65a0e6452bbb792cd70fbddfb1e278d590c65a  ./livemap/serv
 c49d246464982d6a0347e0468a19f90a867fd08987a06a4fe23d988a2a32b87e  ./mod/TeslesNPCOverhaul/Scripts/main.lua
 9eb73c028c6fcba9855965108eed80d6b2727505604292a1d66905d367c6ab58  ./mod/TeslesNPCOverhaul/bridge/scum.lua
 ed1b9d5ba325bc6dc6b7685cc538dffa8855579050d0a61344025a81a2326039  ./mod/TeslesNPCOverhaul/bridge/telemetry.lua
-c2eb3dedef506191f550ab4044c07f9aa53a3053eb0a6616157f0b82f50965c3  ./mod/TeslesNPCOverhaul/config.lua
+fa5dea7d0e367b1e513dfdec46de9321d7b16a5bce7bf115b124dec70f637981  ./mod/TeslesNPCOverhaul/config.lua
 f3f83b3a8357fc612df9377c599c1f17942ef246cbdffedd1d02d29efc882159  ./mod/TeslesNPCOverhaul/core/log.lua
 618e812f17ad45279b1b041b3c737033a6869f6942a883e312b4ee17c7cc4d9f  ./mod/TeslesNPCOverhaul/core/persist.lua
 071cddc413970f7da176b50d605e7061d0e6f5fc138299cc36e426380f0b8c1e  ./mod/TeslesNPCOverhaul/core/rng.lua
@@ -43,9 +43,9 @@ e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  ./mod/TeslesNP
 226664c9a4d780be247aad83905b6a225fe5040cb58684ea05654b95ea06ae63  ./mod/TeslesNPCOverhaul/sim/activity.lua
 b5cfbd8f00727ece0b77d4b8a271e0dce27c480958f9a5f14928c6cc928af5b0  ./mod/TeslesNPCOverhaul/sim/buildings.lua
 2f5a363f242c7ee913b245097ffd8367f8aeea31c42f16b1037e46f0b7badcbd  ./mod/TeslesNPCOverhaul/sim/combat.lua
-1b8b8266510995c5e32941b117729bf98d8b6bbb7eec69b9fee112cdb7a86e0c  ./mod/TeslesNPCOverhaul/sim/director.lua
+77429f2c566ad988b979a7c7413be77f29439c389379dff6616592c57c094fe7  ./mod/TeslesNPCOverhaul/sim/director.lua
 69f6f0d91b77b00fede91e02a507cc86900e50a906df6fe1c4fd1ba5b181ee84  ./mod/TeslesNPCOverhaul/sim/movement.lua
-42a617120f1774d6709af383cd591a83ca0f585cce2d5c9641423ee083d64f63  ./mod/TeslesNPCOverhaul/sim/physical.lua
+cc6d7b9196916bcd8ef99ac34596664bed3f6360eed45b99194e496bf7e79458  ./mod/TeslesNPCOverhaul/sim/physical.lua
 feeb8b6c248fc4e6eb8f94ff5fff8b7a18af1fba093db1bee138596d0720284f  ./mod/TeslesNPCOverhaul/sim/population.lua
 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  ./mod/TeslesNPCOverhaul/state/.keep
 d874852996358bdedc4fe348d75b055c846fb4faf25fcc1d5a33b23480703e1c  ./mod/TeslesNPCOverhaul/world/c0_sweep.lua

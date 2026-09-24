@@ -308,6 +308,17 @@ do
 end
 
 print("")
+print("== materialise distance on high ground ==")
+do
+    local Ph = require("sim.physical")
+    -- A virtual squad has Z 0; the player stands 720 m up on a hill next to it.
+    local group = { position = { X = 1000, Y = 1000, Z = 0 }, members = {} }
+    local lod, d = Ph.group_lod(group, { { X = 1400, Y = 1000, Z = 72000 } })
+    check(d < 1000 and lod == "FULL", string.format("a squad 4 m away is 4 m away, whatever the height (%.0f UU, %s)", d, lod))
+    check(Ph.wants_physical(group, d), "and it materialises")
+end
+
+print("")
 print("== death detection ==")
 do
     package.loaded["bridge.scum"] = nil

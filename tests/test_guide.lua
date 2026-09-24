@@ -196,8 +196,13 @@ grp.members[2].position = { X = 15000, Y = 0, Z = 0 }
 local lod = Physical.group_lod(grp, { { X = 15500, Y = 0, Z = 0 } })
 check(lod == "FULL", "yhden jasenen laheisyys nostaa koko ryhman lahitilaan")
 
+-- Height counts where it is real: members with a body in the world.
+for _, m in ipairs(grp.members) do m.materialized = true end
+grp.physical = true
 local hi = Physical.group_lod(grp, { { X = 0, Y = 0, Z = 30000 } })
 check(hi == "LIGHT", "etaisyys lasketaan myos korkeudessa")
+for _, m in ipairs(grp.members) do m.materialized = false end
+grp.physical = false
 
 section("combat and buildings")
 check(Combat.tuning.contact_uu == 12000, "vihamielinen ryhmakontakti noin 120 m")

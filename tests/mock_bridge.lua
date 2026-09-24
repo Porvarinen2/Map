@@ -57,10 +57,17 @@ function B.actor_health(h)
     return a and (a.hp or 100) or nil
 end
 
-function B.move_to(h, dest)
+function B.move_to(h, dest, opts)
     local a = B.actors[h]
     if not a then return false end
     a.follow = nil
+    -- SCUM's navmesh is a small patch around its AI: a pathfinding request
+    -- is accepted and then goes nowhere.
+    if B.pathfinding_goes_nowhere and not (opts and opts.direct) then
+        a.target = nil
+        B.stats.moves = B.stats.moves + 1
+        return true
+    end
     local ok = a:command(dest)
     if ok then B.stats.moves = B.stats.moves + 1 else B.stats.rejects = B.stats.rejects + 1 end
     return ok

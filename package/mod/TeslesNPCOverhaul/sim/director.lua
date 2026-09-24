@@ -416,13 +416,29 @@ function D:move_physical(group, dt)
                 or U.dist2d(pos, st.target) < STEER.reached
                 or (U.dist2d(carrot, st.target) > STEER.retarget
                     and now - (st.at or 0) >= STEER.retarget_sec)
-                or now - (st.at or 0) >= STEER.stale_sec)
+                or now - (st.at or 0) >= STEER.stale_sec
+                or (now - (st.still and st.still.at or now) >= 5 and now - (st.at or 0) >= 5))
             if need and now >= (st.backoff_until or 0) then
-                local direct = st.direct_until and now < st.direct_until
-                local ok = self.bridge.move_to(lead.runtime_id, carrot, { direct = direct, radius = 120 })
-                if not ok and not direct then
+                -- Straight at the carrot by default: the route is already
+                -- checked against the terrain, and a navmesh request out here
+                -- only reaches the edge of the small patch SCUM builds around
+                -- its AI - the 1.4.2 log has the leader accepted and standing
+                -- still for 40 s. Pathfinding is the way round an obstacle
+                -- when a straight walk has stopped making ground.
+                local stuck = now - (st.still and st.still.at or now) >= 5
+                local pathfind = false
+                if stuck then
+                    -- Alternate: pathfinding round the obstacle, then straight
+                    -- again, so neither can leave the leader standing for good.
+                    st.unstick = (st.unstick or 0) + 1
+                    pathfind = st.unstick % 2 == 1
+                else
+                    st.unstick = 0
+                end
+                local ok = self.bridge.move_to(lead.runtime_id, carrot,
+                    { direct = not pathfind, radius = 120 })
+                if not ok and pathfind then
                     ok = self.bridge.move_to(lead.runtime_id, carrot, { direct = true, radius = 120 })
-                    if ok then st.direct_until = now + 30 end
                 end
                 if ok then
                     st.target, st.at, st.force, st.fails = carrot, now, false, 0

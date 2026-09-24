@@ -38,6 +38,7 @@ Bridge.reset()
 Bridge.configure(rng, { spawn_fail_rate = 0, move_reject_rate = 0.05 })
 -- SCUM ignores the requested speed: every actor walks at 125 UU/s.
 local SCUM_PACE = 125
+Bridge.pathfinding_goes_nowhere = true
 Bridge.set_speed = function(h, v)
     local a = Bridge.actors[h]
     if a then a.speed = SCUM_PACE end
