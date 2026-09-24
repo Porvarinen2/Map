@@ -421,12 +421,25 @@ if (Test-Path -LiteralPath $gearPath0) {
   if ($m0.Success) {
     $blk = $m0.Value
     $old = ($blk -match 'Christmas_Pants_02|Ghillie_Suit_Pants_01|Asu\s*=\s*0') -or
-           ($blk -match 'Weapons\s*=\s*\{\s*"Weapon_M1911"\s*\}')
+           ($blk -match 'Weapons\s*=\s*\{\s*"Weapon_M1911"\s*\}') -or
+           ($blk -match 'Weapons\s*=\s*\{\s*"Weapon_SCAR_DMR"\s*\}')
     if ($old) {
-      $new = "KAIKKI = {`r`n        Weapons = { `"Weapon_SCAR_DMR`" },`r`n    }"
+      $new = "KAIKKI = {`r`n        Weapons = { `"Weapon_SCAR_DMR`", `"Weapon_AS_Val`" },`r`n    }"
       [System.IO.File]::WriteAllText($gearPath0, $g0.Substring(0, $m0.Index) + $new + $g0.Substring($m0.Index + $m0.Length))
       Say "varusteet.lua: KAIKKI-testi -> Weapons = Weapon_SCAR_DMR (sama ase kaikille)." "Green"
     }
+  }
+}
+# The police patrol wears the guard body unless the owner chose otherwise.
+$gearPathP = Join-Path $target 'varusteet.lua'
+if (Test-Path -LiteralPath $gearPathP) {
+  $gp = [System.IO.File]::ReadAllText($gearPathP)
+  $reP = [regex]'police_patrol\s*=\s*\{(?:[^{}]|\{[^{}]*\})*\}'
+  $mp = $reP.Match($gp)
+  if ($mp.Success -and $mp.Value -notmatch 'Runko') {
+    $pv = ([regex]'police_patrol\s*=\s*\{').Replace($mp.Value, "police_patrol = {`r`n        Runko = `"Guard`",", 1)
+    [System.IO.File]::WriteAllText($gearPathP, $gp.Substring(0, $mp.Index) + $pv + $gp.Substring($mp.Index + $mp.Length))
+    Say "varusteet.lua: police_patrol Runko = Guard (vartija-asut)." "Green"
   }
 }
 # An older varusteet.lua has no KAIKKI section (gear for every squad). Add it
@@ -435,7 +448,7 @@ $gearPath = Join-Path $target 'varusteet.lua'
 if ((Test-Path -LiteralPath $gearPath)) {
   $gearText = [System.IO.File]::ReadAllText($gearPath)
   if ($gearText -notmatch 'KAIKKI' -and $gearText -match 'return\s*\{') {
-    $block = "return {`r`n    -- KAIKKI: nama saa jokainen NPC jokaisessa ryhmassa (lisaksi ryhman omat).`r`n    KAIKKI = {`r`n        Weapons = { `"Weapon_SCAR_DMR`" },`r`n    },"
+    $block = "return {`r`n    -- KAIKKI: nama saa jokainen NPC jokaisessa ryhmassa (lisaksi ryhman omat).`r`n    KAIKKI = {`r`n        Weapons = { `"Weapon_SCAR_DMR`", `"Weapon_AS_Val`" },`r`n    },"
     $gearText = ([regex]'return\s*\{').Replace($gearText, $block, 1)
     [System.IO.File]::WriteAllText($gearPath, $gearText)
     Say "varusteet.lua: lisattiin KAIKKI-kohta (testi: Weapon_SCAR_DMR)." "Green"

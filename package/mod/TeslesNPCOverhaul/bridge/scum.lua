@@ -2258,7 +2258,12 @@ function B.apply_loadout(handle, loadout, label)
         if ok and res then given = given + 1
         elseif not ok then lnote(label .. ": " .. name .. " - error: " .. tostring(res)) end
     end
-    local w = (loadout.Weapons or {})[1]
+    -- Weapons is a wish list: the first one this server has is used.
+    local w = nil
+    for _, name in ipairs(loadout.Weapons or {}) do
+        local okc, c = pcall(B.find_item_class, name)
+        if okc and c then w = name; break end
+    end
     if w then
         B.pending_weapons[handle] = { name = w, label = label, deadline = os.time() + B.weapon_wait_sec }
         pcall(B.tick_weapons, os.time())

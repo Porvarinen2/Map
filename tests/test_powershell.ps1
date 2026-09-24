@@ -219,6 +219,34 @@ return {
 Check ((Get-LuaKaikkiWeapon (Join-Path $modDir "varusteet.lua")) -eq "Weapon_SCAR_DMR" -and
        ((Get-Content -Raw (Join-Path $modDir "varusteet.lua")) -match 'My_Own_Shirt')) `
       "the gear file 1.8.0 broke is repaired, the owner's lines stay"
+# 1.8.3's SCAR-only test with a police block lacking Runko.
+Set-Content -LiteralPath (Join-Path $modDir "varusteet.lua") -Value @"
+return {
+    KAIKKI = {
+        Weapons = { "Weapon_SCAR_DMR" },
+    },
+    police_patrol = {
+        Clothes = {},
+        Weapons = {},
+        Items = {},
+    },
+}
+"@
+& (Join-Path $pkg "INSTALL.ps1") -ServerRoot (Join-Path $lab "server") `
+  -SkipUE4SS -NoMap -Yes -NoPause | Out-Null
+$gear = Get-Content -Raw (Join-Path $modDir "varusteet.lua")
+Check ($gear -match 'Weapon_AS_Val' -and $gear -match 'Runko = "Guard"') `
+      "the SCAR test gets a fallback weapon and the police patrol the guard body"
+$pr = "Guard"
+if (Get-Command lua5.4 -ErrorAction SilentlyContinue) {
+  $pp = (Join-Path $modDir "varusteet.lua") -replace '\\','/'
+  $pr = (& lua5.4 -e "print(dofile('$pp').police_patrol.Runko)")
+}
+Check ($pr -eq "Guard") "and Lua reads the police Runko"
+& (Join-Path $pkg "INSTALL.ps1") -ServerRoot (Join-Path $lab "server") `
+  -SkipUE4SS -NoMap -Yes -NoPause | Out-Null
+$gear2 = Get-Content -Raw (Join-Path $modDir "varusteet.lua")
+Check ($gear2 -eq $gear) "a second install changes nothing more"
 
 # DIAGNOSE packs the gear files and the gear log.
 Set-Content -LiteralPath (Join-Path (Join-Path $modDir "output") "npc_loadout.txt") -Value "LOADOUT LOG"

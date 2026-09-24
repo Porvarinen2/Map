@@ -10,7 +10,8 @@
 -- SCUM arpoo asun tyypin omasta listasta pelaajan koneella, joten
 -- yksittaista vaatetta tai asua palvelin ei voi valita (kokeiltu 1.7.x).
 --
--- Weapons = ase #SpawnItem-nimella, esim. { "Weapon_M1911" }.
+-- Weapons = aseet #SpawnItem-nimella toivejarjestyksessa: NPC saa ensimmaisen,
+-- jonka modi loytaa, esim. { "Weapon_SCAR_DMR", "Weapon_AS_Val" }.
 --
 --   police_patrol = {
 --       Runko = "Guard",
@@ -27,7 +28,7 @@ return {
     -- KAIKKI: koskee jokaista NPC:ta jokaisessa ryhmassa.
     -- Testi: kaikille sama ase, jotta nahdaan toimiiko aseen vaihto.
     KAIKKI = {
-        Weapons = { "Weapon_SCAR_DMR" },
+        Weapons = { "Weapon_SCAR_DMR", "Weapon_AS_Val" },
     },
     police_patrol = {
         Runko = "Guard",
