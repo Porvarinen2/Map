@@ -347,6 +347,10 @@ local function start()
         f:write(table.concat(lines, "\n"), "\n")
         f:close()
     end
+    Bridge.on_catalog = function(key, how)
+        Log.info("NPC class " .. key .. ": " .. how)
+        boot("npc class " .. key .. ": " .. how)
+    end
     Bridge.init(CFG)
     boot("bridge init: " .. (Bridge.available() and "engine available"
         or "engine NOT available yet"))

@@ -369,6 +369,35 @@ function draw() {
     const live = state.groups.find(g => g.gid === selected.gid);
     if (live) { if (show.routes) drawRoute(live); drawGroup(live); }
   }
+  (state.players || []).forEach(drawPlayer);
+}
+
+// A player: white diamond with a dashed ring at the materialise distance, so
+// it is obvious how close a group has to be before it becomes real in game.
+function drawPlayer(p) {
+  const s = worldToScreen(p.x, p.y);
+  const lod = state.lod || {};
+  const ring = worldToScreen(p.x + (lod.materialize_m || 600) * 100, p.y);
+  const rr = Math.abs(ring.x - s.x);
+  if (rr > 4) {
+    ctx.save();
+    ctx.setLineDash([6, 5]);
+    ctx.strokeStyle = "rgba(255,255,255,0.55)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(s.x, s.y, rr, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+  }
+  ctx.save();
+  ctx.translate(s.x, s.y); ctx.rotate(Math.PI / 4);
+  ctx.fillStyle = "#ffffff"; ctx.strokeStyle = "#111"; ctx.lineWidth = 2;
+  ctx.fillRect(-6, -6, 12, 12); ctx.strokeRect(-6, -6, 12, 12);
+  ctx.restore();
+  ctx.font = "12px system-ui, sans-serif";
+  ctx.fillStyle = "#fff"; ctx.strokeStyle = "rgba(0,0,0,0.8)"; ctx.lineWidth = 3;
+  const label = "PELAAJA" + (p.nearest_m != null
+    ? `  lähin ryhmä ${(p.nearest_m / 1000).toFixed(1)} km` : "");
+  ctx.strokeText(label, s.x + 12, s.y - 10);
+  ctx.fillText(label, s.x + 12, s.y - 10);
 }
 
 /* --------------------------------------------------------------- filters */
@@ -401,6 +430,16 @@ function bar(v, max, cls) {
 function renderWorld() {
   const s = state.stats || {};
   const lod = state.lod || {};
+  const players = (state.players || []).map(p => `
+      <div class="h"><div><div class="k">Pelaaja kartalla</div>
+        <div class="d">lähin ryhmä ${esc(p.nearest_gid || "-")} · ${
+          p.nearest_m != null ? (p.nearest_m / 1000).toFixed(2) + " km" : "-"} ·
+          fyysiseksi alle ${esc(lod.materialize_m || 600)} m</div></div>
+        <div class="s OK">ONLINE</div></div>`).join("");
+  const playersSection = `
+    <div class="section"><h2>Pelaajat</h2><div class="health">${players ||
+      '<div class="h"><div><div class="k">Ei pelaajia</div><div class="d">Pelaaja näkyy ' +
+      '30 s liittymisen jälkeen.</div></div><div class="s PENDING">-</div></div>'}</div></div>`;
   const waiting = state.waiting ? `
     <div class="section">
       <h2>Odottaa dataa</h2>
@@ -425,6 +464,7 @@ function renderWorld() {
 
   return `<div class="pad">
     ${waiting}
+    ${playersSection}
     <div class="section">
       <h2>Populaatio</h2>
       <div class="grid2">

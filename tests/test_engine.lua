@@ -209,4 +209,31 @@ do
 end
 
 print("")
+print("== NPC class loading ==")
+-- On a live server the Drifter Blueprints are not in memory until loaded, so
+-- StaticFindObject alone never found them and nothing could ever spawn.
+do
+    local loaded, loads = {}, 0
+    local fake_class = { IsValid = function() return true end,
+                         GetFullName = function() return "BlueprintGeneratedClass BP_Drifter" end }
+    _G.StaticFindObject = function(path) return loaded[path] and fake_class or nil end
+    _G.LoadAsset = function(path) loads = loads + 1; loaded[path] = true end
+    package.loaded["bridge.scum"] = nil
+    local SB = require("bridge.scum")
+    SB.cfg = {}
+    local calls = 0
+    while (SB.catalog_pending or 1) > 0 and calls < 20 do
+        SB.maybe_refresh_catalog(1000 + calls); calls = calls + 1
+    end
+    check(loads == 10, "every Drifter class is loaded once (" .. loads .. " loads)")
+    check(calls == 10, "one load per tick, never a burst (" .. calls .. " ticks)")
+    check(SB.catalog_found == 5, "all five levels resolve after loading")
+    check(SB.class_for(3, "Radiation") ~= nil, "a radiation variant resolves")
+    local before = loads
+    for k = 1, 30 do SB.maybe_refresh_catalog(2000 + k) end
+    check(loads == before, "a complete catalog is never reloaded")
+    _G.StaticFindObject, _G.LoadAsset = nil, nil
+end
+
+print("")
 os.exit(fails == 0 and 0 or 1)

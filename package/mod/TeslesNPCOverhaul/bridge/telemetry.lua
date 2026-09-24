@@ -229,7 +229,27 @@ function T.snapshot(world, bridge, director, extra)
         skillDefs[i] = { name = s.fi, key = s.key, group = s.group }
     end
 
+    -- Players as the director sees them (after the join grace), and the
+    -- distance to the nearest group, so the map can answer "where are the
+    -- NPCs relative to me".
+    local players = {}
+    local plist = (bridge and bridge.player_positions and bridge.player_positions()) or {}
+    for _, p in ipairs(plist) do
+        local best = nil
+        for _, g in ipairs(world.groups) do
+            if g.position then
+                local dx, dy = g.position.X - p.X, g.position.Y - p.Y
+                local d = math.sqrt(dx * dx + dy * dy)
+                if not best or d < best.d then best = { d = d, gid = g.gid } end
+            end
+        end
+        players[#players + 1] = { x = p.X, y = p.Y,
+            nearest_gid = best and best.gid or nil,
+            nearest_m = best and math.floor(best.d / 100) or nil }
+    end
+
     return {
+        players = players,
         version = extra and extra.version or "1.0.0",
         traitDefs = traitDefs,
         skillDefs = skillDefs,

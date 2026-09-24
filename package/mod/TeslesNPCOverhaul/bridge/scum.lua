@@ -222,64 +222,97 @@ local function class_is_valid(c)
     return type(n) == "string" and n ~= "" and n:find("Drifter") ~= nil
 end
 
--- Finds and caches the NPC classes this server actually exposes. The guide is
--- explicit that a catalog hit is not proof of a successful spawn, so this only
--- reports what was found.
-function B.refresh_catalog()
-    local found, missing = 0, {}
-    for level = 1, 5 do
-        for _, variant in ipairs({ false, "Radiation" }) do
-            local key = level .. (variant or "")
-            if not class_cache[key] then
-                local path = level_path(level, variant or nil)
-                local ok, c = pcall(function() return StaticFindObject(path) end)
-                if ok and class_is_valid(c) then
-                    class_cache[key] = c
-                    found = found + 1
-                elseif not variant then
-                    -- Fall back to a live instance's class if the asset path
-                    -- has moved between game versions.
-                    local ok2, o = pcall(function() return FindFirstOf(level_short(level) .. "_C") end)
-                    if ok2 and valid(o) then
-                        local okc, c2 = pcall(function() return o:GetClass() end)
-                        if okc and class_is_valid(c2) then
-                            class_cache[key] = c2
-                            found = found + 1
-                        end
-                    end
-                end
+-- Finds, and if needed loads, the NPC classes. A Blueprint class is not in
+-- memory until something uses it, so StaticFindObject alone found nothing on a
+-- live server and no NPC could ever be spawned. LoadAsset (UE4SS, game thread
+-- only - which is where the tick runs) loads the package; the class can then
+-- be found by path.
+--
+-- At most one load per call: loading a Blueprint is disk and CPU work on the
+-- game thread, and ten of them in one tick is a visible hitch. The old
+-- fallback, FindFirstOf("BP_Drifter_Lvl_N_C"), walked the whole object array
+-- five times per retry - the one-second ticks every 45 s in the server logs.
+local catalog_order = {}
+for level = 1, 5 do
+    catalog_order[#catalog_order + 1] = { level = level }
+end
+for level = 1, 5 do
+    catalog_order[#catalog_order + 1] = { level = level, variant = "Radiation" }
+end
+local catalog_failed = {}
+
+local function find_class(path)
+    local ok, c = pcall(function() return StaticFindObject(path) end)
+    if ok and class_is_valid(c) then return c end
+    return nil
+end
+
+local function load_class(level, variant)
+    local path = level_path(level, variant)
+    local c = find_class(path)
+    if c then return c, "found" end
+    if not have("LoadAsset") then return nil, "LoadAsset unavailable" end
+    crumb("LoadAsset " .. path)
+    local ok, err = pcall(function() LoadAsset(path) end)
+    if not ok then
+        note_api_error("LoadAsset(" .. level_short(level) .. (variant and ("_" .. variant) or "") .. ")", err)
+    end
+    c = find_class(path)
+    if c then return c, "loaded" end
+    return nil, ok and "not found after load" or tostring(err)
+end
+
+function B.refresh_catalog(max_loads)
+    max_loads = max_loads or 1
+    local loads = 0
+    for _, e in ipairs(catalog_order) do
+        local key = e.level .. (e.variant or "")
+        local cached = class_cache[key]
+        if not (cached and valid(cached)) and not catalog_failed[key] and loads < max_loads then
+            loads = loads + 1
+            local c, how = load_class(e.level, e.variant)
+            if c then
+                class_cache[key] = c
+                if B.on_catalog then pcall(B.on_catalog, key, how) end
             else
-                found = found + 1
+                catalog_failed[key] = how
+                if B.on_catalog then pcall(B.on_catalog, key, "FAILED: " .. tostring(how)) end
             end
         end
     end
+
+    local found, missing = 0, {}
     for level = 1, 5 do
-        if not class_cache[tostring(level)] and not class_cache[level] then
-            missing[#missing + 1] = "L" .. level
-        end
+        if class_cache[tostring(level)] then found = found + 1
+        else missing[#missing + 1] = "L" .. level end
+    end
+    local pending = 0
+    for _, e in ipairs(catalog_order) do
+        local key = e.level .. (e.variant or "")
+        if not class_cache[key] and not catalog_failed[key] then pending = pending + 1 end
     end
     B.catalog_found = found
+    B.catalog_pending = pending
     if found >= 5 then
-        set_health("spawnCatalog", "OK", found .. " NPC classes resolved")
+        set_health("spawnCatalog", "OK", found .. " NPC classes loaded")
+    elseif pending > 0 then
+        set_health("spawnCatalog", "PENDING", found .. " loaded, " .. pending .. " still to load")
     elseif found > 0 then
         set_health("spawnCatalog", "DEGRADED",
             found .. " classes, missing " .. table.concat(missing, ","))
     else
-        set_health("spawnCatalog", "PENDING", "no SCUM NPC class catalog yet")
+        set_health("spawnCatalog", "DEGRADED", "no Drifter class could be loaded")
     end
     return found
 end
 
--- Assets load as the server finishes starting, so a catalog that was empty at
--- boot is not permanently empty. Rescan on a backoff until classes appear,
--- then stop: repeating a successful scan is pure game-thread cost.
+-- One class per tick until every class is either loaded or has failed once.
+-- After that the catalog is left alone: a failure is written down, not
+-- retried every tick.
 function B.maybe_refresh_catalog(now)
-    if (B.catalog_found or 0) >= 5 then return false end
-    now = now or os.time()
-    if B.catalog_next_scan and now < B.catalog_next_scan then return false end
-    B.catalog_next_scan = now + CATALOG_RETRY_SEC
+    if (B.catalog_pending or 1) == 0 then return false end
     local before = B.catalog_found or 0
-    B.refresh_catalog()
+    B.refresh_catalog(1)
     return (B.catalog_found or 0) > before
 end
 
