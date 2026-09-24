@@ -1428,10 +1428,25 @@ end
 --   2. spawn the item next to the NPC
 --   3. hand it to the NPC through whichever equip call SCUM exposes
 local loadout_log = {}
+-- The header (what varusteet.lua configures) is written at boot and kept at
+-- the top, so the file exists and says something even before any spawn.
+B.loadout_header = B.loadout_header or {}
+function B.write_loadout_log()
+    if not B.write_file then return end
+    local lines = {}
+    for _, l in ipairs(B.loadout_header) do lines[#lines + 1] = l end
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = "--- attempts ---"
+    if #loadout_log == 0 then
+        lines[#lines + 1] = "(none yet: no NPC with gear has materialised this session)"
+    end
+    for _, l in ipairs(loadout_log) do lines[#lines + 1] = l end
+    pcall(B.write_file, "npc_loadout.txt", table.concat(lines, "\n") .. "\n")
+end
 local function lnote(text)
     loadout_log[#loadout_log + 1] = os.date("%H:%M:%S") .. "  " .. text
     if #loadout_log > 400 then table.remove(loadout_log, 1) end
-    if B.write_file then pcall(B.write_file, "npc_loadout.txt", table.concat(loadout_log, "\n") .. "\n") end
+    B.write_loadout_log()
 end
 B.loadout_note = lnote
 

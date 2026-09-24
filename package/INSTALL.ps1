@@ -408,6 +408,18 @@ foreach ($uf in $keepUser.Keys) {
     Say "Omat asetukset sailytettiin: $uf" "Green"
   }
 }
+# An older varusteet.lua has no KAIKKI section (gear for every squad). Add it
+# right after "return {" with the owner's test item - their own lines stay.
+$gearPath = Join-Path $target 'varusteet.lua'
+if ((Test-Path -LiteralPath $gearPath)) {
+  $gearText = [System.IO.File]::ReadAllText($gearPath)
+  if ($gearText -notmatch 'KAIKKI' -and $gearText -match 'return\s*\{') {
+    $block = "return {`r`n    -- KAIKKI: nama saa jokainen NPC jokaisessa ryhmassa (lisaksi ryhman omat).`r`n    KAIKKI = {`r`n        Clothes = { `"Christmas_Pants_02`" },`r`n        Weapons = {},`r`n        Items = {},`r`n    },"
+    $gearText = ([regex]'return\s*\{').Replace($gearText, $block, 1)
+    [System.IO.File]::WriteAllText($gearPath, $gearText)
+    Say "varusteet.lua: lisattiin KAIKKI-kohta (testi: Christmas_Pants_02)." "Green"
+  }
+}
 if ($keepOutput) {
   Copy-Item -Path (Join-Path $keepOutput '*') -Destination $outDirEarly -Recurse -Force `
             -ErrorAction SilentlyContinue

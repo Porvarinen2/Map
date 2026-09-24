@@ -5,6 +5,7 @@
   boot log, UE4SS's log, mods.txt, and the folder listings. Writes a zip next
   to this script.
 #>
+param([switch]$NoPause)
 $ErrorActionPreference = "SilentlyContinue"
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $MOD = "TeslesNPCOverhaul"
@@ -63,6 +64,20 @@ if ($out) {
       $report += ""
       $report += "--- $f (last 60 lines) ---"
       $report += (Get-Content $p -Tail 60)
+    } else {
+      $report += ""
+      $report += "--- $f : MISSING ---"
+    }
+  }
+
+  # The owner's own gear and squad files, as the mod reads them.
+  foreach ($f in @("varusteet.lua", "ryhmat.lua")) {
+    $p = Join-Path (Split-Path $out -Parent) $f
+    if (Test-Path $p) {
+      Copy-Item $p (Join-Path $tmp $f) -Force
+      $report += ""
+      $report += "--- $f ---"
+      $report += (Get-Content $p)
     } else {
       $report += ""
       $report += "--- $f : MISSING ---"
@@ -197,4 +212,4 @@ Say "Modin oma tila:" "Cyan"
 $report | Where-Object { $_ -match "^--- (boot|director)\.log" } |
   ForEach-Object { Write-Host "    $_" }
 Write-Host ""
-Read-Host "  Enter sulkee"
+if (-not $NoPause) { Read-Host "  Enter sulkee" }

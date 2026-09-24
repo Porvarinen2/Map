@@ -157,8 +157,45 @@ Set-Content -LiteralPath (Join-Path (Join-Path $modDir "output") "live_state.jso
 Set-Content -LiteralPath (Join-Path (Join-Path $modDir "output") "director.log") -Value "LOG"
 Set-Content -LiteralPath (Join-Path (Join-Path $modDir "output") "boot.log") -Value "STALE"
 Set-Content (Join-Path (Join-Path $modDir "state") "world_state.json") '{"groups":[]}'
+# An owner's gear file from 1.6.0: their own line, no KAIKKI section.
+Set-Content -LiteralPath (Join-Path $modDir "varusteet.lua") -Value @"
+return {
+    police_patrol = { Clothes = { "My_Own_Shirt" }, Weapons = {}, Items = {} },
+}
+"@
+Set-Content -LiteralPath (Join-Path $modDir "ryhmat.lua") -Value 'return { { avain = "omat_testit" } }'
 & (Join-Path $pkg "INSTALL.ps1") -ServerRoot (Join-Path $lab "server") `
   -SkipUE4SS -NoMap -Yes -NoPause | Out-Null
+$gear = Get-Content -Raw (Join-Path $modDir "varusteet.lua")
+Check ($gear -match 'My_Own_Shirt') "a reinstall keeps the owner's own gear lines"
+Check ($gear -match 'KAIKKI' -and $gear -match 'Christmas_Pants_02') `
+      "an old varusteet.lua gets the KAIKKI section with the test item"
+Check ((Get-Content -Raw (Join-Path $modDir "ryhmat.lua")) -match 'omat_testit') `
+      "a reinstall keeps the owner's own squad classes"
+# The gear file must still be valid Lua after the insert.
+$luaOk = $true
+if (Get-Command lua5.4 -ErrorAction SilentlyContinue) {
+  & lua5.4 -e "assert(loadfile('$((Join-Path $modDir 'varusteet.lua') -replace '\\','/')'))" 2>$null
+  $luaOk = ($LASTEXITCODE -eq 0)
+}
+Check $luaOk "and the patched varusteet.lua still loads"
+
+# DIAGNOSE packs the gear files and the gear log.
+Set-Content -LiteralPath (Join-Path (Join-Path $modDir "output") "npc_loadout.txt") -Value "LOADOUT LOG"
+Get-ChildItem $pkg -Filter "TeslesNPC_Diagnostics_*.zip" | Remove-Item -Force
+& (Join-Path $pkg "DIAGNOSE.ps1") -NoPause | Out-Null
+$dz = Get-ChildItem $pkg -Filter "TeslesNPC_Diagnostics_*.zip" | Select-Object -First 1
+Check ($null -ne $dz) "DIAGNOSE writes its zip"
+if ($dz) {
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  $za = [System.IO.Compression.ZipFile]::OpenRead($dz.FullName)
+  $names = $za.Entries | ForEach-Object { $_.Name }
+  $za.Dispose()
+  Check ($names -contains "varusteet.lua") "the diagnostics zip carries varusteet.lua"
+  Check ($names -contains "ryhmat.lua") "and ryhmat.lua"
+  Check ($names -contains "npc_loadout.txt") "and the gear log"
+  Remove-Item $dz.FullName -Force
+}
 Check (Test-Path (Join-Path (Join-Path $modDir "state") "world_state.json")) `
       "a reinstall keeps the saved world"
 Check (Test-Path (Join-Path (Join-Path $modDir "output") "live_state.json")) `

@@ -188,16 +188,33 @@ end
 -- Squad gear lives in its own file so an update never overwrites it.
 do
     local okv, gear = pcall(require, "varusteet")
+    local header = { "TESLES NPC OVERHAUL - varusteet (" .. os.date("%Y-%m-%d %H:%M:%S") .. ")",
+                     "varusteet.lua: " .. MOD_DIR .. SEP .. "varusteet.lua" }
     if okv and type(gear) == "table" then
         CFG.Loadouts = gear
         local n = 0
-        for _, lo in pairs(gear) do
-            for _, k in ipairs({ "Clothes", "Weapons", "Items" }) do n = n + #(lo[k] or {}) end
+        local keys = {}
+        for key in pairs(gear) do keys[#keys + 1] = key end
+        table.sort(keys)
+        for _, key in ipairs(keys) do
+            local lo = gear[key]
+            local parts = {}
+            for _, k in ipairs({ "Clothes", "Weapons", "Items" }) do
+                n = n + #(lo[k] or {})
+                if #(lo[k] or {}) > 0 then parts[#parts + 1] = k .. ": " .. table.concat(lo[k], ", ") end
+            end
+            header[#header + 1] = "  " .. key .. " = " .. (#parts > 0 and table.concat(parts, " | ") or "(tyhja)")
         end
+        if not gear.KAIKKI then
+            header[#header + 1] = "  (KAIKKI-kohtaa ei ole: vain ryhmakohtaiset varusteet kaytossa)"
+        end
+        header[#header + 1] = "yhteensa " .. n .. " esinetta"
         boot("varusteet.lua: " .. n .. " items configured")
     elseif not okv then
+        header[#header + 1] = "EI VOITU LUKEA: " .. tostring(gear)
         boot("varusteet.lua could not be read: " .. tostring(gear))
     end
+    Bridge.loadout_header = header
 end
 Physical.tuning.max_spawns_per_tick = CFG.MaxSpawnsPerTick or Physical.tuning.max_spawns_per_tick
 Physical.tuning.max_spawns_per_tick_proven = CFG.MaxSpawnsPerTickProven
@@ -388,6 +405,7 @@ local function start()
         f:write(text)
         f:close()
     end
+    if Bridge.write_loadout_log then pcall(Bridge.write_loadout_log) end
     Bridge.on_debug = function(text)
         Log.info(text)
         boot(text)

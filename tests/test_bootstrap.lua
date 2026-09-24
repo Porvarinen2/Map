@@ -89,6 +89,13 @@ end
 
 check(exists(MOD .. "/output/boot.log"), "boot.log written before any module loads")
 check(exists(MOD .. "/output/live_state.json"), "live_state.json written to output/")
+do
+    local lf = io.open(MOD .. "/output/npc_loadout.txt", "r")
+    local lt = lf and lf:read("*a") or ""
+    if lf then lf:close() end
+    check(lt:find("KAIKKI", 1, true) and lt:find("Christmas_Pants_02", 1, true),
+          "npc_loadout.txt exists from boot and lists the configured gear")
+end
 check(exists(MOD .. "/output/director.log"), "director.log written to output/")
 
 -- The boot log is the only diagnostic when the mod goes quiet, so it has to
