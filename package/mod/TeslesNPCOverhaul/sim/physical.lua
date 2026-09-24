@@ -138,7 +138,9 @@ function Ph.materialize(group, bridge, ctx)
                     -- Radiation-zone groups get SCUM's hazmat body variant
                     -- where the server exposes it; the bridge falls back to
                     -- the plain class when it does not.
-                    variant = (group.zone == "RADIATION") and "Radiation" or nil,
+                    variant = (group.zone == "RADIATION") and "Radiation"
+                        or (group.class == "bunker_group") and "AbandonedBunker"
+                        or nil,
                     yaw = ctx.yaw,
                 })
                 if handle then

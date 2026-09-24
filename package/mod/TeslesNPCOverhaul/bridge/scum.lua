@@ -232,12 +232,18 @@ end
 -- game thread, and ten of them in one tick is a visible hitch. The old
 -- fallback, FindFirstOf("BP_Drifter_Lvl_N_C"), walked the whole object array
 -- five times per retry - the one-second ticks every 45 s in the server logs.
+-- The variants this SCUM build actually has, from its own #SpawnArmedNPC
+-- list: every level plain, Radiation only for 3-5 (1 and 2 do not exist - the
+-- two failed loads in every log), AbandonedBunker only for 4 and 5.
 local catalog_order = {}
 for level = 1, 5 do
     catalog_order[#catalog_order + 1] = { level = level }
 end
-for level = 1, 5 do
+for level = 3, 5 do
     catalog_order[#catalog_order + 1] = { level = level, variant = "Radiation" }
+end
+for level = 4, 5 do
+    catalog_order[#catalog_order + 1] = { level = level, variant = "AbandonedBunker" }
 end
 local catalog_failed = {}
 
@@ -443,12 +449,27 @@ local function height_hint(pos)
     return best and best.Z or 20000
 end
 
-function B.ground_at(pos)
-    if not sane(pos) then return nil end
+local kismet_cache = nil
+local function get_kismet()
+    if kismet_cache and valid(kismet_cache) then return kismet_cache end
+    local ok, o = pcall(function()
+        return StaticFindObject("/Script/Engine.Default__KismetSystemLibrary")
+    end)
+    if ok and valid(o) then kismet_cache = o; return o end
+    return nil
+end
+
+-- Navigation projection, the precise answer, only works where the server has
+-- built navmesh. On this server it had none next to the player: every probe in
+-- the 1.1.8 log came back "no navmesh". SCUM builds navigation around AI that
+-- already exists, so the first NPC of an area could never prove its ground.
+--
+-- The fallback asks the landscape directly: a visibility line trace straight
+-- down from well above the guess. The terrain has collision whether or not it
+-- has navmesh, and the NPC then generates navigation around itself.
+local function nav_ground(pos, z0)
     local nav = get_navsys()
-    if not nav then return nil end
-    local z0 = height_hint(pos)
-    crumb(string.format("K2_ProjectPointToNavigation %.0f %.0f %.0f", pos.X, pos.Y, z0))
+    if not nav then return nil, "no nav system" end
     local okp, projected, hit = pcall(function()
         local out = {}
         local r = nav:K2_ProjectPointToNavigation(
@@ -458,14 +479,55 @@ function B.ground_at(pos)
             { X = 800.0, Y = 800.0, Z = 30000.0 })
         return out, r
     end)
-    local v = okp and vec(projected) or nil
-    local z = (sane(v) and v) and v.Z or nil
-    if ground_logged < 5 and B.on_debug then
+    if not okp then return nil, "error: " .. tostring(projected) end
+    if hit == false then return nil, "no navmesh" end
+    local v = vec(projected)
+    if sane(v) then return v.Z end
+    return nil, "no navmesh"
+end
+
+local function trace_ground(pos, z0)
+    local k = get_kismet()
+    if not k then return nil, "no KismetSystemLibrary" end
+    crumb(string.format("LineTraceSingle %.0f %.0f %.0f..%.0f", pos.X, pos.Y, z0 + 40000, z0 - 40000))
+    local ok, out, hit = pcall(function()
+        local o = {}
+        local r = k:LineTraceSingle(
+            B.get_world(),
+            { X = pos.X, Y = pos.Y, Z = z0 + 40000 },
+            { X = pos.X, Y = pos.Y, Z = z0 - 40000 },
+            0,        -- TraceTypeQuery1 = Visibility
+            false,    -- simple collision
+            {},       -- nothing to ignore
+            0,        -- no debug drawing
+            o,        -- OutHit
+            true,     -- ignore self
+            { R = 0, G = 0, B = 0, A = 0 }, { R = 0, G = 0, B = 0, A = 0 },
+            0)
+        return o, r
+    end)
+    if not ok then return nil, "error: " .. tostring(out) end
+    if hit == false then return nil, "trace hit nothing" end
+    local p = vec(out.ImpactPoint) or vec(out.Location)
+    if sane(p) then return p.Z + 60 end
+    return nil, "trace result unreadable"
+end
+
+function B.ground_at(pos)
+    if not sane(pos) then return nil end
+    local z0 = height_hint(pos)
+    crumb(string.format("K2_ProjectPointToNavigation %.0f %.0f %.0f", pos.X, pos.Y, z0))
+    local z, why = nav_ground(pos, z0)
+    local how = "navmesh"
+    if not z then
+        local why_nav = why
+        z, why = trace_ground(pos, z0)
+        how = "line trace (navmesh: " .. tostring(why_nav) .. ")"
+    end
+    if ground_logged < 6 and B.on_debug then
         ground_logged = ground_logged + 1
-        pcall(B.on_debug, string.format("ground probe at %.0f %.0f from Z %.0f -> %s (hit=%s)",
-            pos.X, pos.Y, z0,
-            z and string.format("%.0f", z) or (okp and "no navmesh" or ("error: " .. tostring(projected))),
-            tostring(hit)))
+        pcall(B.on_debug, string.format("ground at %.0f %.0f from Z %.0f -> %s via %s",
+            pos.X, pos.Y, z0, z and string.format("%.0f", z) or ("none: " .. tostring(why)), how))
     end
     return z
 end
