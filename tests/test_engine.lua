@@ -280,6 +280,25 @@ do
     SB.player_positions = function() return {} end
     SB.cleanup_vanilla(5010)
     check(scanned == before, "no scans while nobody is online")
+
+    -- 1.4.4 destroyed three of the mod's own NPCs a second after they spawned.
+    -- A pawn is recognised by its object address too, and nothing is scanned
+    -- in the seconds right after one of our spawns.
+    local renamed = pawn("BP_Drifter_Lvl_1_C name-changed", 100)
+    renamed.GetAddress = function() return 0xABC end
+    SB.owned_addr[tostring(0xABC)] = true
+    _G.FindAllOf = function(cname)
+        scanned = scanned + 1
+        if cname == "ArmedNPCBaseAIController" then return { ctrl(renamed) } end
+        return nil
+    end
+    SB.player_positions = function() return { { X = 0, Y = 0, Z = 0 } } end
+    SB.last_spawn_at = 6000
+    local b2 = scanned
+    SB.cleanup_vanilla(6003)
+    check(scanned == b2, "no cleanup scan in the seconds after our own spawn")
+    SB.cleanup_vanilla(6020)
+    check(not renamed.destroyed, "an own actor is known by its address even if its name differs")
     _G.FindAllOf = nil
 end
 

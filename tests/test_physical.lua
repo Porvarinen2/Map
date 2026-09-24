@@ -165,5 +165,43 @@ for _, m in ipairs(squad.members) do if m.materialized then bodies = bodies + 1 
 check(squad.physical and bodies == alive,
       string.format("only the survivors materialise again (%d bodies, %d alive)", bodies, alive))
 
+-- ------------------------------------------------------------ gunfight ---
+-- Two hostile squads meet in front of the player: they shoot, people die,
+-- the dead drop in the world too, and the fight ends.
+do
+    local Diplomacy = require("npc.diplomacy")
+    local a_grp, b_grp = nil, nil
+    for _, g in ipairs(world.groups) do
+        if g.class ~= "radiation_group" and Population.group_alive(g) and #g.members >= 2 then
+            if not a_grp then a_grp = g
+            elseif not b_grp and g ~= a_grp then b_grp = g end
+        end
+    end
+    -- Blood enemies, standing 60 m apart.
+    Diplomacy.adjust(world.diplomacy, a_grp, b_grp, -2, "test")
+    local here = { X = a_grp.position.X, Y = a_grp.position.Y, Z = 0 }
+    b_grp.position = { X = here.X + 6000, Y = here.Y, Z = 0 }
+    for _, m in ipairs(b_grp.members) do m.position = U.copy_vec(b_grp.position) end
+    for _, m in ipairs(a_grp.members) do m.position = U.copy_vec(here) end
+    local before = Population.alive_npc_count(world)
+    local damage_before = Bridge.damage_calls
+    local deaths_before = director.counters.deaths
+    squad = a_grp
+    run(120, 3000)
+    local lost = before - Population.alive_npc_count(world)
+    print(string.format("gunfight: %d killed, %d damage calls, kill result: %s",
+        lost, Bridge.damage_calls - damage_before, tostring(Bridge.kill_result)))
+    check(lost >= 1, "hostile squads kill each other")
+    check(director.counters.deaths - deaths_before >= lost, "every kill is a recorded death")
+    check(Bridge.damage_calls > damage_before, "hits are applied to the real bodies")
+    local walking_dead = 0
+    for _, g in ipairs({ a_grp, b_grp }) do
+        for _, m in ipairs(g.members) do
+            if not m.alive and m.materialized then walking_dead = walking_dead + 1 end
+        end
+    end
+    check(walking_dead == 0, "no dead NPC is still driven as a body")
+end
+
 print("")
 os.exit(fails == 0 and 0 or 1)

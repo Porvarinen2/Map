@@ -84,6 +84,21 @@ function B.follow(h, target, radius)
     return true
 end
 
+-- Damage like SCUM's ApplyDamage: health goes down, at zero the body dies.
+B.damage_calls = 0
+function B.apply_damage(h, amount)
+    local a = B.actors[h]
+    if not a then return false end
+    B.damage_calls = B.damage_calls + 1
+    a.hp = (a.hp or 100) - amount
+    if a.hp <= 0 then a.alive = false; a.target = nil; a.follow = nil end
+    return true
+end
+function B.face() return true end
+function B.clear_focus() return true end
+function B.fire_once() return true end
+function B.note_kill_result(how) B.kill_result = how end
+
 B.brain_checks = 0
 function B.keep_ownership(h)
     B.brain_checks = B.brain_checks + 1

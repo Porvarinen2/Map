@@ -345,6 +345,12 @@ local function start()
         f:write(table.concat(lines, "\n"), "\n")
         f:close()
     end
+    Bridge.write_file = function(name, text)
+        local f = io.open(OUTPUT_DIR .. SEP .. name, "w")
+        if not f then return end
+        f:write(text)
+        f:close()
+    end
     Bridge.on_debug = function(text)
         Log.info(text)
         boot(text)

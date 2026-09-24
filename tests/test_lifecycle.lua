@@ -102,7 +102,11 @@ print(string.format("boot 2: %d groups / %d NPCs",
 
 check(#world2.groups == at_save_groups, "every group survived the restart")
 check(Population.alive_npc_count(world2) == at_save_npcs, "every NPC survived the restart")
-check(at_save_npcs == before_npcs, "no NPC was lost while the world ran")
+-- Squads fight each other since 1.4.5, so NPCs may die while the world runs;
+-- every loss must be a recorded death, nothing may vanish.
+check(before_npcs - at_save_npcs == director.counters.deaths,
+      string.format("every NPC lost while the world ran is a recorded death (%d lost, %d deaths)",
+                    before_npcs - at_save_npcs, director.counters.deaths))
 
 local drift, bad_person, bad_state = 0, 0, 0
 for _, g in ipairs(world2.groups) do

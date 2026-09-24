@@ -416,7 +416,7 @@ function D:move_physical(group, dt)
                 or U.dist2d(pos, st.target) < STEER.reached
                 or (U.dist2d(carrot, st.target) > STEER.retarget
                     and now - (st.at or 0) >= STEER.retarget_sec)
-                or now - (st.at or 0) >= STEER.stale_sec
+                or (now - (st.at or 0) >= STEER.stale_sec and now - (st.still and st.still.at or now) >= 2)
                 or (now - (st.still and st.still.at or now) >= 5 and now - (st.at or 0) >= 5))
             if need and now >= (st.backoff_until or 0) then
                 -- Straight at the carrot by default: the route is already
@@ -469,21 +469,29 @@ function D:move_physical(group, dt)
             local f = st.follow[m.npcId]
             local gap = (ahead.position and m.position) and U.dist2d(ahead.position, m.position) or 0
             local target_changed = not f or f.ahead ~= ahead.npcId
-            -- A follow request ends when the follower arrives; renew it as
-            -- soon as the one ahead has walked away again.
+            -- A follow request ends when the follower arrives. It is renewed
+            -- only once the follower has actually stopped with the one ahead
+            -- walking away - never while it is still walking. 1.4.4 renewed
+            -- every second while a follower lagged, each renewal restarted
+            -- the walk, and the body slid along in its idle animation.
+            local moved = (f and f.last and m.position) and U.dist2d(f.last, m.position) or 999
+            if f and m.position then f.last = U.copy_vec(m.position) end
+            local stopped = moved < 25
             local renew = target_changed
-                or (gap > STEER.spacing + 180 and now - f.at >= 1)
-                or now - f.at >= 12
+                or (gap > STEER.spacing + 180 and stopped and now - f.at >= 2)
+                or (stopped and now - f.at >= 15)
             if renew and self.bridge.follow
                 and self.bridge.follow(m.runtime_id, ahead.runtime_id, STEER.spacing) then
-                st.follow[m.npcId] = { ahead = ahead.npcId, at = now }
+                st.follow[m.npcId] = { ahead = ahead.npcId, at = now,
+                                       last = m.position and U.copy_vec(m.position) }
                 self.counters.commands = self.counters.commands + 1
             elseif renew and gap > STEER.follow_slack then
                 local spot = footprint_back(st.trail, pos, k * STEER.spacing)
                 if spot and m.position then
                     spot.Z = m.position.Z
                     if self.bridge.move_to(m.runtime_id, spot, { direct = true, radius = 150 }) then
-                        st.follow[m.npcId] = { ahead = "trail", at = now }
+                        st.follow[m.npcId] = { ahead = "trail", at = now,
+                                               last = m.position and U.copy_vec(m.position) }
                         self.counters.commands = self.counters.commands + 1
                     end
                 end
@@ -584,6 +592,8 @@ end
 
 -- ---------------------------------------------------------------- combat ---
 
+local function now_ge(now, t, sec) return t == nil or now - t >= sec end
+
 function D:run_combat(group, contact, zpressure)
     local ctx = Combat.build_context(group, contact, zpressure)
     Combat.apply_contact_stress(group, ctx, self.rng)
@@ -599,24 +609,87 @@ function D:run_combat(group, contact, zpressure)
     group.act.until_t = self.now + 20
     Movement.clear(group.mv)
 
-    local enemy_pos = contact.group.position
+    local enemy = contact.group
+    local enemy_pos = enemy.position
+    -- Tactical moves are re-issued every few seconds, not every tick: a new
+    -- order each second restarts the walk and the body slides.
+    local reorder = now_ge(self.now, group.combat_order_at, 4)
+    if reorder then group.combat_order_at = self.now end
     for _, m in ipairs(group.members) do
         if m.alive and m.materialized and m.runtime_id then
-            local point = Combat.tactical_point(m, group, enemy_pos, m.action)
-            if point then
-                self.bridge.move_to(m.runtime_id, point)
-                self.counters.commands = self.counters.commands + 1
-            end
-            if (m.action == "ATTACK" or m.action == "FLANK") and self.bridge.aim_at then
-                if self.bridge.aim_at(m.runtime_id, enemy_pos) and self.bridge.start_fire then
-                    self.bridge.start_fire(m.runtime_id)
+            if reorder then
+                local point = Combat.tactical_point(m, group, enemy_pos, m.action)
+                if point then
+                    self.bridge.move_to(m.runtime_id, point, { direct = true, radius = 150 })
+                    self.counters.commands = self.counters.commands + 1
                 end
-            elseif self.bridge.stop_fire then
-                self.bridge.stop_fire(m.runtime_id)
+            end
+            if self.bridge.face then
+                self.bridge.face(m.runtime_id, enemy_pos)
+                group.focused = true
             end
         end
     end
+
+    -- Gunfire. Every hit is applied to the real body when there is one; a
+    -- killed NPC is checked a few seconds later, and a body that would not
+    -- die is removed so no dead man keeps walking.
+    local hits = Combat.exchange_fire(group, enemy, self.rng)
+    for _, h in ipairs(hits) do
+        if h.shooter.runtime_id and self.bridge.fire_once then self.bridge.fire_once(h.shooter.runtime_id) end
+        local handle = h.target.runtime_id
+        if handle and self.bridge.apply_damage then
+            self.bridge.apply_damage(handle, h.killed and 1000 or h.damage, h.shooter.runtime_id)
+        end
+        if h.killed then
+            if handle then
+                self.kill_checks = self.kill_checks or {}
+                self.kill_checks[#self.kill_checks + 1] = { handle = handle, at = self.now + 4 }
+            end
+            Combat.on_member_lost(enemy, h.target, self.rng,
+                function(kind, gid, name) Log.event(kind, gid, name) end,
+                self.world.diplomacy, group)
+            self.counters.deaths = self.counters.deaths + 1
+            Log.event("KILL", group.gid, h.shooter.name .. " -> " .. h.target.name .. " (" .. enemy.gid .. ")")
+            if h.target.is_leader then
+                Leadership.on_leader_lost(enemy, self.now, function(m) Stress.apply(m, "LEADER_DOWN") end)
+            end
+        end
+    end
+
+    -- Breaking off: the squad leaves and is left alone for a while.
+    if Combat.should_disengage(group) then
+        group.disengaged_until = self.now + 90
+        group.act.state = S.IDLE
+        group.act.until_t = self.now
+        Log.event("DISENGAGE", group.gid, "from " .. enemy.gid)
+        return false
+    end
     return true
+end
+
+
+-- Bodies of NPCs killed by other squads: SCUM decides whether ApplyDamage
+-- killed them; what it decided is logged once, and a body still standing is
+-- removed.
+function D:run_kill_checks()
+    if not self.kill_checks then return end
+    local keep = {}
+    for _, k in ipairs(self.kill_checks) do
+        if self.now >= k.at then
+            if self.bridge.is_alive and self.bridge.is_alive(k.handle) then
+                if self.bridge.note_kill_result then
+                    self.bridge.note_kill_result("ApplyDamage did not kill; body removed")
+                end
+                if self.bridge.despawn then self.bridge.despawn(k.handle) end
+            elseif self.bridge.note_kill_result then
+                self.bridge.note_kill_result("ApplyDamage killed the NPC")
+            end
+        else
+            keep[#keep + 1] = k
+        end
+    end
+    self.kill_checks = keep
 end
 
 -- ------------------------------------------------------------------ tick ---
@@ -666,6 +739,8 @@ function D:tick(now)
             end
         end
     end
+
+    self:run_kill_checks()
 
     -- The radiation zone keeps its fixed squads, inside, and nobody else.
     if self.now >= (self.reserve_check_at or 0) then
@@ -794,8 +869,9 @@ function D:tick_group(group, players, physical_groups, dt)
 
     -- 3. Threat context.
     local contact = nil
-    if group.physical then
-        local list = Combat.find_contacts(group, physical_groups, self.world.diplomacy)
+    if not (group.disengaged_until and group.disengaged_until > now) then
+        local pool = group.physical and physical_groups or self.world.groups
+        local list = Combat.find_contacts(group, pool, self.world.diplomacy, now)
         contact = list[1]
     end
     local zpressure = 0
@@ -810,6 +886,16 @@ function D:tick_group(group, players, physical_groups, dt)
         if group.act.state == S.COMBAT and now >= (group.act.until_t or 0) then
             group.act.state = S.IDLE
             group.act.until_t = now + self.rng:range(4, 12)
+        end
+        -- The fight is over: stop staring at where the enemy stood, or the
+        -- squad walks on sideways.
+        if group.focused and group.act.state ~= S.COMBAT then
+            group.focused = nil
+            for _, m in ipairs(group.members) do
+                if m.alive and m.runtime_id and self.bridge.clear_focus then
+                    self.bridge.clear_focus(m.runtime_id)
+                end
+            end
         end
         self:run_activity(group)
         if group.physical then

@@ -29,13 +29,15 @@ C.tuning = {
     zombie_panic_count = 6,
 }
 
--- Finds hostile groups in contact range. Only physical groups fight: a
--- virtual marker is not evidence of a fight the player could witness.
-function C.find_contacts(group, groups, registry)
+-- Finds hostile groups in contact range. Physical squads meet physical
+-- squads, virtual ones meet virtual ones: a squad within 120 m of a physical
+-- one is inside a player's render circle and physical itself.
+function C.find_contacts(group, groups, registry, now)
     local out = {}
-    if not group.physical or not group.position then return out end
+    if not group.position then return out end
     for _, other in ipairs(groups) do
-        if other ~= group and other.physical and other.position then
+        if other ~= group and (other.physical == group.physical) and other.position
+            and not (other.disengaged_until and other.disengaged_until > (now or 0)) then
             local d = U.dist2d(group.position, other.position)
             if d <= C.tuning.contact_uu then
                 local hostile, value, tier = Diplomacy.hostile(registry, group, other)
@@ -215,6 +217,83 @@ function C.on_member_lost(group, victim, rng, on_event, registry, killer)
         on_event(was_leader and "LEADER_LOST" or "MEMBER_LOST", group.gid, victim.name)
     end
     return was_leader
+end
+
+-- ------------------------------------------------------------ gunfire ---
+
+-- Squads kill each other. Once a second every member that is fighting
+-- (not retreating or fleeing) fires at the nearest living enemy in range.
+-- Hit chance comes from weapon skill, perception and level, falls with range
+-- and against an enemy in cover. Hits cost health; at zero the NPC is dead.
+-- The caller applies each hit to the real actor as well when there is one.
+C.fire = {
+    range_uu = 15000,          -- 150 m effective range
+    base_hit = 0.20,
+    dmg_min = 16, dmg_max = 34,
+}
+
+local function alive_members(group)
+    local out = {}
+    for _, m in ipairs(group.members) do if m.alive then out[#out + 1] = m end end
+    return out
+end
+
+local function weapon_skill(m)
+    local sk = m.skills or {}
+    return math.max(sk.rifle or 0, (sk.pistol or 0) * 0.85, (sk.shotgun or 0) * 0.8)
+end
+
+-- One second of shooting from `group` at `enemy`. Returns a list of hits
+-- { shooter, target, damage, killed }.
+function C.exchange_fire(group, enemy, rng)
+    local hits = {}
+    local foes = alive_members(enemy)
+    if #foes == 0 then return hits end
+    local f = C.fire
+    for _, m in ipairs(group.members) do
+        if m.alive and m.action ~= "RETREAT" and m.action ~= "FLEE" then
+            local mp = m.position or group.position
+            local target, best = nil, math.huge
+            for _, e in ipairs(foes) do
+                if e.alive then
+                    local d = U.dist2d(mp, e.position or enemy.position)
+                    if d < best then target, best = e, d end
+                end
+            end
+            if target and best <= f.range_uu then
+                -- Roughly one aimed shot every two seconds.
+                if rng:chance(0.5) then
+                    local skill = weapon_skill(m) + ((m.skills or {}).perception or 0) * 0.4
+                        + (m.level or 1) * 0.06
+                    local p = f.base_hit * (0.55 + skill) * (1 - 0.6 * best / f.range_uu)
+                    if target.action == "COVER" then p = p * 0.6 end
+                    if rng:chance(U.clamp(p, 0.02, 0.8)) then
+                        local dmg = rng:range(f.dmg_min, f.dmg_max) * (1 + (m.level or 1) * 0.05)
+                        target.health = (target.health or 100) - dmg
+                        local killed = target.health <= 0
+                        if killed then target.health = 0 end
+                        hits[#hits + 1] = { shooter = m, target = target, damage = dmg, killed = killed }
+                        if killed then target.alive = false end
+                    end
+                end
+            end
+        end
+    end
+    return hits
+end
+
+-- A squad breaks off when it has lost its nerve: morale under the retreat
+-- line, or most of its living members retreating or fleeing.
+function C.should_disengage(group)
+    if (group.morale or 1) < C.tuning.morale_retreat then return true end
+    local n, back = 0, 0
+    for _, m in ipairs(group.members) do
+        if m.alive then
+            n = n + 1
+            if m.action == "RETREAT" or m.action == "FLEE" then back = back + 1 end
+        end
+    end
+    return n == 0 or back / n > 0.5
 end
 
 return C

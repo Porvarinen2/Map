@@ -32,6 +32,12 @@ local next_handle = 1
 -- class is SCUM's own encounter spawn and is removed by cleanup_vanilla.
 local owned_names = {}
 B.owned_names = owned_names
+-- Object addresses of the same actors: a second key that does not depend on
+-- a name string. In the 1.4.4 log the cleanup destroyed three of the mod's
+-- own NPCs one second after they spawned.
+local owned_addr = {}
+B.owned_addr = owned_addr
+
 
 -- -------------------------------------------------------------- helpers ----
 
@@ -152,6 +158,18 @@ local function full_name(o)
     if ok and type(s) == "string" then return s end
     return tostring(o)
 end
+
+local function address_of(o)
+    local ok, a = pcall(function() return o:GetAddress() end)
+    if ok and a then return tostring(a) end
+    return nil
+end
+local function is_ours(o)
+    if owned_names[full_name(o)] then return true end
+    local a = address_of(o)
+    return a ~= nil and owned_addr[a] == true
+end
+B.is_ours = is_ours
 
 local function vec(v)
     if not v then return nil end
@@ -667,9 +685,13 @@ function B.spawn_npc(req)
     next_handle = next_handle + 1
     local name = full_name(actor)
     owned_names[name] = true
+    local addr = address_of(actor)
+    if addr then owned_addr[addr] = true end
+    B.last_spawn_at = os.time()
     handles[h] = { actor = actor, npcId = req.npcId, group = req.group,
-                   spawned_at = os.time(), name = name }
+                   spawned_at = os.time(), name = name, addr = addr }
     B.stats.spawns = B.stats.spawns + 1
+    if not B.api_dumped then pcall(B.dump_api_once, h) end
     set_health("physicalVirtualization", "OK",
         B.stats.spawns .. " actors materialized this session")
     return h
@@ -683,6 +705,7 @@ function B.despawn(handle)
     if c then pcall(function() c:StopMovement() end) end
     pcall(function() rec.actor:K2_DestroyActor() end)
     if rec.name then owned_names[rec.name] = nil end
+    if rec.addr then owned_addr[rec.addr] = nil end
     handles[handle] = nil
     B.stats.despawns = B.stats.despawns + 1
     return true
@@ -1048,10 +1071,19 @@ local function remove_foreign(obj, is_controller)
         pawn = (okp and valid(p)) and p or nil
     end
     if pawn then
-        if owned_names[full_name(pawn)] then return false end
+        if is_ours(pawn) then return false end
+        -- Last check against every live handle, by object identity.
+        for _, rec in pairs(handles) do
+            if rec.actor == pawn then return false end
+        end
         -- A corpse may be someone's loot; leave it to SCUM's own cleanup.
         if is_dead(pawn) then return false end
         crumb("vanilla cleanup: K2_DestroyActor " .. full_name(pawn))
+        B.vanilla_log = (B.vanilla_log or 0) + 1
+        if B.vanilla_log <= 15 and B.on_debug then
+            pcall(B.on_debug, "vanilla cleanup removes " .. full_name(pawn)
+                .. " (mod owns " .. B.handle_count() .. " actors)")
+        end
         if ctrl then pcall(function() ctrl:StopMovement() end) end
         pcall(function() pawn:K2_DestroyActor() end)
         if ctrl then pcall(function() ctrl:K2_DestroyActor() end) end
@@ -1067,6 +1099,9 @@ function B.cleanup_vanilla(now)
     end
     now = now or os.time()
     if now < vanilla.next_at then return 0 end
+    -- Never right after one of our own spawns: a pawn that has just been
+    -- created is the one most likely to be misjudged.
+    if B.last_spawn_at and now - B.last_spawn_at < 8 then return 0 end
     vanilla.next_at = now + (B.cfg.VanillaCleanupIntervalSec or 3)
     if #B.player_positions() == 0 then return 0 end
 
@@ -1157,6 +1192,146 @@ function B.walk_speed(handle)
     local ok, v = pcall(function() return a.CharacterMovement.MaxWalkSpeed end)
     if ok and type(v) == "number" then return v end
     return nil
+end
+
+-- ---------------------------------------------------------------- damage --
+
+-- Damage between the mod's squads goes through the engine's own ApplyDamage,
+-- so SCUM's character takes it like any other hit (and dies, drops loot,
+-- ragdolls). Whether SCUM honours it is logged once.
+local gameplay_statics = nil
+local function get_statics()
+    if gameplay_statics and valid(gameplay_statics) then return gameplay_statics end
+    local ok, o = pcall(function()
+        return StaticFindObject("/Script/Engine.Default__GameplayStatics")
+    end)
+    if ok and valid(o) then gameplay_statics = o; return o end
+    return nil
+end
+
+function B.apply_damage(handle, amount, from_handle)
+    local a = B.actor(handle)
+    if not a then return false end
+    local gs = get_statics()
+    if not gs then return false end
+    local src = from_handle and B.actor(from_handle) or nil
+    local inst = src and B.controller(src) or nil
+    crumb(string.format("ApplyDamage h%s %.0f", tostring(handle), amount))
+    local ok, err = pcall(function()
+        gs:ApplyDamage(a, amount, inst, src, nil)
+    end)
+    if not ok then note_api_error("ApplyDamage", err) end
+    return ok
+end
+
+-- The last resort when a killed NPC's body will not die: it is removed, so no
+-- dead man keeps walking.
+B.kill_log = {}
+function B.note_kill_result(how)
+    if not B.kill_log[how] and B.on_debug then
+        B.kill_log[how] = true
+        pcall(B.on_debug, "npc kill: " .. how)
+    end
+end
+
+-- Faces an actor at a point without moving it.
+function B.face(handle, pos)
+    local a = B.actor(handle)
+    if not (a and pos) then return false end
+    local c = B.controller(a)
+    if not c then return false end
+    return (pcall(function() c:SetFocalPoint({ X = pos.X, Y = pos.Y, Z = pos.Z }, 2) end))
+end
+
+function B.clear_focus(handle)
+    local a = B.actor(handle)
+    if not a then return false end
+    local c = B.controller(a)
+    if not c then return false end
+    return (pcall(function() c:ClearFocus(2) end))
+end
+
+-- Tries the likely weapon-fire entry points once each and remembers which
+-- one the engine accepts. Visual only: damage is applied separately.
+local fire_fn = nil
+local FIRE_CANDIDATES = {
+    function(a) a:StartFire() end,
+    function(a) a:Fire() end,
+    function(a) a:FireWeapon() end,
+    function(a) a.EquippedWeapon:StartFire() end,
+    function(a) a:GetEquippedWeapon():StartFire() end,
+}
+function B.fire_once(handle)
+    local a = B.actor(handle)
+    if not a then return false end
+    if fire_fn == false then return false end
+    if fire_fn then return (pcall(fire_fn, a)) end
+    for i, f in ipairs(FIRE_CANDIDATES) do
+        if pcall(f, a) then
+            fire_fn = f
+            if B.on_debug then pcall(B.on_debug, "npc weapon fire works via candidate " .. i) end
+            return true
+        end
+    end
+    fire_fn = false
+    if B.on_debug then pcall(B.on_debug, "npc weapon fire: no known entry point on this build") end
+    return false
+end
+
+-- ------------------------------------------------------------- api dump ---
+
+-- Writes what an NPC actor and its controller expose (functions and
+-- properties whose names matter for movement, animation and combat) to
+-- output/npc_api.txt, once per session. It is how the next version learns
+-- SCUM's real names instead of guessing them.
+local API_WORDS = { "move", "speed", "gait", "stance", "walk", "run", "sprint", "anim",
+    "fire", "shoot", "weapon", "aim", "target", "enemy", "attack", "combat", "damage",
+    "health", "dead", "die", "kill", "alive", "team", "faction", "hostile", "attitude",
+    "perception", "sense", "state", "mode", "alert", "encounter", "behavior", "brain" }
+local function interesting(name)
+    local n = name:lower()
+    for _, w in ipairs(API_WORDS) do if n:find(w, 1, true) then return true end end
+    return false
+end
+
+local function dump_class(obj, out, label)
+    local okc, cls = pcall(function() return obj:GetClass() end)
+    if not (okc and cls and valid(cls)) then return end
+    local depth = 0
+    while cls and valid(cls) and depth < 12 do
+        depth = depth + 1
+        out[#out + 1] = label .. " class " .. full_name(cls)
+        pcall(function()
+            cls:ForEachFunction(function(f)
+                local okn, n = pcall(function() return f:GetFName():ToString() end)
+                if okn and n and interesting(n) then out[#out + 1] = "  fn   " .. n end
+            end)
+        end)
+        pcall(function()
+            cls:ForEachProperty(function(p)
+                local okn, n = pcall(function() return p:GetFName():ToString() end)
+                if okn and n and interesting(n) then out[#out + 1] = "  prop " .. n end
+            end)
+        end)
+        local oks, sup = pcall(function() return cls:GetSuperStruct() end)
+        if not (oks and sup and valid(sup)) then break end
+        local sn = full_name(sup)
+        if sn:find("/Script/Engine.Actor", 1, true) or sn:find("/Script/CoreUObject", 1, true) then break end
+        cls = sup
+    end
+end
+
+function B.dump_api_once(handle)
+    if B.api_dumped or not B.write_file then return end
+    local a = B.actor(handle)
+    if not a then return end
+    B.api_dumped = true
+    local out = { "TESLES NPC OVERHAUL - SCUM NPC API (" .. os.date("%Y-%m-%d %H:%M:%S") .. ")" }
+    dump_class(a, out, "pawn")
+    local c = B.controller(a)
+    if c then dump_class(c, out, "controller") end
+    pcall(B.write_file, "npc_api.txt", table.concat(out, "\n") .. "\n")
+    if B.on_debug then pcall(B.on_debug, "npc api written: " .. #out .. " lines") end
 end
 
 function B.handle_count()
