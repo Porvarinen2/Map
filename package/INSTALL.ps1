@@ -238,6 +238,61 @@ function Read-ModsJson($path) {
   try { return @(Get-Content -LiteralPath $path -Raw | ConvertFrom-Json) } catch { return $null }
 }
 
+# UE4SS hooks a dozen engine functions by default: BeginPlay, EndPlay, actor
+# tick, the Blueprint VM (ProcessInternal / ProcessLocalScriptFunction /
+# ProcessEvent), struct linking, the local-player console and the viewport.
+# This mod calls engine functions but hooks none of them; the only hook it
+# needs is the engine tick, which drives UE4SS's game-thread timers.
+#
+# On this server the default set crashes SCUM the moment a player joins, inside
+# the Blueprint VM, while the mod has not made a single engine call (1.1.4's
+# breadcrumb file stayed empty). Everything but the engine tick is switched
+# off; the original file is kept as UE4SS-settings.ini.tesles-hooks-backup.
+function Set-MinimalUE4SSHooks($w) {
+  $ini = $null
+  foreach ($c in @((Join-Path (Join-Path $w 'ue4ss') 'UE4SS-settings.ini'),
+                   (Join-Path $w 'UE4SS-settings.ini'))) {
+    if (Test-Path -LiteralPath $c) { $ini = $c; break }
+  }
+  if (-not $ini) { return $null }
+  $want = [ordered]@{
+    HookProcessInternal = 0; HookProcessLocalScriptFunction = 0
+    HookInitGameState = 0; HookLoadMap = 0
+    HookCallFunctionByNameWithArguments = 0; HookBeginPlay = 0; HookEndPlay = 0
+    HookLocalPlayerExec = 0; HookAActorTick = 0; HookEngineTick = 1
+    HookGameViewportClientTick = 0; HookUObjectProcessEvent = 0
+    HookProcessConsoleExec = 0; HookUStructLink = 0
+  }
+  $lines = @(Get-Content -LiteralPath $ini)
+  $changed = @()
+  for ($i = 0; $i -lt $lines.Count; $i++) {
+    if ($lines[$i] -match '^\s*([A-Za-z]+)\s*=\s*(\S+)') {
+      $k = $Matches[1]
+      if ($want.Contains($k) -and "$($Matches[2])" -ne "$($want[$k])") {
+        $lines[$i] = "$k = $($want[$k])"
+        $changed += $k
+      }
+    }
+  }
+  if ($changed.Count -gt 0) {
+    $bak = "$ini.tesles-hooks-backup"
+    if (-not (Test-Path -LiteralPath $bak)) { Copy-Item -LiteralPath $ini -Destination $bak -Force }
+    Set-Content -LiteralPath $ini -Value $lines -Encoding ASCII
+  }
+  return $changed
+}
+
+if (-not $SkipUE4SS) {
+  $hooksOff = Set-MinimalUE4SSHooks $win64
+  if ($null -eq $hooksOff) {
+    Say "UE4SS-settings.ini ei loytynyt - koukkuja ei muutettu." "Yellow"
+  } elseif ($hooksOff.Count -gt 0) {
+    Say ("UE4SS:n turhat koukut pois ({0} kpl) - vain EngineTick jaa." -f $hooksOff.Count) "Green"
+  } else {
+    Say "UE4SS:n koukut jo minimissa (vain EngineTick)." "Green"
+  }
+}
+
 # ======================================================== 3. muut modit ====
 Step 3 "Muut modit pois paalta"
 
