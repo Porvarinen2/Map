@@ -183,6 +183,25 @@ local function blocked_set(seq, memory)
 end
 A._planned_walk, A._blocked_set = planned_walk, blocked_set
 
+local DANGEROUS = { CITY = true, MILITARY = true, INDUSTRIAL = true, RESEARCH = true,
+                    BUNKER = true, ABANDONED_BUNKER = true }
+
+-- 1 for a calm squad, down to 0.25 for a terrified or zombie-scarred one.
+function A.fear_factor(group)
+    local sum, n, scars = 0, 0, 0
+    for _, m in ipairs(group.members or {}) do
+        if m.alive then
+            sum = sum + (m.stress or 0)
+            n = n + 1
+            if m.traumas and (m.traumas.ZOMBIE_TRAUMA or m.traumas.COMBAT_AVERSE) then scars = scars + 1 end
+        end
+    end
+    if n == 0 then return 1 end
+    local s = sum / n
+    local f = 1 - math.max(0, s - 0.3) * 1.2 - (scars / n) * 0.3
+    return U.clamp(f, 0.25, 1)
+end
+
 -- Next place after `from`: the nearest places the class cares about win.
 -- Distance dominates - (1 + d/0.9 km)^2 - so a group works its way across
 -- the island neighbourhood by neighbourhood instead of criss-crossing it; the
@@ -209,6 +228,7 @@ function A.pick_next(group, act, from, blocked, last_id)
     -- Places are judged by the land the group stands on: a queued place on
     -- an islet must not make every later pick impossible.
     local mass = Grid.landmass_at(group.position or from)
+    local fear = A.fear_factor(group)
     local scored = {}
     for _, poi in ipairs(POI.points) do
         if eligible(group, cls, poi)
@@ -217,6 +237,9 @@ function A.pick_next(group, act, from, blocked, last_id)
             local d = U.dist2d(from, poi.pos)
             if d > 6000 then
                 local w = cls.poi_weights[poi.kind] * (poi.weight or 1)
+                -- A frightened squad steers clear of the places where the
+                -- dead are thickest and the fighting is.
+                if DANGEROUS[poi.kind] then w = w * fear end
                 scored[#scored + 1] = { poi = poi, score = w / (1 + d / 90000) ^ 2 }
             end
         end

@@ -1,7 +1,7 @@
 -- TESLES NPC OVERHAUL - server configuration.
 -- Distances are Unreal units unless a name says otherwise. 100 UU = 1 metre.
 return {
-    Version = "1.5.0",
+    Version = "1.6.0",
 
     -- ---------------------------------------------------------- population --
     Enabled = true,
@@ -71,6 +71,14 @@ return {
     VanillaCleanupIntervalSec = 3,
 
     -- ------------------------------------------------------------- combat --
+    -- ------------------------------------------------------------- stress ---
+    -- How much stress an average NPC sheds in five minutes out of danger
+    -- (0.01 = one point). Veterans and soldiers recover faster, survivors,
+    -- hunters and civilians slower; every trauma slows it further.
+    StressRecoveryPer5Min = 0.01,
+
+    -- Omat varusteet: katso varusteet.lua (sailyy paivityksissa).
+
     EnableCombat = true,
     ContactRadiusUU = 12000,        -- 120 m hostile group contact
     ZombieRadiusUU = 14000,         -- 140 m zombie pressure

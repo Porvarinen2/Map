@@ -162,6 +162,22 @@ end
 
 -- Push the config's tunables into the modules that own them.
 Physical.tuning.render_uu = CFG.RenderRadiusUU or Physical.tuning.render_uu
+need("npc.stress").tuning.recovery_per_5min = CFG.StressRecoveryPer5Min
+    or need("npc.stress").tuning.recovery_per_5min
+-- Squad gear lives in its own file so an update never overwrites it.
+do
+    local okv, gear = pcall(require, "varusteet")
+    if okv and type(gear) == "table" then
+        CFG.Loadouts = gear
+        local n = 0
+        for _, lo in pairs(gear) do
+            for _, k in ipairs({ "Clothes", "Weapons", "Items" }) do n = n + #(lo[k] or {}) end
+        end
+        boot("varusteet.lua: " .. n .. " items configured")
+    elseif not okv then
+        boot("varusteet.lua could not be read: " .. tostring(gear))
+    end
+end
 Physical.tuning.max_spawns_per_tick = CFG.MaxSpawnsPerTick or Physical.tuning.max_spawns_per_tick
 Physical.tuning.max_spawns_per_tick_proven = CFG.MaxSpawnsPerTickProven
     or Physical.tuning.max_spawns_per_tick_proven

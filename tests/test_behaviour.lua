@@ -81,6 +81,50 @@ do
     check(Behaviour.accuracy(hurt, 10) < a1, "a badly wounded shooter hits less")
 end
 
+section("background decides how hard and how long")
+do
+    local function npc(arch, lvl) return { archetype = arch, level = lvl, alive = true,
+        traits = {}, stress = 0, morale = 0.7 } end
+    local surv, vet = npc("survivor", 2), npc("veteran", 4)
+    Stress.apply(surv, "GUNSHOT_NEAR"); Stress.apply(vet, "GUNSHOT_NEAR")
+    check(surv.stress > vet.stress * 2, string.format(
+        "a survivor takes gunfire much harder than a veteran (%.2f vs %.2f)", surv.stress, vet.stress))
+    surv.stress, vet.stress = 0.8, 0.8
+    for _ = 1, 300 do Stress.recover(surv, 1, false); Stress.recover(vet, 1, false) end
+    local ds, dv = 0.8 - surv.stress, 0.8 - vet.stress
+    check(ds > 0.002 and ds < 0.02, string.format(
+        "a survivor sheds about one point in five minutes (%.3f)", ds))
+    check(dv > ds * 2, string.format("a veteran recovers much faster (%.3f vs %.3f)", dv, ds))
+    local d0 = npc("survivor", 2); d0.stress = 0.8
+    for _ = 1, 300 do Stress.recover(d0, 1, true) end
+    check(0.8 - d0.stress < ds * 0.5, "in danger hardly anyone recovers")
+end
+
+section("losing the other half of a pair")
+do
+    local Combat = require("sim.combat")
+    local rng = RNG.new(3)
+    local a = { name = "A", alive = true, stress = 0.1, morale = 0.7, archetype = "survivor",
+                level = 2, traits = { aggression = 0.3, fearfulness = 0.7 } }
+    local b = { name = "B", alive = true, stress = 0.1, morale = 0.7, archetype = "survivor",
+                level = 2, traits = {} }
+    local pair = { gid = "PAIR", members = { a, b }, morale = 0.7, cohesion = 0.8 }
+    Combat.on_member_lost(pair, b, rng, nil, nil, nil)
+    check(a.stress >= 0.85, string.format("the survivor is shattered (stress %.2f)", a.stress))
+    check(a.traumas and a.traumas.FEAR_OF_LOSS, "and carries the fear of loss")
+    local n = 0
+    for _ in pairs(a.traumas or {}) do n = n + 1 end
+    check(n >= 2, "and a second scar by temperament (" .. n .. " traumas)")
+    check(a.grief_until and a.grief_until > os.time() + 3600, "grief lasts for hours")
+    check(Stress.baseline(a) >= 0.3, string.format("grief keeps the stress floor high (%.2f)", Stress.baseline(a)))
+    check(a.shock_until and a.shock_until > os.time(), "first comes shock")
+    local trio = { gid = "T", members = {}, morale = 0.7, cohesion = 0.8 }
+    for i = 1, 3 do trio.members[i] = { name = "T" .. i, alive = true, stress = 0.1, morale = 0.7,
+        archetype = "survivor", level = 2, traits = {} } end
+    Combat.on_member_lost(trio, trio.members[3], rng, nil, nil, nil)
+    check(trio.members[1].stress < a.stress, "losing one of three hurts, losing your only partner hurts most")
+end
+
 -- -------------------------------------------------------------------------
 section("zombies around a physical squad")
 do
@@ -119,9 +163,9 @@ do
     -- With the zombies gone the squad calms down again.
     Bridge.zombies = {}
     local peak = avg_stress(g)
-    run(300)
-    check(avg_stress(g) < peak - 0.15, string.format(
-        "stress falls again once it is quiet (%.2f -> %.2f)", peak, avg_stress(g)))
+    run(1800)
+    check(avg_stress(g) < peak, string.format(
+        "stress falls again once it is quiet, slowly (%.2f -> %.2f in 30 min)", peak, avg_stress(g)))
 end
 
 -- -------------------------------------------------------------------------

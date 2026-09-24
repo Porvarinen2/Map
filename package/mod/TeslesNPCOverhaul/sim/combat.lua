@@ -222,15 +222,44 @@ function C.on_member_lost(group, victim, rng, on_event, registry, killer)
     victim.materialized = false
     victim.runtime_id = nil
     local was_leader = victim.is_leader
+    local survivors = {}
     for _, m in ipairs(group.members) do
-        if m.alive then
+        if m.alive then survivors[#survivors + 1] = m end
+    end
+    local now = os.time()
+    if #survivors == 1 then
+        -- The last one standing: in a pair this is losing the only other
+        -- person there was. A shock that goes all the way down, a trauma for
+        -- certain, and grief that keeps the stress floor high for hours.
+        local s = survivors[1]
+        Stress.apply(s, "PARTNER_LOST")
+        s.stress = math.max(s.stress or 0, 0.85)
+        s.morale = U.clamp((s.morale or 0.6) - 0.4, 0, 1)
+        s.grief_until = now + 3 * 3600
+        s.shock_until = now + 20 + (rng and rng:range(0, 25) or 10)
+        s.reaction, s.reaction_at = "PARTNER_LOST", now
+        Trauma.remember(s, "PARTNER_LOST", victim.name, 1.0)
+        Trauma.add(s, "FEAR_OF_LOSS")
+        -- And one more scar, by temperament: revenge, or never again.
+        local t = s.traits or {}
+        if (t.aggression or 0.5) + (t.vindictiveness or 0.5) > (t.fearfulness or 0.5) + 0.5 then
+            Trauma.add(s, "VENGEFUL")
+        else
+            Trauma.add(s, (rng and rng:chance(0.5)) and "COMBAT_AVERSE" or "PARANOIA")
+        end
+        if on_event then on_event("PARTNER_LOST", group.gid, s.name .. " lost " .. victim.name) end
+    else
+        for _, m in ipairs(survivors) do
             Stress.apply(m, was_leader and "LEADER_DOWN" or "ALLY_DOWN")
             Trauma.remember(m, was_leader and "LEADER_DOWN" or "ALLY_DOWN",
                 victim.name, was_leader and 0.95 or 0.7)
             Trauma.maybe_trauma(m, was_leader and "LEADER_DOWN" or "ALLY_DOWN", rng)
+            -- A small squad feels every loss more.
+            if #survivors <= 2 then m.grief_until = now + 3600 end
         end
     end
-    group.morale = U.clamp((group.morale or 0.6) - (was_leader and 0.28 or 0.14), 0, 1)
+    group.morale = U.clamp((group.morale or 0.6) - (was_leader and 0.28 or 0.14)
+        - (#survivors == 1 and 0.25 or 0), 0, 1)
     group.cohesion = U.clamp((group.cohesion or 0.7) - (was_leader and 0.24 or 0.10), 0, 1)
     if on_event then
         on_event(was_leader and "LEADER_LOST" or "MEMBER_LOST", group.gid, victim.name)
@@ -247,8 +276,8 @@ end
 -- The caller applies each hit to the real actor as well when there is one.
 C.fire = {
     range_uu = 15000,          -- 150 m effective range
-    base_hit = 0.20,
-    dmg_min = 16, dmg_max = 34,
+    base_hit = 0.28,
+    dmg_min = 22, dmg_max = 42,
 }
 
 local function alive_members(group)

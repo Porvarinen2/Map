@@ -26,7 +26,7 @@ local REACTION_FI = {
     SEVERE_INJURY = "vakava haava", NEAR_MISS = "läheltä piti", ALLY_DOWN = "toveri kaatui",
     LEADER_DOWN = "johtaja kaatui", LEADER_WOUNDED = "johtaja haavoittui",
     ENEMY_SPOTTED = "vihollinen näkyvissä", OUTNUMBERED = "alakynnessä", AMBUSHED = "väijytys",
-    HUNGER = "nälkä", THIRST = "jano",
+    HUNGER = "nälkä", THIRST = "jano", PARTNER_LOST = "menetti parinsa",
 }
 
 local POI = require("world.pois")

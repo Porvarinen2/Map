@@ -853,6 +853,7 @@ function D:tick_group(group, players, physical_groups, dt)
         local spawned, failed, why = Physical.materialize(group, self.bridge, {
             now = now,
             take_ownership = self.cfg.TakeOwnership ~= false,
+            loadout = self.cfg.Loadouts and self.cfg.Loadouts[group.class] or nil,
             yaw = math.floor(U.deg((group.mv and group.mv.smooth_heading) or 0)) % 360,
             on_spawn = function(g, m, pos)
                 Log.event("MATERIALIZE", g.gid, m.npcId)
@@ -964,6 +965,11 @@ function D:tick_group(group, players, physical_groups, dt)
     for _, m in ipairs(group.members) do
         if m.alive then
             Stress.recover(m, dt, in_danger)
+            -- Grief keeps pulling a bereaved NPC back up to its floor.
+            if m.grief_until and now < m.grief_until then
+                local floor = Stress.baseline(m, now)
+                if (m.stress or 0) < floor then m.stress = floor end
+            end
             Stress.privation(m, group.act.supply or 100, dt)
         end
     end

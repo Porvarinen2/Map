@@ -172,9 +172,19 @@ do
     local Diplomacy = require("npc.diplomacy")
     local a_grp, b_grp = nil, nil
     for _, g in ipairs(world.groups) do
-        if g.class ~= "radiation_group" and Population.group_alive(g) and #g.members >= 2 then
+        local intact = true
+        for _, m in ipairs(g.members) do if not m.alive then intact = false end end
+        if g.class ~= "radiation_group" and intact and #g.members >= 2 then
             if not a_grp then a_grp = g
             elseif not b_grp and g ~= a_grp then b_grp = g end
+        end
+    end
+    -- Two hardened squads (a frightened pair would rather run - that is
+    -- tested in test_behaviour.lua).
+    for _, g in ipairs({ a_grp, b_grp }) do
+        for _, m in ipairs(g.members) do
+            m.archetype = "ex_military"; m.stress = 0.05; m.level = 4
+            m.traits.courage = 0.8; m.traits.stressResistance = 0.8; m.traits.fearfulness = 0.2
         end
     end
     -- Blood enemies, standing 60 m apart.
@@ -187,7 +197,7 @@ do
     local damage_before = Bridge.damage_calls
     local deaths_before = director.counters.deaths
     squad = a_grp
-    for i = 1, 12 do run(10, 3000); local function st(g) local s = {} for _, m in ipairs(g.members) do s[#s+1] = string.format("%.2f%s", m.stress or 0, m.alive and "" or "x") end return table.concat(s, ",") end; if os.getenv("DBG") then print(i*10, a_grp.mood, a_grp.act.state, st(a_grp), "|", b_grp.mood, b_grp.act.state, st(b_grp), U.dist2d(a_grp.position, b_grp.position)) end end
+    for i = 1, 24 do run(5, 3000); local function st(g) local s = {} for _, m in ipairs(g.members) do s[#s+1] = string.format("%.2f%s", m.stress or 0, m.alive and "" or "x") end return table.concat(s, ",") end; if os.getenv("DBG") then print(i*5, a_grp.mood, a_grp.act.state, st(a_grp), "|", b_grp.mood, b_grp.act.state, st(b_grp), U.dist2d(a_grp.position, b_grp.position)) end end
     local lost = before - Population.alive_npc_count(world)
     print(string.format("gunfight: %d killed, %d damage calls, kill result: %s",
         lost, Bridge.damage_calls - damage_before, tostring(Bridge.kill_result)))
@@ -201,6 +211,24 @@ do
         end
     end
     check(walking_dead == 0, "no dead NPC is still driven as a body")
+end
+
+-- ----------------------------------------------------------- loadouts ---
+do
+    local g = nil
+    for _, x in ipairs(world.groups) do
+        if Population.group_alive(x) and not x.physical and x.class ~= "radiation_group" then g = x; break end
+    end
+    director.cfg.Loadouts = { [g.class] = { Clothes = { "Police_Shirt_01" }, Weapons = { "Weapon_M9" } } }
+    local before = #Bridge.loadouts_applied
+    squad = g
+    run(20, 3000)
+    local n = #Bridge.loadouts_applied - before
+    local bodies = 0
+    for _, m in ipairs(g.members) do if m.materialized then bodies = bodies + 1 end end
+    check(g.physical and n == bodies, string.format("each materialised member gets the squad's gear (%d of %d)", n, bodies))
+    local lo = Bridge.loadouts_applied[#Bridge.loadouts_applied]
+    check(lo and lo.loadout.Weapons[1] == "Weapon_M9", "the configured items are the ones handed over")
 end
 
 print("")

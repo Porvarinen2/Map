@@ -533,6 +533,7 @@ function drawGroup(g) {
   }
   // Mood ring: how the squad is holding up.
   const MOOD_RING = { PANIC: "rgba(255,70,70,.95)", ROUT: "rgba(255,70,70,.95)",
+    SHOCK: "rgba(255,255,255,.9)",
     SHAKEN: "rgba(255,150,60,.85)", TENSE: "rgba(240,200,80,.7)",
     ZOMBIES: "rgba(150,230,120,.9)", INVESTIGATE: "rgba(120,190,255,.85)",
     AVOID: "rgba(200,170,255,.8)", HOLD: "rgba(200,200,200,.7)", COVER: "rgba(255,120,200,.9)" };

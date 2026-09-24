@@ -129,22 +129,28 @@ function Bh.sense(director, group, now, zombies)
     if #list == 0 or not group.position then return out end
     local reach = senses(group, now)
 
-    -- Gunfire. The squad's own shots are not news to it.
+    -- Gunfire. The squad's own shots are not news to it. How much of it
+    -- there is matters: a sudden burst of heavy fire hits far harder than a
+    -- lone shot.
+    local heard = 0
     for _, n in ipairs(recent_noises(director, now)) do
         if n.source ~= group.gid and n.from ~= group.gid then
             local d = U.dist2d(n.pos, group.position)
             if d <= t.hear_far_uu * reach * n.loud then
+                heard = heard + (n.loud or 1)
                 if d < out.noise_d then out.noise, out.noise_d = n, d end
             end
         end
     end
+    out.intensity = U.clamp(heard / 2, 1, 2.0)
     if out.noise then
         local near = out.noise_d <= t.hear_near_uu
         -- A squad already in a firefight expects the noise; it still wears.
         local fightscale = (group.act and group.act.state == "COMBAT") and 0.35 or 1
         for _, m in ipairs(list) do
             stim(m, near and "GUNSHOT_NEAR" or "GUNSHOT_DISTANT", now,
-                 (near and 1 or U.clamp(1.4 - out.noise_d / t.hear_far_uu, 0.3, 1)) * fightscale)
+                 (near and 1 or U.clamp(1.4 - out.noise_d / t.hear_far_uu, 0.3, 1))
+                 * fightscale * out.intensity)
         end
     end
 
@@ -184,19 +190,23 @@ function Bh.sense(director, group, now, zombies)
 end
 
 -- Virtual squads working a town meet the undead in the abstract.
-local ZOMBIE_RISK = { CITY = 0.030, MILITARY = 0.028, INDUSTRIAL = 0.018, VILLAGE = 0.012,
-                      MEDICAL = 0.02, RESEARCH = 0.02, BUNKER = 0.016, ABANDONED_BUNKER = 0.02 }
+-- Chance per minute of work of running into the undead.
+local ZOMBIE_RISK = { CITY = 0.12, MILITARY = 0.10, INDUSTRIAL = 0.07, VILLAGE = 0.05,
+                      MEDICAL = 0.08, RESEARCH = 0.08, BUNKER = 0.06, ABANDONED_BUNKER = 0.08 }
 function Bh.abstract_zombies(director, group, now, rng)
     if group.physical then return end
     local st = group.act and group.act.state
     if st ~= "SEARCH" and st ~= "PATROL" then return end
     local poi = group.act.goal_poi
     local risk = poi and ZOMBIE_RISK[poi.kind] or 0
-    if risk <= 0 or not rng:chance(risk) then return end
+    -- The table is per minute of work; this runs every second.
+    if risk <= 0 or not rng:chance(risk / 60) then return end
     local list = alive(group)
     local horde = rng:chance(0.2)
+    -- Squads that work these places expect the dead: an encounter wears on
+    -- them less than meeting zombies unprepared.
     for _, m in ipairs(list) do
-        stim(m, horde and "ZOMBIE_HORDE" or "ZOMBIE_CONTACT", now)
+        stim(m, horde and "ZOMBIE_HORDE" or "ZOMBIE_CONTACT", now, 0.6)
     end
     -- Now and then someone gets bitten or clawed.
     if rng:chance(horde and 0.35 or 0.12) and #list > 0 then
@@ -235,11 +245,16 @@ function Bh.contagion(group, dt)
     for _, m in ipairs(list) do if m.is_leader then lead = m end end
     local calm_lead = lead and (((lead.skills or {}).leadership or 0.3) * 0.5
         + Tr.trait(lead, "composure") * 0.5) or 0.3
-    local rate = 0.02 * (1.2 - calm_lead) * (1.1 - (group.cohesion or 0.7) * 0.4)
+    -- Fear spreads fast; calm spreads too, slower, and faster under a steady
+    -- leader. The squad converges on its mean instead of ratcheting upwards.
+    local up = 0.02 * (1.2 - calm_lead) * (1.1 - (group.cohesion or 0.7) * 0.4)
+    local down = 0.006 * (0.5 + calm_lead)
     for _, m in ipairs(list) do
         local s = m.stress or 0
         if avg > s then
-            m.stress = U.clamp(s + (avg - s) * rate * dt, 0, 1)
+            m.stress = U.clamp(s + (avg - s) * up * dt, 0, 1)
+        else
+            m.stress = U.clamp(s - (s - avg) * down * dt, 0, 1)
         end
     end
     -- The squad's morale follows its members'.
@@ -252,7 +267,7 @@ end
 Bh.MOOD_FI = {
     CALM = "Rauhallinen", ALERT = "Valpas", TENSE = "Jännittynyt", SHAKEN = "Järkyttynyt",
     PANIC = "Paniikissa", ROUT = "Hajoaa pakoon", ZOMBIES = "Torjuu zombeja",
-    INVESTIGATE = "Tutkii ammuskelua", COVER = "Suojautuu tulelta", AVOID = "Väistää ammuskelua", HOLD = "Odottaa hiljaa",
+    INVESTIGATE = "Tutkii ammuskelua", COVER = "Suojautuu tulelta", SHOCK = "Shokissa", AVOID = "Väistää ammuskelua", HOLD = "Odottaa hiljaa",
     FIGHT = "Taistelee",
 }
 
@@ -349,6 +364,18 @@ function Bh.react(director, group, now, sense, fighting)
     end
 
     if fighting then group.mood = "FIGHT"; return false end
+
+    -- Shock: someone who has just watched their partner die stands frozen
+    -- for a while before grief turns into flight or fury.
+    local shocked = false
+    for _, m in ipairs(list) do
+        if m.shock_until and now < m.shock_until then shocked = true end
+    end
+    if shocked then
+        group.mood = "SHOCK"
+        group.hold_until = now + 2
+        return true
+    end
 
     -- Under fire from a player: the steady take cover and face the shooter,
     -- (the fearful have already run, above).

@@ -1354,7 +1354,9 @@ end
 local API_WORDS = { "move", "speed", "gait", "stance", "walk", "run", "sprint", "anim",
     "fire", "shoot", "weapon", "aim", "target", "enemy", "attack", "combat", "damage",
     "health", "dead", "die", "kill", "alive", "team", "faction", "hostile", "attitude",
-    "perception", "sense", "state", "mode", "alert", "encounter", "behavior", "brain" }
+    "perception", "sense", "state", "mode", "alert", "encounter", "behavior", "brain",
+    "item", "inventory", "equip", "cloth", "wear", "slot", "gear", "loadout", "attach",
+    "holster", "hand", "strip", "remove", "drop", "container", "backpack", "vest" }
 local function interesting(name)
     local n = name:lower()
     for _, w in ipairs(API_WORDS) do if n:find(w, 1, true) then return true end end
@@ -1397,8 +1399,148 @@ function B.dump_api_once(handle)
     dump_class(a, out, "pawn")
     local c = B.controller(a)
     if c then dump_class(c, out, "controller") end
+    -- Components: inventory and equipment live in components on most UE
+    -- characters, not on the pawn itself.
+    pcall(function()
+        local ac = StaticFindObject("/Script/Engine.ActorComponent")
+        local comps = a:K2_GetComponentsByClass(ac)
+        local seen = {}
+        for i = 1, #comps do
+            local comp = comps[i]
+            local ok, cls = pcall(function() return comp:GetClass() end)
+            local cn = ok and full_name(cls) or "?"
+            if not seen[cn] then
+                seen[cn] = true
+                dump_class(comp, out, "component")
+            end
+        end
+    end)
     pcall(B.write_file, "npc_api.txt", table.concat(out, "\n") .. "\n")
     if B.on_debug then pcall(B.on_debug, "npc api written: " .. #out .. " lines") end
+end
+
+-- -------------------------------------------------------------- loadouts ---
+
+-- Custom gear for the mod's squads (config Loadouts). Every step reports to
+-- output/npc_loadout.txt, because SCUM's own equipment calls are not known
+-- yet: the first session with a loadout configured shows which step works.
+--   1. find the item's class from its spawn name (#SpawnItem name)
+--   2. spawn the item next to the NPC
+--   3. hand it to the NPC through whichever equip call SCUM exposes
+local loadout_log = {}
+local function lnote(text)
+    loadout_log[#loadout_log + 1] = os.date("%H:%M:%S") .. "  " .. text
+    if #loadout_log > 400 then table.remove(loadout_log, 1) end
+    if B.write_file then pcall(B.write_file, "npc_loadout.txt", table.concat(loadout_log, "\n") .. "\n") end
+end
+B.loadout_note = lnote
+
+local item_index = nil
+local item_class_cache = {}
+local function build_item_index()
+    item_index = {}
+    local n = 0
+    local list = find_all("BlueprintGeneratedClass", nil, true) or {}
+    for _, c in ipairs(list) do
+        local name = full_name(c)
+        local path = name:match("%s(%S+)$") or name
+        if path:find("/Items/", 1, true) or path:find("/Weapons/", 1, true)
+            or path:find("/Clothes/", 1, true) or path:find("/Cloth", 1, true) then
+            local short = path:match("%.([^%.]+)$") or path
+            short = short:gsub("_C$", ""):lower()
+            item_index[short] = c
+            item_index[short:gsub("^bp_", "")] = c
+            n = n + 1
+        end
+    end
+    lnote("item index: " .. n .. " loaded item classes")
+end
+
+function B.find_item_class(spawn_name)
+    local key = tostring(spawn_name):lower()
+    local c = item_class_cache[key]
+    if c and valid(c) then return c end
+    if not item_index then build_item_index() end
+    c = item_index[key] or item_index["bp_" .. key]
+    if c and valid(c) then
+        item_class_cache[key] = c
+        return c
+    end
+    return nil
+end
+
+local function spawn_actor(cls, pos)
+    local gs = get_statics()
+    local world = B.get_world()
+    if not (gs and world and cls) then return nil, "no statics/world/class" end
+    local xf = { Rotation = { X = 0, Y = 0, Z = 0, W = 1 },
+                 Translation = { X = pos.X, Y = pos.Y, Z = pos.Z + 50 },
+                 Scale3D = { X = 1, Y = 1, Z = 1 } }
+    local ok, actor = pcall(function()
+        local a = gs:BeginDeferredActorSpawnFromClass(world, cls, xf, 1, nil)
+        if a and valid(a) then gs:FinishSpawningActor(a, xf) end
+        return a
+    end)
+    if ok and valid(actor) then return actor end
+    return nil, tostring(actor)
+end
+
+-- Equip calls tried in order; the first that the engine accepts is kept.
+local EQUIP_CANDIDATES = {
+    "EquipItem", "Server_EquipItem", "EquipItemFromInventory", "TryEquipItem",
+    "AddItemToInventory", "Server_AddItemToInventory", "PutItemInHands",
+    "Server_PutItemInHands", "WearItem", "Server_WearItem", "AutoEquip",
+}
+local equip_fn = nil
+local function try_equip(pawn, item)
+    if equip_fn then
+        local ok = pcall(function() pawn[equip_fn](pawn, item) end)
+        return ok, equip_fn
+    end
+    for _, fn in ipairs(EQUIP_CANDIDATES) do
+        local ok = pcall(function() pawn[fn](pawn, item) end)
+        if ok then
+            equip_fn = fn
+            lnote("equip call accepted: " .. fn)
+            return true, fn
+        end
+    end
+    return false
+end
+
+function B.apply_loadout(handle, loadout, label)
+    local a = B.actor(handle)
+    if not (a and loadout) then return 0 end
+    local names = {}
+    for _, key in ipairs({ "Clothes", "Weapons", "Items" }) do
+        for _, n in ipairs(loadout[key] or {}) do names[#names + 1] = n end
+    end
+    if #names == 0 then return 0 end
+    local okl, loc = pcall(function() return a:K2_GetActorLocation() end)
+    local pos = okl and vec(loc) or nil
+    if not pos then return 0 end
+    local given = 0
+    for _, name in ipairs(names) do
+        local cls = B.find_item_class(name)
+        if not cls then
+            lnote(string.format("%s: %s - item class not found (not loaded, or a different name)", label or "?", name))
+        else
+            local item, why = spawn_actor(cls, pos)
+            if not item then
+                lnote(string.format("%s: %s - spawn failed: %s", label or "?", name, tostring(why)))
+            else
+                local ok, fn = try_equip(a, item)
+                if ok then
+                    given = given + 1
+                    lnote(string.format("%s: %s - equipped via %s", label or "?", name, fn))
+                else
+                    lnote(string.format("%s: %s - spawned, but no equip call worked; removed", label or "?", name))
+                    pcall(function() item:K2_DestroyActor() end)
+                end
+            end
+        end
+    end
+    return given
 end
 
 function B.handle_count()

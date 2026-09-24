@@ -266,7 +266,7 @@ do
         local nq = #(act.queue or {})
         for k = #seq - nq + 1, #seq do
             for j = math.max(1, k - mem), k - 1 do
-                if seq[j] == seq[k] then early = early + 1 end
+                if seq[j] == seq[k] then early = early + 1; if os.getenv("DEBUG_QUEUE") then print("  early", g.gid, g.class, table.concat(seq, ",")) end end
             end
         end
         open_groups = open_groups + 1

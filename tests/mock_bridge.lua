@@ -109,6 +109,11 @@ function B.damage_actor(actor, amount)
     B.zombie_damage = B.zombie_damage + 1
     return true
 end
+B.loadouts_applied = {}
+function B.apply_loadout(h, loadout, label)
+    B.loadouts_applied[#B.loadouts_applied + 1] = { h = h, loadout = loadout, label = label }
+    return #(loadout.Clothes or {}) + #(loadout.Weapons or {}) + #(loadout.Items or {})
+end
 function B.face() return true end
 function B.clear_focus() return true end
 function B.fire_once() return true end
