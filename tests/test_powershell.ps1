@@ -235,7 +235,7 @@ return {
 & (Join-Path $pkg "INSTALL.ps1") -ServerRoot (Join-Path $lab "server") `
   -SkipUE4SS -NoMap -Yes -NoPause | Out-Null
 $gear = Get-Content -Raw (Join-Path $modDir "varusteet.lua")
-Check ($gear -match 'Weapon_AS_Val' -and $gear -match 'Runko = "Guard"') `
+Check ($gear -match 'Weapon_AS_Val' -and $gear -match 'Asu = 0' -and $gear -match 'Runko = "Guard"') `
       "the SCAR test gets a fallback weapon and the police patrol the guard body"
 $pr = "Guard"
 if (Get-Command lua5.4 -ErrorAction SilentlyContinue) {

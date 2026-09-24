@@ -2,13 +2,15 @@
 --
 -- Tama tiedosto SAILYY paivityksissa: INSTALL.bat ei kirjoita sen yli.
 --
+-- Asu = numero NPC-tyypin valmiista asulistasta (0 = ensimmainen), tai
+--   lista { 0, 3, 5 }, josta jokaiselle arvotaan yksi. Yksittaisia vaatteita
+--   ei voi lisata: jokainen asu on valmis kokonainen malli.
+--
 -- Runko = NPC-tyyppi, jonka asuihin ryhma puetaan:
 --   "Drifter"   - kulkurit (siviiliasuja)
 --   "Guard"     - vartijat
 --   "Radiation" - sateilypuvut
 --   "Bunker"    - bunkkerin asut
--- SCUM arpoo asun tyypin omasta listasta pelaajan koneella, joten
--- yksittaista vaatetta tai asua palvelin ei voi valita (kokeiltu 1.7.x).
 --
 -- Weapons = aseet #SpawnItem-nimella toivejarjestyksessa: NPC saa ensimmaisen,
 -- jonka modi loytaa, esim. { "Weapon_SCAR_DMR", "Weapon_AS_Val" }.
@@ -26,8 +28,9 @@
 -- Jokainen yritys kirjataan tiedostoon output\npc_loadout.txt.
 return {
     -- KAIKKI: koskee jokaista NPC:ta jokaisessa ryhmassa.
-    -- Testi: kaikille sama ase, jotta nahdaan toimiiko aseen vaihto.
+    -- Testi: kaikille sama asu ja sama ase.
     KAIKKI = {
+        Asu = 0,
         Weapons = { "Weapon_SCAR_DMR", "Weapon_AS_Val" },
     },
     police_patrol = {

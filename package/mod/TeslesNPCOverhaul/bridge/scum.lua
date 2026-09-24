@@ -866,6 +866,7 @@ function B.despawn(handle)
     if c then pcall(function() c:StopMovement() end) end
     pcall(function() rec.actor:K2_DestroyActor() end)
     B.pending_weapons[handle] = nil
+    B.body_watch[handle] = nil
     -- Gear the mod put on this NPC goes with it.
     for _, x in ipairs(rec.extras or {}) do pcall(function() x:K2_DestroyActor() end) end
     if rec.name then owned_names[rec.name] = nil end
@@ -2237,6 +2238,71 @@ function B.tick_weapons(now)
     end
 end
 
+-- Outfit: _bodyMeshIndex picks one of the NPC type's ready outfits
+-- (_armedNPCBaseCommonData.Variations.Physical, e.g. 10 for Drifter level 1).
+-- Setting it once right after the spawn changed nothing on screen (1.7.9).
+-- SCUM gives the NPC its weapon a moment later, so it probably rolls the
+-- outfit again then: the index is watched for a while, every change the game
+-- makes is logged and our number put back.
+B.body_watch = {}
+B.body_watch_sec = 90
+local body_logged = 0
+local function outfit_count(a)
+    local n = nil
+    pcall(function()
+        local arr = a._armedNPCBaseCommonData.Variations.Physical
+        local ok, c = pcall(function() return arr:GetArrayNum() end)
+        if ok and tonumber(c) then n = tonumber(c) else n = #arr end
+    end)
+    if n and n > 0 then return n end
+    return nil
+end
+function B.set_body(a, want, label)
+    local idx = want
+    if type(want) == "table" then
+        if #want == 0 then return nil end
+        idx = want[math.random(#want)]
+    end
+    idx = tonumber(idx)
+    if not idx then return nil end
+    idx = math.floor(idx)
+    local n = outfit_count(a)
+    if n and (idx < 0 or idx >= n) then idx = idx % n end
+    local ok = pcall(function() a._bodyMeshIndex = idx end)
+    local after = nil
+    pcall(function() after = a._bodyMeshIndex end)
+    if ok and after == idx then return idx, n end
+    return nil
+end
+function B.tick_body(now)
+    if next(B.body_watch) == nil then return end
+    now = now or os.time()
+    for h, w in pairs(B.body_watch) do
+        local a = B.actor(h)
+        if not a then
+            B.body_watch[h] = nil
+        else
+            local cur = nil
+            pcall(function() cur = a._bodyMeshIndex end)
+            if cur ~= w.idx then
+                w.changes = w.changes + 1
+                if w.log then
+                    lnote(string.format("%s: peli vaihtoi asun %s -> %s %d s spawnin jalkeen, palautetaan %d",
+                        w.label, tostring(w.idx), tostring(cur), now - w.t0, w.idx))
+                end
+                pcall(function() a._bodyMeshIndex = w.idx end)
+            end
+            if now - w.t0 >= B.body_watch_sec then
+                B.body_watch[h] = nil
+                if w.log then
+                    lnote(string.format("%s: asu %d pysyi %d s (peli vaihtoi sita %d kertaa)",
+                        w.label, w.idx, B.body_watch_sec, w.changes))
+                end
+            end
+        end
+    end
+end
+
 function B.apply_loadout(handle, loadout, label)
     local a = B.actor(handle)
     if not (a and loadout) then return 0 end
@@ -2248,11 +2314,28 @@ function B.apply_loadout(handle, loadout, label)
     if not B.outfit_surveyed and not B.survey_handle then
         B.survey_handle, B.survey_names, B.survey_at = handle, names, os.time() + 6
     end
-    if #names == 0 then return 0 end
+    local given = 0
+    if loadout.Asu ~= nil then
+        local before = nil
+        pcall(function() before = a._bodyMeshIndex end)
+        local okb, idx, n = pcall(B.set_body, a, loadout.Asu, label)
+        if okb and idx then
+            given = given + 1
+            body_logged = body_logged + 1
+            local log = body_logged <= 6
+            B.body_watch[handle] = { idx = idx, label = label, t0 = os.time(), changes = 0, log = log }
+            if log then
+                lnote(string.format("%s: asu %s -> %d (asuja tyypilla %s)", label, tostring(before), idx, tostring(n or "?")))
+            end
+        elseif body_logged == 0 then
+            body_logged = 1
+            lnote(label .. ": asun asetus ei onnistunut: " .. tostring(idx))
+        end
+    end
+    if #names == 0 then return given end
     local okl, loc = pcall(function() return a:K2_GetActorLocation() end)
     local pos = okl and vec(loc) or nil
-    if not pos then return 0 end
-    local given = 0
+    if not pos then return given end
     for _, name in ipairs(loadout.Clothes or {}) do
         local ok, res = pcall(wear_item, a, handle, name, label, pos)
         if ok and res then given = given + 1

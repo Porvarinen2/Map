@@ -615,6 +615,9 @@ function D:loadout_for(group)
             for _, n in ipairs(src[k] or {}) do out[k][#out[k] + 1] = n end
         end
     end
+    -- Outfit number: the squad's own wins over KAIKKI.
+    if own and own.Asu ~= nil then out.Asu = own.Asu
+    elseif common and common.Asu ~= nil then out.Asu = common.Asu end
     return out
 end
 
@@ -781,6 +784,7 @@ function D:tick(now)
     if self.bridge.maybe_survey then pcall(self.bridge.maybe_survey, now) end
     if self.bridge.maybe_player_survey then pcall(self.bridge.maybe_player_survey, now) end
     if self.bridge.tick_weapons then pcall(self.bridge.tick_weapons, now) end
+    if self.bridge.tick_body then pcall(self.bridge.tick_body, now) end
     if self.bridge.learn_items then pcall(self.bridge.learn_items, now) end
     -- Spawn / remove requests from the live map.
     Commands.poll(self, now)

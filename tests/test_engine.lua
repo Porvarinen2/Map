@@ -406,6 +406,12 @@ do
     check(not torso.swapped, "and nothing else changes")
     check(legs.SkeletalMesh:GetFullName():find("SK_Christmas_Pants_02", 1, true), "the item's own mesh is worn")
     check(not SB.wear_by_mesh(npc, "No_Such_Item_99", "test"), "an item without a mesh is reported, not worn")
+    local body_npc = { _bodyMeshIndex = 4,
+        _armedNPCBaseCommonData = { Variations = { Physical = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 } } } }
+    check(SB.set_body(body_npc, 0, "test") == 0 and body_npc._bodyMeshIndex == 0, "an outfit number sets the NPC's outfit index")
+    check(SB.set_body(body_npc, 13, "test") == 3, "a number past the NPC type's outfit list wraps around")
+    check(SB.set_body(body_npc, { 7 }, "test") == 7, "a list of outfit numbers picks one of them")
+    check(SB.set_body(body_npc, "x", "test") == nil and body_npc._bodyMeshIndex == 7, "a bad outfit number changes nothing")
     _G.FName, _G.FindAllOf, _G.LoadAsset, _G.StaticFindObject = nil, nil, nil, nil
 end
 
