@@ -1867,15 +1867,17 @@ function B.maybe_survey(now)
     if not a then B.survey_handle = nil; return end
     pcall(B.survey_outfit, a, B.survey_names)
 end
-function B.survey_outfit(actor, wanted)
-    if B.outfit_surveyed then return end
-    B.outfit_surveyed = true
-    local lines = { "OUTFIT SURVEY" }
+-- What a character (NPC or player pawn) wears, as seen from Lua: the body
+-- mesh's child components, attached actors, items owned by or attached to it,
+-- its own properties, and the insides of the clothes items it owns.
+local function inspect_character(actor, tag, lines, max_items)
     local an = full_name(actor)
-    -- 0. What hangs off the body mesh: clothes are most likely child mesh
-    --    components of CharacterMesh0.
+    lines[#lines + 1] = tag .. " " .. an
+    pcall(function() lines[#lines + 1] = "  class " .. full_name(actor:GetClass()) end)
+    -- 0. What hangs off the body mesh.
     pcall(function()
         local mesh = actor.Mesh
+        lines[#lines + 1] = "body mesh: " .. full_name(mesh) .. " = " .. full_name(mesh.SkeletalMesh)
         local out = {}
         local r = mesh:GetChildrenComponents(true, out)
         local kids = to_list(r)
@@ -1883,15 +1885,35 @@ function B.survey_outfit(actor, wanted)
         lines[#lines + 1] = "body mesh children: " .. #kids
         for _, k0 in ipairs(kids) do
             local k = unwrap(k0)
-            local nm, cl, m, ow = "?", "?", "", ""
+            local nm, cl, m, ow, sock, mat = "?", "?", "", "", "", ""
             pcall(function() nm = k:GetFName():ToString() end)
             pcall(function() cl = full_name(k:GetClass()) end)
             pcall(function() m = full_name(k.SkeletalMesh) end)
             if m == "" or m == "nil" then pcall(function() m = full_name(k.StaticMesh) end) end
             pcall(function() ow = full_name(k:GetOwner()) end)
-            lines[#lines + 1] = string.format("  %s [%s] mesh=%s owner=%s", tostring(nm), tostring(cl), tostring(m), tostring(ow))
+            pcall(function() sock = k:GetAttachSocketName():ToString() end)
+            pcall(function() mat = full_name(k:GetMaterial(0)) end)
+            lines[#lines + 1] = string.format("  %s [%s] mesh=%s mat0=%s socket=%s owner=%s",
+                tostring(nm), tostring(cl), tostring(m), tostring(mat), tostring(sock), tostring(ow))
         end
     end)
+    -- 0b. Every mesh component the actor owns (clothes may not be children).
+    for _, cname in ipairs({ "SkeletalMeshComponent", "StaticMeshComponent" }) do
+        local n = 0
+        for _, c in ipairs(find_all(cname, nil, true) or {}) do
+            local oko, o = pcall(function() return c:GetOwner() end)
+            if oko and o and full_name(o) == an then
+                n = n + 1
+                local nm, m, par = "?", "", ""
+                pcall(function() nm = c:GetFName():ToString() end)
+                pcall(function() m = full_name(c.SkeletalMesh) end)
+                if m == "" or m == "nil" then pcall(function() m = full_name(c.StaticMesh) end) end
+                pcall(function() par = full_name(c:GetAttachParent()) end)
+                lines[#lines + 1] = string.format("  own %s %s mesh=%s parent=%s", cname, tostring(nm), tostring(m), tostring(par))
+            end
+        end
+        lines[#lines + 1] = string.format("own %s: %d", cname, n)
+    end
     -- 1. Attached actors, asked two ways (UE4SS out-parameter styles differ).
     local attached = {}
     pcall(function()
@@ -1901,15 +1923,17 @@ function B.survey_outfit(actor, wanted)
         if #attached == 0 then attached = to_list(out) end
     end)
     lines[#lines + 1] = "GetAttachedActors: " .. #attached
-    for _, a in ipairs(attached) do
+    for _, a0 in ipairs(attached) do
+        local a = unwrap(a0)
         local sock = ""
         pcall(function() sock = a:GetAttachParentSocketName():ToString() end)
         lines[#lines + 1] = "  " .. full_name(a) .. (sock ~= "" and ("  @" .. sock) or "")
         pcall(function() lines[#lines + 1] = "    class " .. full_name(a:GetClass()) end)
     end
-    -- 2. Item actors on or next to this NPC, by base class.
+    -- 2. Item actors on or next to this character, by base class.
     local npos = nil
     pcall(function() npos = vec(actor:K2_GetActorLocation()) end)
+    local worn = {}
     for _, base in ipairs({ "Item", "ClothesItem" }) do
         local list = find_all(base, nil, true)
         local n, mine = list and #list or 0, 0
@@ -1919,44 +1943,81 @@ function B.survey_outfit(actor, wanted)
             local ipos = nil
             pcall(function() ipos = vec(it:K2_GetActorLocation()) end)
             local near = npos and ipos and U.dist2d(npos, ipos) < 400
-            if (okp and par and full_name(par) == an) or (okw and own and full_name(own) == an) or near then
+            local on = (okp and par and full_name(par) == an) or (okw and own and full_name(own) == an)
+            if on or near then
                 mine = mine + 1
                 local sock = ""
                 pcall(function() sock = it:GetAttachParentSocketName():ToString() end)
-                lines[#lines + 1] = string.format("  [%s on/near NPC] %s @%s parent=%s owner=%s", base,
+                lines[#lines + 1] = string.format("  [%s %s] %s @%s parent=%s owner=%s", base, on and "on" or "near",
                     full_name(it), sock, (okp and par) and full_name(par) or "-", (okw and own) and full_name(own) or "-")
-                pcall(function() lines[#lines + 1] = "    class " .. full_name(it:GetClass()) end)
+                if base == "ClothesItem" and on then worn[#worn + 1] = it end
             end
         end
-        lines[#lines + 1] = string.format("FindAllOf(%s): %d in world, %d on this NPC", base, n, mine)
+        lines[#lines + 1] = string.format("FindAllOf(%s): %d in world, %d on/near", base, n, mine)
     end
-    -- 2b. Everything SCUM's own NPC classes store (the outfit must be in
-    --     here somewhere, since it is not items), and what a worn clothes
-    --     item looks like inside.
-    pcall(dump_props, actor, lines, "NPC", "/Script/Engine.Character")
-    for _, it in ipairs(find_all("ClothesItem", nil, true) or {}) do
-        local okw, own = pcall(function() return it:GetOwner() end)
-        if okw and own and full_name(own) == an then
-            pcall(dump_props, it, lines, "CLOTHES", "/Script/Engine.Actor")
-            local comps = {}
-            for _, cname in ipairs({ "SkeletalMeshComponent", "StaticMeshComponent" }) do
-                for _, c in ipairs(find_all(cname, nil, true) or {}) do
-                    local oko, o = pcall(function() return c:GetOwner() end)
-                    if oko and o and full_name(o) == full_name(it) then
-                        local m = ""
-                        pcall(function() m = full_name(c.SkeletalMesh) end)
-                        pcall(function() if m == "" or m == "nil" then m = full_name(c.StaticMesh) end end)
-                        local vis = ""
-                        pcall(function() vis = tostring(c:IsVisible()) end)
-                        comps[#comps + 1] = string.format("  %s mesh=%s visible=%s", cname, m, vis)
-                    end
+    -- 2b. The character's own properties (where the outfit is stored), and
+    --     what a worn clothes item looks like inside.
+    pcall(dump_props, actor, lines, tag, "/Script/Engine.Character")
+    for i, it in ipairs(worn) do
+        if i > (max_items or 1) then break end
+        pcall(dump_props, it, lines, "CLOTHES", "/Script/Engine.Actor")
+        local comps = {}
+        for _, cname in ipairs({ "SkeletalMeshComponent", "StaticMeshComponent" }) do
+            for _, c in ipairs(find_all(cname, nil, true) or {}) do
+                local oko, o = pcall(function() return c:GetOwner() end)
+                if oko and o and full_name(o) == full_name(it) then
+                    local m, vis, par = "", "", ""
+                    pcall(function() m = full_name(c.SkeletalMesh) end)
+                    pcall(function() if m == "" or m == "nil" then m = full_name(c.StaticMesh) end end)
+                    pcall(function() vis = tostring(c:IsVisible()) end)
+                    pcall(function() par = full_name(c:GetAttachParent()) end)
+                    comps[#comps + 1] = string.format("  %s mesh=%s visible=%s parent=%s", cname, m, vis, par)
                 end
             end
-            lines[#lines + 1] = "CLOTHES components: " .. #comps
-            for _, l in ipairs(comps) do lines[#lines + 1] = l end
-            break
         end
+        lines[#lines + 1] = "CLOTHES components: " .. #comps
+        for _, l in ipairs(comps) do lines[#lines + 1] = l end
     end
+    return worn
+end
+B.inspect_character = inspect_character
+
+-- The player's own outfit, written to player_outfit.txt once a minute: put
+-- the clothes on yourself and the file shows how SCUM stores worn clothes on
+-- a character, to compare with the NPC survey in npc_loadout.txt.
+B.player_survey_every = 60
+local player_history = {}
+function B.maybe_player_survey(now)
+    now = now or os.time()
+    if now - (B.player_survey_at or 0) < B.player_survey_every then return end
+    B.player_survey_at = now
+    if not B.write_file then return end
+    local pawn = nil
+    for _, pc in ipairs(find_all("ConZPlayerController", now, true) or {}) do
+        local okp, p = pcall(function() return pc:K2_GetPawn() end)
+        if okp and valid(p) then pawn = p; break end
+    end
+    if not pawn then return end
+    local lines = {}
+    local worn = {}
+    local ok, w = pcall(inspect_character, pawn, "PLAYER", lines, 4)
+    if ok and w then worn = w end
+    local names = {}
+    for _, it in ipairs(worn) do names[#names + 1] = (full_name(it):match("([%w_]+)_C_%d+") or full_name(it)) end
+    player_history[#player_history + 1] = os.date("%H:%M:%S") .. "  " .. #names .. " clothes: " .. table.concat(names, ", ")
+    while #player_history > 30 do table.remove(player_history, 1) end
+    local head = { "PLAYER OUTFIT " .. os.date("%Y-%m-%d %H:%M:%S"), "--- clothes worn per scan ---" }
+    for _, l in ipairs(player_history) do head[#head + 1] = l end
+    head[#head + 1] = ""
+    head[#head + 1] = "--- latest scan ---"
+    pcall(B.write_file, "player_outfit.txt", table.concat(head, "\n") .. "\n" .. table.concat(lines, "\n") .. "\n")
+end
+
+function B.survey_outfit(actor, wanted)
+    if B.outfit_surveyed then return end
+    B.outfit_surveyed = true
+    local lines = { "OUTFIT SURVEY" }
+    pcall(inspect_character, actor, "NPC", lines, 1)
     -- 3. Item classes learned from the world so far, and the wanted ones.
     pcall(B.learn_items, 0)
     local n = 0
