@@ -284,6 +284,30 @@ do
 end
 
 print("")
+print("== class freed by the garbage collector ==")
+do
+    local objs, loads = {}, 0
+    local function class_obj(path)
+        return { alive = true, IsValid = function(self) return self.alive end,
+                 GetFullName = function() return "BlueprintGeneratedClass " .. path end }
+    end
+    _G.StaticFindObject = function(path) local o = objs[path]; return (o and o.alive) and o or nil end
+    _G.LoadAsset = function(path) loads = loads + 1; objs[path] = class_obj(path) end
+    package.loaded["bridge.scum"] = nil
+    local SB = require("bridge.scum")
+    SB.cfg = {}
+    for k = 1, 25 do SB.maybe_refresh_catalog(1000 + k) end
+    check(SB.class_for(2, nil, "Drifter") ~= nil, "the catalog is complete")
+    -- The engine frees every class nobody has used yet.
+    for _, o in pairs(objs) do o.alive = false end
+    local before = loads
+    local c = SB.class_for(2, nil, "Drifter")
+    check(c ~= nil and c.alive, "a freed class is loaded again when a spawn needs it")
+    check(loads == before + 1, "only the class that is needed is reloaded (" .. (loads - before) .. ")")
+    _G.StaticFindObject, _G.LoadAsset = nil, nil
+end
+
+print("")
 print("== radiation zone ==")
 do
     local Ph = require("sim.physical")

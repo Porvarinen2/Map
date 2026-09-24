@@ -358,10 +358,45 @@ end
 -- Picks the class for a request. A missing variant falls back to the plain
 -- body of the same family, a missing family to Drifter: an NPC in the wrong
 -- clothes beats no NPC.
+-- The Blueprint classes are loaded at startup, but nothing in the world uses
+-- them until the first spawn, and the engine's garbage collector frees an
+-- unused class within a minute or two. The 1.4.0 log shows exactly that: all
+-- twenty classes loaded at 17:06, the player joined at 17:08, ground was found
+-- and not a single spawn was even attempted - every cached class had gone
+-- invalid. A class that has gone is loaded again right when it is needed.
+local reload_after = {}
+B.class_reloads = 0
+local function resolve_class(family, level, variant)
+    local key = ckey(family, level, variant)
+    local c = class_cache[key]
+    if c and valid(c) then return c end
+    if catalog_failed[key] then return nil end
+    local known = false
+    for _, e in ipairs(catalog_order) do
+        if ckey(e.family, e.level, e.variant) == key then known = true break end
+    end
+    if not known then return nil end
+    local now = os.time()
+    if (reload_after[key] or 0) > now then return nil end
+    reload_after[key] = now + 5
+    local nc, how = load_class(family, level, variant)
+    if nc then
+        class_cache[key] = nc
+        B.class_reloads = B.class_reloads + 1
+        if B.on_debug and B.class_reloads <= 10 then
+            pcall(B.on_debug, string.format("npc class %s reloaded (%s): the engine had freed it",
+                short_name(family, level, variant), tostring(how)))
+        end
+        return nc
+    end
+    class_cache[key] = nil
+    return nil
+end
+
 function B.class_for(level, variant, family)
     family = family or "Drifter"
-    local c = class_cache[ckey(family, level, variant)]
-    if c and valid(c) then return c, family, variant end
+    local c = resolve_class(family, level, variant)
+    if c then return c, family, variant end
     if variant then return B.class_for(level, nil, family) end
     if family ~= "Drifter" then return B.class_for(level, nil, "Drifter") end
     return nil
@@ -590,7 +625,8 @@ function B.spawn_npc(req)
     local variant = req.variant
     local cls, used_family, used_variant = B.class_for(req.level, variant, req.family)
     if not cls then
-        set_health("physicalVirtualization", "PENDING", "NPC_CLASS_UNAVAILABLE")
+        set_health("physicalVirtualization", "DEGRADED", "NPC_CLASS_UNAVAILABLE: "
+            .. short_name(req.family or "Drifter", req.level, variant))
         B.stats.spawn_fail = B.stats.spawn_fail + 1
         return nil, "NPC_CLASS_UNAVAILABLE"
     end

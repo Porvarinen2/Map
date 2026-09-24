@@ -56,7 +56,7 @@ if ($out) {
     $report += "mods.txt MISSING at $modsTxt"
   }
 
-  foreach ($f in @("boot.log", "director.log", "events.tsv", "movement_debug.tsv", "last_engine_calls.txt")) {
+  foreach ($f in @("boot.log", "director.log", "events.tsv", "movement_debug.tsv", "last_engine_calls.txt", "live_state.json")) {
     $p = Join-Path $out $f
     if (Test-Path $p) {
       Copy-Item $p (Join-Path $tmp $f) -Force

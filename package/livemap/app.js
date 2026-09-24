@@ -1007,6 +1007,7 @@ async function poll() {
 /* ----------------------------------------------------------------- input */
 
 wrap.addEventListener("mousedown", e => {
+  if (e.button !== 0) return;
   dragging = { x: e.clientX, y: e.clientY, ox: view.ox, oy: view.oy, moved: false };
   wrap.classList.add("dragging");
 });
@@ -1047,6 +1048,68 @@ wrap.addEventListener("wheel", e => {
   zoomAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.18 : 1 / 1.18);
   renderHud();
 }, { passive: false });
+
+/* ---------------------------------------------------------- context menu */
+
+// Right click on the map: copy a SCUM admin teleport command for that spot,
+// ready to paste into the in-game chat. Z 0 is what the community maps use;
+// the game puts the player on the ground.
+const ctxMenu = document.createElement("div");
+ctxMenu.id = "ctxMenu";
+wrap.appendChild(ctxMenu);
+let toastTimer = null;
+
+function copyText(text) {
+  const done = () => showToast("Kopioitu: " + text);
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(done, () => fallbackCopy(text, done));
+  } else fallbackCopy(text, done);
+}
+function fallbackCopy(text, done) {
+  const ta = document.createElement("textarea");
+  ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+  document.body.appendChild(ta); ta.select();
+  let ok = false;
+  try { ok = document.execCommand("copy"); } catch (e) {}
+  ta.remove();
+  if (ok) done(); else window.prompt("Kopioi komento:", text);
+}
+function showToast(text) {
+  let t = document.getElementById("toast");
+  if (!t) { t = document.createElement("div"); t.id = "toast"; wrap.appendChild(t); }
+  t.textContent = text; t.style.display = "block";
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.style.display = "none"; }, 2200);
+}
+function hideCtx() { ctxMenu.style.display = "none"; }
+
+wrap.addEventListener("contextmenu", e => {
+  e.preventDefault();
+  const r = canvas.getBoundingClientRect();
+  const sx = e.clientX - r.left, sy = e.clientY - r.top;
+  const w = screenToWorld(sx, sy);
+  const x = Math.round(w.x), y = Math.round(w.y);
+  const tp = `#Teleport ${x} ${y} 0`;
+  const g = pick(sx, sy);
+  const gtp = g ? `#Teleport ${Math.round(g.x)} ${Math.round(g.y)} 0` : null;
+  ctxMenu.innerHTML = `
+    <div class="hd">${esc(sectorOf(w.x, w.y))} · X ${x} / Y ${y}</div>
+    <button data-copy="${esc(tp)}">Kopioi teleport-komento</button>
+    ${gtp ? `<button data-copy="${esc(gtp)}">Teleporttaa ryhmän ${esc(g.gid)} luo</button>` : ""}
+    <button data-copy="${x} ${y} 0">Kopioi koordinaatit</button>`;
+  ctxMenu.style.display = "block";
+  ctxMenu.style.left = Math.min(sx, wrap.clientWidth - 250) + "px";
+  ctxMenu.style.top = Math.min(sy, wrap.clientHeight - 140) + "px";
+  hideTip();
+});
+ctxMenu.addEventListener("mousedown", e => e.stopPropagation());
+ctxMenu.addEventListener("click", e => {
+  const b = e.target.closest("[data-copy]");
+  if (b) { copyText(b.dataset.copy); hideCtx(); }
+});
+window.addEventListener("mousedown", e => { if (e.button !== 2) hideCtx(); });
+window.addEventListener("keydown", e => { if (e.key === "Escape") hideCtx(); });
+wrap.addEventListener("wheel", hideCtx, { passive: true });
 
 function pick(sx, sy) {
   let best = null, bestD = 18;

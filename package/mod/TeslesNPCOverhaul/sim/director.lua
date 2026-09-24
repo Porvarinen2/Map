@@ -697,6 +697,14 @@ function D:tick_group(group, players, physical_groups, dt)
         self.counters.spawns = self.counters.spawns + spawned
         self.counters.spawn_fail = self.counters.spawn_fail + failed
         if failed > 0 and spawned == 0 then
+            -- Every refusal is on record, so "no NPCs appeared" always has a
+            -- reason in events.tsv and, once per change, in boot.log.
+            if group.spawn_note ~= why then
+                Log.event("SPAWN_FAIL", group.gid, tostring(why))
+                if self.bridge.on_debug then
+                    pcall(self.bridge.on_debug, "spawn refused for " .. group.gid .. ": " .. tostring(why))
+                end
+            end
             group.spawn_note = why
         else
             group.spawn_note = nil
