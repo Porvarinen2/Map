@@ -592,5 +592,43 @@ do
     end
 end
 
+do
+    -- Sight: a player behind the NPC is not seen, one in front at 150 m is
+    -- (the squad closes in), fire opens only at 100 m.
+    local world, d = fresh(77)
+    local g = world.groups[1]
+    local m = g.members[1]
+    for _, x in ipairs(g.members) do x.alive = (x == m) end
+    m.runtime_id, m.position = 991, { X = 0, Y = 0, Z = 0 }
+    m.gear = { weapon = "Weapon_AK47" }
+    g.position = m.position
+    local calls = {}
+    local front = false
+    local fake = setmetatable({
+        set_native = function(h, on) calls[#calls + 1] = on; return true end,
+        sees = function() return front end,
+        weapon_of = function() return nil end,
+    }, { __index = d.bridge })
+    d.bridge = fake
+    d:player_fights({ g }, { { X = 15000, Y = 0, Z = 0 } }, 1000)
+    check(#calls == 0 and not g.spotted, "a player 150 m behind the NPC is not seen")
+    front = true
+    d:player_fights({ g }, { { X = 15000, Y = 0, Z = 0 } }, 1001)
+    check(#calls == 0 and g.spotted ~= nil, "seen at 150 m: the squad knows, nobody fires yet")
+    front = false
+    d:player_fights({ g }, { { X = 9000, Y = 0, Z = 0 } }, 1005)
+    check(#calls == 1 and calls[1] == true, "at 90 m the NPC that knows opens fire")
+    local world2, d2 = fresh(78)
+    local g2 = world2.groups[1]
+    local m2 = g2.members[1]
+    for _, x in ipairs(g2.members) do x.alive = (x == m2) end
+    m2.runtime_id, m2.position, m2.gear = 992, { X = 0, Y = 0, Z = 0 }, { weapon = "Weapon_AK47" }
+    local c2 = {}
+    d2.bridge = setmetatable({ set_native = function(h, on) c2[#c2 + 1] = on; return true end,
+        sees = function() return false end, weapon_of = function() return nil end }, { __index = d2.bridge })
+    d2:player_fights({ g2 }, { { X = 800, Y = 0, Z = 0 } }, 1000)
+    check(#c2 == 1, "right next to it (8 m) the NPC notices even from behind")
+end
+
 print("")
 os.exit(fails == 0 and 0 or 1)

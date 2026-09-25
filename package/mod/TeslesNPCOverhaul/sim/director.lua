@@ -653,10 +653,30 @@ end
 -- reach for a while. Reach comes from the NPC's weapon: a scoped rifle
 -- 200 m, a rifle 150 m, a pistol 50 m; melee fighters close in from 40 m.
 D.FIGHT = { release_factor = 1.3, release_extra_uu = 2000, release_after = 20, melee_uu = 4000 }
+-- Seeing and shooting (config): an NPC notices a player up to DetectRangeM
+-- away, but only in front of it (ViewAngleDeg to either side) and with a
+-- clear line of sight - never through the back of its head, except right
+-- next to it (CloseSenseM: footsteps). A squad that spots a player closes
+-- in; each member opens fire (SCUM's own AI) at FireRangeM, a scoped rifle
+-- at ScopedFireRangeM.
+function D:sight_rules()
+    local c = self.cfg or {}
+    return {
+        detect = (tonumber(c.NPCDetectRangeM) or 200) * 100,
+        fire = (tonumber(c.NPCFireRangeM) or 100) * 100,
+        fire_scoped = (tonumber(c.NPCScopedFireRangeM) or 200) * 100,
+        angle = tonumber(c.NPCViewAngleDeg) or 60,
+        close = (tonumber(c.NPCCloseSenseM) or 10) * 100,
+    }
+end
+
 function D:player_fights(physical_groups, players, now)
     if not self.bridge.set_native then return end
     local F = D.FIGHT
+    local R = self:sight_rules()
+    local sees = self.bridge.sees
     for _, g in ipairs(physical_groups) do
+        local spotted = nil
         for _, m in ipairs(g.members) do
             if m.alive and m.runtime_id then
                 -- The weapon the NPC really got (same manual type as SCUM's).
@@ -665,14 +685,30 @@ function D:player_fights(physical_groups, players, now)
                     m.gear.weapon, m.gear.scoped = real, false
                 end
                 local mp = m.position or g.position
-                local best = math.huge
+                local best, bp = math.huge, nil
                 for _, p in ipairs(players) do
                     local d = U.dist2d(mp, p)
-                    if d < best then best = d end
+                    if d < best then best, bp = d, p end
                 end
                 local prof = Weapons.profile(m.gear and m.gear.weapon or "Weapon_AK47", m.gear and m.gear.scoped)
-                local reach = math.max(prof.range, F.melee_uu)
-                if best <= reach then
+                local fire = prof.scoped and R.fire_scoped or R.fire
+                local reach = math.max(math.min(prof.range, fire), F.melee_uu)
+                if prof.scoped then reach = math.max(reach, fire) end
+                -- Does this NPC see the player (front, clear line)?
+                if bp and best <= R.detect and not m.native_fight then
+                    local seen = best <= R.close
+                    if not seen then
+                        if sees then
+                            local ok, v = pcall(sees, m.runtime_id, bp, R.angle)
+                            seen = ok and v == true
+                        else
+                            seen = true
+                        end
+                    end
+                    if seen then spotted = spotted or { pos = bp, d = best, who = m.npcId } end
+                end
+                local aware = (g.spotted and now <= g.spotted.until_t) or best <= R.close
+                if best <= reach and (aware or spotted or m.native_fight) then
                     m.fight_far_since = nil
                     if not m.native_fight then
                         m.native_fight = true
@@ -686,6 +722,26 @@ function D:player_fights(physical_groups, players, now)
                         self.bridge.set_native(m.runtime_id, false)
                         Log.event("FIGHT_END", g.gid, m.npcId)
                     end
+                end
+            end
+        end
+        -- One of them saw a player: the squad knows, turns towards them and
+        -- closes in (re-planned when the player has moved on).
+        if spotted then
+            local first = not (g.spotted and now <= g.spotted.until_t)
+            local moved = g.spotted and g.spotted.pos and U.dist2d(g.spotted.pos, spotted.pos) > 2000
+            g.spotted = { pos = U.copy_vec(spotted.pos), until_t = now + 60,
+                          routed_at = g.spotted and g.spotted.routed_at }
+            if first then
+                Log.event("SPOTTED", g.gid, string.format("%s %.0f m", spotted.who, spotted.d / 100))
+            end
+            if first or (moved and now - (g.spotted.routed_at or 0) >= 10) then
+                g.spotted.routed_at = now
+                g.investigating = { pos = U.copy_vec(spotted.pos), until_t = now + 60 }
+                pcall(self.solve_route, self, g, spotted.pos, { prefer_roads = false, direct_max = 400000 })
+                if g.act then
+                    g.act.state = S.PATROL
+                    g.act.until_t = now + 60
                 end
             end
         end

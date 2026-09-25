@@ -1304,6 +1304,81 @@ end
 -- of the NPC's weapon the brain is started again and SCUM's AI fights with
 -- the weapon, magazine and weapon manual the NPC carries; when the player
 -- is gone the director takes the NPC back.
+-- Does the NPC see a spot: in front of it (within half_angle degrees of
+-- where it faces) and with nothing solid between its eyes and the spot?
+function B.sees(handle, target, half_angle)
+    local a = B.actor(handle)
+    if not a then return false end
+    local p = nil
+    pcall(function() p = vec(a:K2_GetActorLocation()) end)
+    if not (p and sane(target)) then return false end
+    local yaw = nil
+    pcall(function() yaw = tonumber(a:K2_GetActorRotation().Yaw) end)
+    if yaw then
+        local ang = math.deg(math.atan(target.Y - p.Y, target.X - p.X))
+        local diff = math.abs(((ang - yaw + 540) % 360) - 180)
+        if diff > (half_angle or 60) then return false end
+    end
+    local k = get_kismet()
+    if not k then return true end
+    local from = { X = p.X, Y = p.Y, Z = p.Z + 70 }
+    local to = { X = target.X, Y = target.Y, Z = (target.Z or p.Z) + 40 }
+    local ok, out, hit = pcall(function()
+        local o = {}
+        local r = k:LineTraceSingle(B.get_world(), from, to, 0, false, { a }, 0, o, true,
+            { R = 0, G = 0, B = 0, A = 0 }, { R = 0, G = 0, B = 0, A = 0 }, 0)
+        return o, r
+    end)
+    if not ok then return true end
+    if hit == false then return true end
+    local ip = vec(out.ImpactPoint) or vec(out.Location)
+    if not sane(ip) then return true end
+    local total = math.sqrt((to.X - from.X) ^ 2 + (to.Y - from.Y) ^ 2 + (to.Z - from.Z) ^ 2)
+    local got = math.sqrt((ip.X - from.X) ^ 2 + (ip.Y - from.Y) ^ 2 + (ip.Z - from.Z) ^ 2)
+    -- Hitting the player (or right next to them) is seeing them.
+    return got >= total - 150
+end
+
+-- SCUM's own sight for an NPC handed a fight: as far as the mod's detection
+-- (config NPCDetectRangeM) and only to the front (NPCViewAngleDeg). The
+-- sight settings are plain values on the controller's sense configs; the
+-- perception system reads them again on RequestStimuliListenerUpdate.
+local sight_logged = false
+local function tune_sight(a)
+    local c = B.controller(a)
+    if not c then return end
+    local radius = (tonumber(B.cfg and B.cfg.NPCDetectRangeM) or 200) * 100
+    local angle = tonumber(B.cfg and B.cfg.NPCViewAngleDeg) or 60
+    local before = nil
+    local function set(cfg)
+        if not (cfg and valid(cfg)) then return end
+        pcall(function()
+            before = before or string.format("%.0f/%.0f/%.0f", cfg.SightRadius, cfg.LoseSightRadius,
+                cfg.PeripheralVisionAngleDegrees)
+        end)
+        pcall(function() cfg.SightRadius = radius end)
+        pcall(function() cfg.LoseSightRadius = radius + 2000 end)
+        pcall(function() cfg.PeripheralVisionAngleDegrees = angle end)
+    end
+    local perc = nil
+    pcall(function() perc = c.PerceptionComponent end)
+    if perc and valid(perc) then
+        pcall(function()
+            perc.SensesConfig:ForEach(function(_, e)
+                local cfg = unwrap(e)
+                if cfg and valid(cfg) and full_name(cfg:GetClass()):find("Sight") then set(cfg) end
+            end)
+        end)
+    end
+    pcall(function() set(c._sightSenseConfigCombat) end)
+    local upd = perc and valid(perc) and pcall(function() perc:RequestStimuliListenerUpdate() end)
+    if not sight_logged then
+        sight_logged = true
+        B.loadout_note(string.format("NPC:n nako: ennen %s (sade/katoaa/kulma), nyt %.0f/%.0f/%.0f, paivitys %s",
+            tostring(before), radius, radius + 2000, angle, tostring(upd)))
+    end
+end
+
 function B.set_native(handle, on)
     local rec = handles[handle]
     local a = B.actor(handle)
@@ -1312,6 +1387,10 @@ function B.set_native(handle, on)
     local c = B.controller(a)
     local ok = false
     if on then
+        if not rec.sight_tuned then
+            rec.sight_tuned = true
+            pcall(tune_sight, a)
+        end
         pcall(function() c:ClearFocus(0) end)
         ok = pcall(function()
             local bt = c.BrainComponent

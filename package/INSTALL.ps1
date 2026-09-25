@@ -360,7 +360,7 @@ $target = Join-Path $mods $MOD
 $keepState = $null
 $keepOutput = $null
 $keepUser = @{}
-$keepGhostChance = $null
+$keepCfg = @{}
 if (Test-Path -LiteralPath $target) {
   Copy-Item -LiteralPath $target -Destination (Join-Path $backup $MOD) -Recurse -Force
   Say "Vanha versio varmuuskopioitiin." "Gray"
@@ -392,8 +392,12 @@ if (Test-Path -LiteralPath $target) {
   if (Test-Path -LiteralPath $oldCfg) {
     $oc = Get-Content -LiteralPath $oldCfg -Raw
     $mv = [regex]::Match($oc, 'Version\s*=\s*"([^"]+)"')
-    $mg = [regex]::Match($oc, 'GhostWeaponChance\s*=\s*([0-9.]+)')
-    if ($mg.Success -and -not ($mv.Success -and $mv.Groups[1].Value -eq '1.9.21')) { $keepGhostChance = $mg.Groups[1].Value }
+    foreach ($key in @('GhostWeaponChance', 'NPCDetectRangeM', 'NPCFireRangeM', 'NPCScopedFireRangeM', 'NPCViewAngleDeg', 'NPCCloseSenseM')) {
+      $mg = [regex]::Match($oc, "$key\s*=\s*([0-9.]+)")
+      if (-not $mg.Success) { continue }
+      if ($key -eq 'GhostWeaponChance' -and $mv.Success -and $mv.Groups[1].Value -eq '1.9.21') { continue }
+      $keepCfg[$key] = $mg.Groups[1].Value
+    }
   }
   Remove-Item -LiteralPath $target -Recurse -Force
 }
@@ -410,12 +414,14 @@ if ($keepState) {
   Remove-Item -LiteralPath $keepState -Recurse -Force
   Say "Maailman tila palautettiin." "Green"
 }
-if ($keepGhostChance) {
+if ($keepCfg.Count -gt 0) {
   $newCfg = Join-Path $target 'config.lua'
   $nc = Get-Content -LiteralPath $newCfg -Raw
-  $nc = [regex]::Replace($nc, 'GhostWeaponChance\s*=\s*[0-9.]+', "GhostWeaponChance = $keepGhostChance")
+  foreach ($key in $keepCfg.Keys) {
+    $nc = [regex]::Replace($nc, "$key\s*=\s*[0-9.]+", "$key = $($keepCfg[$key])")
+    Say "Oma asetus sailytettiin: $key = $($keepCfg[$key])" "Green"
+  }
   [System.IO.File]::WriteAllText($newCfg, $nc, (New-Object System.Text.UTF8Encoding($false)))
-  Say "Haamuaseen todennakoisyys sailytettiin: $keepGhostChance" "Green"
 }
 foreach ($uf in $keepUser.Keys) {
   $tmp = $keepUser[$uf]

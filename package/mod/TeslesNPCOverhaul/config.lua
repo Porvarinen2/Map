@@ -1,7 +1,7 @@
 -- TESLES NPC OVERHAUL - server configuration.
 -- Distances are Unreal units unless a name says otherwise. 100 UU = 1 metre.
 return {
-    Version = "1.9.26",
+    Version = "1.9.27",
 
     -- ---------------------------------------------------------- population --
     Enabled = true,
@@ -91,6 +91,16 @@ return {
     -- HAAMUASEEN TODENNAKOISYYS: 1.0 = kaikilla NPC:illa custom-ase (kun
     -- sopiva loytyy), 0.5 = puolella, 0 = ei kellaan. Sailyy paivityksissa.
     GhostWeaponChance = 1.0,
+
+    -- NAKO JA AMPUMINEN: NPC huomaa pelaajan tasta etaisyydesta (metria),
+    -- vain edessaan (kulma sivulle) ja jos valissa ei ole esteita. Aivan
+    -- vierelta (LahiM) se huomaa myos selan takaa. Ampuminen alkaa
+    -- FireRangeM:sta, tahtaimella ScopedFireRangeM:sta.
+    NPCDetectRangeM = 200,
+    NPCFireRangeM = 100,
+    NPCScopedFireRangeM = 200,
+    NPCViewAngleDeg = 60,
+    NPCCloseSenseM = 10,
 
     -- Omat varusteet: katso varusteet.lua (sailyy paivityksissa).
 
