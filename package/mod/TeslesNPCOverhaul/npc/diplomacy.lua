@@ -49,9 +49,13 @@ function D.add_authority(class_key) AUTHORITY[class_key] = true end
 -- owner's rule: only the members of one squad are friends). Bandits and the authorities hate each other most. The
 -- owner's own class pairs (ryhmat.lua) still set their own standing.
 D.ALL_HOSTILE = -0.65
+D.ZONE_ALLIES = { radiation_group = true, island_residents = true }
 function D.default_standing(class_a, class_b)
     local c = custom_pairs[class_a .. "|" .. class_b]
     if c then return c end
+    -- The squads of a closed zone stick together: the radiation teams in C0
+    -- and the islanders on Z4 are friends among themselves.
+    if class_a == class_b and D.ZONE_ALLIES[class_a] then return 0.6 end
     if class_a == "bandit_gang" or class_b == "bandit_gang" then
         local other = (class_a == "bandit_gang") and class_b or class_a
         if AUTHORITY[other] then return D.BANDIT_VS_AUTHORITY end

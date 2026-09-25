@@ -134,6 +134,9 @@ check(Diplomacy.default_standing("police_patrol", "hunters") == -0.65,
       "kaikki eri luokat ovat toisilleen vihamielisia")
 check(Diplomacy.default_standing("militia_cell", "militia_cell") == -0.65,
       "myos saman luokan squadit ovat vihollisia")
+check(Diplomacy.default_standing("radiation_group", "radiation_group") > 0.5
+      and Diplomacy.default_standing("island_residents", "island_residents") > 0.5,
+      "C0:n sateilyryhmat ja Z4:n saarelaiset ovat toisilleen ystavia")
 
 local b = Factory.new_npc({ id = 9001, archetype = "bandit" })
 local s = Factory.new_npc({ id = 9002, archetype = "survivor" })
