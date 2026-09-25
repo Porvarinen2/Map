@@ -341,8 +341,11 @@ function Bh.react(director, group, now, sense, fighting)
         if best then threat_pos, shot_by_player = best, true end
     end
 
-    -- Panic and rout: the squad breaks and runs.
-    if (mood == "PANIC" or mood == "ROUT") and threat_pos then
+    -- Panic and rout: the squad breaks and runs - but a squad facing a
+    -- hostile squad stands and fights until it has taken losses (the way it
+    -- stands against zombies); gunfire alone does not send it running.
+    local stands = group.last_contact and not (group.loss_at and now - group.loss_at < 120)
+    if (mood == "PANIC" or mood == "ROUT") and threat_pos and not stands then
         local dest = away_point(group.position, threat_pos, t.flee_uu * (mood == "ROUT" and 1.6 or 1))
         group.flee_until = now + (mood == "ROUT" and 45 or 25)
         group.disengaged_until = now + 60

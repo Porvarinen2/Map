@@ -209,7 +209,7 @@ check(not Physical.wants_physical({ physical = true, lod_changed_at = 100 }, 100
       "pito-ajan jalkeen ryhma virtualisoituu")
 
 section("combat and buildings")
-check(Combat.tuning.contact_uu == 12000, "vihamielinen ryhmakontakti noin 120 m")
+check(Combat.tuning.contact_uu == 20000, "vihamielinen ryhmakontakti noin 200 m")
 check(Combat.tuning.zombie_uu == 14000, "zombipaine noin 140 m")
 check(Combat.tuning.preferred_range_uu == 2500, "ampuma-etaisyyden tavoite 25 m")
 check(Combat.tuning.morale_retreat == 0.25,

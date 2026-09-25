@@ -18,7 +18,7 @@ local function Utility_trait(m, k) return Tr.trait(m, k) end
 local C = {}
 
 C.tuning = {
-    contact_uu = 12000,            -- 120 m hostile group contact
+    contact_uu = 20000,            -- 200 m hostile group contact
     zombie_uu = 14000,             -- 140 m zombie awareness
     preferred_range_uu = 2500,     -- 25 m ranged stand-off
     min_range_uu = 900,
@@ -305,7 +305,10 @@ function C.exchange_fire(group, enemy, rng, accuracy)
     if #foes == 0 then return hits end
     local f = C.fire
     for _, m in ipairs(group.members) do
-        if m.alive and m.action ~= "RETREAT" and m.action ~= "FLEE" then
+        -- Until the squad has lost someone, everyone fires, even those
+        -- whose nerve says run.
+        local holds = not (group.loss_at and os.time() - group.loss_at < 120)
+        if m.alive and (holds or (m.action ~= "RETREAT" and m.action ~= "FLEE")) then
             local mp = m.position or group.position
             local target, best = nil, math.huge
             for _, e in ipairs(foes) do
