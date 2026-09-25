@@ -2864,7 +2864,35 @@ function B.tick_loot(now)
         for k, p in pairs(loose_items_near(l.pos, 350)) do
             if not l.base[k] then fresh = p; break end
         end
-        if fresh or gone then
+        -- A player at the body (searching it). SCUM's search loot was not
+        -- seen as new loose items on the 1.9.22 server, so standing by the
+        -- body for a moment is enough.
+        local near = false
+        for _, pl in ipairs(B.player_positions() or {}) do
+            if math.abs(pl.X - l.pos.X) < 260 and math.abs(pl.Y - l.pos.Y) < 260 and math.abs((pl.Z or l.pos.Z) - l.pos.Z) < 300 then
+                near = true
+            end
+        end
+        l.near_polls = near and (l.near_polls or 0) + 1 or 0
+        -- What lies around the body while a player is there (to learn how
+        -- SCUM's search loot shows up): once per body.
+        if near and not l.probed then
+            l.probed = true
+            local seen = {}
+            for _, it in ipairs(find_all("Item", nil, true) or {}) do
+                local p = nil
+                pcall(function() p = vec(it:K2_GetActorLocation()) end)
+                if p and math.abs(p.X - l.pos.X) < 400 and math.abs(p.Y - l.pos.Y) < 400 and #seen < 12 then
+                    local o = nil
+                    pcall(function() o = it:GetOwner() end)
+                    seen[#seen + 1] = ((full_name(it:GetClass()):match("([%w_]+)$") or "?"):gsub("_C$", ""))
+                        .. (o and ("<" .. ((full_name(o:GetClass()):match("([%w_]+)$")) or "?") .. ">") or "")
+                        .. (l.base[full_name(it)] and "*" or "")
+                end
+            end
+            lnote(string.format("ruumiin luona (%s): %s", l.label, #seen > 0 and table.concat(seen, ", ") or "ei esineita"))
+        end
+        if l.near_polls >= 2 or fresh or gone then
             table.remove(B.pending_loot, i)
             -- Next to SCUM's own loot, on the floor under it.
             local ref = fresh or l.pos
@@ -2874,7 +2902,7 @@ function B.tick_loot(now)
             if z then at.Z = z + 3 elseif fresh then at.Z = fresh.Z end
             local ok = lay_weapon(l, at)
             lnote(string.format("haamuase lootattu (%s): %s maassa %s (%s)", l.label, l.name, tostring(ok),
-                fresh and "searchattu" or "ruumis poistui"))
+                fresh and "uusi loot ruumiin vieressa" or gone and "ruumis poistui" or "pelaaja ruumiin luona"))
         elseif now - l.t0 > B.loot_wait_sec then
             table.remove(B.pending_loot, i)
         end
