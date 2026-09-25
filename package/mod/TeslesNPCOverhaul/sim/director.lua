@@ -369,12 +369,16 @@ function D:move_physical(group, dt)
     -- Followers get a little more so the column closes up instead of
     -- stretching.
     local want = (group.act.state == S.TRAVEL)
-        and (self.cfg.PhysicalTravelSpeedUU or 420)
-        or (self.cfg.PhysicalWalkSpeedUU or 300)
+        and (self.cfg.PhysicalTravelSpeedUU or 135)
+        or (self.cfg.PhysicalWalkSpeedUU or 135)
+    -- Running away (or back): a run, not a walk.
+    if (group.flee_until and self.now < group.flee_until) or group.act.state == S.RETREAT then
+        want = self.cfg.PhysicalRunSpeedUU or 450
+    end
     if group.speed_set ~= want and self.bridge.set_speed then
         for _, m in ipairs(group.members) do
             if m.alive and m.runtime_id then
-                self.bridge.set_speed(m.runtime_id, m == lead and want or want * 1.12)
+                self.bridge.set_speed(m.runtime_id, m == lead and want or want * 1.05)
             end
         end
         group.speed_set = want
@@ -749,7 +753,7 @@ function D:player_fights(physical_groups, players, now)
             end
             if first or (moved and now - (g.spotted.routed_at or 0) >= 10) then
                 g.spotted.routed_at = now
-                g.investigating = { pos = U.copy_vec(spotted.pos), until_t = now + 60 }
+                g.chase_mood = { kind = "CHASE_PLAYER", until_t = now + 60 }
                 pcall(self.solve_route, self, g, spotted.pos, { prefer_roads = false, direct_max = 400000 })
                 if g.act then
                     g.act.state = S.PATROL
@@ -760,10 +764,13 @@ function D:player_fights(physical_groups, players, now)
     end
 end
 
+-- Hunters go after the animals they see. Nobody walks towards zombies on
+-- purpose: zombies at a squad's destination are fought there (fight_zombies).
 function D:watch_creatures(g, R, now)
     local near = self.bridge.creatures_near
     local sees = self.bridge.sees
     if not (near and sees) then return end
+    if g.class ~= "hunters" then return end
     if now < (g.creature_check_at or 0) then return end
     g.creature_check_at = now + 3
     if (g.flee_until and now < g.flee_until) or (g.act and (g.act.state == S.COMBAT or g.act.state == S.RETREAT)) then
@@ -779,8 +786,10 @@ function D:watch_creatures(g, R, now)
     end
     if not eyes then return end
     local from = eyes.position or g.position
-    local ok, list = pcall(near, from, R.detect)
-    if not ok or type(list) ~= "table" then return end
+    local ok, all = pcall(near, from, R.detect)
+    if not ok or type(all) ~= "table" then return end
+    local list = {}
+    for _, c in ipairs(all) do if c.kind == "animal" then list[#list + 1] = c end end
     table.sort(list, function(a, b) return U.dist2d(a.pos, from) < U.dist2d(b.pos, from) end)
     for i = 1, math.min(#list, 3) do
         local c = list[i]
@@ -789,7 +798,7 @@ function D:watch_creatures(g, R, now)
             local okv, v = pcall(sees, eyes.runtime_id, c.pos, R.angle)
             if okv and v == true then
                 g.chase = { pos = U.copy_vec(c.pos), until_t = now + 60, kind = c.kind }
-                g.investigating = { pos = U.copy_vec(c.pos), until_t = now + 60 }
+                g.chase_mood = { kind = c.kind == "animal" and "CHASE_ANIMAL" or "CHASE_ZOMBIE", until_t = now + 60 }
                 pcall(self.solve_route, self, g, c.pos, { prefer_roads = false, direct_max = 400000 })
                 if g.act then
                     g.act.state = S.PATROL
@@ -1195,7 +1204,17 @@ function D:tick_group(group, players, physical_groups, dt)
                 end
             end
             if not holding then group.held = nil end
-            if not reacting then self:move_physical(group, dt) end
+            if not reacting then self:move_physical(group, dt)
+            elseif group.flee_until and now < group.flee_until and self.bridge.set_speed then
+                -- A squad running for it runs (the walk pace would crawl).
+                local run = self.cfg.PhysicalRunSpeedUU or 450
+                if group.speed_set ~= run then
+                    for _, m in ipairs(group.members) do
+                        if m.alive and m.runtime_id then self.bridge.set_speed(m.runtime_id, run) end
+                    end
+                    group.speed_set = run
+                end
+            end
         elseif not holding then
             self:move_virtual(group, dt)
         end

@@ -268,7 +268,8 @@ Bh.MOOD_FI = {
     CALM = "Rauhallinen", ALERT = "Valpas", TENSE = "Jännittynyt", SHAKEN = "Järkyttynyt",
     PANIC = "Paniikissa", ROUT = "Hajoaa pakoon", ZOMBIES = "Torjuu zombeja",
     INVESTIGATE = "Tutkii ammuskelua", COVER = "Suojautuu tulelta", SHOCK = "Shokissa", AVOID = "Väistää ammuskelua", HOLD = "Odottaa hiljaa",
-    FIGHT = "Taistelee",
+    FIGHT = "Taistelee", CHASE_PLAYER = "Lähestyy pelaajaa", CHASE_ZOMBIE = "Lähestyy zombeja",
+    CHASE_ANIMAL = "Jäljittää eläintä",
 }
 
 function Bh.mood(group, now)
@@ -447,6 +448,11 @@ function Bh.react(director, group, now, sense, fighting)
     if group.investigating then
         if now > group.investigating.until_t then group.investigating = nil
         else group.mood = "INVESTIGATE" end
+    end
+    -- Closing in on something it saw (a player, zombies, an animal).
+    if group.chase_mood then
+        if now > group.chase_mood.until_t then group.chase_mood = nil
+        else group.mood = group.chase_mood.kind end
     end
     if group.hold_until and now < group.hold_until then
         group.mood = "HOLD"

@@ -1,7 +1,7 @@
 -- TESLES NPC OVERHAUL - server configuration.
 -- Distances are Unreal units unless a name says otherwise. 100 UU = 1 metre.
 return {
-    Version = "1.9.43",
+    Version = "1.9.45",
 
     -- ---------------------------------------------------------- population --
     Enabled = true,
@@ -42,8 +42,9 @@ return {
     -- --------------------------------------------------------- travel pace --
     VirtualTravelSpeedUU = 340,     -- 3.4 m/s while virtual
     VirtualRoadSpeedMultiplier = 1.25,
-    PhysicalWalkSpeedUU = 300,
-    PhysicalTravelSpeedUU = 420,
+    PhysicalWalkSpeedUU = 135,      -- SCUM's own NPC walk speed: faster slides
+    PhysicalTravelSpeedUU = 135,
+    PhysicalRunSpeedUU = 450,       -- fleeing
 
     -- ------------------------------------------------------ render circle ---
     -- A squad within this map distance (2D, height ignored) of any player is
