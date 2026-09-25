@@ -1,7 +1,7 @@
 -- TESLES NPC OVERHAUL - server configuration.
 -- Distances are Unreal units unless a name says otherwise. 100 UU = 1 metre.
 return {
-    Version = "1.9.12",
+    Version = "1.9.13",
 
     -- ---------------------------------------------------------- population --
     Enabled = true,
@@ -76,10 +76,11 @@ return {
     -- (0.01 = one point). Veterans and soldiers recover faster, survivors,
     -- hunters and civilians slower; every trauma slows it further.
     StressRecoveryPer5Min = 0.01,
-    -- false: NPCs keep the weapon SCUM gives them (it fires) and the mod adds
+    -- false: SCUM itself hands each NPC the squad's weapon as it is spawned
+    -- (its weapon list is set just before), so the NPC fires it; the mod adds
     -- a magazine, random rounds, condition and sometimes a scope.
-    -- true: the weapon is swapped for one of the squad's list - such NPCs
-    -- do not fire in fights with players (SCUM limitation, 1.9.x tests).
+    -- true: the old way, a weapon swapped in afterwards - such NPCs do not
+    -- fire in fights with players (1.9.x tests).
     SwapWeapons = false,
 
     -- Omat varusteet: katso varusteet.lua (sailyy paivityksissa).

@@ -154,8 +154,13 @@ function Ph.materialize(group, bridge, ctx)
         if m.alive then alive[#alive + 1] = m end
     end
 
+    -- One NPC at a time when the bridge asks for it: SCUM hands each NPC its
+    -- weapon from a list set just before the spawn, so the next one waits
+    -- until the last has its weapon.
+    if bridge.spawn_ready then budget = math.min(budget, 1) end
     for i, m in ipairs(alive) do
         if budget <= 0 then break end
+        if not m.materialized and bridge.spawn_ready and not bridge.spawn_ready() then break end
         if not m.materialized then
             local pos = Ph.member_spawn_point(group, i, #alive)
             local ground = bridge.ground_at and bridge.ground_at(pos) or nil
@@ -171,7 +176,9 @@ function Ph.materialize(group, bridge, ctx)
                 last_reason = "NO_GROUND_PROOF"
             else
                 local variant = Ph.body_variant(group, m)
+                local lo = ctx.loadout_for and ctx.loadout_for(m) or ctx.loadout
                 local handle, err = bridge.spawn_npc({
+                    weapons = lo and lo.Weapons or nil,
                     archetype = m.archetype,
                     level = Ph.body_level(m.level, variant),
                     position = pos,
@@ -198,7 +205,6 @@ function Ph.materialize(group, bridge, ctx)
                         bridge.take_ownership(handle)
                     end
                     -- The squad's own gear (config Loadouts), when set.
-                    local lo = ctx.loadout_for and ctx.loadout_for(m) or ctx.loadout
                     if lo and bridge.apply_loadout then
                         pcall(bridge.apply_loadout, handle, lo, group.gid .. "/" .. tostring(m.npcId))
                     end

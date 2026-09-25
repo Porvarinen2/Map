@@ -822,6 +822,12 @@ function B.spawn_npc(req)
         return nil, "POSITION_OUT_OF_WORLD"
     end
     local rot = { Pitch = 0, Yaw = (req.yaw or 0), Roll = 0 }
+    -- The NPC's weapon, given before it exists (see B.preset_weapon).
+    local wanted = nil
+    if req.weapons and B.preset_weapon then
+        local okp, w = pcall(B.preset_weapon, cls, req.weapons)
+        if okp then wanted = w end
+    end
     crumb(string.format("SpawnAIFromClass %s lvl %s at %.0f %.0f %.0f",
         tostring(req.variant or "base"), tostring(req.level), pos.X, pos.Y, pos.Z))
     local ok, actor = pcall(function()
@@ -851,7 +857,8 @@ function B.spawn_npc(req)
     if addr then owned_addr[addr] = true end
     B.last_spawn_at = os.time()
     handles[h] = { actor = actor, npcId = req.npcId, group = req.group,
-                   spawned_at = os.time(), name = name, addr = addr }
+                   spawned_at = os.time(), name = name, addr = addr, wanted = wanted }
+    B.last_spawn = { handle = h, at = os.clock(), t = os.time() }
     B.stats.spawns = B.stats.spawns + 1
     if not B.api_dumped then pcall(B.dump_api_once, h) end
     set_health("physicalVirtualization", "OK",
@@ -2518,6 +2525,110 @@ local function manual_of(name)
 end
 B.manual_of = manual_of
 
+-- ---------------------------------------------- weapons from the start ---
+-- SCUM gives an armed NPC its weapon itself, a moment after the spawn, from
+-- the list in its common data (PossibleItemInHands, e.g. four weapons for a
+-- level 1 drifter) - and builds the weapon manual the NPC fires through for
+-- exactly that weapon. A weapon swapped in later is never fired (1.9.6-
+-- 1.9.11). So the list is set to the wanted weapon just before the NPC is
+-- spawned, and SCUM itself hands it over, manual and all. The list's weapon
+-- field is a soft class reference; how UE4SS takes a value for it is tried
+-- once (a path string, a soft class path, a soft class reference) and the
+-- way that reads back right is kept.
+local soft_way = nil      -- nil: not tried yet, false: none works
+local function kismet()
+    local k = nil
+    pcall(function() k = StaticFindObject("/Script/Engine.Default__KismetSystemLibrary") end)
+    return k
+end
+local function soft_text(v)
+    local k = kismet()
+    local t = nil
+    if k then pcall(function() t = k:Conv_SoftClassReferenceToString(v) end) end
+    if t ~= nil then pcall(function() t = t:ToString() end) end
+    if type(t) ~= "string" then pcall(function() t = v:ToString() end) end
+    return type(t) == "string" and t or tostring(v)
+end
+local SOFT_WAYS = {
+    { "polku", function(path) return path end },
+    { "SoftClassPath", function(path) return kismet():MakeSoftClassPath(path) end },
+    { "SoftClassRef", function(path)
+        local k = kismet()
+        return k:Conv_SoftClassPathToSoftClassRef(k:MakeSoftClassPath(path))
+    end },
+}
+local function write_soft(entry, path, short)
+    local tries = {}
+    local ways = SOFT_WAYS
+    if soft_way then ways = { soft_way } end
+    for _, w in ipairs(ways) do
+        local okv, val = pcall(w[2], path)
+        local okset = okv and pcall(function() entry.Item = val end)
+        local back = okset and soft_text(entry.Item) or ""
+        tries[#tries + 1] = w[1] .. "=" .. (okset and back:sub(-60) or "x")
+        if okset and back:find(short, 1, true) then
+            soft_way = w
+            return true, tries
+        end
+    end
+    return false, tries
+end
+function B.preset_weapon(npccls, names)
+    if soft_way == false or (B.cfg and B.cfg.SwapWeapons) then return nil end
+    -- The first of the member's weapons whose class is known (one new class
+    -- lookup per tick at most, as everywhere).
+    local wcls, wname = nil, nil
+    for _, n in ipairs(names or {}) do
+        local c = B.find_item_class(n)
+        if c then wcls, wname = c, n; break end
+    end
+    if not wcls then return nil end
+    local path = full_name(wcls):match("%s(%S+)$")
+    local cdo, cd, arr = nil, nil, nil
+    pcall(function() cdo = npccls:GetCDO() end)
+    pcall(function() cd = cdo._armedNPCBaseCommonData end)
+    pcall(function() arr = cd.PossibleItemInHands end)
+    if not (path and arr) then
+        if not B.preset_noted then B.preset_noted = true; lnote("aseen esiasetus: NPC-luokan listaa ei loytynyt") end
+        return nil
+    end
+    local short = (path:match("%.([%w_]+)$") or wname):gsub("_C$", "")
+    local all_ok, notes = true, nil
+    pcall(function()
+        arr:ForEach(function(_, e)
+            local entry = unwrap(e)
+            local ok, tries = write_soft(entry, path, short)
+            notes = notes or tries
+            if not ok then all_ok = false end
+            pcall(function() entry.SpawnWeight = 1.0 end)
+        end)
+    end)
+    if soft_way == nil and not all_ok then
+        soft_way = false
+        lnote("aseen esiasetus EI toimi (" .. table.concat(notes or {}, ", ") .. "): NPC:t pitavat SCUMin aseet")
+        return nil
+    end
+    if not B.preset_ok_noted and all_ok then
+        B.preset_ok_noted = true
+        lnote("aseen esiasetus toimii (" .. tostring(soft_way and soft_way[1]) .. "): " .. wname)
+    end
+    return all_ok and wname or nil
+end
+
+-- One NPC at a time: the next is spawned once the last one has its weapon
+-- (or after a few seconds), so no NPC picks up a list set for another.
+B.spawn_gap_sec = 4
+function B.spawn_ready()
+    local l = B.last_spawn
+    if not l then return true end
+    if os.time() - l.t >= B.spawn_gap_sec then return true end
+    local a = B.actor(l.handle)
+    if not a then return true end
+    local w = nil
+    pcall(function() w = a._itemInHands end)
+    return w ~= nil and valid(w)
+end
+
 -- A weapon: the new one goes where SCUM had put the NPC's own (same parent
 -- and socket), becomes the item in hands, and the old one is removed.
 B.want_rounds = {}
@@ -2614,6 +2725,10 @@ function B.tick_weapons(now)
                 if not (w and valid(w)) then w = olds[1] end
                 local wname = (full_name(w:GetClass()):match("([%w_]+)$") or "?"):gsub("_C$", "")
                 B.weapon_chosen[h] = wname
+                local rec = handles[h]
+                if rec and rec.wanted and rec.wanted:lower() ~= wname:lower() then
+                    lnote(string.format("%s: pyydetty %s, SCUM antoi %s", p.label, rec.wanted, wname))
+                end
                 local pos = nil
                 pcall(function() pos = vec(a:K2_GetActorLocation()) end)
                 if pos then
