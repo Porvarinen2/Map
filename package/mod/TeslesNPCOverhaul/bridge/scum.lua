@@ -2740,20 +2740,90 @@ local function ghost_weapon(a, h, own, name, label, pos)
     return prop
 end
 
--- The NPC is dead: the hidden weapon and the prop go, and a fresh copy of
--- the prop lies where it was. The prop itself stays "in hands" to SCUM
--- (active, held by the NPC), so it could not be picked up (1.9.17); a new
--- weapon spawned on the ground is plain loot. It gets the prop's condition
--- and a magazine with some rounds.
+-- The NPC is dead: the hidden weapon and the prop go. The prop itself stays
+-- "in hands" to SCUM (active, held by the NPC), so it could not be picked up
+-- (1.9.17), and a copy spawned at once hung in the air (1.9.18: the navmesh
+-- is above the ground). So the weapon waits in the body like SCUM's own
+-- loot: when the body is searched and SCUM's items fall out, a fresh copy
+-- (prop's condition, a magazine with some rounds) lies down next to them.
+B.pending_loot = {}
+B.loot_poll_sec = 2
+B.loot_wait_sec = 1800
+local loot_next = 0
+
+local function body_pos(a)
+    local p = nil
+    pcall(function() p = vec(a.Mesh:K2_GetComponentLocation()) end)
+    if not sane(p) then pcall(function() p = vec(a:K2_GetActorLocation()) end) end
+    return sane(p) and p or nil
+end
+
+-- Loose items (nobody holds them) around a spot.
+local function loose_items_near(pos, r)
+    local out = {}
+    for _, it in ipairs(find_all("Item", nil, true) or {}) do
+        if valid(it) then
+            local p = nil
+            pcall(function() p = vec(it:K2_GetActorLocation()) end)
+            if p and math.abs(p.X - pos.X) < r and math.abs(p.Y - pos.Y) < r and math.abs(p.Z - pos.Z) < 250 then
+                local ok, o = pcall(function() return it:GetOwner() end)
+                if not (ok and o) then out[full_name(it)] = p end
+            end
+        end
+    end
+    return out
+end
+
+-- The floor right under a spot (a short trace: a roof or a tree above the
+-- body must not count).
+local function floor_under(pos)
+    local k = get_kismet()
+    if not k then return nil end
+    local ok, out, hit = pcall(function()
+        local o = {}
+        local r = k:LineTraceSingle(B.get_world(),
+            { X = pos.X, Y = pos.Y, Z = pos.Z + 80 }, { X = pos.X, Y = pos.Y, Z = pos.Z - 400 },
+            0, false, {}, 0, o, true, { R = 0, G = 0, B = 0, A = 0 }, { R = 0, G = 0, B = 0, A = 0 }, 0)
+        return o, r
+    end)
+    if not ok or hit == false then return nil end
+    local p = vec(out.ImpactPoint) or vec(out.Location)
+    return sane(p) and p.Z or nil
+end
+
+local function lay_weapon(l, at)
+    local name = l.name
+    local cls = B.find_item_class(name)
+    if not cls then return false end
+    local want = 0
+    local item = spawn_actor(cls, at, function(x)
+        if Weapons.magazine_for(name) then return end
+        local cap = 0
+        pcall(function() cap = tonumber(x.InternalMagazineCapacity) or 0 end)
+        if cap <= 0 then pcall(function() if x.UseChamberAsInternalMagazine then cap = tonumber(x.MaxLoadedAmmo) or 1 end end) end
+        if cap > 0 then
+            want = some_rounds(cap)
+            pcall(function() x.InitialAmmo = want end)
+        end
+    end)
+    if not item then return false end
+    if want > 0 then B.want_rounds[full_name(item)] = want end
+    local okf, err = pcall(B.fit_weapon, item, name, l.lo or {}, l.label, at)
+    if not okf then lnote("haamuase: varustus - error: " .. tostring(err)) end
+    return true
+end
+
 function B.ghost_drop(handle)
     local rec = handles[handle]
     local g = rec and rec.ghost
     if not g or g.dropped then return end
     g.dropped = true
     local own, prop = g.own, g.prop
-    local pos, name = nil, g.name
+    local a = B.actor(handle)
+    local pos = a and body_pos(a) or nil
+    local name = g.name
     if prop and valid(prop) then
-        pcall(function() pos = vec(prop:K2_GetActorLocation()) end)
+        if not pos then pcall(function() pos = vec(prop:K2_GetActorLocation()) end) end
         if not name then
             pcall(function() name = (full_name(prop:GetClass()):match("([%w_]+)$") or ""):gsub("_C$", "") end)
         end
@@ -2764,35 +2834,47 @@ function B.ghost_drop(handle)
             if x == prop then table.remove(rec.extras, i); break end
         end
     end
-    if not pos then pcall(function() pos = vec(B.actor(handle):K2_GetActorLocation()) end) end
     if own and valid(own) then
         for _, part in ipairs(items_owned_by(own)) do pcall(function() part:K2_DestroyActor() end) end
         pcall(function() own:K2_DestroyActor() end)
     end
-    local dropped = false
     if pos and name and name ~= "" then
-        local z = B.ground_at(pos)
-        local at = { X = pos.X + 40, Y = pos.Y, Z = (z or pos.Z) + 8 }
-        local cls = B.find_item_class(name)
-        local want = 0
-        local item = cls and spawn_actor(cls, at, function(x)
-            if Weapons.magazine_for(name) then return end
-            local cap = 0
-            pcall(function() cap = tonumber(x.InternalMagazineCapacity) or 0 end)
-            if cap <= 0 then pcall(function() if x.UseChamberAsInternalMagazine then cap = tonumber(x.MaxLoadedAmmo) or 1 end end) end
-            if cap > 0 then
-                want = some_rounds(cap)
-                pcall(function() x.InitialAmmo = want end)
-            end
-        end) or nil
-        if item then
-            dropped = true
-            if want > 0 then B.want_rounds[full_name(item)] = want end
-            local okf, err = pcall(B.fit_weapon, item, name, g.lo or {}, g.label or tostring(rec.npcId), at)
-            if not okf then lnote("haamuase: varustus - error: " .. tostring(err)) end
+        B.pending_loot[#B.pending_loot + 1] = { handle = handle, actor = a, pos = pos, name = name, lo = g.lo,
+            label = g.label or tostring(rec.npcId), base = loose_items_near(pos, 350), t0 = os.time() }
+    end
+    lnote(string.format("haamuase odottaa ruumiissa (%s): %s", tostring(rec.npcId), tostring(name)))
+end
+
+function B.tick_loot(now)
+    if #B.pending_loot == 0 then return end
+    now = now or os.time()
+    if now < loot_next then return end
+    loot_next = now + B.loot_poll_sec
+    for i = #B.pending_loot, 1, -1 do
+        local l = B.pending_loot[i]
+        local fresh, gone = nil, not (l.actor and valid(l.actor))
+        if not gone then
+            local p = body_pos(l.actor)
+            if p then l.pos = p end
+        end
+        for k, p in pairs(loose_items_near(l.pos, 350)) do
+            if not l.base[k] then fresh = p; break end
+        end
+        if fresh or gone then
+            table.remove(B.pending_loot, i)
+            -- Next to SCUM's own loot, on the floor under it.
+            local ref = fresh or l.pos
+            local ang = math.random() * 2 * math.pi
+            local at = { X = ref.X + math.cos(ang) * 35, Y = ref.Y + math.sin(ang) * 35, Z = ref.Z }
+            local z = floor_under(at)
+            if z then at.Z = z + 3 elseif fresh then at.Z = fresh.Z end
+            local ok = lay_weapon(l, at)
+            lnote(string.format("haamuase lootattu (%s): %s maassa %s (%s)", l.label, l.name, tostring(ok),
+                fresh and "searchattu" or "ruumis poistui"))
+        elseif now - l.t0 > B.loot_wait_sec then
+            table.remove(B.pending_loot, i)
         end
     end
-    lnote(string.format("haamuase pudotettu (%s): %s maassa %s", tostring(rec.npcId), tostring(name), tostring(dropped)))
 end
 
 -- SCUM gives an NPC its own weapon a moment after the spawn. 1.8.1 put the
@@ -2805,6 +2887,7 @@ function B.weapon_of(handle) return B.weapon_chosen[handle] end
 B.weapon_wait_sec = 20
 function B.tick_weapons(now)
     B.probe_budget = 1
+    pcall(B.tick_loot, now)
     if next(B.pending_weapons) == nil then return end
     now = now or os.time()
     local by_owner = nil
