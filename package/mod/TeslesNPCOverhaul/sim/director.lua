@@ -842,6 +842,17 @@ function D:run_combat(group, contact, zpressure)
                 self.bridge.face(m.runtime_id, enemy_pos)
                 group.focused = true
             end
+            -- Weapon up and aimed at the nearest enemy.
+            if self.bridge.aim_at then
+                local tgt, bd = nil, math.huge
+                for _, e in ipairs(enemy.members) do
+                    if e.alive and e.position then
+                        local d = U.dist2d(m.position or group.position, e.position)
+                        if d < bd then tgt, bd = e, d end
+                    end
+                end
+                pcall(self.bridge.aim_at, m.runtime_id, (tgt and tgt.position) or enemy_pos)
+            end
         end
     end
 
@@ -1167,6 +1178,9 @@ function D:tick_group(group, players, physical_groups, dt)
             for _, m in ipairs(group.members) do
                 if m.alive and m.runtime_id and self.bridge.clear_focus then
                     self.bridge.clear_focus(m.runtime_id)
+                end
+                if m.alive and m.runtime_id and self.bridge.stop_aim then
+                    pcall(self.bridge.stop_aim, m.runtime_id)
                 end
             end
         end

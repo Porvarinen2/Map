@@ -1,7 +1,7 @@
 -- TESLES NPC OVERHAUL - server configuration.
 -- Distances are Unreal units unless a name says otherwise. 100 UU = 1 metre.
 return {
-    Version = "1.9.42",
+    Version = "1.9.43",
 
     -- ---------------------------------------------------------- population --
     Enabled = true,
@@ -122,7 +122,7 @@ return {
     -- ---------------------------------------------------------- buildings --
     -- Off by default: the door and interior steps are not proven on this
     -- server yet, and the guide is explicit that a timer is not proof.
-    EnableBuildingSearch = false,
+    EnableBuildingSearch = true,    -- squads go through houses at the places they visit
     BuildingSearchRadiusUU = 12000,
     MaxBuildingsPerTarget = 8,
     InteriorDelaySec = 15,

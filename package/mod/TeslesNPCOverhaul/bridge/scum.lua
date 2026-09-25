@@ -1094,6 +1094,19 @@ end
 function B.set_speed(handle, uu_per_sec)
     local a = B.actor(handle)
     if not a then return false end
+    -- SCUM's own walking speed, logged once: a speed the walk animation was
+    -- not made for looks like sliding.
+    if not B.speed_noted then
+        B.speed_noted = true
+        pcall(function()
+            local mc = a.CharacterMovement
+            if B.on_debug then
+                pcall(B.on_debug, string.format("npc speed: SCUM MaxWalkSpeed %.0f, crouched %.0f, mode %s; set %.0f",
+                    tonumber(mc.MaxWalkSpeed) or -1, tonumber(mc.MaxWalkSpeedCrouched) or -1,
+                    tostring(mc.MovementMode), uu_per_sec))
+            end
+        end)
+    end
     local ok = pcall(function()
         local mc = a.CharacterMovement
         if mc then
@@ -1222,34 +1235,58 @@ function B.nearby_zombies(pos, radius)
     return total
 end
 
--- Building search needs engine support that has not been demonstrated on this
--- server yet. Rather than fake a result, the capability reports PENDING and
--- the director falls back to open-area behaviour.
-function B.find_buildings(pos, radius)
-    if not B.cfg.EnableBuildingSearch then
-set_health("buildingSearch", "PENDING", "disabled in config")
-        return nil
-    end
-    local list = find_all("ConZBuilding")
-    if not list or #list == 0 then
-        set_health("buildingSearch", "PENDING",
-            "waiting for live proof: building_discovery")
-        return nil
-    end
-    local out = {}
-    for _, b in ipairs(list) do
-        if valid(b) then
-            local okl, loc = pcall(function() return b:K2_GetActorLocation() end)
-            local v = okl and vec(loc) or nil
-            if v and U.dist2d(v, pos) <= radius then
-                out[#out + 1] = { id = full_name(b), position = v, object = b }
+-- Houses for the squads to go through (config EnableBuildingSearch). The
+-- world's building actors are listed once and remembered (positions only,
+-- scanned again every 15 minutes); the first class name this SCUM build
+-- knows is used, and which one is logged. Doors stand in when no building
+-- class is found: a door is where a house is entered.
+B.BUILDING_CLASSES = { "ConZBuilding", "BuildingBase", "Building", "ConZDoor", "DoorBase", "Door" }
+local building_cache = { t = nil, list = {}, class = nil }
+local function scan_buildings()
+    local now = os.time()
+    if building_cache.t and now - building_cache.t < 900 then return building_cache end
+    building_cache.t = now
+    building_cache.list = {}
+    for _, cname in ipairs(B.BUILDING_CLASSES) do
+        crumb("FindAllOf " .. cname)
+        local list = find_all(cname, now, true)
+        if list and #list > 0 then
+            for _, b in ipairs(list) do
+                if valid(b) then
+                    local okl, loc = pcall(function() return b:K2_GetActorLocation() end)
+                    local v = okl and vec(loc) or nil
+                    if sane(v) then
+                        building_cache.list[#building_cache.list + 1] = { id = full_name(b), position = v }
+                    end
+                end
+            end
+            if #building_cache.list > 0 then
+                building_cache.class = cname
+                if B.on_debug then
+                    pcall(B.on_debug, string.format("buildings: %d found as %s", #building_cache.list, cname))
+                end
+                break
             end
         end
     end
-    if #out > 0 then
-        set_health("buildingSearch", "DEGRADED",
-            "buildings found; door + interior steps unproven")
+    return building_cache
+end
+
+function B.find_buildings(pos, radius)
+    if not B.cfg.EnableBuildingSearch then
+        set_health("buildingSearch", "PENDING", "disabled in config")
+        return nil
     end
+    local c = scan_buildings()
+    if #c.list == 0 then
+        set_health("buildingSearch", "DEGRADED", "no building actors found (" .. table.concat(B.BUILDING_CLASSES, ", ") .. ")")
+        return nil
+    end
+    local out = {}
+    for _, b in ipairs(c.list) do
+        if U.dist2d(b.position, pos) <= radius then out[#out + 1] = b end
+    end
+    set_health("buildingSearch", "OK", string.format("%d buildings (%s)", #c.list, tostring(c.class)))
     return out
 end
 
@@ -1646,6 +1683,31 @@ end
 -- Tries the likely weapon-fire entry points once each and remembers which
 -- one the engine accepts. Visual only: damage is applied separately.
 local fire_fn = nil
+-- Fighting pose for a squad fight: the NPC is put in combat mode (weapon
+-- up) and every player's machine is told where it aims
+-- (_aimLocationTargetForSimulatedProxy - SCUM's own replicated aim point),
+-- so the rifle points at the enemy it shoots at. Plain fields, no calls.
+function B.aim_at(handle, pos)
+    local rec = handles[handle]
+    local a = B.actor(handle)
+    if not (rec and a and pos) or rec.native then return false end
+    local target = { X = pos.X, Y = pos.Y, Z = (pos.Z or 0) + 120 }
+    pcall(function() a._isInCombatMode = true end)
+    pcall(function() a._aimLocationTargetForSimulatedProxy = target end)
+    pcall(function() a._assignAimLocationOnSimulatedProxy = true end)
+    rec.aiming = true
+    return true
+end
+function B.stop_aim(handle)
+    local rec = handles[handle]
+    local a = B.actor(handle)
+    if not (rec and a and rec.aiming) then return false end
+    rec.aiming = nil
+    pcall(function() a._assignAimLocationOnSimulatedProxy = false end)
+    pcall(function() a._isInCombatMode = false end)
+    return true
+end
+
 -- A shot in a fight between squads: the NPC's own weapon (the one SCUM
 -- gave it and its weapon manual fires) is fired with Weapon.StartFire() -
 -- no arguments, signature read from the game - and stopped on the next
