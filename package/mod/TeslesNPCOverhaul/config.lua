@@ -1,7 +1,7 @@
 -- TESLES NPC OVERHAUL - server configuration.
 -- Distances are Unreal units unless a name says otherwise. 100 UU = 1 metre.
 return {
-    Version = "1.9.14",
+    Version = "1.9.15",
 
     -- ---------------------------------------------------------- population --
     Enabled = true,
@@ -84,6 +84,10 @@ return {
     -- Setting SCUM's weapon list before the spawn crashed the server with
     -- this UE4SS (1.9.13). Keep false.
     PresetWeapons = false,
+    -- Ghost weapon: SCUM's own weapon (the one the NPC fires) is hidden and
+    -- the squad's weapon of the same type is shown in its hand; on death
+    -- the hidden one is removed and the shown one drops as loot.
+    GhostWeapons = true,
 
     -- Omat varusteet: katso varusteet.lua (sailyy paivityksissa).
 

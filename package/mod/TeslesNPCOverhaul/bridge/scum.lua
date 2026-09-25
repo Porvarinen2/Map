@@ -944,6 +944,7 @@ function B.is_alive(handle)
         -- The first seconds after a spawn the pawn may not be possessed yet.
         if how == "no controller" and os.time() - (rec.spawned_at or 0) < 6 then return true end
         note_death(how)
+        if rec.ghost and not rec.ghost.dropped and B.ghost_drop then pcall(B.ghost_drop, handle) end
         return false
     end
     return true
@@ -2688,6 +2689,79 @@ local function hold_weapon(a, handle, name, label, pos, olds)
     return att, item
 end
 
+-- ---------------------------------------------------------- ghost weapon ---
+-- The NPC keeps SCUM's weapon - the only one it fires, through the weapon
+-- manual SCUM built for it - but that weapon is hidden, and the squad's own
+-- weapon (same type: rifle for rifle, pistol for pistol, so the hands hold
+-- it right) sits in its hand as a prop. When the NPC dies the hidden weapon
+-- is removed and the prop drops to the ground in its place, magazine and
+-- all, as if it had fired it.
+local function ghost_weapon(a, h, own, name, label, pos)
+    local cls = B.find_item_class(name)
+    if not cls then return nil end
+    local want = 0
+    local prop = spawn_actor(cls, pos, function(x)
+        if Weapons.magazine_for(name) then return end
+        local cap = 0
+        pcall(function() cap = tonumber(x.InternalMagazineCapacity) or 0 end)
+        if cap <= 0 then pcall(function() if x.UseChamberAsInternalMagazine then cap = tonumber(x.MaxLoadedAmmo) or 1 end end) end
+        if cap > 0 then
+            want = some_rounds(cap)
+            pcall(function() x.InitialAmmo = want end)
+        end
+    end)
+    if not prop then return nil end
+    keep_extra(h, prop)
+    if want > 0 then B.want_rounds[full_name(prop)] = want end
+    pcall(function() prop:SetOwner(a) end)
+    pcall(function() prop:SetActorEnableCollision(false) end)
+    pcall(function() prop._attachParentObject = a end)
+    local parent, socket = nil, nil
+    pcall(function() parent = own:K2_GetRootComponent():GetAttachParent() end)
+    pcall(function() socket = own:GetAttachParentSocketName() end)
+    if not (parent and valid(parent)) then pcall(function() parent = a.Mesh end) end
+    local att = pcall(function()
+        prop:K2_GetRootComponent():K2_AttachToComponent(parent, socket or fname("hand_r"), 2, 2, 2, false)
+    end)
+    -- SCUM's weapon, and whatever hangs on it, out of sight.
+    local hid = pcall(function() own:SetActorHiddenInGame(true) end)
+    for _, part in ipairs(items_owned_by(own)) do pcall(function() part:SetActorHiddenInGame(true) end) end
+    local rec = handles[h]
+    if rec then rec.ghost = { own = own, prop = prop } end
+    lnote(string.format("%s: haamuase - nakyva %s, piilotettu %s (kiinni %s, piilossa %s)", label, name,
+        (full_name(own:GetClass()):match("([%w_]+)$") or "?"):gsub("_C$", ""), tostring(att), tostring(hid)))
+    return prop
+end
+
+-- The NPC is dead: the hidden weapon goes, the prop drops where it was.
+function B.ghost_drop(handle)
+    local rec = handles[handle]
+    local g = rec and rec.ghost
+    if not g or g.dropped then return end
+    g.dropped = true
+    local own, prop = g.own, g.prop
+    if prop and valid(prop) then
+        local pos = nil
+        pcall(function() pos = vec(prop:K2_GetActorLocation()) end)
+        pcall(function() prop:K2_DetachFromActor(1, 1, 1) end)
+        local z = pos and B.ground_at(pos) or nil
+        if pos and z then
+            pcall(function() prop:K2_SetActorLocation({ X = pos.X, Y = pos.Y, Z = z + 6 }, false, {}, true) end)
+        end
+        pcall(function() prop:SetActorEnableCollision(true) end)
+        pcall(function() prop:SetOwner(nil) end)
+        -- It is loot now: a later despawn of the body must not take it along.
+        for i, x in ipairs(rec.extras or {}) do
+            if x == prop then table.remove(rec.extras, i); break end
+        end
+    end
+    if own and valid(own) then
+        for _, part in ipairs(items_owned_by(own)) do pcall(function() part:K2_DestroyActor() end) end
+        pcall(function() own:K2_DestroyActor() end)
+    end
+    lnote("haamuase pudotettu (" .. tostring(rec.npcId) .. ")")
+end
+
 -- SCUM gives an NPC its own weapon a moment after the spawn. 1.8.1 put the
 -- new weapon on at once: when the NPC had no weapon yet, the new one hung in
 -- the air (no hand socket to copy) and the NPC got its own anyway. So the
@@ -2723,11 +2797,41 @@ function B.tick_weapons(now)
             -- fires, because the NPC's weapon manual stays bound to the one
             -- SCUM gave it (1.9.6-1.9.11), and re-binding it crashes SCUM.
             if #olds > 0 and not (B.cfg and B.cfg.SwapWeapons) then
-                B.pending_weapons[h] = nil
                 local w = nil
                 pcall(function() w = a._itemInHands end)
                 if not (w and valid(w)) then w = olds[1] end
                 local wname = (full_name(w:GetClass()):match("([%w_]+)$") or "?"):gsub("_C$", "")
+                -- Ghost weapon: a prop of the same type from the member's list.
+                local gpick, gwait = nil, false
+                if not (B.cfg and B.cfg.GhostWeapons == false) then
+                    local own_m = ""
+                    pcall(function()
+                        local m = a._weaponManual
+                        if m and valid(m) then own_m = full_name(m:GetClass()) end
+                    end)
+                    for _, name in ipairs(p.order or { p.name }) do
+                        local mc = manual_cache[name:lower()]
+                        if mc == nil then mc = manual_of(name) end
+                        if mc == nil then gwait = true; break end
+                        if mc and mc == own_m then gpick = name; break end
+                    end
+                end
+                if gwait and not gpick and now <= p.deadline + 60 then goto continue end
+                B.pending_weapons[h] = nil
+                if gpick and gpick:lower() ~= wname:lower() then
+                    local gpos = nil
+                    pcall(function() gpos = vec(a:K2_GetActorLocation()) end)
+                    local prop = gpos and ghost_weapon(a, h, w, gpick, p.label, gpos) or nil
+                    if prop then
+                        B.weapon_chosen[h] = gpick
+                        local lo = {}
+                        for k, v in pairs(p.loadout or {}) do lo[k] = v end
+                        if gpick ~= p.name then lo.Tahtain = nil end
+                        local okf, err = pcall(B.fit_weapon, prop, gpick, lo, p.label, gpos)
+                        if not okf then lnote(p.label .. ": varustus - error: " .. tostring(err)) end
+                        goto continue
+                    end
+                end
                 B.weapon_chosen[h] = wname
                 local rec = handles[h]
                 if rec and rec.wanted and rec.wanted:lower() ~= wname:lower() then
