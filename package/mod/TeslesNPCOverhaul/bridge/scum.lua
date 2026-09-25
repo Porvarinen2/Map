@@ -2723,13 +2723,20 @@ local function ghost_weapon(a, h, own, name, label, pos)
     local att = pcall(function()
         prop:K2_GetRootComponent():K2_AttachToComponent(parent, socket or fname("hand_r"), 2, 2, 2, false)
     end)
+    -- Players' machines draw a weapon in the NPC's hand only for the NPC's
+    -- item in hands (1.9.15: the prop was attached on the server but lay on
+    -- the ground on screen). So the prop becomes the item in hands, active
+    -- and held by the NPC; SCUM's weapon stays alive, hidden - the weapon
+    -- manual SCUM built for it is still bound to it and fires it.
+    pcall(function() prop._currentState = prop._activeState end)
+    local inhands = pcall(function() a._itemInHands = prop end)
     -- SCUM's weapon, and whatever hangs on it, out of sight.
     local hid = pcall(function() own:SetActorHiddenInGame(true) end)
     for _, part in ipairs(items_owned_by(own)) do pcall(function() part:SetActorHiddenInGame(true) end) end
     local rec = handles[h]
     if rec then rec.ghost = { own = own, prop = prop } end
-    lnote(string.format("%s: haamuase - nakyva %s, piilotettu %s (kiinni %s, piilossa %s)", label, name,
-        (full_name(own:GetClass()):match("([%w_]+)$") or "?"):gsub("_C$", ""), tostring(att), tostring(hid)))
+    lnote(string.format("%s: haamuase - nakyva %s, piilotettu %s (kiinni %s, kadessa %s, piilossa %s)", label, name,
+        (full_name(own:GetClass()):match("([%w_]+)$") or "?"):gsub("_C$", ""), tostring(att), tostring(inhands), tostring(hid)))
     return prop
 end
 
