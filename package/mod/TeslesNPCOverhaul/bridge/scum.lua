@@ -2744,17 +2744,14 @@ local function ghost_weapon(a, h, own, name, label, pos)
     return prop
 end
 
--- The NPC is dead: the hidden weapon and the prop go. The prop itself stays
--- "in hands" to SCUM (active, held by the NPC), so it could not be picked up
--- (1.9.17), and a copy spawned at once hung in the air (1.9.18: the navmesh
--- is above the ground). So the weapon waits in the body like SCUM's own
--- loot: when the body is searched and SCUM's items fall out, a fresh copy
--- (prop's condition, a magazine with some rounds) lies down next to them.
-B.pending_loot = {}
-B.loot_poll_sec = 2
-B.loot_wait_sec = 1800
-local loot_next = 0
-
+-- The NPC is dead: the hidden weapon and the prop go, and the weapon falls
+-- from its hand. The prop itself stays "in hands" to SCUM (active, held by
+-- the NPC) and could not be picked up (1.9.17), so a fresh copy - same
+-- weapon, same scope, the prop's condition, a magazine with some rounds -
+-- lies on the floor right under where the hand was. The floor comes from a
+-- short trace down (the navmesh sits above the ground: 1.9.18 left the
+-- weapon hanging in the air). Waiting for a search (1.9.19-1.9.23) did not
+-- work: SCUM's search loot is not visible to the mod.
 local function body_pos(a)
     local p = nil
     pcall(function() p = vec(a.Mesh:K2_GetComponentLocation()) end)
@@ -2762,32 +2759,16 @@ local function body_pos(a)
     return sane(p) and p or nil
 end
 
--- Loose items (nobody holds them) around a spot.
-local function loose_items_near(pos, r)
-    local out = {}
-    for _, it in ipairs(find_all("Item", nil, true) or {}) do
-        if valid(it) then
-            local p = nil
-            pcall(function() p = vec(it:K2_GetActorLocation()) end)
-            if p and math.abs(p.X - pos.X) < r and math.abs(p.Y - pos.Y) < r and math.abs(p.Z - pos.Z) < 250 then
-                local ok, o = pcall(function() return it:GetOwner() end)
-                if not (ok and o) then out[full_name(it)] = p end
-            end
-        end
-    end
-    return out
-end
-
 -- The floor right under a spot (a short trace: a roof or a tree above the
 -- body must not count).
-local function floor_under(pos)
+local function floor_under(pos, ignore)
     local k = get_kismet()
     if not k then return nil end
     local ok, out, hit = pcall(function()
         local o = {}
         local r = k:LineTraceSingle(B.get_world(),
             { X = pos.X, Y = pos.Y, Z = pos.Z + 80 }, { X = pos.X, Y = pos.Y, Z = pos.Z - 400 },
-            0, false, {}, 0, o, true, { R = 0, G = 0, B = 0, A = 0 }, { R = 0, G = 0, B = 0, A = 0 }, 0)
+            0, false, ignore or {}, 0, o, true, { R = 0, G = 0, B = 0, A = 0 }, { R = 0, G = 0, B = 0, A = 0 }, 0)
         return o, r
     end)
     if not ok or hit == false then return nil end
@@ -2824,10 +2805,10 @@ function B.ghost_drop(handle)
     g.dropped = true
     local own, prop = g.own, g.prop
     local a = B.actor(handle)
-    local pos = a and body_pos(a) or nil
-    local name = g.name
+    local body = a and body_pos(a) or nil
+    local hand, name = nil, g.name
     if prop and valid(prop) then
-        if not pos then pcall(function() pos = vec(prop:K2_GetActorLocation()) end) end
+        pcall(function() hand = vec(prop:K2_GetActorLocation()) end)
         if not name then
             pcall(function() name = (full_name(prop:GetClass()):match("([%w_]+)$") or ""):gsub("_C$", "") end)
         end
@@ -2842,71 +2823,27 @@ function B.ghost_drop(handle)
         for _, part in ipairs(items_owned_by(own)) do pcall(function() part:K2_DestroyActor() end) end
         pcall(function() own:K2_DestroyActor() end)
     end
-    if pos and name and name ~= "" then
-        B.pending_loot[#B.pending_loot + 1] = { handle = handle, actor = a, pos = pos, name = name, lo = g.lo,
-            label = g.label or tostring(rec.npcId), base = loose_items_near(pos, 350), t0 = os.time() }
-    end
-    lnote(string.format("haamuase odottaa ruumiissa (%s): %s", tostring(rec.npcId), tostring(name)))
-end
-
-function B.tick_loot(now)
-    if #B.pending_loot == 0 then return end
-    now = now or os.time()
-    if now < loot_next then return end
-    loot_next = now + B.loot_poll_sec
-    for i = #B.pending_loot, 1, -1 do
-        local l = B.pending_loot[i]
-        local fresh, gone = nil, not (l.actor and valid(l.actor))
-        if not gone then
-            local p = body_pos(l.actor)
-            if p then l.pos = p end
+    local ok, where = false, "?"
+    local ref = sane(hand) and hand or body
+    if ref and name and name ~= "" then
+        -- The body is not the floor: the trace passes through it.
+        local ign = a and { a } or nil
+        local at = { X = ref.X, Y = ref.Y, Z = ref.Z }
+        local z = floor_under(at, ign)
+        if not z and body then
+            at = { X = body.X + 40, Y = body.Y, Z = body.Z }
+            z = floor_under(at, ign)
         end
-        for k, p in pairs(loose_items_near(l.pos, 350)) do
-            if not l.base[k] then fresh = p; break end
-        end
-        -- A player at the body (searching it). SCUM's search loot was not
-        -- seen as new loose items on the 1.9.22 server, so standing by the
-        -- body for a moment is enough.
-        local near = false
-        for _, pl in ipairs(B.player_positions() or {}) do
-            if math.abs(pl.X - l.pos.X) < 260 and math.abs(pl.Y - l.pos.Y) < 260 and math.abs((pl.Z or l.pos.Z) - l.pos.Z) < 300 then
-                near = true
-            end
-        end
-        l.near_polls = near and (l.near_polls or 0) + 1 or 0
-        -- What lies around the body while a player is there (to learn how
-        -- SCUM's search loot shows up): once per body.
-        if near and not l.probed then
-            l.probed = true
-            local seen = {}
-            for _, it in ipairs(find_all("Item", nil, true) or {}) do
-                local p = nil
-                pcall(function() p = vec(it:K2_GetActorLocation()) end)
-                if p and math.abs(p.X - l.pos.X) < 400 and math.abs(p.Y - l.pos.Y) < 400 and #seen < 12 then
-                    local o = nil
-                    pcall(function() o = it:GetOwner() end)
-                    seen[#seen + 1] = ((full_name(it:GetClass()):match("([%w_]+)$") or "?"):gsub("_C$", ""))
-                        .. (o and ("<" .. ((full_name(o:GetClass()):match("([%w_]+)$")) or "?") .. ">") or "")
-                        .. (l.base[full_name(it)] and "*" or "")
-                end
-            end
-            lnote(string.format("ruumiin luona (%s): %s", l.label, #seen > 0 and table.concat(seen, ", ") or "ei esineita"))
-        end
-        if l.near_polls >= 2 or fresh or gone then
-            table.remove(B.pending_loot, i)
-            -- Next to SCUM's own loot, on the floor under it.
-            local ref = fresh or l.pos
-            local ang = math.random() * 2 * math.pi
-            local at = { X = ref.X + math.cos(ang) * 35, Y = ref.Y + math.sin(ang) * 35, Z = ref.Z }
-            local z = floor_under(at)
-            if z then at.Z = z + 3 elseif fresh then at.Z = fresh.Z end
-            local ok = lay_weapon(l, at)
-            lnote(string.format("haamuase lootattu (%s): %s maassa %s (%s)", l.label, l.name, tostring(ok),
-                fresh and "uusi loot ruumiin vieressa" or gone and "ruumis poistui" or "pelaaja ruumiin luona"))
-        elseif now - l.t0 > B.loot_wait_sec then
-            table.remove(B.pending_loot, i)
+        if z then
+            at.Z = z + 6
+            ok = lay_weapon({ name = name, lo = g.lo, label = g.label or tostring(rec.npcId) }, at)
+            where = string.format("%.0f %.0f %.0f", at.X, at.Y, at.Z)
+        else
+            where = "lattiaa ei loytynyt"
         end
     end
+    lnote(string.format("haamuase pudotettu (%s): %s maassa %s (%s)", tostring(rec.npcId), tostring(name),
+        tostring(ok), where))
 end
 
 -- Does this NPC show a custom weapon (config GhostWeaponChance)? The roll
@@ -2931,7 +2868,6 @@ function B.weapon_of(handle) return B.weapon_chosen[handle] end
 B.weapon_wait_sec = 20
 function B.tick_weapons(now)
     B.probe_budget = 1
-    pcall(B.tick_loot, now)
     if next(B.pending_weapons) == nil then return end
     now = now or os.time()
     local by_owner = nil
@@ -2991,6 +2927,8 @@ function B.tick_weapons(now)
                         local lo = {}
                         for k, v in pairs(p.loadout or {}) do lo[k] = v end
                         if gpick ~= p.name then lo.Tahtain = nil end
+                        -- Scope decided once: the weapon dropped at death gets the same.
+                        if lo.Tahtain == nil then lo.Tahtain = math.random() < (tonumber(lo.TahtainOsuus) or 0) end
                         local okf, err = pcall(B.fit_weapon, prop, gpick, lo, p.label, gpos)
                         if not okf then lnote(p.label .. ": varustus - error: " .. tostring(err)) end
                         local rec = handles[h]
