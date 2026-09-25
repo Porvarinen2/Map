@@ -351,6 +351,9 @@ end
 -- A squad breaks off when it has lost its nerve: morale under the retreat
 -- line, or most of its living members retreating or fleeing.
 function C.should_disengage(group)
+    -- A squad that has not lost anyone in this fight stands (it breaks off
+    -- only after casualties, the way it would against zombies).
+    if not (group.loss_at and os.time() - group.loss_at < 120) then return false end
     if (group.morale or 1) < C.tuning.morale_retreat then return true end
     local n, back = 0, 0
     for _, m in ipairs(group.members) do

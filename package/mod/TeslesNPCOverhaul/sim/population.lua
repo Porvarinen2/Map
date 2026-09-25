@@ -389,6 +389,7 @@ function P.serialize(world)
         pending_growth = world.pending_growth,
         saved_at = os.time(),
         diplomacy = world.diplomacy.pairs,
+        diplomacy_rules = 2,
         groups = {},
     }
     for _, g in ipairs(world.groups) do
@@ -439,7 +440,9 @@ function P.deserialize(saved)
     world.created_at = saved.created_at or os.time()
     world.next_group_id = saved.next_group_id or 1
     world.pending_growth = saved.pending_growth
-    world.diplomacy.pairs = saved.diplomacy or {}
+    -- Standings saved under the old rules (1.9.38 and before: most squads
+    -- neutral) are dropped once; the new defaults (everyone hostile) apply.
+    world.diplomacy.pairs = (saved.diplomacy_rules == 2) and (saved.diplomacy or {}) or {}
 
     world.dropped_classes = {}
     for _, sg in ipairs(saved.groups or {}) do

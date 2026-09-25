@@ -45,17 +45,13 @@ function D.set_default(class_a, class_b, value)
 end
 function D.add_authority(class_key) AUTHORITY[class_key] = true end
 
--- Every squad is hostile to every other squad (the owner's rule): the island
--- is a free-for-all. Bandits and the authorities hate each other most. The
+-- Every squad is hostile to every other squad, whatever their classes (the
+-- owner's rule: only the members of one squad are friends). Bandits and the authorities hate each other most. The
 -- owner's own class pairs (ryhmat.lua) still set their own standing.
 D.ALL_HOSTILE = -0.65
 function D.default_standing(class_a, class_b)
     local c = custom_pairs[class_a .. "|" .. class_b]
     if c then return c end
-    -- Squads of one class work together (the radiation teams sweep Krsko
-    -- side by side, the islanders share their town) - except bandit gangs,
-    -- who trust nobody.
-    if class_a == class_b and class_a ~= "bandit_gang" then return 0 end
     if class_a == "bandit_gang" or class_b == "bandit_gang" then
         local other = (class_a == "bandit_gang") and class_b or class_a
         if AUTHORITY[other] then return D.BANDIT_VS_AUTHORITY end

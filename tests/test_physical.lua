@@ -195,7 +195,11 @@ do
             m.traits.courage = 0.8; m.traits.stressResistance = 0.8; m.traits.fearfulness = 0.2
         end
     end
-    -- Blood enemies, standing 60 m apart.
+    -- Blood enemies, standing 60 m apart, fresh (no flight or earlier
+    -- fight still running: every squad is hostile to every other now).
+    for _, g in ipairs({ a_grp, b_grp }) do
+        g.disengaged_until, g.flee_until, g.loss_at, g.hold_until = nil, nil, nil, nil
+    end
     Diplomacy.adjust(world.diplomacy, a_grp, b_grp, -2, "test")
     local here = { X = a_grp.position.X, Y = a_grp.position.Y, Z = 0 }
     b_grp.position = { X = here.X + 6000, Y = here.Y, Z = 0 }

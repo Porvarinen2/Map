@@ -37,6 +37,11 @@ local TICK = 1
 local rng = RNG.new(31337)
 Bridge.configure(rng, { spawn_fail_rate = 0.06, move_reject_rate = 0.06 })
 
+-- The walking tests below follow squads' plans; squads of one class are
+-- kept at peace here so a firefight does not cut a planned walk short (in
+-- the game every squad is hostile to every other).
+local Diplomacy = require("npc.diplomacy")
+for _, c in ipairs(require("npc.groups").list) do Diplomacy.set_default(c.key, c.key, 0) end
 local world = Population.new_world({ seed = 20260921, target_npcs = 100 })
 Population.generate(world)
 print(string.format("world: %d groups / %d NPCs",
