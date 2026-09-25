@@ -300,6 +300,52 @@ do
     check(#world.groups == n0, "the map cannot put other squads on the island, nor residents elsewhere")
 end
 
+section("weapons: condition, scopes, reach")
+do
+    local W = require("npc.weapons")
+    local Combat = require("sim.combat")
+    local rng = RNG.new(5)
+    local function avg_cond(class)
+        local sum = 0
+        for i = 1, 40 do sum = sum + W.gear_for(class, { level = 3 }, {}, rng).condition end
+        return sum / 40
+    end
+    local e, sc = avg_cond("elite_unit"), avg_cond("scavengers")
+    check(e > 0.85 and sc < 0.5, string.format("the elite keep their weapons in shape, scavengers do not (%.0f %% vs %.0f %%)", e * 100, sc * 100))
+    local scoped, rifles = 0, 0
+    for _ = 1, 200 do
+        local g = W.gear_for("hunters", { level = 3 }, {}, rng)
+        if #W.scopes_for(g.weapon) > 0 then
+            rifles = rifles + 1
+            if g.scoped then scoped = scoped + 1 end
+        end
+    end
+    check(rifles > 0 and scoped > rifles * 0.2 and scoped < rifles * 0.6,
+          string.format("some hunting rifles carry a scope (%d of %d)", scoped, rifles))
+    check(W.profile("Weapon_Hunter85_V2", true).range == 20000 and W.profile("Weapon_Hunter85_V2", true).acc > 1.5
+          and W.profile("Weapon_M1911").range == 5000 and W.profile("2H_Axe").range <= 300,
+          "a scope reaches 200 m and aims far better; a pistol 50 m, an axe arm's length")
+    -- One marksman against a squad 180 m away: only the scope reaches.
+    local function duel(scope)
+        local a = { members = { { alive = true, level = 3, skills = { rifle = 0.6 }, position = { X = 0, Y = 0 },
+                                  gear = { weapon = "Weapon_Hunter85_V2", scoped = scope } } } }
+        local b = { members = { { alive = true, health = 100, position = { X = 18000, Y = 0 } } } }
+        local shots = 0
+        for _ = 1, 60 do shots = shots + (Combat.exchange_fire(a, b, rng).shots or 0) end
+        return shots
+    end
+    check(duel(true) > 0 and duel(false) == 0, "a scoped rifle fires at 180 m, the same rifle without one does not")
+    -- The weapon is picked once and kept through a save.
+    local world, d = fresh(41)
+    local g = first_group(world)
+    local lo = d:loadout_for(g, g.members[1])
+    local picked = g.members[1].gear.weapon
+    check(lo.Weapons[1] == picked and lo.ordered and lo.Kunto ~= nil, "a member's own weapon goes first, with its condition")
+    local w2 = Population.deserialize(Population.serialize(world))
+    local g2 = w2.by_gid[g.gid]
+    check(g2.members[1].gear and g2.members[1].gear.weapon == picked, "and the NPC keeps it across a restart")
+end
+
 section("a bigger population, lively Z sectors")
 do
     local Zones = require("world.zones")

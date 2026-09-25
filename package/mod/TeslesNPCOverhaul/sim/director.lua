@@ -623,6 +623,23 @@ function D:loadout_for(group, m)
     out.Lipas = weap.Lipas
     out.Tahtaimet = weap.Tahtaimet
     out.TahtainOsuus = weap.TahtainOsuus
+    -- A member's own weapon: picked once, kept, and it comes first; the
+    -- rest of its tier stands by in case the server lacks that one.
+    if m then
+        if not (m.gear and m.gear.weapon) then
+            m.gear = Weapons.gear_for(group.class, m, all, self.rng)
+        end
+        if m.gear then
+            local list = { m.gear.weapon }
+            for _, n in ipairs(weap.Weapons or {}) do
+                if n ~= m.gear.weapon then list[#list + 1] = n end
+            end
+            out.Weapons = list
+            out.ordered = true
+            out.Tahtain = m.gear.scoped
+            out.Kunto = m.gear.condition
+        end
+    end
     -- Outfit number: the squad's own wins over KAIKKI.
     if own and own.Asu ~= nil then out.Asu = own.Asu
     elseif common and common.Asu ~= nil then out.Asu = common.Asu end

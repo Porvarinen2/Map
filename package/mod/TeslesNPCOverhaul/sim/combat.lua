@@ -12,6 +12,7 @@ local Diplomacy = require("npc.diplomacy")
 local Leadership = require("npc.leadership")
 local Grid = require("world.navgrid")
 local Tr = require("npc.trauma")
+local Weapons = require("npc.weapons")
 local function Utility_trait(m, k) return Tr.trait(m, k) end
 
 local C = {}
@@ -66,7 +67,12 @@ function C.contact_range(group)
         end
     end
     local f = n > 0 and (0.75 + sum / n * 0.7) or 1
-    group._range, group._range_at = C.tuning.contact_uu * f, now
+    local r = C.tuning.contact_uu * f
+    -- A scoped rifle in the squad: it spots and engages out to 200 m.
+    for _, m in ipairs(group.members) do
+        if m.alive and m.gear and m.gear.scoped then r = math.max(r, Weapons.SCOPE_RANGE); break end
+    end
+    group._range, group._range_at = r, now
     return group._range
 end
 
@@ -308,12 +314,17 @@ function C.exchange_fire(group, enemy, rng, accuracy)
                     if d < best then target, best = e, d end
                 end
             end
-            if target and best <= f.range_uu then
+            -- The member's own weapon sets its reach and aim: a scoped rifle
+            -- 200 m and steady, a pistol 50 m, a club only at arm's length.
+            local prof = m.gear and m.gear.weapon and Weapons.profile(m.gear.weapon, m.gear.scoped) or nil
+            local range = prof and prof.range or f.range_uu
+            if target and best <= range then
                 -- Roughly one aimed shot every two seconds.
                 if rng:chance(0.5) then
                     local skill = weapon_skill(m) + ((m.skills or {}).perception or 0) * 0.4
                         + (m.level or 1) * 0.06
-                    local p = f.base_hit * (0.55 + skill) * (1 - 0.6 * best / f.range_uu)
+                    local p = f.base_hit * (0.55 + skill) * (1 - 0.6 * best / range)
+                        * (prof and prof.acc or 1)
                     if target.action == "COVER" then p = p * 0.6 end
                     if accuracy then p = p * accuracy(m) end
                     hits.shots = (hits.shots or 0) + 1

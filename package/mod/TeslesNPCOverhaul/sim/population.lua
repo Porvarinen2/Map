@@ -426,7 +426,7 @@ function P.serialize(world)
                 action = m.action, injuries = m.injuries,
                 is_leader = m.is_leader,
                 traumas = m.traumas, relations = m.relations,
-                memories = m.memories, xp = m.xp,
+                memories = m.memories, xp = m.xp, gear = m.gear,
             }
         end
         out.groups[#out.groups + 1] = sg
@@ -478,6 +478,7 @@ function P.deserialize(saved)
             npc.relations = sm.relations or {}
             npc.memories = sm.memories or {}
             npc.xp = sm.xp or npc.xp
+            npc.gear = sm.gear
             Factory.reserve_npc_id(npc.id)
             g.members[#g.members + 1] = npc
         end

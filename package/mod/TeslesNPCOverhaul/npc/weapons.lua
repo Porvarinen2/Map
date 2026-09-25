@@ -220,4 +220,60 @@ function W.for_member(class, level, gear, roll)
     }
 end
 
+-- Weapon condition by squad class: the elite look after their weapons,
+-- scavengers and bandits hardly at all. { lowest, highest } share of the
+-- weapon's full condition.
+W.CONDITION = {
+    elite_unit = { 0.85, 1.0 }, military_group = { 0.7, 0.95 }, police_patrol = { 0.7, 0.95 },
+    bunker_group = { 0.6, 0.9 }, radiation_group = { 0.6, 0.9 }, hunters = { 0.55, 0.9 },
+    militia_cell = { 0.45, 0.8 }, survivor_group = { 0.4, 0.8 }, pair = { 0.4, 0.8 },
+    island_residents = { 0.4, 0.75 }, lone_wanderer = { 0.35, 0.75 },
+    bandit_gang = { 0.2, 0.55 }, scavengers = { 0.15, 0.5 },
+}
+W.DEFAULT_CONDITION = { 0.35, 0.75 }
+
+local KIND = {}
+for _, e in ipairs(W.LIST) do KIND[e[1]:lower()] = e[3] end
+function W.kind(name) return KIND[tostring(name):lower()] end
+
+-- How far and how well a weapon shoots in the squads' own fights.
+-- range in UU (100 = 1 m); acc multiplies the hit chance.
+W.PROFILE = {
+    melee = { range = 300, acc = 1.2 },
+    bow_crude = { range = 3000, acc = 0.6 }, bow = { range = 5000, acc = 0.8 },
+    compound = { range = 6000, acc = 0.95 }, xbow_impro = { range = 4000, acc = 0.7 },
+    xbow = { range = 6000, acc = 1.0 }, gun_impro = { range = 3000, acc = 0.55 },
+    pistol = { range = 5000, acc = 0.85 }, revolver = { range = 5000, acc = 0.9 },
+    sawed = { range = 1500, acc = 1.1 }, shotgun = { range = 3500, acc = 1.0 },
+    smg = { range = 8000, acc = 0.9 }, bolt = { range = 15000, acc = 1.1 },
+    semi = { range = 15000, acc = 1.0 }, ak = { range = 15000, acc = 0.9 },
+    assault = { range = 15000, acc = 1.0 }, dmr = { range = 15000, acc = 1.15 },
+    sniper = { range = 15000, acc = 1.2 }, lmg = { range = 15000, acc = 0.85 },
+}
+local MELEE = { impro = true, spear = true, tool = true, blade = true, hunt_blade = true, axe = true,
+                bat = true, baton = true, mil_melee = true }
+-- A scope: 200 m and a far steadier aim.
+W.SCOPE_RANGE = 20000
+W.SCOPE_ACC = 1.8
+function W.profile(name, scoped)
+    local k = W.kind(name)
+    local p = (k and MELEE[k]) and W.PROFILE.melee or (k and W.PROFILE[k]) or { range = 15000, acc = 1.0 }
+    if scoped and not MELEE[k or ""] then
+        return { range = math.max(p.range, W.SCOPE_RANGE), acc = p.acc * W.SCOPE_ACC, scoped = true }
+    end
+    return p
+end
+
+-- The weapon one NPC carries, picked once and kept (saved with the NPC):
+-- { weapon, scoped, condition }.
+function W.gear_for(class, m, gear, rng)
+    local setup = W.for_member(class, m.level, gear, rng:float())
+    local list = setup.Weapons or {}
+    if #list == 0 then return nil, setup end
+    local name = list[rng:int(1, #list)]
+    local scoped = #W.scopes_for(name) > 0 and rng:float() < (setup.TahtainOsuus or 0)
+    local c = W.CONDITION[class] or W.DEFAULT_CONDITION
+    return { weapon = name, scoped = scoped, condition = c[1] + (c[2] - c[1]) * rng:float() }, setup
+end
+
 return W

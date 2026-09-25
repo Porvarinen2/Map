@@ -2220,7 +2220,7 @@ local function functions_of(obj, stop_at)
 end
 B.functions_of = functions_of
 function B.log_weapon_api(obj, label, force)
-    if not (obj and valid(obj)) or #weapon_api > 6000 then return end
+    if not (obj and valid(obj)) or #weapon_api > 12000 then return end
     local key = ""
     pcall(function() key = full_name(obj:GetClass()) end)
     if weapon_api_seen[key] and not force then return end
@@ -2266,94 +2266,150 @@ local function weapon_mesh(w)
     end
     return m
 end
-local SKIP_FN = { "^OnRep", "^Get", "^Is", "^Can", "^Has", "^NetMulticast", "^Client", "^Receive", "^K2_", "^BP_" }
-local function try_weapon_calls(w, part, words, label)
-    local tried = {}
-    for _, fn in ipairs(functions_of(w, "/Script/Engine.Actor")) do
-        local low = fn:lower()
-        local match = false
-        for _, wd in ipairs(words) do if low:find(wd, 1, true) then match = true end end
-        local skip = false
-        for _, pat in ipairs(SKIP_FN) do if fn:find(pat) then skip = true end end
-        if match and not skip and (low:find("attach") or low:find("insert") or low:find("set")
-            or low:find("load") or low:find("equip") or low:find("add") or low:find("mount")) then
-            local ok, err = pcall(function() return w[fn](w, part) end)
-            tried[#tried + 1] = fn .. "=" .. (ok and "ok" or ("x:" .. tostring(err):sub(1, 60)))
-        end
-    end
-    return tried
+-- SCUM's own call for fitting an attachment (magazine, scope) to a weapon:
+-- Weapon:AddAttachmentOnServer(item) (1.9.x: the only one that took the
+-- scope; the magazine was only tried with magazine-named calls).
+local function call_ok(obj, fn, ...)
+    local args = { ... }
+    local ok, res = pcall(function() return obj[fn](obj, table.unpack(args)) end)
+    return ok, res
 end
-local function put_on_weapon(w, name, socket, words, label, pos)
+local function num(obj, fn)
+    local ok, v = call_ok(obj, fn)
+    v = ok and unwrap(v) or nil
+    return tonumber(v)
+end
+local function set_condition(item, share)
+    if not share then return nil end
+    local max = num(item, "GetMaxHealth") or 100
+    local ok = call_ok(item, "SetHealth", max * share)
+    return ok and math.floor(share * 100 + 0.5) or nil
+end
+local function put_on_weapon(w, name, label, pos, before_attach)
     local cls = B.find_item_class(name)
     if not cls then return nil end
     local part = spawn_actor(cls, pos)
     if not part then return nil end
     pcall(function() part:SetOwner(w) end)
     pcall(function() part:SetActorEnableCollision(false) end)
-    local mesh = weapon_mesh(w)
-    local att = false
-    if mesh then
-        att = pcall(function() part:K2_GetRootComponent():K2_AttachToComponent(mesh, fname(socket), 2, 2, 2, false) end)
-    end
-    local tried = try_weapon_calls(w, part, words, label)
+    if before_attach then pcall(before_attach, part) end
+    local ok, err = call_ok(w, "AddAttachmentOnServer", part)
     B.log_weapon_api(part, "PART " .. name)
-    lnote(string.format("%s: %s -> %s (attach %s @%s, calls: %s)", label, name, full_name(w):match("([%w_]+)_C_") or "?",
-        tostring(att), socket, #tried > 0 and table.concat(tried, ", ") or "none"))
-    return part
+    return part, ok, err
 end
--- Rounds in a magazine: numeric properties named like a round count are set
--- to 40-90% of a capacity property (both found at run time and logged).
-local function fill_magazine(mag, label)
-    local count_p, cap_p, cap = nil, nil, nil
-    local names = {}
-    local okc, cls = pcall(function() return mag:GetClass() end)
-    local depth = 0
-    while okc and cls and valid(cls) and depth < 8 do
-        depth = depth + 1
-        if full_name(cls):find("/Script/Engine.Actor", 1, true) then break end
-        pcall(function()
-            cls:ForEachProperty(function(p)
-                local n = p:GetFName():ToString()
-                local v = mag[n]
-                if type(v) == "number" then names[#names + 1] = n end
-            end)
-        end)
-        local oks, sup = pcall(function() return cls:GetSuperStruct() end)
-        if not (oks and sup) then break end
-        cls = sup
+-- A magazine with some rounds: filled with its default ammo, then some taken
+-- out again (40-90 % left).
+local function fill_magazine(mag)
+    call_ok(mag, "FillWithDefaultAmmo")
+    local full = num(mag, "GetAmmoCount") or 0
+    local keep = math.max(1, math.floor(full * (0.4 + math.random() * 0.5) + 0.5))
+    if full > keep then
+        if not call_ok(mag, "RemoveAmmo", full - keep) then call_ok(mag, "SetAmmo", keep) end
     end
-    for _, n in ipairs(names) do
-        local low = n:lower()
-        if not cap_p and (low:find("capacity") or low:find("max")) then cap_p = n end
-        if not count_p and (low:find("ammo") or low:find("round") or low:find("bullet") or low:find("cartridge")
-            or low:find("count")) and not low:find("max") and not low:find("capacity") then count_p = n end
-    end
-    if cap_p then pcall(function() cap = mag[cap_p] end) end
-    local set = nil
-    if count_p then
-        local want = math.floor((tonumber(cap) or 10) * (0.4 + math.random() * 0.5) + 0.5)
-        if pcall(function() mag[count_p] = want end) then set = want end
-    end
-    lnote(string.format("%s: lipas: numerot [%s], panokset %s = %s (kapasiteetti %s = %s)", label,
-        table.concat(names, ", "), tostring(count_p), tostring(set), tostring(cap_p), tostring(cap)))
+    return full, num(mag, "GetAmmoCount")
 end
 function B.fit_weapon(w, weapon_name, loadout, label, pos)
     B.log_weapon_api(w, "WEAPON " .. weapon_name)
+    local notes = {}
+    local cond = tonumber(loadout.Kunto)
+    local c = set_condition(w, cond)
+    if c then notes[#notes + 1] = "kunto " .. c .. " %" end
     local mname = type(loadout.Lipas) == "string" and loadout.Lipas or Weapons.magazine_for(weapon_name)
     if loadout.Lipas ~= false and mname then
-        local mag = put_on_weapon(w, mname, "MagazineSocket", { "magazine", "clip" }, label, pos)
-        if mag then pcall(fill_magazine, mag, label) end
+        local full, left = nil, nil
+        local mag, ok, err = put_on_weapon(w, mname, label, pos, function(m)
+            full, left = fill_magazine(m)
+            set_condition(m, cond)
+        end)
+        if mag then
+            notes[#notes + 1] = string.format("lipas %s %s (%s/%s panosta)", mname,
+                ok and "kiinni" or ("EI kiinni: " .. tostring(err):sub(1, 80)), tostring(left), tostring(full))
+        else
+            notes[#notes + 1] = "lipasta " .. mname .. " ei loytynyt"
+        end
+    elseif Weapons.kind(weapon_name) and loadout.Lipas ~= false then
+        -- Built-in magazine (revolvers, shotguns, bolt-action rifles): the
+        -- weapon is loaded as it is.
+        local before = num(w, "GetAmmoCount")
+        local ok = call_ok(w, "FillUpWithDefaultAmmo")
+        notes[#notes + 1] = string.format("sisainen lipas: %s -> %s%s", tostring(before),
+            tostring(num(w, "GetAmmoCount")), ok and "" or " (FillUpWithDefaultAmmo ei onnistunut)")
     end
     local scopes = loadout.Tahtaimet or Weapons.scopes_for(weapon_name)
-    if #Weapons.scopes_for(weapon_name) > 0 and #scopes > 0
-        and math.random() < (tonumber(loadout.TahtainOsuus) or 0) then
+    local want_scope = loadout.Tahtain
+    if want_scope == nil then want_scope = math.random() < (tonumber(loadout.TahtainOsuus) or 0) end
+    if want_scope and #Weapons.scopes_for(weapon_name) > 0 and #scopes > 0 then
         for _, sname in ipairs(scopes) do
             if B.find_item_class(sname) then
-                put_on_weapon(w, sname, "Scope", { "scope", "attachment", "sight" }, label, pos)
+                local sc, ok = put_on_weapon(w, sname, label, pos, function(x) set_condition(x, cond) end)
+                if sc then notes[#notes + 1] = "tahtain " .. sname .. (ok and " kiinni" or " EI kiinni") end
                 break
             end
         end
     end
+    lnote(string.format("%s: %s - %s", label, weapon_name, table.concat(notes, ", ")))
+end
+
+-- The NPC fires through a "weapon manual" made for its weapon type
+-- (Weapon._armedNPCWeaponManualClass): a rifle manual cannot fire a pistol,
+-- which is why the NPCs of 1.9.x held their new weapons without shooting.
+-- A manual of the new weapon's class is made for the NPC, the settings of
+-- the old one carried over, and it takes the old one's place.
+local manual_logged = {}
+local function swap_manual(a, item, label)
+    local mc = nil
+    pcall(function() mc = item._armedNPCWeaponManualClass end)
+    if not (mc and valid(mc)) then return "ei kasikirjaa (lyomaase?)" end
+    local old = nil
+    pcall(function() old = a._weaponManual end)
+    local oldc = old and valid(old) and full_name(old:GetClass()) or ""
+    if oldc == full_name(mc) then return "sama kasikirja" end
+    if not have("StaticConstructObject") then return "StaticConstructObject puuttuu" end
+    local ok, new = pcall(function() return StaticConstructObject(mc, a) end)
+    if not (ok and new and valid(new)) then return "kasikirjaa ei voitu tehda: " .. tostring(new) end
+    local copied = 0
+    if old and valid(old) then
+        local okc, cls = pcall(function() return new:GetClass() end)
+        local depth = 0
+        while okc and cls and valid(cls) and depth < 8 do
+            depth = depth + 1
+            if full_name(cls):find("/Script/CoreUObject.Object", 1, true) then break end
+            pcall(function()
+                cls:ForEachProperty(function(p)
+                    local n = p:GetFName():ToString()
+                    local okv, v = pcall(function() return old[n] end)
+                    if okv and v ~= nil then
+                        local tv = type(v)
+                        local val = v
+                        if tv == "userdata" then
+                            local fn = full_name(v)
+                            -- Objects of the old manual itself stay the new one's own.
+                            if fn:find(full_name(old), 1, true) then val = nil end
+                        end
+                        if val ~= nil and pcall(function() new[n] = val end) then copied = copied + 1 end
+                    end
+                end)
+            end)
+            local oks, sup = pcall(function() return cls:GetSuperStruct() end)
+            if not (oks and sup) then break end
+            cls = sup
+        end
+    end
+    local set = pcall(function() a._weaponManual = new end)
+    if not manual_logged[full_name(mc)] then
+        manual_logged[full_name(mc)] = true
+        if old and valid(old) then B.log_weapon_api(old, "OLD MANUAL", true) end
+        B.log_weapon_api(new, "NEW MANUAL", true)
+        -- How far SCUM's own AI sees and shoots at players (for scoped NPCs).
+        if not B.ai_logged then
+            B.ai_logged = true
+            local c = B.controller(a)
+            if c then B.log_weapon_api(c, "AI CONTROLLER", true) end
+            pcall(function() B.log_weapon_api(a._armedNPCBaseCommonData, "NPC COMMON DATA", true) end)
+        end
+    end
+    return string.format("kasikirja %s -> %s (%d asetusta kopioitu, asetettu %s)",
+        oldc:match("([%w_]+)$") or "?", full_name(mc):match("([%w_]+)$") or "?", copied, tostring(set))
 end
 
 -- A weapon: the new one goes where SCUM had put the NPC's own (same parent
@@ -2379,9 +2435,10 @@ local function hold_weapon(a, handle, name, label, pos, olds)
         item:K2_GetRootComponent():K2_AttachToComponent(parent, socket or fname("hand_r"), 2, 2, 2, false)
     end)
     local inhands = pcall(function() a._itemInHands = item end)
+    local okm, manual = pcall(swap_manual, a, item, label)
     for _, o in ipairs(olds) do pcall(function() o:K2_DestroyActor() end) end
-    lnote(string.format("%s: %s - weapon placed (attach=%s, in hands=%s, replaced %d)",
-        label, name, tostring(att), tostring(inhands), #olds))
+    lnote(string.format("%s: %s - weapon placed (attach=%s, in hands=%s, replaced %d, %s)",
+        label, name, tostring(att), tostring(inhands), #olds, okm and tostring(manual) or ("manual error " .. tostring(manual))))
     return att, item
 end
 
@@ -2540,6 +2597,7 @@ function B.apply_loadout(handle, loadout, label)
     local order = {}
     for _, name in ipairs(loadout.Weapons or {}) do order[#order + 1] = name end
     for i = #order, 2, -1 do
+        if loadout.ordered then break end
         local j = math.random(i)
         order[i], order[j] = order[j], order[i]
     end
