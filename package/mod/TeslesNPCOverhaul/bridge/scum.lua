@@ -1772,7 +1772,7 @@ function B.find_item_class(spawn_name)
     return nil
 end
 
-local function spawn_actor(cls, pos)
+local function spawn_actor(cls, pos, before_finish)
     local gs = get_statics()
     local world = B.get_world()
     if not (gs and world and cls) then return nil, "no statics/world/class" end
@@ -1781,6 +1781,8 @@ local function spawn_actor(cls, pos)
                  Scale3D = { X = 1, Y = 1, Z = 1 } }
     local ok, actor = pcall(function()
         local a = gs:BeginDeferredActorSpawnFromClass(world, cls, xf, 1, nil)
+        -- Settings the item reads while it is made (e.g. InitialAmmo).
+        if a and valid(a) and before_finish then pcall(before_finish, a) end
         if a and valid(a) then gs:FinishSpawningActor(a, xf) end
         return a
     end)
@@ -2285,10 +2287,10 @@ local function set_condition(item, share)
     local ok = call_ok(item, "SetHealth", max * share)
     return ok and math.floor(share * 100 + 0.5) or nil
 end
-local function put_on_weapon(w, name, label, pos, before_attach)
+local function put_on_weapon(w, name, label, pos, before_attach, before_finish)
     local cls = B.find_item_class(name)
     if not cls then return nil end
-    local part = spawn_actor(cls, pos)
+    local part = spawn_actor(cls, pos, before_finish)
     if not part then return nil end
     pcall(function() part:SetOwner(w) end)
     pcall(function() part:SetActorEnableCollision(false) end)
@@ -2297,17 +2299,46 @@ local function put_on_weapon(w, name, label, pos, before_attach)
     B.log_weapon_api(part, "PART " .. name)
     return part, ok, err
 end
--- A magazine with some rounds: filled with its default ammo, then some taken
--- out again (40-90 % left).
-local function fill_magazine(mag)
-    call_ok(mag, "FillWithDefaultAmmo")
-    local full = num(mag, "GetAmmoCount") or 0
-    local keep = math.max(1, math.floor(full * (0.4 + math.random() * 0.5) + 0.5))
-    if full > keep then
-        if not call_ok(mag, "RemoveAmmo", full - keep) then call_ok(mag, "SetAmmo", keep) end
-    end
-    return full, num(mag, "GetAmmoCount")
+-- A random share of a capacity: 30-90 %, at least one round.
+local function some_rounds(cap)
+    cap = math.floor(tonumber(cap) or 0)
+    if cap <= 0 then return 0 end
+    return math.max(1, math.min(cap, math.floor(cap * (0.3 + math.random() * 0.6) + 0.5)))
 end
+-- The rounds are given to the item while it is made (InitialAmmo, as SCUM's
+-- own spawners do); should that leave it empty, SCUM's fill calls are tried
+-- one by one and the first that works is used.
+local fill_way = nil
+local function load_rounds(obj, want, cap_fn)
+    local have = num(obj, "GetAmmoCount") or 0
+    if have > 0 then return have, "InitialAmmo" end
+    local ammo = nil
+    pcall(function() ammo = obj.DefaultFillAmmo or obj.DefaultAmmunitionItemClass end)
+    local ways = {
+        { "SetAmmo", function() return call_ok(obj, "SetAmmo", want) end },
+        { "AddAmmo", function() return call_ok(obj, "AddAmmo", ammo, want) end },
+        { "AddAmmoSingle", function()
+            local ok = false
+            for _ = 1, want do ok = call_ok(obj, "AddAmmoSingle", ammo) or ok end
+            return ok
+        end },
+        { "FillWithDefaultAmmo", function() return call_ok(obj, "FillWithDefaultAmmo") end },
+        { "FillUpWithDefaultAmmo", function() return call_ok(obj, "FillUpWithDefaultAmmo") end },
+    }
+    if fill_way then
+        for i, wdef in ipairs(ways) do if wdef[1] == fill_way then table.insert(ways, 1, table.remove(ways, i)) break end end
+    end
+    for _, wdef in ipairs(ways) do
+        pcall(wdef[2])
+        local n = num(obj, "GetAmmoCount") or 0
+        if n > 0 then
+            fill_way = wdef[1]
+            return n, wdef[1]
+        end
+    end
+    return 0, "ei mikaan tapa"
+end
+
 function B.fit_weapon(w, weapon_name, loadout, label, pos)
     B.log_weapon_api(w, "WEAPON " .. weapon_name)
     local notes = {}
@@ -2316,24 +2347,30 @@ function B.fit_weapon(w, weapon_name, loadout, label, pos)
     if c then notes[#notes + 1] = "kunto " .. c .. " %" end
     local mname = type(loadout.Lipas) == "string" and loadout.Lipas or Weapons.magazine_for(weapon_name)
     if loadout.Lipas ~= false and mname then
-        local full, left = nil, nil
+        local want, cap, got, how = 0, 0, 0, ""
         local mag, ok, err = put_on_weapon(w, mname, label, pos, function(m)
-            full, left = fill_magazine(m)
+            got, how = load_rounds(m, want)
             set_condition(m, cond)
+        end, function(m)
+            pcall(function() cap = m._capacity end)
+            want = some_rounds(cap)
+            pcall(function() m.InitialAmmo = want end)
         end)
         if mag then
-            notes[#notes + 1] = string.format("lipas %s %s (%s/%s panosta)", mname,
-                ok and "kiinni" or ("EI kiinni: " .. tostring(err):sub(1, 80)), tostring(left), tostring(full))
+            notes[#notes + 1] = string.format("lipas %s %s (%s/%s panosta, %s)", mname,
+                ok and "kiinni" or ("EI kiinni: " .. tostring(err):sub(1, 80)), tostring(got), tostring(cap), how)
         else
             notes[#notes + 1] = "lipasta " .. mname .. " ei loytynyt"
         end
     elseif Weapons.kind(weapon_name) and loadout.Lipas ~= false then
         -- Built-in magazine (revolvers, shotguns, bolt-action rifles): the
         -- weapon is loaded as it is.
-        local before = num(w, "GetAmmoCount")
-        local ok = call_ok(w, "FillUpWithDefaultAmmo")
-        notes[#notes + 1] = string.format("sisainen lipas: %s -> %s%s", tostring(before),
-            tostring(num(w, "GetAmmoCount")), ok and "" or " (FillUpWithDefaultAmmo ei onnistunut)")
+        -- The rounds were set as the weapon was made (hold_weapon).
+        local n = num(w, "GetAmmoCount")
+        local want = B.want_rounds[full_name(w)] or 0
+        if n and n == 0 and want > 0 then n = load_rounds(w, want) end
+        B.want_rounds[full_name(w)] = nil
+        if n then notes[#notes + 1] = string.format("sisainen lipas: %s panosta", tostring(n)) end
     end
     local scopes = loadout.Tahtaimet or Weapons.scopes_for(weapon_name)
     local want_scope = loadout.Tahtain
@@ -2356,6 +2393,30 @@ end
 -- A manual of the new weapon's class is made for the NPC, the settings of
 -- the old one carried over, and it takes the old one's place.
 local manual_logged = {}
+-- Sets a manual up for its NPC and weapon (Initialize); which form of the
+-- call SCUM takes is found by checking GetWeapon afterwards.
+local function bind_manual(new, a, item)
+    local init = "Initialize: ei onnistunut"
+    local function bound()
+        local ok, w = call_ok(new, "GetWeapon")
+        w = ok and unwrap(w) or nil
+        return w ~= nil and valid(w) and full_name(w) == full_name(item)
+    end
+    if bound() then return "ase sidottu (GetWeapon)" end
+    local errs = {}
+    for _, args in ipairs({ { a, item }, { a }, { item }, { item, a }, {} }) do
+        local ok, err = call_ok(new, "Initialize", table.unpack(args))
+        if bound() then init = "Initialize(" .. #args .. ") ok"; break end
+        errs[#errs + 1] = "(" .. #args .. ")=" .. (ok and "ok" or tostring(err):sub(-120))
+    end
+    if init:find("ei") and not B.init_err_logged then
+        B.init_err_logged = true
+        lnote("Initialize-yritykset: " .. table.concat(errs, " | "))
+    end
+    if init:find("ei") and bound() then init = "ase jo sidottu" end
+    return init
+end
+
 local function swap_manual(a, item, label)
     local mc = nil
     pcall(function() mc = item._armedNPCWeaponManualClass end)
@@ -2363,7 +2424,10 @@ local function swap_manual(a, item, label)
     local old = nil
     pcall(function() old = a._weaponManual end)
     local oldc = old and valid(old) and full_name(old:GetClass()) or ""
-    if oldc == full_name(mc) then return "sama kasikirja" end
+    if oldc == full_name(mc) then
+        -- Same kind of manual: it still points at the old, removed weapon.
+        return "sama kasikirja, " .. bind_manual(old, a, item)
+    end
     if not have("StaticConstructObject") then return "StaticConstructObject puuttuu" end
     local ok, new = pcall(function() return StaticConstructObject(mc, a) end)
     if not (ok and new and valid(new)) then return "kasikirjaa ei voitu tehda: " .. tostring(new) end
@@ -2396,6 +2460,7 @@ local function swap_manual(a, item, label)
         end
     end
     local set = pcall(function() a._weaponManual = new end)
+    local init = bind_manual(new, a, item)
     if not manual_logged[full_name(mc)] then
         manual_logged[full_name(mc)] = true
         if old and valid(old) then B.log_weapon_api(old, "OLD MANUAL", true) end
@@ -2408,21 +2473,35 @@ local function swap_manual(a, item, label)
             pcall(function() B.log_weapon_api(a._armedNPCBaseCommonData, "NPC COMMON DATA", true) end)
         end
     end
-    return string.format("kasikirja %s -> %s (%d asetusta kopioitu, asetettu %s)",
-        oldc:match("([%w_]+)$") or "?", full_name(mc):match("([%w_]+)$") or "?", copied, tostring(set))
+    return string.format("kasikirja %s -> %s (%d asetusta kopioitu, asetettu %s, %s)",
+        oldc:match("([%w_]+)$") or "?", full_name(mc):match("([%w_]+)$") or "?", copied, tostring(set), init)
 end
 
 -- A weapon: the new one goes where SCUM had put the NPC's own (same parent
 -- and socket), becomes the item in hands, and the old one is removed.
+B.want_rounds = {}
 local function hold_weapon(a, handle, name, label, pos, olds)
     local cls = B.find_item_class(name)
     if not cls then return false end
-    local item, why = spawn_actor(cls, pos)
+    -- A weapon with a built-in magazine (shotgun, revolver, bolt-action)
+    -- gets a random number of rounds as it is made.
+    local want = 0
+    local item, why = spawn_actor(cls, pos, function(x)
+        if Weapons.magazine_for(name) then return end
+        local cap = 0
+        pcall(function() cap = tonumber(x.InternalMagazineCapacity) or 0 end)
+        if cap <= 0 then pcall(function() if x.UseChamberAsInternalMagazine then cap = tonumber(x.MaxLoadedAmmo) or 1 end end) end
+        if cap > 0 then
+            want = some_rounds(cap)
+            pcall(function() x.InitialAmmo = want end)
+        end
+    end)
     if not item then
         lnote(string.format("%s: %s - spawn failed: %s", label, name, tostring(why)))
         return false
     end
     keep_extra(handle, item)
+    if want > 0 then B.want_rounds[full_name(item)] = want end
     pcall(function() item:SetOwner(a) end)
     pcall(function() item:SetActorEnableCollision(false) end)
     local parent, socket = nil, nil
