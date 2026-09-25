@@ -109,6 +109,11 @@ function B.damage_actor(actor, amount)
     B.zombie_damage = B.zombie_damage + 1
     return true
 end
+B.native = {}
+function B.set_native(h, on)
+    B.native[h] = on or nil
+    return true
+end
 B.loadouts_applied = {}
 function B.apply_loadout(h, loadout, label)
     B.loadouts_applied[#B.loadouts_applied + 1] = { h = h, loadout = loadout, label = label }

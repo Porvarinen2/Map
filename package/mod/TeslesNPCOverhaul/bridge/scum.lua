@@ -1014,7 +1014,16 @@ end
 -- 1.2.1 log shows every pathfinding request toward a route waypoint rejected.
 -- The director only ever asks for short hops along a route that was already
 -- checked against the terrain, so a straight walk is exactly what it wants.
+-- An NPC in a fight with a player is SCUM's own again (see B.set_native):
+-- the director's orders are held back until the fight is over.
+local function in_native(handle)
+    local rec = handles[handle]
+    return rec ~= nil and rec.native == true
+end
+B.in_native = in_native
+
 function B.move_to(handle, dest, opts)
+    if in_native(handle) then return true end
     opts = opts or {}
     local a = B.actor(handle)
     if not a or not dest then return false end
@@ -1046,6 +1055,7 @@ function B.move_to(handle, dest, opts)
 end
 
 function B.move_to_actor(handle, target_handle)
+    if in_native(handle) then return true end
     local a, t = B.actor(handle), B.actor(target_handle)
     if not (a and t) then return false end
     local c = B.controller(a)
@@ -1059,6 +1069,7 @@ function B.move_to_actor(handle, target_handle)
 end
 
 function B.stop(handle)
+    if in_native(handle) then return true end
     local a = B.actor(handle)
     if not a then return false end
     local c = B.controller(a)
@@ -1274,6 +1285,37 @@ function B.take_ownership(handle)
     return true
 end
 
+-- SCUM's own combat AI for a fight with a player. The director keeps the
+-- NPC's brain stopped so it walks the director's routes; with the brain
+-- stopped it never aims or fires either. When a player comes within reach
+-- of the NPC's weapon the brain is started again and SCUM's AI fights with
+-- the weapon, magazine and weapon manual the NPC carries; when the player
+-- is gone the director takes the NPC back.
+function B.set_native(handle, on)
+    local rec = handles[handle]
+    local a = B.actor(handle)
+    if not (rec and a) then return false end
+    if (rec.native == true) == (on == true) then return true end
+    local c = B.controller(a)
+    local ok = false
+    if on then
+        pcall(function() c:ClearFocus(0) end)
+        ok = pcall(function()
+            local bt = c.BrainComponent
+            if not pcall(function() bt:RestartLogic() end) then bt:StartLogic() end
+        end)
+        rec.native = true
+        crumb("set_native h" .. tostring(handle) .. " on " .. tostring(ok))
+    else
+        rec.native = false
+        pcall(function() c:StopMovement() end)
+        ok = pcall(function() c.BrainComponent:StopLogic("TeslesDirector") end)
+        crumb("set_native h" .. tostring(handle) .. " off " .. tostring(ok))
+    end
+    B.native_switches = (B.native_switches or 0) + 1
+    return ok
+end
+
 -- ------------------------------------------------------ vanilla cleanup --
 
 -- Only the mod's own groups may walk the island. SCUM's encounter manager keeps
@@ -1403,6 +1445,7 @@ end
 -- Follow another actor: the engine tracks the moving goal itself, so the
 -- follower walks a continuous curve instead of hopping between points.
 function B.follow(handle, target_handle, radius)
+    if in_native(handle) then return true end
     local a, t = B.actor(handle), B.actor(target_handle)
     if not (a and t) then return false end
     local c = B.controller(a)
@@ -1471,6 +1514,7 @@ end
 
 -- Faces an actor at a point without moving it.
 function B.face(handle, pos)
+    if in_native(handle) then return true end
     local a = B.actor(handle)
     if not (a and pos) then return false end
     local c = B.controller(a)
@@ -1479,6 +1523,7 @@ function B.face(handle, pos)
 end
 
 function B.clear_focus(handle)
+    if in_native(handle) then return true end
     local a = B.actor(handle)
     if not a then return false end
     local c = B.controller(a)
@@ -2436,8 +2481,9 @@ local function swap_manual(a, item, label)
     pcall(function() old = a._weaponManual end)
     local oldc = old and valid(old) and full_name(old:GetClass()) or ""
     if oldc == full_name(mc) then
-        -- Same kind of manual: it still points at the old, removed weapon.
-        return "sama kasikirja"
+        -- Same kind of manual: set up again for the new weapon.
+        local oki = call_ok(old, "Initialize")
+        return "sama kasikirja, Initialize() " .. tostring(oki)
     end
     if not have("StaticConstructObject") then return "StaticConstructObject puuttuu" end
     local ok, new = pcall(function() return StaticConstructObject(mc, a) end)
@@ -2472,6 +2518,13 @@ local function swap_manual(a, item, label)
     end
     local set = pcall(function() a._weaponManual = new end)
     pcall(B.log_signatures)
+    -- Initialize takes no arguments (weapon_api.txt, 1.9.8): the manual finds
+    -- its NPC (its outer) and weapon itself.
+    local init_ok = call_ok(new, "Initialize")
+    local okw, gw = call_ok(new, "GetWeapon")
+    gw = okw and unwrap(gw) or nil
+    local init = "Initialize() " .. tostring(init_ok) .. ", ase " ..
+        ((gw and valid(gw) and full_name(gw) == full_name(item)) and "sidottu" or "EI sidottu")
     if not manual_logged[full_name(mc)] then
         manual_logged[full_name(mc)] = true
         if old and valid(old) then B.log_weapon_api(old, "OLD MANUAL", true) end
@@ -2484,8 +2537,8 @@ local function swap_manual(a, item, label)
             pcall(function() B.log_weapon_api(a._armedNPCBaseCommonData, "NPC COMMON DATA", true) end)
         end
     end
-    return string.format("kasikirja %s -> %s (%d asetusta kopioitu, asetettu %s)",
-        oldc:match("([%w_]+)$") or "?", full_name(mc):match("([%w_]+)$") or "?", copied, tostring(set))
+    return string.format("kasikirja %s -> %s (%d asetusta kopioitu, asetettu %s, %s)",
+        oldc:match("([%w_]+)$") or "?", full_name(mc):match("([%w_]+)$") or "?", copied, tostring(set), init)
 end
 
 -- A weapon: the new one goes where SCUM had put the NPC's own (same parent

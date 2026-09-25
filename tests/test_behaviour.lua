@@ -346,6 +346,25 @@ do
     check(g2.members[1].gear and g2.members[1].gear.weapon == picked, "and the NPC keeps it across a restart")
 end
 
+section("fights with players go to SCUM's own AI")
+do
+    local world, d = fresh(51)
+    local g = first_group(world)
+    local m = g.members[1]
+    m.gear = { weapon = "Weapon_Hunter85_V2", scoped = true, condition = 0.8 }
+    local sim = os.time()
+    local function at(dist)
+        Bridge.players = { { X = g.position.X + dist, Y = g.position.Y, Z = 0 } }
+        for _ = 1, 3 do sim = sim + 1; Bridge.step(1); d:tick(sim) end
+    end
+    at(8000)
+    check(g.physical and m.runtime_id and Bridge.native[m.runtime_id], "a player within a scoped rifle's reach: SCUM's AI fights")
+    local h = m.runtime_id
+    Bridge.players = { { X = g.position.X + 60000, Y = g.position.Y, Z = 0 } }
+    for _ = 1, 25 do sim = sim + 1; Bridge.step(1); d:tick(sim) end
+    check(not m.runtime_id or not Bridge.native[h], "the player gone for a while: the director takes the NPC back")
+end
+
 section("a bigger population, lively Z sectors")
 do
     local Zones = require("world.zones")

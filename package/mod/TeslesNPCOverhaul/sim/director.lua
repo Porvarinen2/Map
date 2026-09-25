@@ -646,6 +646,46 @@ function D:loadout_for(group, m)
     return out
 end
 
+-- Fights with players are SCUM's own: an NPC whose weapon reaches a player
+-- gets its own combat AI back (bridge.set_native) and aims and fires the
+-- way SCUM does; the director takes it back once the player has been out of
+-- reach for a while. Reach comes from the NPC's weapon: a scoped rifle
+-- 200 m, a rifle 150 m, a pistol 50 m; melee fighters close in from 40 m.
+D.FIGHT = { release_factor = 1.3, release_extra_uu = 2000, release_after = 20, melee_uu = 4000 }
+function D:player_fights(physical_groups, players, now)
+    if not self.bridge.set_native then return end
+    local F = D.FIGHT
+    for _, g in ipairs(physical_groups) do
+        for _, m in ipairs(g.members) do
+            if m.alive and m.runtime_id then
+                local mp = m.position or g.position
+                local best = math.huge
+                for _, p in ipairs(players) do
+                    local d = U.dist2d(mp, p)
+                    if d < best then best = d end
+                end
+                local prof = Weapons.profile(m.gear and m.gear.weapon or "Weapon_AK47", m.gear and m.gear.scoped)
+                local reach = math.max(prof.range, F.melee_uu)
+                if best <= reach then
+                    m.fight_far_since = nil
+                    if not m.native_fight then
+                        m.native_fight = true
+                        self.bridge.set_native(m.runtime_id, true)
+                        Log.event("FIGHT", g.gid, string.format("%s vs player %.0f m", m.npcId, best / 100))
+                    end
+                elseif m.native_fight and best > reach * F.release_factor + F.release_extra_uu then
+                    m.fight_far_since = m.fight_far_since or now
+                    if now - m.fight_far_since >= F.release_after then
+                        m.native_fight, m.fight_far_since = nil, nil
+                        self.bridge.set_native(m.runtime_id, false)
+                        Log.event("FIGHT_END", g.gid, m.npcId)
+                    end
+                end
+            end
+        end
+    end
+end
+
 local function now_ge(now, t, sec) return t == nil or now - t >= sec end
 
 function D:run_combat(group, contact, zpressure)
@@ -791,6 +831,7 @@ function D:tick(now)
     for _, group in ipairs(world.groups) do
         self:tick_group(group, players, physical_groups, dt)
     end
+    self:player_fights(physical_groups, players, now)
 
     -- Group relations and leadership recovery are cheap; run them every tick.
     for _, group in ipairs(world.groups) do
