@@ -203,6 +203,8 @@ end
 -- class weight decides between places at similar distance, and a little
 -- randomness among the best three keeps two identical groups from marching
 -- in lockstep. A class with a fixed circuit walks it in order instead.
+A.HOME_ROW_WEIGHT = 1.5
+A.ROW_WEIGHT = { Z = 2.5 }
 function A.pick_next(group, act, from, blocked, last_id)
     local cls = GroupClasses.get(group.class)
     if not (cls and from) then return nil end
@@ -224,6 +226,11 @@ function A.pick_next(group, act, from, blocked, last_id)
     -- an islet must not make every later pick impossible.
     local mass = Grid.landmass_at(group.position or from)
     local fear = A.fear_factor(group)
+    -- Squads go everywhere, but the south (the Z row, good loot and too few
+    -- visitors) draws everyone more, and a squad leans a little towards the
+    -- row of sectors it started in.
+    local home_row = nil
+    pcall(function() home_row = tostring(Zones.sector(group.home or from)):sub(1, 1) end)
     local scored = {}
     for _, poi in ipairs(POI.points) do
         if eligible(group, cls, poi)
@@ -235,6 +242,9 @@ function A.pick_next(group, act, from, blocked, last_id)
                 -- A frightened squad steers clear of the places where the
                 -- dead are thickest and the fighting is.
                 if DANGEROUS[poi.kind] then w = w * fear end
+                local row = tostring(poi.sector):sub(1, 1)
+                w = w * (A.ROW_WEIGHT[row] or 1)
+                if home_row and row == home_row then w = w * A.HOME_ROW_WEIGHT end
                 scored[#scored + 1] = { poi = poi, score = w / (1 + d / 90000) ^ 2 }
             end
         end

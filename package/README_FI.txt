@@ -1,4 +1,4 @@
-TESLES NPC OVERHAUL 1.9.35
+TESLES NPC OVERHAUL 1.9.36
 =========================
 
 Pysyva NPC-populaatio SCUM-palvelimelle. NPC-hahmot ja niiden ryhmat ovat
