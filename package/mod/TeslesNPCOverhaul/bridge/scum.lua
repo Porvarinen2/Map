@@ -2446,7 +2446,9 @@ local SIGNATURES = {
     "/Script/SCUM.WeaponAttachmentMagazine:FillWithDefaultAmmo",
     "/Script/SCUM.Weapon:FillUpWithDefaultAmmo",
     "/Script/SCUM.Weapon:AddAttachmentOnServer",
-    "/Script/SCUM.ArmedNPCBase:OnRep_ItemInHands",
+    "/Script/SCUM.Item:Equip",
+    "/Script/SCUM.Weapon:Equip",
+    "/Script/SCUM.Weapon:StartFire",
 }
 function B.log_signatures()
     if B.signatures_logged then return end
@@ -2534,9 +2536,21 @@ local function hold_weapon(a, handle, name, label, pos, olds)
         item:K2_GetRootComponent():K2_AttachToComponent(parent, socket or fname("hand_r"), 2, 2, 2, false)
     end)
     local inhands = pcall(function() a._itemInHands = item end)
+    -- A weapon in someone's hands is "active" and knows who holds it (the
+    -- player's weapon: _currentState = StateActive, _attachParentObject =
+    -- the player). A freshly spawned one is inactive and fires nothing, which
+    -- is why the swapped weapons never shot. Both are set as plain fields -
+    -- no function of the weapon is called (Initialize crashed the server).
+    pcall(function() item._attachParentObject = a end)
+    local state = "?"
+    pcall(function()
+        local act = item._activeState
+        if act and valid(act) then item._currentState = act end
+    end)
+    pcall(function() state = (full_name(item._currentState):match("([%w_]+)$") or "?") end)
     for _, o in ipairs(olds) do pcall(function() o:K2_DestroyActor() end) end
-    lnote(string.format("%s: %s - weapon placed (attach=%s, in hands=%s, replaced %d)",
-        label, name, tostring(att), tostring(inhands), #olds))
+    lnote(string.format("%s: %s - weapon placed (attach=%s, in hands=%s, replaced %d, state %s)",
+        label, name, tostring(att), tostring(inhands), #olds, state))
     return att, item
 end
 
