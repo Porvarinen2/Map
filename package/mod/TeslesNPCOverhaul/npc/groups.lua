@@ -74,6 +74,7 @@ G.list = {
     {
         key = "militia_cell", fi = "Miliisisolu", size = { 2, 5 },
         archetypes = { "militia", "survivor", "veteran" },
+        levels = { 4, 5 },
         tactics = "defensive", weight = 7,
         poi_weights = { MILITARY = 3.0, INDUSTRIAL = 2.4, VILLAGE = 2.0, BUNKER = 1.6, ABANDONED_BUNKER = 1.2 },
     },
@@ -99,6 +100,19 @@ for _, g in ipairs(G.list) do G.by_key[g.key] = g end
 G.count = #G.list
 
 function G.get(key) return G.by_key[key] end
+
+-- A class that sets its members' level (level = 5, or levels = { 4, 5 }):
+-- the level of the member with this seed, the same every time; nil when the
+-- class leaves it to the archetype.
+function G.member_level(cls, seed)
+    if not cls then return nil end
+    if cls.level then return cls.level end
+    if cls.levels then
+        local lo, hi = cls.levels[1], cls.levels[2]
+        return lo + (math.floor((tonumber(seed) or 0) / 7) % (hi - lo + 1))
+    end
+    return nil
+end
 
 -- --------------------------------------------------------- own classes ---
 

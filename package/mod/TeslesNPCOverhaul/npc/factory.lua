@@ -72,6 +72,8 @@ function F.new_npc(opts)
     -- trait and skill draw as the original roll.
     local rolled = rng:int(lo, hi)
     local level = math.max(lo, math.min(hi, opts.level or rolled))
+    -- A class that sets the level wins over the archetype's range.
+    if opts.class_level then level = opts.class_level end
 
     local npc = {
         id = id,
@@ -154,11 +156,12 @@ function F.new_group(opts)
 
     for i = 1, size do
         local arch = cls.archetypes[rng:int(1, #cls.archetypes)]
+        local mseed = seed * 131 + i * 7919
         local npc = F.new_npc({
             archetype = arch,
-            seed = seed * 131 + i * 7919,
+            seed = mseed,
             group_id = group.gid,
-            level = cls.level,
+            class_level = GroupClasses.member_level(cls, mseed),
         })
         group.members[i] = npc
     end

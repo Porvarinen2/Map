@@ -664,6 +664,16 @@ do
         end
     end
     check(all5, "every elite member is a level 5 Guard")
+    local lv = { [4] = 0, [5] = 0 }
+    local other = 0
+    for k = 1, 30 do
+        local g = Factory.new_group({ id = 950 + k, class = "militia_cell", seed = 5000 + k,
+            position = { X = 0, Y = 0, Z = 0 }, home = { X = 0, Y = 0, Z = 0 } })
+        for _, m in ipairs(g.members) do
+            if lv[m.level] then lv[m.level] = lv[m.level] + 1 else other = other + 1 end
+        end
+    end
+    check(other == 0 and lv[4] > 10 and lv[5] > 10, string.format("militia are level 4-5 (%d / %d)", lv[4], lv[5]))
     check(bunker > n * 0.25 and bunker < n * 0.75, string.format("about half wear the bunker body (%d of %d)", bunker, n))
 end
 
