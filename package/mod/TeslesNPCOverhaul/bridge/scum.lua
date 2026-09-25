@@ -2779,14 +2779,32 @@ local function floor_under(pos, ignore)
     return sane(p) and p.Z or nil
 end
 
--- Lying as if dropped: a random heading and a tilt, so with physics on it
--- tips over onto its side and settles on the floor.
-local function drop_rotation()
-    local yaw = math.random() * 2 * math.pi
-    local tilt = math.rad(35)
-    local s, c = math.sin(yaw / 2), math.cos(yaw / 2)
-    local a, b = math.sin(tilt / 2), math.cos(tilt / 2)
-    return { X = c * a, Y = s * a, Z = s * b, W = c * b }
+-- Items in SCUM do not fall: a weapon has to be laid down. It is made
+-- upright (as held), its box tells which way the barrel runs (the longest
+-- side), it is turned onto its side around that line with a random heading,
+-- and set down so the bottom of its box touches the floor.
+local function box_of(item)
+    local o, e = {}, {}
+    local ok = pcall(function() item:GetActorBounds(false, o, e, false) end)
+    local ov, ev = vec(o), vec(e)
+    if ok and sane(ov) and sane(ev) and (ev.X + ev.Y + ev.Z) > 1 then return ov, ev end
+    return nil
+end
+
+local function lay_down(item, floor)
+    local yaw = math.random() * 360
+    local _, e = box_of(item)
+    local rot = { Pitch = 0, Yaw = yaw, Roll = 90 }
+    if e and e.Y > e.X then rot = { Pitch = 0, Yaw = yaw, Roll = 0 }; rot.Pitch = 90 end
+    pcall(function() item:K2_SetActorRotation(rot, true) end)
+    local p = nil
+    pcall(function() p = vec(item:K2_GetActorLocation()) end)
+    local o2, e2 = box_of(item)
+    local z = floor + 4
+    if p and o2 then z = p.Z + (floor - (o2.Z - e2.Z)) + 1 end
+    if p then pcall(function() item:K2_SetActorLocation({ X = p.X, Y = p.Y, Z = z }, false, {}, true) end) end
+    return string.format("%s, lattia %.0f, asetettu %.0f", e and (e.Y > e.X and "piippu Y" or "piippu X") or "ei mittoja",
+        floor, z)
 end
 
 local function lay_weapon(l, at)
@@ -2803,35 +2821,13 @@ local function lay_weapon(l, at)
             want = some_rounds(cap)
             pcall(function() x.InitialAmmo = want end)
         end
-    end, drop_rotation(), true)
+    end, nil, true)
     if not item then return false end
     if want > 0 then B.want_rounds[full_name(item)] = want end
+    local okl, how = pcall(lay_down, item, l.floor or at.Z)
     local okf, err = pcall(B.fit_weapon, item, name, l.lo or {}, l.label, at)
     if not okf then lnote("haamuase: varustus - error: " .. tostring(err)) end
-    -- Physics on: it falls and settles like a dropped item.
-    local phys = pcall(function()
-        local root = item:K2_GetRootComponent()
-        root:SetSimulatePhysics(true)
-    end)
-    B.drop_checks = B.drop_checks or {}
-    B.drop_checks[#B.drop_checks + 1] = { item = item, z0 = at.Z, t = os.time() + 3, name = name, phys = phys }
-    return true
-end
-
--- A few seconds after a drop: where did the weapon come to rest (logged
--- once per weapon, to see whether physics moved it)?
-function B.tick_drops(now)
-    if not B.drop_checks or #B.drop_checks == 0 then return end
-    for i = #B.drop_checks, 1, -1 do
-        local d = B.drop_checks[i]
-        if now >= d.t then
-            table.remove(B.drop_checks, i)
-            local z = nil
-            pcall(function() z = vec(d.item:K2_GetActorLocation()).Z end)
-            lnote(string.format("pudotettu %s: fysiikka %s, korkeus %.0f -> %s", d.name, tostring(d.phys), d.z0,
-                z and string.format("%.0f", z) or "?"))
-        end
-    end
+    return true, okl and how or ("asettelu - error: " .. tostring(how))
 end
 
 function B.ghost_drop(handle)
@@ -2871,9 +2867,11 @@ function B.ghost_drop(handle)
             z = floor_under(at, ign)
         end
         if z then
-            at.Z = z + 12
-            ok = lay_weapon({ name = name, lo = g.lo, label = g.label or tostring(rec.npcId) }, at)
-            where = string.format("%.0f %.0f %.0f", at.X, at.Y, at.Z)
+            -- Made above the floor (never inside the ground), then laid down.
+            at.Z = z + 40
+            local how
+            ok, how = lay_weapon({ name = name, lo = g.lo, label = g.label or tostring(rec.npcId), floor = z }, at)
+            where = tostring(how)
         else
             where = "lattiaa ei loytynyt"
         end
@@ -2904,7 +2902,6 @@ function B.weapon_of(handle) return B.weapon_chosen[handle] end
 B.weapon_wait_sec = 20
 function B.tick_weapons(now)
     B.probe_budget = 1
-    pcall(B.tick_drops, now or os.time())
     if next(B.pending_weapons) == nil then return end
     now = now or os.time()
     local by_owner = nil
