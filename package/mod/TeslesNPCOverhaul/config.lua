@@ -1,7 +1,7 @@
 -- TESLES NPC OVERHAUL - server configuration.
 -- Distances are Unreal units unless a name says otherwise. 100 UU = 1 metre.
 return {
-    Version = "1.9.20",
+    Version = "1.9.21",
 
     -- ---------------------------------------------------------- population --
     Enabled = true,
@@ -88,6 +88,9 @@ return {
     -- the squad's weapon of the same type is shown in its hand; on death
     -- the hidden one is removed and the shown one drops as loot.
     GhostWeapons = true,
+    -- HAAMUASEEN TODENNAKOISYYS: 0.5 = puolella NPC:ista on custom-ase,
+    -- lopuilla SCUMin oma. 1.0 = kaikilla (kun sopiva loytyy), 0 = ei kellaan.
+    GhostWeaponChance = 0.5,
 
     -- Omat varusteet: katso varusteet.lua (sailyy paivityksissa).
 

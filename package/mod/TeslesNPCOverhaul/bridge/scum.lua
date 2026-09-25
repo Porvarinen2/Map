@@ -2881,6 +2881,18 @@ function B.tick_loot(now)
     end
 end
 
+-- Does this NPC show a custom weapon (config GhostWeaponChance)? The roll
+-- comes from the NPC's name, so it is the same every time it is spawned.
+function B.ghost_roll(label)
+    local c = tonumber(B.cfg and B.cfg.GhostWeaponChance)
+    if c == nil then c = 0.5 end
+    if c >= 1 then return true end
+    if c <= 0 then return false end
+    local h = 5381
+    for i = 1, #tostring(label or "") do h = (h * 33 + tostring(label):byte(i)) % 2147483647 end
+    return (h % 10000) / 10000 < c
+end
+
 -- SCUM gives an NPC its own weapon a moment after the spawn. 1.8.1 put the
 -- new weapon on at once: when the NPC had no weapon yet, the new one hung in
 -- the air (no hand socket to copy) and the NPC got its own anyway. So the
@@ -2923,7 +2935,7 @@ function B.tick_weapons(now)
                 local wname = (full_name(w:GetClass()):match("([%w_]+)$") or "?"):gsub("_C$", "")
                 -- Ghost weapon: a prop of the same type from the member's list.
                 local gpick, gwait = nil, false
-                if not (B.cfg and B.cfg.GhostWeapons == false) then
+                if not (B.cfg and B.cfg.GhostWeapons == false) and B.ghost_roll(p.label) then
                     local own_m = ""
                     pcall(function()
                         local m = a._weaponManual
