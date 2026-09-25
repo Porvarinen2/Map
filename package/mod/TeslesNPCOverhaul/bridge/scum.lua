@@ -948,6 +948,7 @@ function B.is_alive(handle)
         -- The first seconds after a spawn the pawn may not be possessed yet.
         if how == "no controller" and os.time() - (rec.spawned_at or 0) < 6 then return true end
         note_death(how)
+        if not rec.ghost and B.top_up then pcall(B.top_up, handle) end
         if rec.ghost and not rec.ghost.dropped and B.ghost_drop then pcall(B.ghost_drop, handle) end
         return false
     end
@@ -2504,6 +2505,44 @@ local function load_rounds(obj, want, cap_fn)
     return 0, "ei mikaan tapa"
 end
 
+-- The NPC is dead: its weapon must not be empty - it should look used, not
+-- emptied (players found every bolt-action at 0 rounds, 1.9.33). A magazine
+-- at 0 gets some rounds (FillWithDefaultAmmo(Count), signature read from the
+-- game); a built-in magazine at 0 is filled (FillUpWithDefaultAmmo(), no
+-- arguments).
+function B.top_up(handle)
+    local rec = handles[handle]
+    if not rec or rec.topped then return end
+    rec.topped = true
+    local w = rec.weapon
+    if not (w and valid(w)) then
+        local a = B.actor(handle)
+        pcall(function() w = a and a._itemInHands end)
+    end
+    if not (w and valid(w)) then return end
+    local name = (full_name(w:GetClass()):match("([%w_]+)$") or "?"):gsub("_C$", "")
+    local mag = nil
+    pcall(function() mag = unwrap(w:GetMagazine()) end)
+    local note = nil
+    if mag and valid(mag) then
+        local n = num(mag, "GetAmmoCount") or 0
+        if n == 0 then
+            local cap = 0
+            pcall(function() cap = tonumber(mag._capacity) or 0 end)
+            local want = some_rounds(cap > 0 and cap or 10)
+            call_ok(mag, "FillWithDefaultAmmo", want)
+            note = string.format("lipas 0 -> %s", tostring(num(mag, "GetAmmoCount")))
+        end
+    elseif Weapons.magazine_for(name) == nil then
+        local n = num(w, "GetAmmoCount") or 0
+        if n == 0 then
+            call_ok(w, "FillUpWithDefaultAmmo")
+            note = string.format("sisainen 0 -> %s", tostring(num(w, "GetAmmoCount")))
+        end
+    end
+    if note then lnote(string.format("%s: kuoli, %s: %s", tostring(rec.npcId), name, note)) end
+end
+
 function B.fit_weapon(w, weapon_name, loadout, label, pos)
     B.log_weapon_api(w, "WEAPON " .. weapon_name)
     pcall(B.log_signatures)
@@ -2575,6 +2614,10 @@ local SIGNATURES = {
     "/Script/SCUM.Weapon:Equip",
     "/Script/SCUM.Weapon:StartFire",
     "/Script/SCUM.Item:DropAround",
+    "/Script/SCUM.Weapon:GetMagazine",
+    "/Script/SCUM.Weapon:FillUpWithAmmo",
+    "/Script/SCUM.Weapon:AddAmmoSingle",
+    "/Script/SCUM.Weapon:RemoveAmmo",
 }
 function B.log_signatures()
     if B.signatures_logged then return end
@@ -3075,6 +3118,7 @@ function B.tick_weapons(now)
                 end
                 B.weapon_chosen[h] = wname
                 local rec = handles[h]
+                if rec then rec.weapon = w end
                 if rec and rec.wanted and rec.wanted:lower() ~= wname:lower() then
                     lnote(string.format("%s: pyydetty %s, SCUM antoi %s", p.label, rec.wanted, wname))
                 end
