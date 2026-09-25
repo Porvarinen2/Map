@@ -392,10 +392,16 @@ if (Test-Path -LiteralPath $target) {
   if (Test-Path -LiteralPath $oldCfg) {
     $oc = Get-Content -LiteralPath $oldCfg -Raw
     $mv = [regex]::Match($oc, 'Version\s*=\s*"([^"]+)"')
-    foreach ($key in @('GhostWeaponChance', 'NPCDetectRangeM', 'NPCFireRangeM', 'NPCScopedFireRangeM', 'NPCViewAngleDeg', 'NPCCloseSenseM')) {
+    foreach ($key in @('GhostWeaponChance', 'TopWeaponChance', 'NPCDetectRangeM', 'NPCFireRangeM', 'NPCScopedFireRangeM', 'NPCViewAngleDeg', 'NPCCloseSenseM')) {
       $mg = [regex]::Match($oc, "$key\s*=\s*([0-9.]+)")
       if (-not $mg.Success) { continue }
-      if ($key -eq 'GhostWeaponChance' -and $mv.Success -and $mv.Groups[1].Value -eq '1.9.21') { continue }
+      # Up to 1.9.31 GhostWeaponChance held an old default (0.5 / 1.0); from
+      # 1.9.32 on the default is 0 (vanilla weapons), so older values are not kept.
+      if ($key -eq 'GhostWeaponChance') {
+        $ov = $null
+        if ($mv.Success) { try { $ov = [version]$mv.Groups[1].Value } catch { $ov = $null } }
+        if (-not $ov -or $ov -lt [version]'1.9.32') { continue }
+      }
       # 1.9.27 had the first sight defaults (200 m / 60 deg...); 1.9.28 brings new ones.
       if ($key -like 'NPC*' -and $mv.Success -and $mv.Groups[1].Value -eq '1.9.27') { continue }
       $keepCfg[$key] = $mg.Groups[1].Value

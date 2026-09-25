@@ -176,11 +176,21 @@ local function nonempty(t) return type(t) == "table" and #t > 0 end
 
 -- The tier of an NPC: its skill level, one lower now and then, within its
 -- squad class's floor and ceiling.
-function W.tier(class, level, roll)
+-- The top weapons (tier 5: SVD, the sniper rifles, the best assault rifles
+-- and machine guns) are rare: only this share of the NPCs that would carry
+-- one get it (config TopWeaponChance), the rest one tier lower.
+W.TOP_CHANCE = 0.2
+function W.tier(class, level, roll, top_roll)
     local t = math.max(1, math.min(5, math.floor(tonumber(level) or 1)))
     if (roll or math.random()) < 0.25 then t = t - 1 end
     local c = W.CLASS[class] or {}
-    return math.max(c.min or 1, math.min(c.max or 5, t))
+    t = math.max(c.min or 1, math.min(c.max or 5, t))
+    if t == 5 and (top_roll or math.random()) >= W.TOP_CHANCE then t = 4 end
+    return t
+end
+function W.tier_of(name)
+    for _, e in ipairs(W.LIST) do if e[1]:lower() == tostring(name):lower() then return e[2] end end
+    return nil
 end
 
 -- The weapons of a class at a tier, or at the nearest tier that has any.
@@ -198,7 +208,7 @@ end
 
 -- The weapon setup of one NPC: varusteet.lua's own class entry wins, then
 -- KAIKKI, then the class's weapons at the NPC's tier.
-function W.for_member(class, level, gear, roll)
+function W.for_member(class, level, gear, roll, top_roll)
     gear = gear or {}
     local own, all, cls = gear[class] or {}, gear.KAIKKI or gear.ALL or {}, W.CLASS[class] or {}
     local function pick(key)
@@ -213,7 +223,7 @@ function W.for_member(class, level, gear, roll)
         return nil
     end
     return {
-        Weapons = pick("Weapons") or (W.pool_near(class, W.tier(class, level, roll))),
+        Weapons = pick("Weapons") or (W.pool_near(class, W.tier(class, level, roll, top_roll))),
         Lipas = pick("Lipas"),
         Tahtaimet = pick("Tahtaimet"),
         TahtainOsuus = tonumber(pick("TahtainOsuus")) or W.DEFAULT_SCOPE_SHARE,
@@ -303,8 +313,12 @@ function W.similar(own, class, first)
     if not k then return {} end
     local q = quiet(own)
     local pool = {}
-    for _, n in ipairs(first or {}) do pool[#pool + 1] = n end
-    for tt = 1, 5 do for _, n in ipairs(W.pool(class, tt)) do pool[#pool + 1] = n end end
+    -- A top weapon is shown only when it is the member's own.
+    local top_ok = first and first[1] and W.tier_of(first[1]) == 5
+    for i, n in ipairs(first or {}) do
+        if i == 1 or top_ok or W.tier_of(n) ~= 5 then pool[#pool + 1] = n end
+    end
+    for tt = 1, top_ok and 5 or 4 do for _, n in ipairs(W.pool(class, tt)) do pool[#pool + 1] = n end end
     local out, seen = {}, {}
     local function pass(same_kind)
         local found = {}
@@ -335,13 +349,13 @@ end
 -- The weapon one NPC carries, picked once and kept (saved with the NPC):
 -- { weapon, scoped, condition }.
 function W.gear_for(class, m, gear, rng)
-    local setup = W.for_member(class, m.level, gear, rng:float())
+    local setup = W.for_member(class, m.level, gear, rng:float(), rng:float())
     local list = setup.Weapons or {}
     if #list == 0 then return nil, setup end
     local name = list[rng:int(1, #list)]
     local scoped = #W.scopes_for(name) > 0 and rng:float() < (setup.TahtainOsuus or 0)
     local c = W.CONDITION[class] or W.DEFAULT_CONDITION
-    return { weapon = name, scoped = scoped, condition = c[1] + (c[2] - c[1]) * rng:float() }, setup
+    return { weapon = name, scoped = scoped, condition = c[1] + (c[2] - c[1]) * rng:float(), top_rolled = true }, setup
 end
 
 return W

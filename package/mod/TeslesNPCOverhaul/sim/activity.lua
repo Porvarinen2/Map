@@ -262,6 +262,19 @@ function A.refill_queue(group, act, heading_to)
         if not (poi and cls and eligible(group, cls, poi)) then table.remove(act.queue, i) end
     end
     local memory = A.memory_of(group)
+    -- A squad drawn off its plan (a player or zombies spotted, gunfire
+    -- investigated) skips a planned place, and the places queued behind it
+    -- move closer to where they were last: those now inside the memory are
+    -- dropped and planned again.
+    if not (cls and cls.reserved_zone) then
+        local keep = {}
+        for _, id in ipairs(act.queue) do
+            local seq = planned_walk({ recent = act.recent, goal_poi = act.goal_poi,
+                pending_goal = act.pending_goal, queue = keep }, heading_to)
+            if not blocked_set(seq, memory)[id] then keep[#keep + 1] = id else break end
+        end
+        act.queue = keep
+    end
     local guard = 0
     while #act.queue < A.QUEUE_LENGTH and guard < 6 do
         guard = guard + 1

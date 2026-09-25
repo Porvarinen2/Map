@@ -611,6 +611,7 @@ function D:loadout_for(group, m)
     if not level then
         for _, x in ipairs(group.members or {}) do level = math.max(level or 0, x.level or 1) end
     end
+    Weapons.TOP_CHANCE = tonumber(self.cfg.TopWeaponChance) or 0.2
     local weap = Weapons.for_member(group.class, level, all)
     local out = {}
     for _, k in ipairs({ "Clothes", "Items" }) do
@@ -627,13 +628,19 @@ function D:loadout_for(group, m)
     -- A member's own weapon: picked once, kept, and it comes first; the
     -- rest of its tier stands by in case the server lacks that one.
     if m then
+        -- A top weapon picked before the top weapons became rare (1.9.32)
+        -- is picked again.
+        if m.gear and m.gear.weapon and not m.gear.top_rolled and Weapons.tier_of(m.gear.weapon) == 5 then
+            m.gear = nil
+        end
         if not (m.gear and m.gear.weapon) then
             m.gear = Weapons.gear_for(group.class, m, all, self.rng)
         end
         if m.gear then
             local list = { m.gear.weapon }
+            local top = Weapons.tier_of(m.gear.weapon) == 5
             for _, n in ipairs(weap.Weapons or {}) do
-                if n ~= m.gear.weapon then list[#list + 1] = n end
+                if n ~= m.gear.weapon and (top or Weapons.tier_of(n) ~= 5) then list[#list + 1] = n end
             end
             out.Weapons = list
             out.ordered = true

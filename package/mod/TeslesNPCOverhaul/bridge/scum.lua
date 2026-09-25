@@ -2890,6 +2890,9 @@ end
 local function lay_down(item, floor, body)
     if body and valid(body) then
         local ok, res = pcall(function() return item:DropAround(body, body) end)
+        if not (ok and res ~= false) then
+            ok, res = pcall(function() return item:DropAround(body, nil) end)
+        end
         if ok and res ~= false then
             local p = nil
             pcall(function() p = vec(item:K2_GetActorLocation()) end)
@@ -2921,10 +2924,14 @@ local function lay_weapon(l, at)
     end, nil, true)
     if not item then return false end
     if want > 0 then B.want_rounds[full_name(item)] = want end
-    local okf, err = pcall(B.fit_weapon, item, name, l.lo or {}, l.label, at)
-    if not okf then lnote("haamuase: varustus - error: " .. tostring(err)) end
     crumb("DropAround " .. name)
     local okl, how = pcall(lay_down, item, l.floor or at.Z, l.body)
+    -- Magazine and scope go on where the weapon now lies: fitted before the
+    -- weapon was moved, the scope stayed hanging in the air (1.9.31).
+    local here = at
+    pcall(function() here = vec(item:K2_GetActorLocation()) or at end)
+    local okf, err = pcall(B.fit_weapon, item, name, l.lo or {}, l.label, here)
+    if not okf then lnote("haamuase: varustus - error: " .. tostring(err)) end
     return true, okl and how or ("asettelu - error: " .. tostring(how))
 end
 
@@ -2980,7 +2987,7 @@ end
 -- comes from the NPC's name, so it is the same every time it is spawned.
 function B.ghost_roll(label)
     local c = tonumber(B.cfg and B.cfg.GhostWeaponChance)
-    if c == nil then c = 1.0 end
+    if c == nil then c = 0 end
     if c >= 1 then return true end
     if c <= 0 then return false end
     local h = 5381

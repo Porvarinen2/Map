@@ -34,6 +34,7 @@ local function count(kind, gid)
     return n
 end
 
+local function has_name(list, n) for _, x in ipairs(list) do if x == n then return true end end return false end
 local function fresh(seed)
     Bridge.reset()
     Bridge.zombies = {}
@@ -542,9 +543,10 @@ do
     local weak = W.for_member("bandit_gang", 1, {}, 0.9)
     check(has(weak.Weapons, "1H_Wooden_club") and not has(weak.Weapons, "Weapon_AK47"), "a weak bandit gets improvised melee")
     check(has(W.for_member("bandit_gang", 5, {}, 0.9).Weapons, "Weapon_AK47"), "a skilled bandit an AK")
-    check(has(W.for_member("elite_unit", 1, {}, 0.1).Weapons, "Weapon_SCAR_DMR")
+    check(has(W.for_member("elite_unit", 1, {}, 0.1, 0.1).Weapons, "Weapon_SCAR_DMR")
+          and has(W.for_member("elite_unit", 1, {}, 0.1, 0.9).Weapons, "Weapon_M16A4")
           and has(W.for_member("military_group", 1, {}, 0.1).Weapons, "Weapon_M16A4"),
-          "the elite always carry the best, soldiers never below assault rifles")
+          "the elite carry the best when the top roll allows, else assault rifles; soldiers never below")
     check(W.tier("bandit_gang", 3, 0.1) == 2 and W.tier("bandit_gang", 3, 0.9) == 3, "now and then one tier lower")
     check(#W.for_member("palomiehet_x", 2, {}, 0.9).Weapons > 0, "a squad with no theme uses every weapon of its tier")
     do
@@ -630,6 +632,20 @@ do
         sees = function() return false end, weapon_of = function() return nil end }, { __index = d2.bridge })
     d2:player_fights({ g2 }, { { X = 400, Y = 0, Z = 0 } }, 1000)
     check(#c2 == 1, "right next to it (4 m) the NPC notices even from behind")
+end
+
+do
+    -- Top weapons are rare: of 400 elite members only about a fifth carry one.
+    local W = require("npc.weapons")
+    local rng = RNG.new(5)
+    local top = 0
+    for _ = 1, 400 do
+        local g = W.gear_for("elite_unit", { level = 5 }, {}, rng)
+        if W.tier_of(g.weapon) == 5 then top = top + 1 end
+    end
+    check(top > 40 and top < 130, string.format("top weapons are rare (%d of 400 elite members)", top))
+    local sv = W.similar("Weapon_M1_Garand", "military_group", { "Weapon_SKS" })
+    check(not has_name(sv, "Weapon_SVD_Dragunov"), "no SVD is shown for a member whose own weapon is not a top one")
 end
 
 print("")
