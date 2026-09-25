@@ -360,6 +360,7 @@ $target = Join-Path $mods $MOD
 $keepState = $null
 $keepOutput = $null
 $keepUser = @{}
+$keepGhostChance = $null
 if (Test-Path -LiteralPath $target) {
   Copy-Item -LiteralPath $target -Destination (Join-Path $backup $MOD) -Recurse -Force
   Say "Vanha versio varmuuskopioitiin." "Gray"
@@ -385,6 +386,15 @@ if (Test-Path -LiteralPath $target) {
     }
   }
   if ($keepState) { Say "Maailman tila otettiin talteen." "Green" }
+  # The owner's ghost weapon chance survives an update (1.9.21 had 0.5 as
+  # its default; from 1.9.22 on the default is 1.0, so that one is not kept).
+  $oldCfg = Join-Path $target 'config.lua'
+  if (Test-Path -LiteralPath $oldCfg) {
+    $oc = Get-Content -LiteralPath $oldCfg -Raw
+    $mv = [regex]::Match($oc, 'Version\s*=\s*"([^"]+)"')
+    $mg = [regex]::Match($oc, 'GhostWeaponChance\s*=\s*([0-9.]+)')
+    if ($mg.Success -and -not ($mv.Success -and $mv.Groups[1].Value -eq '1.9.21')) { $keepGhostChance = $mg.Groups[1].Value }
+  }
   Remove-Item -LiteralPath $target -Recurse -Force
 }
 
@@ -399,6 +409,13 @@ if ($keepState) {
   Copy-Item -Path (Join-Path $keepState '*') -Destination (Join-Path $target 'state') -Recurse -Force
   Remove-Item -LiteralPath $keepState -Recurse -Force
   Say "Maailman tila palautettiin." "Green"
+}
+if ($keepGhostChance) {
+  $newCfg = Join-Path $target 'config.lua'
+  $nc = Get-Content -LiteralPath $newCfg -Raw
+  $nc = [regex]::Replace($nc, 'GhostWeaponChance\s*=\s*[0-9.]+', "GhostWeaponChance = $keepGhostChance")
+  [System.IO.File]::WriteAllText($newCfg, $nc, (New-Object System.Text.UTF8Encoding($false)))
+  Say "Haamuaseen todennakoisyys sailytettiin: $keepGhostChance" "Green"
 }
 foreach ($uf in $keepUser.Keys) {
   $tmp = $keepUser[$uf]

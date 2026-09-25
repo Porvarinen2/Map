@@ -2885,7 +2885,7 @@ end
 -- comes from the NPC's name, so it is the same every time it is spawned.
 function B.ghost_roll(label)
     local c = tonumber(B.cfg and B.cfg.GhostWeaponChance)
-    if c == nil then c = 0.5 end
+    if c == nil then c = 1.0 end
     if c >= 1 then return true end
     if c <= 0 then return false end
     local h = 5381
