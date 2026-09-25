@@ -2573,7 +2573,11 @@ local function write_soft(entry, path, short)
     end
     return false, tries
 end
+-- 1.9.13: writing the list crashed the server the moment the first NPC was
+-- spawned (access violation inside UE4SS). Kept only behind a config switch
+-- that is off (PresetWeapons), in case a later UE4SS handles it.
 function B.preset_weapon(npccls, names)
+    if not (B.cfg and B.cfg.PresetWeapons) then return nil end
     if soft_way == false or (B.cfg and B.cfg.SwapWeapons) then return nil end
     -- The first of the member's weapons whose class is known (one new class
     -- lookup per tick at most, as everywhere).
