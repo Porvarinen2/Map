@@ -269,7 +269,7 @@ end
 -- shoots: no SVD in hand firing buckshot.
 local GROUP = {
     shotgun = "shotgun", sawed = "shotgun",
-    bolt = "precision", semi = "precision", dmr = "precision", sniper = "precision",
+    bolt = "bolt", semi = "semi", dmr = "semi", sniper = "semi",
     ak = "auto", assault = "auto", lmg = "auto",
     smg = "smg",
     pistol = "pistol", revolver = "pistol",
@@ -282,20 +282,49 @@ function W.group(name)
     if not k then return nil end
     return GROUP[k] or "melee"
 end
--- Shown weapons for an NPC whose real weapon is `own`: the member's own list
--- first, then the rest of its squad class's weapons - only of own's group.
+-- Weapons with a silencer built in: they sound like a bow, so they are only
+-- paired with each other (an AS Val may show as a VSS, never as a SCAR).
+W.SUPPRESSED = { weapon_as_val = true, weapon_vss_vz = true, weapon_mp5_sd = true }
+local function quiet(n) return W.SUPPRESSED[n:lower()] == true end
+local function tier_of(n)
+    for _, e in ipairs(W.LIST) do if e[1]:lower() == n:lower() then return e[2] end end
+    return nil
+end
+-- Shown weapons for an NPC whose real weapon is `own`, closest first: the
+-- same kind (member's list, then its squad class's weapons, nearest tier
+-- first), then the same group within one tier. Never another group, never
+-- a silenced one for a loud one or the other way round.
 function W.similar(own, class, first)
-    local g = W.group(own)
-    if not g then return {} end
+    local k, g, t = W.kind(own), W.group(own), tier_of(own)
+    if not k then return {} end
+    local q = quiet(own)
+    local pool = {}
+    for _, n in ipairs(first or {}) do pool[#pool + 1] = n end
+    for tt = 1, 5 do for _, n in ipairs(W.pool(class, tt)) do pool[#pool + 1] = n end end
     local out, seen = {}, {}
-    local function add(n)
-        if not seen[n:lower()] and W.group(n) == g then
-            seen[n:lower()] = true
-            out[#out + 1] = n
+    local function pass(same_kind)
+        local found = {}
+        for i, n in ipairs(pool) do
+            local l = n:lower()
+            local nk = W.kind(n)
+            if not seen[l] and nk and quiet(n) == q and (same_kind and nk == k or not same_kind and W.group(n) == g) then
+                local d = math.abs((tier_of(n) or t or 3) - (t or 3))
+                if same_kind or d <= 1 then
+                    seen[l] = true
+                    found[#found + 1] = { n = n, d = d, i = i }
+                end
+            end
         end
+        table.sort(found, function(x, y)
+            local fx, fy = x.i <= #(first or {}), y.i <= #(first or {})
+            if fx ~= fy then return fx end
+            if x.d ~= y.d then return x.d < y.d end
+            return x.i < y.i
+        end)
+        for _, f in ipairs(found) do out[#out + 1] = f.n end
     end
-    for _, n in ipairs(first or {}) do add(n) end
-    for t = 1, 5 do for _, n in ipairs(W.pool(class, t)) do add(n) end end
+    pass(true)
+    pass(false)
     return out
 end
 

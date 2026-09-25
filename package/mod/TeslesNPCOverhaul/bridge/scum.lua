@@ -2740,33 +2740,59 @@ local function ghost_weapon(a, h, own, name, label, pos)
     return prop
 end
 
--- The NPC is dead: the hidden weapon goes, the prop drops where it was.
+-- The NPC is dead: the hidden weapon and the prop go, and a fresh copy of
+-- the prop lies where it was. The prop itself stays "in hands" to SCUM
+-- (active, held by the NPC), so it could not be picked up (1.9.17); a new
+-- weapon spawned on the ground is plain loot. It gets the prop's condition
+-- and a magazine with some rounds.
 function B.ghost_drop(handle)
     local rec = handles[handle]
     local g = rec and rec.ghost
     if not g or g.dropped then return end
     g.dropped = true
     local own, prop = g.own, g.prop
+    local pos, name = nil, g.name
     if prop and valid(prop) then
-        local pos = nil
         pcall(function() pos = vec(prop:K2_GetActorLocation()) end)
-        pcall(function() prop:K2_DetachFromActor(1, 1, 1) end)
-        local z = pos and B.ground_at(pos) or nil
-        if pos and z then
-            pcall(function() prop:K2_SetActorLocation({ X = pos.X, Y = pos.Y, Z = z + 6 }, false, {}, true) end)
+        if not name then
+            pcall(function() name = (full_name(prop:GetClass()):match("([%w_]+)$") or ""):gsub("_C$", "") end)
         end
-        pcall(function() prop:SetActorEnableCollision(true) end)
-        pcall(function() prop:SetOwner(nil) end)
-        -- It is loot now: a later despawn of the body must not take it along.
+        pcall(function() prop:SetActorHiddenInGame(true) end)
+        for _, part in ipairs(items_owned_by(prop)) do pcall(function() part:K2_DestroyActor() end) end
+        pcall(function() prop:K2_DestroyActor() end)
         for i, x in ipairs(rec.extras or {}) do
             if x == prop then table.remove(rec.extras, i); break end
         end
     end
+    if not pos then pcall(function() pos = vec(B.actor(handle):K2_GetActorLocation()) end) end
     if own and valid(own) then
         for _, part in ipairs(items_owned_by(own)) do pcall(function() part:K2_DestroyActor() end) end
         pcall(function() own:K2_DestroyActor() end)
     end
-    lnote("haamuase pudotettu (" .. tostring(rec.npcId) .. ")")
+    local dropped = false
+    if pos and name and name ~= "" then
+        local z = B.ground_at(pos)
+        local at = { X = pos.X + 40, Y = pos.Y, Z = (z or pos.Z) + 8 }
+        local cls = B.find_item_class(name)
+        local want = 0
+        local item = cls and spawn_actor(cls, at, function(x)
+            if Weapons.magazine_for(name) then return end
+            local cap = 0
+            pcall(function() cap = tonumber(x.InternalMagazineCapacity) or 0 end)
+            if cap <= 0 then pcall(function() if x.UseChamberAsInternalMagazine then cap = tonumber(x.MaxLoadedAmmo) or 1 end end) end
+            if cap > 0 then
+                want = some_rounds(cap)
+                pcall(function() x.InitialAmmo = want end)
+            end
+        end) or nil
+        if item then
+            dropped = true
+            if want > 0 then B.want_rounds[full_name(item)] = want end
+            local okf, err = pcall(B.fit_weapon, item, name, g.lo or {}, g.label or tostring(rec.npcId), at)
+            if not okf then lnote("haamuase: varustus - error: " .. tostring(err)) end
+        end
+    end
+    lnote(string.format("haamuase pudotettu (%s): %s maassa %s", tostring(rec.npcId), tostring(name), tostring(dropped)))
 end
 
 -- SCUM gives an NPC its own weapon a moment after the spawn. 1.8.1 put the
@@ -2840,6 +2866,8 @@ function B.tick_weapons(now)
                         if gpick ~= p.name then lo.Tahtain = nil end
                         local okf, err = pcall(B.fit_weapon, prop, gpick, lo, p.label, gpos)
                         if not okf then lnote(p.label .. ": varustus - error: " .. tostring(err)) end
+                        local rec = handles[h]
+                        if rec and rec.ghost then rec.ghost.name = gpick; rec.ghost.lo = lo; rec.ghost.label = p.label end
                         goto continue
                     end
                 end

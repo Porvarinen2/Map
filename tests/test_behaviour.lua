@@ -340,6 +340,13 @@ do
     check(sh[1] == "Weapon_M1887" and not has(sh, "Weapon_SVD_Dragunov"),
           "a ghost weapon looks like what it fires: a shotgun shows a shotgun, never an SVD")
     check(#W.similar("Weapon_SDASS", "military_group", {}) == 0, "and a squad without shotguns shows SCUM's own")
+    local qv = W.similar("Weapon_AS_Val", "military_group", { "Weapon_SCAR_DMR", "Weapon_SVD_Dragunov", "Weapon_VSS_VZ" })
+    check(qv[1] == "Weapon_VSS_VZ" and not has(qv, "Weapon_SCAR_DMR") and not has(qv, "Weapon_SVD_Dragunov"), "an AS Val (bow-like sound) shows only as a VSS, never a loud rifle")
+    local hb = W.similar("Weapon_Hunter85_V2", "hunters", { "Weapon_SVD_Dragunov", "Weapon_MosinNagant" })
+    check(hb[1] == "Weapon_MosinNagant" and not has(hb, "Weapon_SVD_Dragunov"), "a bolt-action shows a bolt-action")
+    for _, n in ipairs(W.similar("Weapon_BlackHawk_Crossbow", "hunters", { "Weapon_SCAR_DMR" })) do
+        check(W.group(n) == "crossbow", "a crossbow shows only crossbows (" .. n .. ")")
+    end
     -- The weapon is picked once and kept through a save.
     local world, d = fresh(41)
     local g = first_group(world)
