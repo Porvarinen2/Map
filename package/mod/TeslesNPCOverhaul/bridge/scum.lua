@@ -2881,32 +2881,27 @@ local function floor_under(pos)
     return sane(p) and p.Z or nil
 end
 
--- Items in SCUM do not fall: a weapon has to be laid down. It is made
--- upright (as held), its box tells which way the barrel runs (the longest
--- side), it is turned onto its side around that line with a random heading,
--- and set down so the bottom of its box touches the floor.
-local function box_of(item)
-    local o, e = {}, {}
-    local ok = pcall(function() item:GetActorBounds(false, o, e, false) end)
-    local ov, ev = vec(o), vec(e)
-    if ok and sane(ov) and sane(ev) and (ev.X + ev.Y + ev.Z) > 1 then return ov, ev end
-    return nil
-end
-
-local function lay_down(item, floor)
-    local yaw = math.random() * 360
-    local _, e = box_of(item)
-    local rot = { Pitch = 0, Yaw = yaw, Roll = 90 }
-    if e and e.Y > e.X then rot = { Pitch = 0, Yaw = yaw, Roll = 0 }; rot.Pitch = 90 end
-    pcall(function() item:K2_SetActorRotation(rot, true) end)
+-- The weapon is put down by SCUM itself: Item.DropAround(Actor, dropper)
+-- - SCUM's own drop, the one that puts a dropped item on the ground next to
+-- a character (signature read from the game: 1.9.30 weapon_api.txt). The
+-- body is both the spot and the dropper. Only when SCUM refuses is it laid
+-- on the floor by hand: on its side, just above the floor (1.9.26 measured
+-- the weapon's box and put it 18 m up in the air).
+local function lay_down(item, floor, body)
+    if body and valid(body) then
+        local ok, res = pcall(function() return item:DropAround(body, body) end)
+        if ok and res ~= false then
+            local p = nil
+            pcall(function() p = vec(item:K2_GetActorLocation()) end)
+            return string.format("SCUMin pudotus, korkeus %s (lattia %.0f)", p and string.format("%.0f", p.Z) or "?", floor)
+        end
+        crumb("DropAround refused: " .. tostring(res))
+    end
+    pcall(function() item:K2_SetActorRotation({ Pitch = 0, Yaw = math.random() * 360, Roll = 90 }, true) end)
     local p = nil
     pcall(function() p = vec(item:K2_GetActorLocation()) end)
-    local o2, e2 = box_of(item)
-    local z = floor + 4
-    if p and o2 then z = p.Z + (floor - (o2.Z - e2.Z)) + 1 end
-    if p then pcall(function() item:K2_SetActorLocation({ X = p.X, Y = p.Y, Z = z }, false, {}, true) end) end
-    return string.format("%s, lattia %.0f, asetettu %.0f", e and (e.Y > e.X and "piippu Y" or "piippu X") or "ei mittoja",
-        floor, z)
+    if p then pcall(function() item:K2_SetActorLocation({ X = p.X, Y = p.Y, Z = floor + 5 }, false, {}, true) end) end
+    return string.format("kasin maahan, lattia %.0f", floor)
 end
 
 local function lay_weapon(l, at)
@@ -2926,9 +2921,10 @@ local function lay_weapon(l, at)
     end, nil, true)
     if not item then return false end
     if want > 0 then B.want_rounds[full_name(item)] = want end
-    local okl, how = pcall(lay_down, item, l.floor or at.Z)
     local okf, err = pcall(B.fit_weapon, item, name, l.lo or {}, l.label, at)
     if not okf then lnote("haamuase: varustus - error: " .. tostring(err)) end
+    crumb("DropAround " .. name)
+    local okl, how = pcall(lay_down, item, l.floor or at.Z, l.body)
     return true, okl and how or ("asettelu - error: " .. tostring(how))
 end
 
@@ -2970,7 +2966,7 @@ function B.ghost_drop(handle)
             -- Made above the floor (never inside the ground), then laid down.
             at.Z = z + 40
             local how
-            ok, how = lay_weapon({ name = name, lo = g.lo, label = g.label or tostring(rec.npcId), floor = z }, at)
+            ok, how = lay_weapon({ name = name, lo = g.lo, label = g.label or tostring(rec.npcId), floor = z, body = a }, at)
             where = tostring(how)
         else
             where = "lattiaa ei loytynyt"
