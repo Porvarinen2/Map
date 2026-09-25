@@ -778,14 +778,18 @@ function B.ground_at(pos)
     if not sane(pos) then return nil end
     local z0 = height_hint(pos)
     crumb(string.format("K2_ProjectPointToNavigation %.0f %.0f %.0f", pos.X, pos.Y, z0))
-    local z, why = nav_ground(pos, z0)
-    local how = "navmesh"
+    -- The surface first: a navmesh probe with a tall search box snapped a
+    -- map spawn to navigation deep under the ground (a bunker below a base)
+    -- and the squad fell through the world (1.9.19). The navmesh is asked
+    -- only when the trace finds nothing.
+    local z, why = trace_ground(pos, z0)
+    local how = "line trace"
     if not z then
-        local why_nav = why
-        z, why = trace_ground(pos, z0)
-        how = "line trace (navmesh: " .. tostring(why_nav) .. ")"
+        local why_tr = why
+        z, why = nav_ground(pos, z0)
+        how = "navmesh (line trace: " .. tostring(why_tr) .. ")"
     end
-    if ground_logged < 6 and B.on_debug then
+    if ground_logged < 30 and B.on_debug then
         ground_logged = ground_logged + 1
         pcall(B.on_debug, string.format("ground at %.0f %.0f from Z %.0f -> %s via %s",
             pos.X, pos.Y, z0, z and string.format("%.0f", z) or ("none: " .. tostring(why)), how))

@@ -344,6 +344,8 @@ do
     check(qv[1] == "Weapon_VSS_VZ" and not has(qv, "Weapon_SCAR_DMR") and not has(qv, "Weapon_SVD_Dragunov"), "an AS Val (bow-like sound) shows only as a VSS, never a loud rifle")
     local hb = W.similar("Weapon_Hunter85_V2", "hunters", { "Weapon_SVD_Dragunov", "Weapon_MosinNagant" })
     check(hb[1] == "Weapon_MosinNagant" and not has(hb, "Weapon_SVD_Dragunov"), "a bolt-action shows a bolt-action")
+    local gr = W.similar("Weapon_M1_Garand", "military_group", { "Weapon_AWP", "Weapon_AWM", "Weapon_SVD_Dragunov" })
+    check(not has(gr, "Weapon_AWP") and not has(gr, "Weapon_AWM"), "a semi-auto never shows as a bolt-action sniper")
     for _, n in ipairs(W.similar("Weapon_BlackHawk_Crossbow", "hunters", { "Weapon_SCAR_DMR" })) do
         check(W.group(n) == "crossbow", "a crossbow shows only crossbows (" .. n .. ")")
     end

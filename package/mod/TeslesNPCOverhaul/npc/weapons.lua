@@ -277,9 +277,13 @@ local GROUP = {
     bow_crude = "bow", bow = "bow", compound = "bow",
     xbow_impro = "crossbow", xbow = "crossbow",
 }
+-- Sniper rifles that are bolt-action: they only stand in for bolt-actions
+-- (an AWP must not fire as fast as a Garand).
+W.BOLT_SNIPERS = { weapon_awm = true, weapon_awp = true }
 function W.group(name)
     local k = W.kind(name)
     if not k then return nil end
+    if W.BOLT_SNIPERS[name:lower()] then return "bolt" end
     return GROUP[k] or "melee"
 end
 -- Weapons with a silencer built in: they sound like a bow, so they are only
@@ -307,7 +311,7 @@ function W.similar(own, class, first)
         for i, n in ipairs(pool) do
             local l = n:lower()
             local nk = W.kind(n)
-            if not seen[l] and nk and quiet(n) == q and (same_kind and nk == k or not same_kind and W.group(n) == g) then
+            if not seen[l] and nk and quiet(n) == q and W.group(n) == g and (nk == k or not same_kind) then
                 local d = math.abs((tier_of(n) or t or 3) - (t or 3))
                 if same_kind or d <= 1 then
                     seen[l] = true
