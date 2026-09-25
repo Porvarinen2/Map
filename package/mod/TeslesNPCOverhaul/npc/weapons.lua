@@ -264,6 +264,41 @@ function W.profile(name, scoped)
     return p
 end
 
+-- Weapons that fire alike. A ghost weapon (the NPC fires SCUM's hidden
+-- weapon, a squad weapon is shown in its hand) must look like what it
+-- shoots: no SVD in hand firing buckshot.
+local GROUP = {
+    shotgun = "shotgun", sawed = "shotgun",
+    bolt = "precision", semi = "precision", dmr = "precision", sniper = "precision",
+    ak = "auto", assault = "auto", lmg = "auto",
+    smg = "smg",
+    pistol = "pistol", revolver = "pistol",
+    gun_impro = "improvised",
+    bow_crude = "bow", bow = "bow", compound = "bow",
+    xbow_impro = "crossbow", xbow = "crossbow",
+}
+function W.group(name)
+    local k = W.kind(name)
+    if not k then return nil end
+    return GROUP[k] or "melee"
+end
+-- Shown weapons for an NPC whose real weapon is `own`: the member's own list
+-- first, then the rest of its squad class's weapons - only of own's group.
+function W.similar(own, class, first)
+    local g = W.group(own)
+    if not g then return {} end
+    local out, seen = {}, {}
+    local function add(n)
+        if not seen[n:lower()] and W.group(n) == g then
+            seen[n:lower()] = true
+            out[#out + 1] = n
+        end
+    end
+    for _, n in ipairs(first or {}) do add(n) end
+    for t = 1, 5 do for _, n in ipairs(W.pool(class, t)) do add(n) end end
+    return out
+end
+
 -- The weapon one NPC carries, picked once and kept (saved with the NPC):
 -- { weapon, scoped, condition }.
 function W.gear_for(class, m, gear, rng)

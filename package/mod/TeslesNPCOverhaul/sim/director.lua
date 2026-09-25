@@ -620,6 +620,7 @@ function D:loadout_for(group, m)
         end
     end
     out.Weapons = weap.Weapons
+    out.Luokka = group.class
     out.Lipas = weap.Lipas
     out.Tahtaimet = weap.Tahtaimet
     out.TahtainOsuus = weap.TahtainOsuus

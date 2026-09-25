@@ -335,6 +335,11 @@ do
         return shots
     end
     check(duel(true) > 0 and duel(false) == 0, "a scoped rifle fires at 180 m, the same rifle without one does not")
+    local function has(list, n) for _, x in ipairs(list) do if x == n then return true end end return false end
+    local sh = W.similar("Weapon_SDASS", "bandit_gang", { "Weapon_SVD_Dragunov", "Weapon_M1887" })
+    check(sh[1] == "Weapon_M1887" and not has(sh, "Weapon_SVD_Dragunov"),
+          "a ghost weapon looks like what it fires: a shotgun shows a shotgun, never an SVD")
+    check(#W.similar("Weapon_SDASS", "military_group", {}) == 0, "and a squad without shotguns shows SCUM's own")
     -- The weapon is picked once and kept through a save.
     local world, d = fresh(41)
     local g = first_group(world)

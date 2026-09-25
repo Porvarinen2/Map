@@ -2816,7 +2816,11 @@ function B.tick_weapons(now)
                         local m = a._weaponManual
                         if m and valid(m) then own_m = full_name(m:GetClass()) end
                     end)
-                    for _, name in ipairs(p.order or { p.name }) do
+                    -- Only weapons that fire like the hidden one (same group:
+                    -- shotgun, precision rifle, automatic rifle, pistol...)
+                    -- and that the hands hold the same way (same manual).
+                    local cands = Weapons.similar(wname, (p.loadout or {}).Luokka, p.order)
+                    for _, name in ipairs(cands) do
                         local mc = manual_cache[name:lower()]
                         if mc == nil then mc = manual_of(name) end
                         if mc == nil then gwait = true; break end
