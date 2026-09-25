@@ -1845,12 +1845,12 @@ function B.find_item_class(spawn_name)
     return nil
 end
 
-local function spawn_actor(cls, pos, before_finish)
+local function spawn_actor(cls, pos, before_finish, rot, exact)
     local gs = get_statics()
     local world = B.get_world()
     if not (gs and world and cls) then return nil, "no statics/world/class" end
-    local xf = { Rotation = { X = 0, Y = 0, Z = 0, W = 1 },
-                 Translation = { X = pos.X, Y = pos.Y, Z = pos.Z + 50 },
+    local xf = { Rotation = rot or { X = 0, Y = 0, Z = 0, W = 1 },
+                 Translation = { X = pos.X, Y = pos.Y, Z = pos.Z + (exact and 0 or 50) },
                  Scale3D = { X = 1, Y = 1, Z = 1 } }
     local ok, actor = pcall(function()
         local a = gs:BeginDeferredActorSpawnFromClass(world, cls, xf, 1, nil)
@@ -2476,6 +2476,9 @@ local SIGNATURES = {
     "/Script/SCUM.Item:Equip",
     "/Script/SCUM.Weapon:Equip",
     "/Script/SCUM.Weapon:StartFire",
+    "/Script/SCUM.Item:DropAround",
+    "/Script/SCUM.Item:Server_Throw",
+    "/Script/SCUM.Item:Multicast_Throw",
 }
 function B.log_signatures()
     if B.signatures_logged then return end
@@ -2776,6 +2779,16 @@ local function floor_under(pos, ignore)
     return sane(p) and p.Z or nil
 end
 
+-- Lying as if dropped: a random heading and a tilt, so with physics on it
+-- tips over onto its side and settles on the floor.
+local function drop_rotation()
+    local yaw = math.random() * 2 * math.pi
+    local tilt = math.rad(35)
+    local s, c = math.sin(yaw / 2), math.cos(yaw / 2)
+    local a, b = math.sin(tilt / 2), math.cos(tilt / 2)
+    return { X = c * a, Y = s * a, Z = s * b, W = c * b }
+end
+
 local function lay_weapon(l, at)
     local name = l.name
     local cls = B.find_item_class(name)
@@ -2790,12 +2803,35 @@ local function lay_weapon(l, at)
             want = some_rounds(cap)
             pcall(function() x.InitialAmmo = want end)
         end
-    end)
+    end, drop_rotation(), true)
     if not item then return false end
     if want > 0 then B.want_rounds[full_name(item)] = want end
     local okf, err = pcall(B.fit_weapon, item, name, l.lo or {}, l.label, at)
     if not okf then lnote("haamuase: varustus - error: " .. tostring(err)) end
+    -- Physics on: it falls and settles like a dropped item.
+    local phys = pcall(function()
+        local root = item:K2_GetRootComponent()
+        root:SetSimulatePhysics(true)
+    end)
+    B.drop_checks = B.drop_checks or {}
+    B.drop_checks[#B.drop_checks + 1] = { item = item, z0 = at.Z, t = os.time() + 3, name = name, phys = phys }
     return true
+end
+
+-- A few seconds after a drop: where did the weapon come to rest (logged
+-- once per weapon, to see whether physics moved it)?
+function B.tick_drops(now)
+    if not B.drop_checks or #B.drop_checks == 0 then return end
+    for i = #B.drop_checks, 1, -1 do
+        local d = B.drop_checks[i]
+        if now >= d.t then
+            table.remove(B.drop_checks, i)
+            local z = nil
+            pcall(function() z = vec(d.item:K2_GetActorLocation()).Z end)
+            lnote(string.format("pudotettu %s: fysiikka %s, korkeus %.0f -> %s", d.name, tostring(d.phys), d.z0,
+                z and string.format("%.0f", z) or "?"))
+        end
+    end
 end
 
 function B.ghost_drop(handle)
@@ -2835,7 +2871,7 @@ function B.ghost_drop(handle)
             z = floor_under(at, ign)
         end
         if z then
-            at.Z = z + 6
+            at.Z = z + 12
             ok = lay_weapon({ name = name, lo = g.lo, label = g.label or tostring(rec.npcId) }, at)
             where = string.format("%.0f %.0f %.0f", at.X, at.Y, at.Z)
         else
@@ -2868,6 +2904,7 @@ function B.weapon_of(handle) return B.weapon_chosen[handle] end
 B.weapon_wait_sec = 20
 function B.tick_weapons(now)
     B.probe_budget = 1
+    pcall(B.tick_drops, now or os.time())
     if next(B.pending_weapons) == nil then return end
     now = now or os.time()
     local by_owner = nil
