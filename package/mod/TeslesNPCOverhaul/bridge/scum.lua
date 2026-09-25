@@ -2575,14 +2575,13 @@ local SIGNATURES = {
     "/Script/SCUM.Weapon:Equip",
     "/Script/SCUM.Weapon:StartFire",
     "/Script/SCUM.Item:DropAround",
-    "/Script/SCUM.Item:Server_Throw",
-    "/Script/SCUM.Item:Multicast_Throw",
 }
 function B.log_signatures()
     if B.signatures_logged then return end
     B.signatures_logged = true
     weapon_api[#weapon_api + 1] = "=== SIGNATURES"
     for _, path in ipairs(SIGNATURES) do
+        crumb("signature " .. path)
         local f = nil
         pcall(function() f = StaticFindObject(path) end)
         if f and valid(f) then
@@ -2592,8 +2591,13 @@ function B.log_signatures()
                     local n, t = "?", "?"
                     pcall(function() n = p:GetFName():ToString() end)
                     pcall(function() t = p:GetClass():GetFName():ToString() end)
+                    -- Only object/class parameters have a class to name:
+                    -- asking a struct parameter for one crashed UE4SS
+                    -- (1.9.28-1.9.29, on the first weapon after a join).
                     local extra = ""
-                    pcall(function() extra = " " .. full_name(p:GetPropertyClass()) end)
+                    if t == "ObjectProperty" or t == "ClassProperty" then
+                        pcall(function() extra = " " .. full_name(p:GetPropertyClass()) end)
+                    end
                     params[#params + 1] = n .. ":" .. t .. extra
                 end)
             end)
