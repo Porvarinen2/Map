@@ -396,6 +396,8 @@ if (Test-Path -LiteralPath $target) {
       $mg = [regex]::Match($oc, "$key\s*=\s*([0-9.]+)")
       if (-not $mg.Success) { continue }
       if ($key -eq 'GhostWeaponChance' -and $mv.Success -and $mv.Groups[1].Value -eq '1.9.21') { continue }
+      # 1.9.27 had the first sight defaults (200 m / 60 deg...); 1.9.28 brings new ones.
+      if ($key -like 'NPC*' -and $mv.Success -and $mv.Groups[1].Value -eq '1.9.27') { continue }
       $keepCfg[$key] = $mg.Groups[1].Value
     }
   }

@@ -662,11 +662,11 @@ D.FIGHT = { release_factor = 1.3, release_extra_uu = 2000, release_after = 20, m
 function D:sight_rules()
     local c = self.cfg or {}
     return {
-        detect = (tonumber(c.NPCDetectRangeM) or 200) * 100,
+        detect = (tonumber(c.NPCDetectRangeM) or 300) * 100,
         fire = (tonumber(c.NPCFireRangeM) or 100) * 100,
-        fire_scoped = (tonumber(c.NPCScopedFireRangeM) or 200) * 100,
-        angle = tonumber(c.NPCViewAngleDeg) or 60,
-        close = (tonumber(c.NPCCloseSenseM) or 10) * 100,
+        fire_scoped = (tonumber(c.NPCScopedFireRangeM) or 250) * 100,
+        angle = tonumber(c.NPCViewAngleDeg) or 45,
+        close = (tonumber(c.NPCCloseSenseM) or 5) * 100,
     }
 end
 
@@ -725,6 +725,11 @@ function D:player_fights(physical_groups, players, now)
                 end
             end
         end
+        -- Nobody saw a player: zombies or animals in sight draw the squad
+        -- towards them (checked every few seconds, one look per squad).
+        if not spotted and not (g.spotted and now <= g.spotted.until_t) then
+            self:watch_creatures(g, R, now)
+        end
         -- One of them saw a player: the squad knows, turns towards them and
         -- closes in (re-planned when the player has moved on).
         if spotted then
@@ -743,6 +748,49 @@ function D:player_fights(physical_groups, players, now)
                     g.act.state = S.PATROL
                     g.act.until_t = now + 60
                 end
+            end
+        end
+    end
+end
+
+function D:watch_creatures(g, R, now)
+    local near = self.bridge.creatures_near
+    local sees = self.bridge.sees
+    if not (near and sees) then return end
+    if now < (g.creature_check_at or 0) then return end
+    g.creature_check_at = now + 3
+    if (g.flee_until and now < g.flee_until) or (g.act and (g.act.state == S.COMBAT or g.act.state == S.RETREAT)) then
+        return
+    end
+    if g.chase and now <= g.chase.until_t then
+        if U.dist2d(g.position, g.chase.pos) > 3000 then return end
+        g.chase = nil
+    end
+    local eyes = nil
+    for _, m in ipairs(g.members) do
+        if m.alive and m.runtime_id and m.materialized ~= false and not m.native_fight then eyes = m; break end
+    end
+    if not eyes then return end
+    local from = eyes.position or g.position
+    local ok, list = pcall(near, from, R.detect)
+    if not ok or type(list) ~= "table" then return end
+    table.sort(list, function(a, b) return U.dist2d(a.pos, from) < U.dist2d(b.pos, from) end)
+    for i = 1, math.min(#list, 3) do
+        local c = list[i]
+        local d = U.dist2d(c.pos, from)
+        if d > 3000 then
+            local okv, v = pcall(sees, eyes.runtime_id, c.pos, R.angle)
+            if okv and v == true then
+                g.chase = { pos = U.copy_vec(c.pos), until_t = now + 60, kind = c.kind }
+                g.investigating = { pos = U.copy_vec(c.pos), until_t = now + 60 }
+                pcall(self.solve_route, self, g, c.pos, { prefer_roads = false, direct_max = 400000 })
+                if g.act then
+                    g.act.state = S.PATROL
+                    g.act.until_t = now + 60
+                end
+                Log.event("SPOTTED", g.gid, string.format("%s %s %.0f m", eyes.npcId,
+                    c.kind == "animal" and "elain" or "zombi", d / 100))
+                return
             end
         end
     end

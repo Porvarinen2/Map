@@ -1,7 +1,7 @@
 -- TESLES NPC OVERHAUL - server configuration.
 -- Distances are Unreal units unless a name says otherwise. 100 UU = 1 metre.
 return {
-    Version = "1.9.27",
+    Version = "1.9.28",
 
     -- ---------------------------------------------------------- population --
     Enabled = true,
@@ -94,13 +94,14 @@ return {
 
     -- NAKO JA AMPUMINEN: NPC huomaa pelaajan tasta etaisyydesta (metria),
     -- vain edessaan (kulma sivulle) ja jos valissa ei ole esteita. Aivan
-    -- vierelta (LahiM) se huomaa myos selan takaa. Ampuminen alkaa
-    -- FireRangeM:sta, tahtaimella ScopedFireRangeM:sta.
-    NPCDetectRangeM = 200,
+    -- vierelta (CloseSenseM) se huomaa myos selan takaa. Ampuminen alkaa
+    -- FireRangeM:sta, tahtaimella ScopedFireRangeM:sta. Nahdessaan zombeja
+    -- tai elaimia squad lahtee niita kohti.
+    NPCDetectRangeM = 300,
     NPCFireRangeM = 100,
-    NPCScopedFireRangeM = 200,
-    NPCViewAngleDeg = 60,
-    NPCCloseSenseM = 10,
+    NPCScopedFireRangeM = 250,
+    NPCViewAngleDeg = 45,
+    NPCCloseSenseM = 5,
 
     -- Omat varusteet: katso varusteet.lua (sailyy paivityksissa).
 

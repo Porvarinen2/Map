@@ -1187,6 +1187,18 @@ function B.zombies_near(pos, radius)
     return out
 end
 
+-- Zombies and animals within radius of a point: { pos, kind }.
+function B.creatures_near(pos, radius)
+    local out = {}
+    local c = B.census()
+    for _, kind in ipairs({ "zombie", "animal" }) do
+        for _, z in ipairs(c[kind] or {}) do
+            if U.dist2d(z.pos, pos) <= radius then out[#out + 1] = { pos = z.pos, kind = kind } end
+        end
+    end
+    return out
+end
+
 -- Damage to any actor the census found (a zombie, an animal).
 function B.damage_actor(actor, amount, from_handle)
     if not valid(actor) then return false end
@@ -1347,8 +1359,8 @@ local sight_logged = false
 local function tune_sight(a)
     local c = B.controller(a)
     if not c then return end
-    local radius = (tonumber(B.cfg and B.cfg.NPCDetectRangeM) or 200) * 100
-    local angle = tonumber(B.cfg and B.cfg.NPCViewAngleDeg) or 60
+    local radius = (tonumber(B.cfg and B.cfg.NPCDetectRangeM) or 300) * 100
+    local angle = tonumber(B.cfg and B.cfg.NPCViewAngleDeg) or 45
     local before = nil
     local function set(cfg)
         if not (cfg and valid(cfg)) then return end

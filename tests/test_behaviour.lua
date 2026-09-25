@@ -612,9 +612,11 @@ do
     d.bridge = fake
     d:player_fights({ g }, { { X = 15000, Y = 0, Z = 0 } }, 1000)
     check(#calls == 0 and not g.spotted, "a player 150 m behind the NPC is not seen")
+    d:player_fights({ g }, { { X = 800, Y = 0, Z = 0 } }, 1000)
+    check(#calls == 0, "nor at 8 m behind it (only 5 m counts)")
     front = true
-    d:player_fights({ g }, { { X = 15000, Y = 0, Z = 0 } }, 1001)
-    check(#calls == 0 and g.spotted ~= nil, "seen at 150 m: the squad knows, nobody fires yet")
+    d:player_fights({ g }, { { X = 29000, Y = 0, Z = 0 } }, 1001)
+    check(#calls == 0 and g.spotted ~= nil, "seen at 290 m: the squad knows, nobody fires yet")
     front = false
     d:player_fights({ g }, { { X = 9000, Y = 0, Z = 0 } }, 1005)
     check(#calls == 1 and calls[1] == true, "at 90 m the NPC that knows opens fire")
@@ -626,8 +628,8 @@ do
     local c2 = {}
     d2.bridge = setmetatable({ set_native = function(h, on) c2[#c2 + 1] = on; return true end,
         sees = function() return false end, weapon_of = function() return nil end }, { __index = d2.bridge })
-    d2:player_fights({ g2 }, { { X = 800, Y = 0, Z = 0 } }, 1000)
-    check(#c2 == 1, "right next to it (8 m) the NPC notices even from behind")
+    d2:player_fights({ g2 }, { { X = 400, Y = 0, Z = 0 } }, 1000)
+    check(#c2 == 1, "right next to it (4 m) the NPC notices even from behind")
 end
 
 print("")
