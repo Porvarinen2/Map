@@ -328,6 +328,8 @@ function C.exchange_fire(group, enemy, rng, accuracy)
                     if target.action == "COVER" then p = p * 0.6 end
                     if accuracy then p = p * accuracy(m) end
                     hits.shots = (hits.shots or 0) + 1
+                    hits.shooters = hits.shooters or {}
+                    hits.shooters[#hits.shooters + 1] = m
                     if rng:chance(U.clamp(p, 0.02, 0.8)) then
                         local dmg = rng:range(f.dmg_min, f.dmg_max) * (1 + (m.level or 1) * 0.05)
                         target.health = (target.health or 100) - dmg

@@ -855,8 +855,11 @@ function D:run_combat(group, contact, zpressure)
         Behaviour.noise(self, group.position, "gunfire", U.clamp(0.7 + hits.shots * 0.15, 0.7, 1.6))
         self.noises[#self.noises].from = group.gid
     end
+    -- Every NPC that shot fires its real weapon (seen and heard), hit or miss.
+    for _, m in ipairs(hits.shooters or {}) do
+        if m.runtime_id and self.bridge.fire_once then pcall(self.bridge.fire_once, m.runtime_id) end
+    end
     for _, h in ipairs(hits) do
-        if h.shooter.runtime_id and self.bridge.fire_once then self.bridge.fire_once(h.shooter.runtime_id) end
         local handle = h.target.runtime_id
         if handle and self.bridge.apply_damage then
             self.bridge.apply_damage(handle, h.killed and 1000 or h.damage, h.shooter.runtime_id)
@@ -963,6 +966,11 @@ function D:tick(now)
         end
     end
 
+    -- Where the squads are, for spreading them over the map (every 30 s).
+    if now_ge(self.now, self.load_counted_at, 30) then
+        self.load_counted_at = self.now
+        pcall(Activity.count_load, self.world.groups)
+    end
     self:run_kill_checks()
     if self.bridge.maybe_survey then pcall(self.bridge.maybe_survey, now) end
     if self.bridge.maybe_player_survey then pcall(self.bridge.maybe_player_survey, now) end

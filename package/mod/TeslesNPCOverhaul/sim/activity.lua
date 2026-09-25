@@ -203,8 +203,23 @@ end
 -- class weight decides between places at similar distance, and a little
 -- randomness among the best three keeps two identical groups from marching
 -- in lockstep. A class with a fixed circuit walks it in order instead.
-A.HOME_ROW_WEIGHT = 1.5
-A.ROW_WEIGHT = { Z = 2.5 }
+A.HOME_ROW_WEIGHT = 1.25
+A.sector_load = nil
+-- How many squads are in each sector or heading for it; the average is over
+-- the sectors that have places to go to.
+function A.count_load(groups)
+    local by, total = {}, 0
+    for _, g in ipairs(groups or {}) do
+        local here = g.position and Zones.sector(g.position)
+        if here then by[here] = (by[here] or 0) + 1; total = total + 1 end
+        local goal = g.act and g.act.goal_poi
+        if goal and goal.sector and goal.sector ~= here then by[goal.sector] = (by[goal.sector] or 0) + 0.5 end
+    end
+    local sectors = 0
+    for _ in pairs(POI.by_sector or {}) do sectors = sectors + 1 end
+    A.sector_load = { by = by, avg = sectors > 0 and total / sectors or 0 }
+    return A.sector_load
+end
 function A.pick_next(group, act, from, blocked, last_id)
     local cls = GroupClasses.get(group.class)
     if not (cls and from) then return nil end
@@ -226,9 +241,10 @@ function A.pick_next(group, act, from, blocked, last_id)
     -- an islet must not make every later pick impossible.
     local mass = Grid.landmass_at(group.position or from)
     local fear = A.fear_factor(group)
-    -- Squads go everywhere, but the south (the Z row, good loot and too few
-    -- visitors) draws everyone more, and a squad leans a little towards the
-    -- row of sectors it started in.
+    -- Squads go everywhere, spread evenly: a sector with fewer squads (in it
+    -- or on their way to it) than the average draws more, a crowded one
+    -- less (A.sector_load, counted by the director). A squad leans a little
+    -- towards the row of sectors it started in.
     local home_row = nil
     pcall(function() home_row = tostring(Zones.sector(group.home or from)):sub(1, 1) end)
     local scored = {}
@@ -243,8 +259,12 @@ function A.pick_next(group, act, from, blocked, last_id)
                 -- dead are thickest and the fighting is.
                 if DANGEROUS[poi.kind] then w = w * fear end
                 local row = tostring(poi.sector):sub(1, 1)
-                w = w * (A.ROW_WEIGHT[row] or 1)
                 if home_row and row == home_row then w = w * A.HOME_ROW_WEIGHT end
+                local L = A.sector_load
+                if L and L.avg and L.avg > 0 then
+                    local n = L.by[poi.sector] or 0
+                    w = w * U.clamp((L.avg + 0.5) / (n + 0.5), 0.4, 2.5)
+                end
                 scored[#scored + 1] = { poi = poi, score = w / (1 + d / 90000) ^ 2 }
             end
         end

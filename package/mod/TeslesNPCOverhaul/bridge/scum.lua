@@ -1646,28 +1646,41 @@ end
 -- Tries the likely weapon-fire entry points once each and remembers which
 -- one the engine accepts. Visual only: damage is applied separately.
 local fire_fn = nil
-local FIRE_CANDIDATES = {
-    function(a) a:StartFire() end,
-    function(a) a:Fire() end,
-    function(a) a:FireWeapon() end,
-    function(a) a.EquippedWeapon:StartFire() end,
-    function(a) a:GetEquippedWeapon():StartFire() end,
-}
+-- A shot in a fight between squads: the NPC's own weapon (the one SCUM
+-- gave it and its weapon manual fires) is fired with Weapon.StartFire() -
+-- no arguments, signature read from the game - and stopped on the next
+-- tick with StopFire(). The damage itself is dealt by the director
+-- (ApplyDamage); this makes the shot seen and heard. An empty magazine gets
+-- a few rounds first, so a long fight does not go silent.
+B.firing = {}
 function B.fire_once(handle)
+    local rec = handles[handle]
     local a = B.actor(handle)
-    if not a then return false end
-    if fire_fn == false then return false end
-    if fire_fn then return (pcall(fire_fn, a)) end
-    for i, f in ipairs(FIRE_CANDIDATES) do
-        if pcall(f, a) then
-            fire_fn = f
-            if B.on_debug then pcall(B.on_debug, "npc weapon fire works via candidate " .. i) end
-            return true
+    if not (rec and a) or rec.native then return false end
+    local w = rec.ghost and rec.ghost.own or rec.weapon
+    if not (w and valid(w)) then pcall(function() w = a._itemInHands end) end
+    if not (w and valid(w)) then return false end
+    if B.firing[handle] then return true end
+    pcall(function()
+        local mag = unwrap(w:GetMagazine())
+        if mag and valid(mag) and (tonumber(unwrap(mag:GetAmmoCount())) or 0) == 0 then
+            mag:FillWithDefaultAmmo(math.random(3, 8))
         end
+    end)
+    crumb("StartFire h" .. tostring(handle))
+    local ok = pcall(function() w:StartFire() end)
+    if ok then B.firing[handle] = w end
+    if not B.fire_noted then
+        B.fire_noted = true
+        if B.on_debug then pcall(B.on_debug, "npc weapon fire: Weapon.StartFire " .. tostring(ok)) end
     end
-    fire_fn = false
-    if B.on_debug then pcall(B.on_debug, "npc weapon fire: no known entry point on this build") end
-    return false
+    return ok
+end
+function B.stop_firing()
+    for h, w in pairs(B.firing) do
+        if valid(w) then pcall(function() w:StopFire() end) end
+        B.firing[h] = nil
+    end
 end
 
 -- ------------------------------------------------------------- api dump ---
@@ -3048,6 +3061,7 @@ function B.weapon_of(handle) return B.weapon_chosen[handle] end
 B.weapon_wait_sec = 20
 function B.tick_weapons(now)
     B.probe_budget = 1
+    pcall(B.stop_firing)
     if next(B.pending_weapons) == nil then return end
     now = now or os.time()
     local by_owner = nil
