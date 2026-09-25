@@ -457,7 +457,8 @@ do
     local loads = 0
     _G.LoadAsset = function(p) loads = loads + 1; loaded[p] = true end
     _G.StaticFindObject = function(p)
-        if p == op and loaded["/Game/ConZ_Files/Items/Clothes/Underwear_Pants/Christmas_Pants_02"] then return cls end
+        -- LoadAsset takes the object path (as for the NPC classes).
+        if p == op and loaded[op] then return cls end
     end
     package.loaded["bridge.scum"] = nil
     local SB = require("bridge.scum")

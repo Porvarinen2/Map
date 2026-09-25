@@ -1712,7 +1712,7 @@ local function load_item_class(op)
     if not have("LoadAsset") then return nil end
     local pkg = op:match("^(.-)%.") or op
     local short = pkg:match("([^/]+)$") or ""
-    for _, p in ipairs({ op, pkg .. "." .. short, pkg }) do
+    for _, p in ipairs({ op, pkg .. "." .. short }) do
         pcall(function() LoadAsset(p) end)
         pcall(function() c = StaticFindObject(op) end)
         if c and valid(c) then return c end
@@ -1751,6 +1751,11 @@ function B.learn_items(now)
         table.sort(keys)
         local lines = {}
         for _, k in ipairs(keys) do lines[#lines + 1] = k .. "\t" .. B.item_paths[k] end
+        -- Names SCUM does not have: kept so they are never searched again.
+        local miss = {}
+        for k in pairs(guess_failed) do if not k:find("^path:") and not B.item_paths[k] then miss[#miss + 1] = k end end
+        table.sort(miss)
+        for _, k in ipairs(miss) do lines[#lines + 1] = k .. "\t-" end
         pcall(B.write_file, "item_classes.txt", table.concat(lines, "\n") .. "\n")
     end
     if learned > 0 then lnote("learned " .. learned .. " item classes from the world (item_classes.txt)") end
@@ -1759,7 +1764,8 @@ end
 function B.load_item_paths(text)
     for line in tostring(text or ""):gmatch("[^\r\n]+") do
         local k, p = line:match("^(%S+)\t(%S+)$")
-        if k then B.item_paths[k] = p end
+        if k and p == "-" then guess_failed[k] = true
+        elseif k then B.item_paths[k] = p end
     end
 end
 
@@ -1782,7 +1788,15 @@ function B.find_item_class(spawn_name)
     -- Not seen in the world yet: SCUM keeps items in
     -- /Game/ConZ_Files/Items/<category>/<Name>.<Name>_C (item_classes.txt,
     -- 1.7.4), so the usual categories are tried once each.
+    B.last_find_deferred = false
+    if not guess_failed[key] and (B.probe_budget or 1) <= 0 then
+        -- A class search costs failed LoadAsset calls (1.9.11: 18-22 s
+        -- freezes when many NPCs asked at once). One new name per tick.
+        B.last_find_deferred = true
+        return nil
+    end
     if not guess_failed[key] then
+        B.probe_budget = (B.probe_budget or 1) - 1
         local name = tostring(spawn_name)
         -- Weapons and their parts live in a handful of folders (item_classes.txt
         -- of the test server): only those are tried for them.
@@ -1792,7 +1806,7 @@ function B.find_item_class(spawn_name)
         elseif low:find("^weaponscope_") or low:find("^weaponsights_") then folders = { "Weapons/Attachments/Scope" }
         elseif low:find("^scoperail_") then folders = { "Weapons/Attachments/Rail" }
         elseif low:find("^[12]h_") then folders = { "Weapons/New_Melee", "Weapons" }
-        elseif low:find("^weapon_") or low:find("bow") or low:find("spear") then
+        elseif low:find("^weapon_") or low:find("bow") or low:find("spear") or Weapons.kind(name) then
             folders = { "Weapons/Ranged_Weapons", "Weapons", "Weapons/New_Melee" }
         end
         for _, folder in ipairs(folders) do
@@ -1807,6 +1821,7 @@ function B.find_item_class(spawn_name)
             end
         end
         guess_failed[key] = true
+        B.item_paths_dirty = true
         lnote(name .. ": not found in " .. #folders .. " item folders - drop one with #SpawnItem so the mod learns it")
     end
     if not item_index then build_item_index() end
@@ -2483,7 +2498,11 @@ local function manual_of(name)
     local key = tostring(name):lower()
     if manual_cache[key] ~= nil then return manual_cache[key] end
     local cls = B.find_item_class(name)
-    if not cls then manual_cache[key] = false; return false end
+    if not cls then
+        if B.last_find_deferred then return nil end
+        manual_cache[key] = false
+        return false
+    end
     local cdo = nil
     pcall(function() cdo = cls:GetCDO() end)
     if not (cdo and valid(cdo)) then
@@ -2563,6 +2582,7 @@ B.weapon_chosen = {}
 function B.weapon_of(handle) return B.weapon_chosen[handle] end
 B.weapon_wait_sec = 20
 function B.tick_weapons(now)
+    B.probe_budget = 1
     if next(B.pending_weapons) == nil then return end
     now = now or os.time()
     local by_owner = nil
@@ -2583,25 +2603,54 @@ function B.tick_weapons(now)
                 end
             end
             local olds = by_owner[full_name(a)] or {}
-            if #olds > 0 then
+            -- SCUM's own weapon is kept and fitted out (config SwapWeapons
+            -- off, the default): a weapon put in the NPC's hands later never
+            -- fires, because the NPC's weapon manual stays bound to the one
+            -- SCUM gave it (1.9.6-1.9.11), and re-binding it crashes SCUM.
+            if #olds > 0 and not (B.cfg and B.cfg.SwapWeapons) then
                 B.pending_weapons[h] = nil
+                local w = nil
+                pcall(function() w = a._itemInHands end)
+                if not (w and valid(w)) then w = olds[1] end
+                local wname = (full_name(w:GetClass()):match("([%w_]+)$") or "?"):gsub("_C$", "")
+                B.weapon_chosen[h] = wname
                 local pos = nil
                 pcall(function() pos = vec(a:K2_GetActorLocation()) end)
-                -- The NPC's own manual type (from the weapon SCUM gave it).
+                if pos then
+                    local lo = {}
+                    for k, v in pairs(p.loadout or {}) do lo[k] = v end
+                    lo.Tahtain = nil
+                    local okf, err = pcall(B.fit_weapon, w, wname, lo, p.label, pos)
+                    if not okf then lnote(p.label .. ": varustus - error: " .. tostring(err)) end
+                end
+                goto continue
+            end
+            -- Is every candidate's type known, or is one still to be looked up
+            -- (one lookup per tick)? Then the NPC waits for its turn.
+            local waiting, pick = false, nil
+            if #olds > 0 then
                 local own = ""
                 pcall(function()
                     local m = a._weaponManual
                     if m and valid(m) then own = full_name(m:GetClass()) end
                 end)
-                local pick, probes = nil, 0
+                p.own = own
                 for _, name in ipairs(p.order or { p.name }) do
-                    local known = manual_cache[name:lower()] ~= nil
-                    if known or probes < 4 then
-                        if not known then probes = probes + 1 end
-                        local mc = manual_of(name)
-                        if mc and mc == own then pick = name; break end
-                    end
+                    local mc = manual_cache[name:lower()]
+                    if mc == nil then mc = manual_of(name) end
+                    if mc == nil then waiting = true; break end
+                    if mc and mc == own then pick = name; break end
                 end
+                p.pick = pick
+            end
+            if waiting and not pick and now <= p.deadline + 60 then
+                -- next tick
+            elseif #olds > 0 then
+                B.pending_weapons[h] = nil
+                local pos = nil
+                pcall(function() pos = vec(a:K2_GetActorLocation()) end)
+                -- The NPC's own manual type (from the weapon SCUM gave it).
+                local own, pick = p.own or "", p.pick
                 if pos and pick then
                     local ok, res, item = pcall(hold_weapon, a, h, pick, p.label, pos, olds)
                     if not ok then lnote(p.label .. ": " .. pick .. " - error: " .. tostring(res))
@@ -2627,6 +2676,7 @@ function B.tick_weapons(now)
                 lnote(p.label .. ": " .. p.name .. " - NPC:n omaa asetta ei tullut " .. B.weapon_wait_sec .. " s:ssa, ase jatettiin vaihtamatta")
             end
         end
+        ::continue::
     end
 end
 
@@ -2742,19 +2792,14 @@ function B.apply_loadout(handle, loadout, label)
         local j = math.random(i)
         order[i], order[j] = order[j], order[i]
     end
-    -- At most a few unknown names are probed per NPC (a miss costs a few
-    -- LoadAsset calls once; misses are remembered).
-    local probes = 0
+    -- The classes are looked up later, one per tick (tick_weapons); names
+    -- this server does not have are left out now.
+    local kept = {}
     for _, name in ipairs(order) do
-        local known = item_class_cache[name:lower()] ~= nil
-        if not known and guess_failed[name:lower()] then
-            -- already missed
-        elseif known or probes < 3 then
-            if not known then probes = probes + 1 end
-            local okc, c = pcall(B.find_item_class, name)
-            if okc and c then w = name; break end
-        end
+        if not guess_failed[name:lower()] or item_class_cache[name:lower()] then kept[#kept + 1] = name end
     end
+    order = kept
+    w = order[1] or "SCUM"
     if w then
         B.pending_weapons[handle] = { name = w, order = order, label = label, loadout = loadout,
                                       deadline = os.time() + B.weapon_wait_sec }
