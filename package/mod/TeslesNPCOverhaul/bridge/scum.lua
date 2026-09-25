@@ -2314,14 +2314,8 @@ local function load_rounds(obj, want, cap_fn)
     if have > 0 then return have, "InitialAmmo" end
     local ammo = nil
     pcall(function() ammo = obj.DefaultFillAmmo or obj.DefaultAmmunitionItemClass end)
+    -- Only calls that take no arguments: guessed arguments can crash SCUM.
     local ways = {
-        { "SetAmmo", function() return call_ok(obj, "SetAmmo", want) end },
-        { "AddAmmo", function() return call_ok(obj, "AddAmmo", ammo, want) end },
-        { "AddAmmoSingle", function()
-            local ok = false
-            for _ = 1, want do ok = call_ok(obj, "AddAmmoSingle", ammo) or ok end
-            return ok
-        end },
         { "FillWithDefaultAmmo", function() return call_ok(obj, "FillWithDefaultAmmo") end },
         { "FillUpWithDefaultAmmo", function() return call_ok(obj, "FillUpWithDefaultAmmo") end },
     }
@@ -2341,6 +2335,7 @@ end
 
 function B.fit_weapon(w, weapon_name, loadout, label, pos)
     B.log_weapon_api(w, "WEAPON " .. weapon_name)
+    pcall(B.log_signatures)
     local notes = {}
     local cond = tonumber(loadout.Kunto)
     local c = set_condition(w, cond)
@@ -2393,28 +2388,44 @@ end
 -- A manual of the new weapon's class is made for the NPC, the settings of
 -- the old one carried over, and it takes the old one's place.
 local manual_logged = {}
--- Sets a manual up for its NPC and weapon (Initialize); which form of the
--- call SCUM takes is found by checking GetWeapon afterwards.
-local function bind_manual(new, a, item)
-    local init = "Initialize: ei onnistunut"
-    local function bound()
-        local ok, w = call_ok(new, "GetWeapon")
-        w = ok and unwrap(w) or nil
-        return w ~= nil and valid(w) and full_name(w) == full_name(item)
+-- The parameters SCUM's functions take, read from the functions themselves
+-- (1.9.7 guessed Initialize's arguments and a wrong guess crashed the
+-- server). Written to weapon_api.txt once.
+local SIGNATURES = {
+    "/Script/SCUM.ArmedNPCWeaponManual:Initialize",
+    "/Script/SCUM.ArmedNPCWeaponManual:GetWeapon",
+    "/Script/SCUM.WeaponAttachmentMagazine:SetAmmo",
+    "/Script/SCUM.WeaponAttachmentMagazine:AddAmmo",
+    "/Script/SCUM.WeaponAttachmentMagazine:FillWithDefaultAmmo",
+    "/Script/SCUM.Weapon:FillUpWithDefaultAmmo",
+    "/Script/SCUM.Weapon:AddAttachmentOnServer",
+    "/Script/SCUM.ArmedNPCBase:OnRep_ItemInHands",
+}
+function B.log_signatures()
+    if B.signatures_logged then return end
+    B.signatures_logged = true
+    weapon_api[#weapon_api + 1] = "=== SIGNATURES"
+    for _, path in ipairs(SIGNATURES) do
+        local f = nil
+        pcall(function() f = StaticFindObject(path) end)
+        if f and valid(f) then
+            local params = {}
+            pcall(function()
+                f:ForEachProperty(function(p)
+                    local n, t = "?", "?"
+                    pcall(function() n = p:GetFName():ToString() end)
+                    pcall(function() t = p:GetClass():GetFName():ToString() end)
+                    local extra = ""
+                    pcall(function() extra = " " .. full_name(p:GetPropertyClass()) end)
+                    params[#params + 1] = n .. ":" .. t .. extra
+                end)
+            end)
+            weapon_api[#weapon_api + 1] = "  " .. path .. "(" .. table.concat(params, ", ") .. ")"
+        else
+            weapon_api[#weapon_api + 1] = "  " .. path .. " - not found"
+        end
     end
-    if bound() then return "ase sidottu (GetWeapon)" end
-    local errs = {}
-    for _, args in ipairs({ { a, item }, { a }, { item }, { item, a }, {} }) do
-        local ok, err = call_ok(new, "Initialize", table.unpack(args))
-        if bound() then init = "Initialize(" .. #args .. ") ok"; break end
-        errs[#errs + 1] = "(" .. #args .. ")=" .. (ok and "ok" or tostring(err):sub(-120))
-    end
-    if init:find("ei") and not B.init_err_logged then
-        B.init_err_logged = true
-        lnote("Initialize-yritykset: " .. table.concat(errs, " | "))
-    end
-    if init:find("ei") and bound() then init = "ase jo sidottu" end
-    return init
+    write_weapon_api()
 end
 
 local function swap_manual(a, item, label)
@@ -2426,7 +2437,7 @@ local function swap_manual(a, item, label)
     local oldc = old and valid(old) and full_name(old:GetClass()) or ""
     if oldc == full_name(mc) then
         -- Same kind of manual: it still points at the old, removed weapon.
-        return "sama kasikirja, " .. bind_manual(old, a, item)
+        return "sama kasikirja"
     end
     if not have("StaticConstructObject") then return "StaticConstructObject puuttuu" end
     local ok, new = pcall(function() return StaticConstructObject(mc, a) end)
@@ -2460,7 +2471,7 @@ local function swap_manual(a, item, label)
         end
     end
     local set = pcall(function() a._weaponManual = new end)
-    local init = bind_manual(new, a, item)
+    pcall(B.log_signatures)
     if not manual_logged[full_name(mc)] then
         manual_logged[full_name(mc)] = true
         if old and valid(old) then B.log_weapon_api(old, "OLD MANUAL", true) end
@@ -2473,8 +2484,8 @@ local function swap_manual(a, item, label)
             pcall(function() B.log_weapon_api(a._armedNPCBaseCommonData, "NPC COMMON DATA", true) end)
         end
     end
-    return string.format("kasikirja %s -> %s (%d asetusta kopioitu, asetettu %s, %s)",
-        oldc:match("([%w_]+)$") or "?", full_name(mc):match("([%w_]+)$") or "?", copied, tostring(set), init)
+    return string.format("kasikirja %s -> %s (%d asetusta kopioitu, asetettu %s)",
+        oldc:match("([%w_]+)$") or "?", full_name(mc):match("([%w_]+)$") or "?", copied, tostring(set))
 end
 
 -- A weapon: the new one goes where SCUM had put the NPC's own (same parent
