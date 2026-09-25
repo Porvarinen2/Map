@@ -19,8 +19,7 @@ D.TIERS = {
     { key = "FRIENDLY",   fi = "Ystavallinen",    max = 1.01 },
 }
 
--- Default standings. Everything not listed starts at 0 (NEUTRAL). Two bandit
--- gangs are deliberately NOT hostile to each other by default.
+-- Default standings: see D.default_standing (everyone hostile).
 D.BANDIT_VS_AUTHORITY = -0.80
 D.BANDIT_VS_OTHER = -0.65
 
@@ -46,16 +45,22 @@ function D.set_default(class_a, class_b, value)
 end
 function D.add_authority(class_key) AUTHORITY[class_key] = true end
 
+-- Every squad is hostile to every other squad (the owner's rule): the island
+-- is a free-for-all. Bandits and the authorities hate each other most. The
+-- owner's own class pairs (ryhmat.lua) still set their own standing.
+D.ALL_HOSTILE = -0.65
 function D.default_standing(class_a, class_b)
     local c = custom_pairs[class_a .. "|" .. class_b]
     if c then return c end
-    if class_a == "bandit_gang" and class_b == "bandit_gang" then return 0 end
+    -- Squads of one class work together (the radiation teams sweep Krsko
+    -- side by side, the islanders share their town) - except bandit gangs,
+    -- who trust nobody.
+    if class_a == class_b and class_a ~= "bandit_gang" then return 0 end
     if class_a == "bandit_gang" or class_b == "bandit_gang" then
         local other = (class_a == "bandit_gang") and class_b or class_a
         if AUTHORITY[other] then return D.BANDIT_VS_AUTHORITY end
-        return D.BANDIT_VS_OTHER
     end
-    return 0
+    return D.ALL_HOSTILE
 end
 
 local function key_of(a, b)

@@ -128,10 +128,12 @@ check(Diplomacy.default_standing("bandit_gang", "elite_unit") == -0.80,
       "rosvojoukko vs eliittiyksikko = -0.80")
 check(Diplomacy.default_standing("bandit_gang", "survivor_group") == -0.65,
       "rosvojoukko vs muu ei-rosvoryhma = -0.65")
-check(Diplomacy.default_standing("bandit_gang", "bandit_gang") == 0,
-      "kahden rosvojoukon suhde ei ole automaattisesti vihamielinen")
-check(Diplomacy.default_standing("police_patrol", "hunters") == 0,
-      "muut oletussuhteet ovat 0")
+check(Diplomacy.default_standing("bandit_gang", "bandit_gang") == -0.65,
+      "kaksi rosvojoukkoa ovat toisilleen vihamielisia")
+check(Diplomacy.default_standing("police_patrol", "hunters") == -0.65,
+      "kaikki eri luokat ovat toisilleen vihamielisia")
+check(Diplomacy.default_standing("radiation_group", "radiation_group") == 0,
+      "saman luokan ryhmat (ei rosvot) toimivat yhdessa")
 
 local b = Factory.new_npc({ id = 9001, archetype = "bandit" })
 local s = Factory.new_npc({ id = 9002, archetype = "survivor" })
