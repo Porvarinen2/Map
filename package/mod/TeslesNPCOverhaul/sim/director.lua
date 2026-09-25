@@ -658,6 +658,11 @@ function D:player_fights(physical_groups, players, now)
     for _, g in ipairs(physical_groups) do
         for _, m in ipairs(g.members) do
             if m.alive and m.runtime_id then
+                -- The weapon the NPC really got (same manual type as SCUM's).
+                local real = self.bridge.weapon_of and self.bridge.weapon_of(m.runtime_id)
+                if real and m.gear and m.gear.weapon ~= real then
+                    m.gear.weapon, m.gear.scoped = real, false
+                end
                 local mp = m.position or g.position
                 local best = math.huge
                 for _, p in ipairs(players) do

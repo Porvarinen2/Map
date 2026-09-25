@@ -867,6 +867,7 @@ function B.despawn(handle)
     if c then pcall(function() c:StopMovement() end) end
     pcall(function() rec.actor:K2_DestroyActor() end)
     B.pending_weapons[handle] = nil
+    B.weapon_chosen[handle] = nil
     B.body_watch[handle] = nil
     -- Gear the mod put on this NPC goes with it.
     for _, x in ipairs(rec.extras or {}) do pcall(function() x:K2_DestroyActor() end) end
@@ -2427,12 +2428,13 @@ function B.fit_weapon(w, weapon_name, loadout, label, pos)
     lnote(string.format("%s: %s - %s", label, weapon_name, table.concat(notes, ", ")))
 end
 
--- The NPC fires through a "weapon manual" made for its weapon type
--- (Weapon._armedNPCWeaponManualClass): a rifle manual cannot fire a pistol,
--- which is why the NPCs of 1.9.x held their new weapons without shooting.
--- A manual of the new weapon's class is made for the NPC, the settings of
--- the old one carried over, and it takes the old one's place.
-local manual_logged = {}
+-- The NPC fires through a "weapon manual" SCUM makes for its weapon type
+-- (Weapon._armedNPCWeaponManualClass: rifle, handgun, bow, crossbow...).
+-- A manual cannot be made or set up again from here: 1.9.6 made new ones
+-- (the NPC held its weapon without firing), 1.9.7 and 1.9.9 called their
+-- Initialize and the server crashed. So an NPC only gets a weapon of the
+-- same manual type as the one SCUM gave it: rifle for rifle, pistol for
+-- pistol - its own manual then fires the new weapon.
 -- The parameters SCUM's functions take, read from the functions themselves
 -- (1.9.7 guessed Initialize's arguments and a wrong guess crashed the
 -- server). Written to weapon_api.txt once.
@@ -2473,73 +2475,27 @@ function B.log_signatures()
     write_weapon_api()
 end
 
-local function swap_manual(a, item, label)
+local manual_cache = {}
+local cdo_noted = false
+local function manual_of(name)
+    local key = tostring(name):lower()
+    if manual_cache[key] ~= nil then return manual_cache[key] end
+    local cls = B.find_item_class(name)
+    if not cls then manual_cache[key] = false; return false end
+    local cdo = nil
+    pcall(function() cdo = cls:GetCDO() end)
+    if not (cdo and valid(cdo)) then
+        if not cdo_noted then cdo_noted = true; lnote("GetCDO ei toimi: aseen kasikirjaa ei voi lukea") end
+        manual_cache[key] = false
+        return false
+    end
     local mc = nil
-    pcall(function() mc = item._armedNPCWeaponManualClass end)
-    if not (mc and valid(mc)) then return "ei kasikirjaa (lyomaase?)" end
-    local old = nil
-    pcall(function() old = a._weaponManual end)
-    local oldc = old and valid(old) and full_name(old:GetClass()) or ""
-    if oldc == full_name(mc) then
-        -- Same kind of manual: set up again for the new weapon.
-        local oki = call_ok(old, "Initialize")
-        return "sama kasikirja, Initialize() " .. tostring(oki)
-    end
-    if not have("StaticConstructObject") then return "StaticConstructObject puuttuu" end
-    local ok, new = pcall(function() return StaticConstructObject(mc, a) end)
-    if not (ok and new and valid(new)) then return "kasikirjaa ei voitu tehda: " .. tostring(new) end
-    local copied = 0
-    if old and valid(old) then
-        local okc, cls = pcall(function() return new:GetClass() end)
-        local depth = 0
-        while okc and cls and valid(cls) and depth < 8 do
-            depth = depth + 1
-            if full_name(cls):find("/Script/CoreUObject.Object", 1, true) then break end
-            pcall(function()
-                cls:ForEachProperty(function(p)
-                    local n = p:GetFName():ToString()
-                    local okv, v = pcall(function() return old[n] end)
-                    if okv and v ~= nil then
-                        local tv = type(v)
-                        local val = v
-                        if tv == "userdata" then
-                            local fn = full_name(v)
-                            -- Objects of the old manual itself stay the new one's own.
-                            if fn:find(full_name(old), 1, true) then val = nil end
-                        end
-                        if val ~= nil and pcall(function() new[n] = val end) then copied = copied + 1 end
-                    end
-                end)
-            end)
-            local oks, sup = pcall(function() return cls:GetSuperStruct() end)
-            if not (oks and sup) then break end
-            cls = sup
-        end
-    end
-    local set = pcall(function() a._weaponManual = new end)
-    pcall(B.log_signatures)
-    -- Initialize takes no arguments (weapon_api.txt, 1.9.8): the manual finds
-    -- its NPC (its outer) and weapon itself.
-    local init_ok = call_ok(new, "Initialize")
-    local okw, gw = call_ok(new, "GetWeapon")
-    gw = okw and unwrap(gw) or nil
-    local init = "Initialize() " .. tostring(init_ok) .. ", ase " ..
-        ((gw and valid(gw) and full_name(gw) == full_name(item)) and "sidottu" or "EI sidottu")
-    if not manual_logged[full_name(mc)] then
-        manual_logged[full_name(mc)] = true
-        if old and valid(old) then B.log_weapon_api(old, "OLD MANUAL", true) end
-        B.log_weapon_api(new, "NEW MANUAL", true)
-        -- How far SCUM's own AI sees and shoots at players (for scoped NPCs).
-        if not B.ai_logged then
-            B.ai_logged = true
-            local c = B.controller(a)
-            if c then B.log_weapon_api(c, "AI CONTROLLER", true) end
-            pcall(function() B.log_weapon_api(a._armedNPCBaseCommonData, "NPC COMMON DATA", true) end)
-        end
-    end
-    return string.format("kasikirja %s -> %s (%d asetusta kopioitu, asetettu %s, %s)",
-        oldc:match("([%w_]+)$") or "?", full_name(mc):match("([%w_]+)$") or "?", copied, tostring(set), init)
+    pcall(function() mc = cdo._armedNPCWeaponManualClass end)
+    local v = (mc and valid(mc)) and full_name(mc) or ""
+    manual_cache[key] = v
+    return v
 end
+B.manual_of = manual_of
 
 -- A weapon: the new one goes where SCUM had put the NPC's own (same parent
 -- and socket), becomes the item in hands, and the old one is removed.
@@ -2578,10 +2534,9 @@ local function hold_weapon(a, handle, name, label, pos, olds)
         item:K2_GetRootComponent():K2_AttachToComponent(parent, socket or fname("hand_r"), 2, 2, 2, false)
     end)
     local inhands = pcall(function() a._itemInHands = item end)
-    local okm, manual = pcall(swap_manual, a, item, label)
     for _, o in ipairs(olds) do pcall(function() o:K2_DestroyActor() end) end
-    lnote(string.format("%s: %s - weapon placed (attach=%s, in hands=%s, replaced %d, %s)",
-        label, name, tostring(att), tostring(inhands), #olds, okm and tostring(manual) or ("manual error " .. tostring(manual))))
+    lnote(string.format("%s: %s - weapon placed (attach=%s, in hands=%s, replaced %d)",
+        label, name, tostring(att), tostring(inhands), #olds))
     return att, item
 end
 
@@ -2590,6 +2545,8 @@ end
 -- the air (no hand socket to copy) and the NPC got its own anyway. So the
 -- swap waits until the NPC's own weapon exists and takes its place.
 B.pending_weapons = {}
+B.weapon_chosen = {}
+function B.weapon_of(handle) return B.weapon_chosen[handle] end
 B.weapon_wait_sec = 20
 function B.tick_weapons(now)
     if next(B.pending_weapons) == nil then return end
@@ -2616,13 +2573,40 @@ function B.tick_weapons(now)
                 B.pending_weapons[h] = nil
                 local pos = nil
                 pcall(function() pos = vec(a:K2_GetActorLocation()) end)
-                if pos then
-                    local ok, res, item = pcall(hold_weapon, a, h, p.name, p.label, pos, olds)
-                    if not ok then lnote(p.label .. ": " .. p.name .. " - error: " .. tostring(res))
+                -- The NPC's own manual type (from the weapon SCUM gave it).
+                local own = ""
+                pcall(function()
+                    local m = a._weaponManual
+                    if m and valid(m) then own = full_name(m:GetClass()) end
+                end)
+                local pick, probes = nil, 0
+                for _, name in ipairs(p.order or { p.name }) do
+                    local known = manual_cache[name:lower()] ~= nil
+                    if known or probes < 4 then
+                        if not known then probes = probes + 1 end
+                        local mc = manual_of(name)
+                        if mc and mc == own then pick = name; break end
+                    end
+                end
+                if pos and pick then
+                    local ok, res, item = pcall(hold_weapon, a, h, pick, p.label, pos, olds)
+                    if not ok then lnote(p.label .. ": " .. pick .. " - error: " .. tostring(res))
                     elseif res and item then
-                        local okf, err = pcall(B.fit_weapon, item, p.name, p.loadout or {}, p.label, pos)
+                        B.weapon_chosen[h] = pick
+                        local lo = p.loadout or {}
+                        if pick ~= p.name then
+                            -- Another weapon than the member's pick: its scope is rolled anew.
+                            local lo2 = {}
+                            for k, v in pairs(lo) do lo2[k] = v end
+                            lo2.Tahtain = nil
+                            lo = lo2
+                        end
+                        local okf, err = pcall(B.fit_weapon, item, pick, lo, p.label, pos)
                         if not okf then lnote(p.label .. ": varustus - error: " .. tostring(err)) end
                     end
+                elseif pos then
+                    lnote(string.format("%s: oma ase pidetaan (kasikirja %s; listassa ei samaa tyyppia)",
+                        p.label, own:match("([%w_]+)$") or "-"))
                 end
             elseif now > p.deadline then
                 B.pending_weapons[h] = nil
@@ -2758,7 +2742,7 @@ function B.apply_loadout(handle, loadout, label)
         end
     end
     if w then
-        B.pending_weapons[handle] = { name = w, label = label, loadout = loadout,
+        B.pending_weapons[handle] = { name = w, order = order, label = label, loadout = loadout,
                                       deadline = os.time() + B.weapon_wait_sec }
         pcall(B.tick_weapons, os.time())
         given = given + 1
