@@ -35,18 +35,27 @@ function P.new_world(opts)
     }
 end
 
--- Spawn anchor: a passable point, preferring somewhere near a POI so groups
--- start their life somewhere plausible rather than in empty forest.
--- The south row (Z0-Z4) has fewer marked places than the rest of the map;
--- a place there is picked for a new squad more often, so the Z sectors are
--- as lively as the others.
-P.SECTOR_WEIGHT = { Z = 1.0 }
-P.OTHER_WEIGHT = 0.25
+-- Spawn anchor: a passable point near a POI, so groups start their life
+-- somewhere plausible rather than in empty forest. The sector is drawn
+-- first, every sector alike, then a place inside it: squads spread evenly
+-- over the map (the south row has fewer marked places than the middle, and
+-- drawing places alone left it nearly empty).
+local sector_keys = nil
 local function anchor_point(rng, allow_sector)
+    if not sector_keys then
+        sector_keys = {}
+        for k in pairs(POI.by_sector or {}) do sector_keys[#sector_keys + 1] = k end
+        table.sort(sector_keys)
+    end
     for _ = 1, 160 do
-        local poi = POI.points[rng:int(1, POI.count)]
-        local w = poi and (P.SECTOR_WEIGHT[tostring(poi.sector):sub(1, 1)] or P.OTHER_WEIGHT) or 0
-        if poi and not poi.blocked and rng:float() < w and (not allow_sector or allow_sector(poi)) then
+        local poi
+        if #sector_keys > 0 then
+            local list = POI.by_sector[sector_keys[rng:int(1, #sector_keys)]]
+            poi = list and list[rng:int(1, #list)]
+        else
+            poi = POI.points[rng:int(1, POI.count)]
+        end
+        if poi and not poi.blocked and (not allow_sector or allow_sector(poi)) then
             local ang = rng:float() * math.pi * 2
             local d = rng:range(0, poi.radius or 9000)
             local p = {
@@ -275,7 +284,7 @@ function P.merge_stragglers(world, log)
                         joiner.is_leader = false
                         host.members[#host.members + 1] = joiner
                         for i, m in ipairs(solo.members) do
-                            if m == joiner then table.remove(solo.members, i); break end
+                            if m == joiner then table.remove(solo.members, i); solo.merged_out = true; break end
                         end
                         host.level = Skills.group_level(host.members)
                         host.cohesion = U.clamp((host.cohesion or 0.7) - 0.08, 0, 1)
@@ -294,20 +303,26 @@ end
 
 -- Removes groups whose members are all dead. Dead NPCs are not automatically
 -- replaced; that is a deliberate default from the guide.
+-- Returns the number of squads removed, and how many of them were ordinary
+-- squads (not the radiation zone's or the island's, which come back on their
+-- own in their own place - ensure_reserved).
 function P.prune(world, log)
     local kept = {}
-    local removed = 0
+    local removed, ordinary = 0, 0
     for _, g in ipairs(world.groups) do
         if P.group_alive(g) then
             kept[#kept + 1] = g
         else
             world.by_gid[g.gid] = nil
             removed = removed + 1
+            local cls = GroupClasses.get(g.class)
+            -- A squad whose last man joined another was not wiped out.
+            if not (cls and cls.reserved_zone) and not g.merged_out then ordinary = ordinary + 1 end
             if log then log("group wiped out: " .. g.gid .. " (" .. g.class .. ")") end
         end
     end
     world.groups = kept
-    return removed
+    return removed, ordinary
 end
 
 -- A raised NPC target (config TargetNPCs) grows a saved world a few squads
@@ -332,10 +347,13 @@ function P.grow(world, log, max_groups)
     return added
 end
 
--- Optional respawn to keep the world from emptying out over weeks.
+-- A squad wiped out to the last man is replaced by a new squad of a random
+-- class (never the radiation zone's or the island's) somewhere random on the
+-- map (config EnableReplenish). Only the hard cap stops it.
+P.HARD_CAP = 250
 function P.replenish(world, log)
-    if P.alive_npc_count(world) >= world.target_npcs then return 0 end
-    local rng = RNG.new(world.seed + os.time())
+    if P.alive_npc_count(world) >= P.HARD_CAP then return 0 end
+    local rng = RNG.new(world.seed + os.time() + (world.next_group_id or 0))
     local pool = {}
     for _, g in ipairs(GroupClasses.general()) do
         pool[#pool + 1] = { key = g.key, weight = g.weight }

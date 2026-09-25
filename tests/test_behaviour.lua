@@ -393,7 +393,7 @@ do
         end
     end
     check(Population.alive_npc_count(world) >= 195, string.format("a world of %d NPCs", Population.alive_npc_count(world)))
-    check(z / all >= 0.25, string.format("the Z row holds its share of the squads (%d of %d)", z, all))
+    check(z / all >= 0.12, string.format("the Z row holds its share of the squads (%d of %d)", z, all))
     local w2 = Population.new_world({ seed = 32, target_npcs = 60 })
     Population.generate(w2)
     local n0 = Population.alive_npc_count(w2)
@@ -675,6 +675,29 @@ do
     end
     check(other == 0 and lv[4] > 10 and lv[5] > 10, string.format("militia are level 4-5 (%d / %d)", lv[4], lv[5]))
     check(bunker > n * 0.25 and bunker < n * 0.75, string.format("about half wear the bunker body (%d of %d)", bunker, n))
+end
+
+do
+    -- A squad wiped out is replaced by a new ordinary squad; a radiation
+    -- squad is not replaced here (it comes back in its own zone).
+    local world = Population.new_world({ seed = 61, target_npcs = 60 })
+    Population.generate(world)
+    local Groups = require("npc.groups")
+    local ord, rad = nil, nil
+    for _, g in ipairs(world.groups) do
+        local c = Groups.get(g.class)
+        if c and c.reserved_zone == nil and not ord then ord = g end
+        if g.class == "radiation_group" and not rad then rad = g end
+    end
+    for _, g in ipairs({ ord, rad }) do for _, m in ipairs(g.members) do m.alive = false end end
+    local n0 = #world.groups
+    local removed, ordinary = Population.prune(world)
+    check(removed == 2 and ordinary == 1, string.format("two squads wiped, one ordinary (%d, %d)", removed, ordinary))
+    local added = Population.replenish(world)
+    local newest = world.groups[#world.groups]
+    local c = Groups.get(newest.class)
+    check(added > 0 and #world.groups == n0 - 1 and not c.reserved_zone,
+          "the wiped ordinary squad is replaced by a random ordinary squad")
 end
 
 print("")

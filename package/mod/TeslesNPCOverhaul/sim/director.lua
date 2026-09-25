@@ -992,9 +992,11 @@ function D:tick(now)
     if self.ticks % 20 == 0 then
         Population.merge_stragglers(world, function(m) Log.event("JOINED", "", m) end)
     end
-    local removed = Population.prune(world, function(m) Log.event("WIPED", m, "") end)
-    if removed > 0 and self.cfg.EnableReplenish then
-        Population.replenish(world, function(m) Log.event("REPLENISH", m, "") end)
+    local removed, ordinary = Population.prune(world, function(m) Log.event("WIPED", m, "") end)
+    if (ordinary or 0) > 0 and self.cfg.EnableReplenish then
+        for _ = 1, ordinary do
+            Population.replenish(world, function(m) Log.event("REPLENISH", m, "") end)
+        end
     end
     return self.counters
 end

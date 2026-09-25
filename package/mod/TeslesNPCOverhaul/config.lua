@@ -1,12 +1,15 @@
 -- TESLES NPC OVERHAUL - server configuration.
 -- Distances are Unreal units unless a name says otherwise. 100 UU = 1 metre.
 return {
-    Version = "1.9.41",
+    Version = "1.9.42",
 
     -- ---------------------------------------------------------- population --
     Enabled = true,
     TargetNPCs = 200,               -- hard cap is 250
-    EnableReplenish = false,        -- dead NPCs are NOT auto-replaced by default
+    -- TAYDENNYS: kun kokonainen squad kuolee, jonnekin satunnaiseen paikkaan
+    -- tulee uusi satunnaisen tyyppinen squad (ei sateily- eika saariryhma;
+    -- C0:n ja Z4:n squadit palaavat aina omalle paikalleen).
+    EnableReplenish = true,
     WorldSeed = 0,                  -- 0 = derive from first start, then stored
 
     -- ---------------------------------------------------------------- tick --
