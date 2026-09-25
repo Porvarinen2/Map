@@ -1333,11 +1333,18 @@ function B.sees(handle, target, half_angle)
     end
     local k = get_kismet()
     if not k then return true end
-    local from = { X = p.X, Y = p.Y, Z = p.Z + 70 }
+    -- From just outside the NPC's own body towards the spot. No actor list
+    -- to ignore: handing UE4SS an actor inside that list crashed the server
+    -- (1.9.28, on join).
+    local dx, dy = target.X - p.X, target.Y - p.Y
+    local len = math.sqrt(dx * dx + dy * dy)
+    if len < 1 then return true end
+    local from = { X = p.X + dx / len * 80, Y = p.Y + dy / len * 80, Z = p.Z + 70 }
     local to = { X = target.X, Y = target.Y, Z = (target.Z or p.Z) + 40 }
+    crumb(string.format("LineTraceSingle sees %.0f %.0f -> %.0f %.0f", from.X, from.Y, to.X, to.Y))
     local ok, out, hit = pcall(function()
         local o = {}
-        local r = k:LineTraceSingle(B.get_world(), from, to, 0, false, { a }, 0, o, true,
+        local r = k:LineTraceSingle(B.get_world(), from, to, 0, false, {}, 0, o, true,
             { R = 0, G = 0, B = 0, A = 0 }, { R = 0, G = 0, B = 0, A = 0 }, 0)
         return o, r
     end)
@@ -2855,14 +2862,14 @@ end
 
 -- The floor right under a spot (a short trace: a roof or a tree above the
 -- body must not count).
-local function floor_under(pos, ignore)
+local function floor_under(pos)
     local k = get_kismet()
     if not k then return nil end
     local ok, out, hit = pcall(function()
         local o = {}
         local r = k:LineTraceSingle(B.get_world(),
             { X = pos.X, Y = pos.Y, Z = pos.Z + 80 }, { X = pos.X, Y = pos.Y, Z = pos.Z - 400 },
-            0, false, ignore or {}, 0, o, true, { R = 0, G = 0, B = 0, A = 0 }, { R = 0, G = 0, B = 0, A = 0 }, 0)
+            0, false, {}, 0, o, true, { R = 0, G = 0, B = 0, A = 0 }, { R = 0, G = 0, B = 0, A = 0 }, 0)
         return o, r
     end)
     if not ok or hit == false then return nil end
@@ -2949,13 +2956,11 @@ function B.ghost_drop(handle)
     local ok, where = false, "?"
     local ref = sane(hand) and hand or body
     if ref and name and name ~= "" then
-        -- The body is not the floor: the trace passes through it.
-        local ign = a and { a } or nil
         local at = { X = ref.X, Y = ref.Y, Z = ref.Z }
-        local z = floor_under(at, ign)
+        local z = floor_under(at)
         if not z and body then
             at = { X = body.X + 40, Y = body.Y, Z = body.Z }
-            z = floor_under(at, ign)
+            z = floor_under(at)
         end
         if z then
             -- Made above the floor (never inside the ground), then laid down.
