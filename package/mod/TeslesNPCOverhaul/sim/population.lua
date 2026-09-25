@@ -464,7 +464,7 @@ function P.deserialize(saved)
             -- one source of truth, and a much smaller save file.
             local npc = Factory.new_npc({
                 id = sm.id, seed = sm.seed, archetype = sm.archetype,
-                level = sm.level, name = sm.name, group_id = sg.gid,
+                level = cls.level or sm.level, name = sm.name, group_id = sg.gid,
             })
             npc.npcId = sm.npcId or npc.npcId
             npc.alive = sm.alive ~= false

@@ -80,6 +80,9 @@ G.list = {
     {
         key = "elite_unit", fi = "Eliittiyksikkö", size = { 3, 5 },
         archetypes = { "elite", "ex_military" },
+        -- The hardest squad: every member a level 5 Guard, about half of
+        -- them in the Abandoned Bunker body.
+        level = 5, bunker_share = 0.5,
         tactics = "elite", weight = 3,
         poi_weights = { MILITARY = 5.0, RESEARCH = 3.5, BUNKER = 3.0, ABANDONED_BUNKER = 2.4 },
     },

@@ -648,5 +648,24 @@ do
     check(not has_name(sv, "Weapon_SVD_Dragunov"), "no SVD is shown for a member whose own weapon is not a top one")
 end
 
+do
+    -- The elite are always level 5 Guards, about half in the bunker body.
+    local Factory = require("npc.factory")
+    local Physical = require("sim.physical")
+    local all5, bunker, n = true, 0, 0
+    for k = 1, 30 do
+        local g = Factory.new_group({ id = 900 + k, class = "elite_unit", seed = 4000 + k,
+            position = { X = 0, Y = 0, Z = 0 }, home = { X = 0, Y = 0, Z = 0 } })
+        for _, m in ipairs(g.members) do
+            n = n + 1
+            if m.level ~= 5 then all5 = false end
+            if Physical.body_family(m, g) ~= "Guard" then all5 = false end
+            if Physical.body_variant(g, m) == "AbandonedBunker" then bunker = bunker + 1 end
+        end
+    end
+    check(all5, "every elite member is a level 5 Guard")
+    check(bunker > n * 0.25 and bunker < n * 0.75, string.format("about half wear the bunker body (%d of %d)", bunker, n))
+end
+
 print("")
 os.exit(fails == 0 and 0 or 1)

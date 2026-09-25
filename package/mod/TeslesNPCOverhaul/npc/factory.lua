@@ -158,6 +158,7 @@ function F.new_group(opts)
             archetype = arch,
             seed = seed * 131 + i * 7919,
             group_id = group.gid,
+            level = cls.level,
         })
         group.members[i] = npc
     end

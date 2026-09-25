@@ -112,6 +112,10 @@ function Ph.body_variant(group, m)
     end
     local cls = GroupClasses.get(group.class)
     if cls and cls.variant then return cls.variant end
+    -- A share of the class in the Abandoned Bunker body, fixed per NPC.
+    if cls and cls.bunker_share and ((m.seed or m.id or 0) % 1000) / 1000 < cls.bunker_share then
+        return "AbandonedBunker"
+    end
     if group.class == "bunker_group" or m.archetype == "bunker_specialist" then
         return "AbandonedBunker"
     end
