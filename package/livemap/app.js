@@ -193,7 +193,10 @@ function zoomAt(sx, sy, factor) {
   const s = mapSize();
   const r = canvas.getBoundingClientRect();
   const minScale = Math.min(r.width / s.w, r.height / s.h) * 0.85;
-  view.scale = Math.max(minScale, Math.min(40, view.scale * factor));
+  // Deepest zoom: about 3 screen pixels per map pixel of the sharpest map
+  // (past that there is nothing more to see, only blur).
+  const maxScale = 3 * (tiles ? 1 : 14481 / s.w) / Math.max(1, (window.devicePixelRatio || 1) * 0.75);
+  view.scale = Math.max(minScale, Math.min(maxScale, view.scale * factor));
   const after = screenToImg(sx, sy);
   view.ox += (after.x - before.x) * view.scale;
   view.oy += (after.y - before.y) * view.scale;
@@ -207,6 +210,16 @@ function drawBase(r) {
   ctx.fillRect(0, 0, r.width, r.height);
   const s = mapSize();
   if (tiles) {
+    // The whole island at low detail first, so a tile still loading never
+    // leaves a black hole; the sharp tiles are painted over it.
+    if (mapReady && mapImg.naturalWidth && mapMips.length) {
+      const o0 = imgToScreen(0, 0);
+      const need0 = s.w * view.scale;
+      let pick0 = mapMips[0];
+      for (const m of mapMips) if (m.w >= need0 / 2) pick0 = m;
+      ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(pick0.img, o0.x, o0.y, s.w * view.scale, s.h * view.scale);
+    }
     drawTiles(r, s);
     const o = imgToScreen(0, 0);
     ctx.fillStyle = "rgba(6,8,12,.22)";
@@ -216,7 +229,7 @@ function drawBase(r) {
     const need = s.w * view.scale;
     let pick = mapMips[0] || { img: mapImg, w: s.w };
     for (const m of mapMips) if (m.w >= need) pick = m;
-    ctx.imageSmoothingEnabled = view.scale < 2;
+    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
     ctx.drawImage(pick.img, o.x, o.y, s.w * view.scale, s.h * view.scale);
     ctx.fillStyle = "rgba(6,8,12,.22)";
     ctx.fillRect(o.x, o.y, s.w * view.scale, s.h * view.scale);
@@ -255,18 +268,18 @@ function drawMissingMap(r) {
 // Picks the pyramid level whose pixels are closest to one screen pixel, then
 // paints only the tiles inside the viewport.
 function drawTiles(r, s) {
-  let best = tiles.levels[0], bestErr = Infinity;
-  for (const lv of tiles.levels) {
-    const need = Math.abs(Math.log2((lv.width / s.w) / view.scale));
-    if (need < bestErr) { bestErr = need; best = lv; }
-  }
+  // The smallest level with at least one image pixel per screen pixel
+  // (device pixels): sharp at every zoom, never more than needed.
+  const want = s.w * view.scale * (window.devicePixelRatio || 1);
+  let best = tiles.levels[tiles.levels.length - 1];
+  for (const lv of tiles.levels) { if (lv.width >= want * 0.9) { best = lv; break; } }
   const k = view.scale * (s.w / best.width);
   const ts = best.tile;
   const x0 = Math.max(0, Math.floor((-view.ox) / (ts * k)));
   const y0 = Math.max(0, Math.floor((-view.oy) / (ts * k)));
   const x1 = Math.min(best.cols - 1, Math.ceil((r.width - view.ox) / (ts * k)));
   const y1 = Math.min(best.rows - 1, Math.ceil((r.height - view.oy) / (ts * k)));
-  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
   for (let ty = y0; ty <= y1; ty++) {
     for (let tx = x0; tx <= x1; tx++) {
       const key = best.z + "/" + tx + "/" + ty;
@@ -279,8 +292,10 @@ function drawTiles(r, s) {
         tileCache.set(key, img);
       }
       if (img && img.complete && img.naturalWidth) {
-        ctx.drawImage(img, view.ox + tx * ts * k, view.oy + ty * ts * k,
-                      ts * k, ts * k);
+        // Half a pixel of overlap hides the seams between tiles.
+        const tw = img.naturalWidth * k, th = img.naturalHeight * k;
+        ctx.drawImage(img, view.ox + tx * ts * k - 0.25, view.oy + ty * ts * k - 0.25,
+                      tw + 0.5, th + 0.5);
       }
     }
   }
@@ -554,7 +569,9 @@ function drawGroup(g) {
     SHOCK: "rgba(255,255,255,.9)",
     SHAKEN: "rgba(255,150,60,.85)", TENSE: "rgba(240,200,80,.7)",
     ZOMBIES: "rgba(150,230,120,.9)", INVESTIGATE: "rgba(120,190,255,.85)",
-    AVOID: "rgba(200,170,255,.8)", HOLD: "rgba(200,200,200,.7)", COVER: "rgba(255,120,200,.9)" };
+    AVOID: "rgba(200,170,255,.8)", HOLD: "rgba(200,200,200,.7)", COVER: "rgba(255,120,200,.9)",
+    CHASE_PLAYER: "rgba(255,90,90,.9)", CHASE_ZOMBIE: "rgba(150,230,120,.9)", CHASE_ANIMAL: "rgba(190,220,110,.85)",
+    FIGHT: "rgba(255,70,70,.95)" };
   const mr = MOOD_RING[g.mood];
   if (mr) {
     ctx.beginPath();
@@ -588,16 +605,24 @@ function drawGroup(g) {
       ctx.lineWidth = 1; ctx.strokeStyle = "rgba(0,0,0,.7)"; ctx.stroke();
     }
   }
+  // A soft drop shadow, then the disc lit from the top-left.
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,.65)"; ctx.shadowBlur = 9; ctx.shadowOffsetY = 2;
   ctx.beginPath();
-  ctx.arc(p.x, p.y, r + 2, 0, Math.PI * 2);
-  ctx.fillStyle = "rgba(0,0,0,.45)";
+  ctx.arc(p.x, p.y, r + 1.5, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(8,10,14,.85)";
   ctx.fill();
+  ctx.restore();
+  const grad = ctx.createRadialGradient(p.x - r * 0.35, p.y - r * 0.4, r * 0.15, p.x, p.y, r);
+  grad.addColorStop(0, "rgba(255,255,255,.55)");
+  grad.addColorStop(0.35, col);
+  grad.addColorStop(1, col);
   ctx.beginPath();
   ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-  ctx.fillStyle = col;
+  ctx.fillStyle = grad;
   ctx.fill();
-  ctx.lineWidth = isSel ? 2.4 : 1;
-  ctx.strokeStyle = isSel ? "#fff" : "rgba(0,0,0,.65)";
+  ctx.lineWidth = isSel ? 2.4 : 1.2;
+  ctx.strokeStyle = isSel ? "#fff" : "rgba(0,0,0,.7)";
   ctx.stroke();
 
   // Member count badge
@@ -613,10 +638,14 @@ function drawGroup(g) {
     ctx.font = "11px Inter, sans-serif";
     ctx.textAlign = "left";
     const w = ctx.measureText(label).width;
-    ctx.fillStyle = "rgba(7,8,10,.82)";
-    ctx.fillRect(p.x + r + 5, p.y - 8, w + 8, 16);
-    ctx.fillStyle = "#e8eaee";
-    ctx.fillText(label, p.x + r + 9, p.y);
+    ctx.fillStyle = "rgba(7,8,10,.86)";
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(p.x + r + 6, p.y - 9, w + 12, 18, 6);
+    else ctx.rect(p.x + r + 6, p.y - 9, w + 12, 18);
+    ctx.fill();
+    ctx.strokeStyle = col; ctx.globalAlpha = 0.55; ctx.lineWidth = 1; ctx.stroke(); ctx.globalAlpha = 1;
+    ctx.fillStyle = "#eef0f3";
+    ctx.fillText(label, p.x + r + 12, p.y + 0.5);
   }
   ctx.restore();
 }

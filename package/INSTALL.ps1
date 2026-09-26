@@ -498,7 +498,7 @@ if (Test-Path $oldBoot) { Remove-Item $oldBoot -Force }
 Step 5 "Map"
 
 $mapDir = Join-Path $here 'livemap\map'
-$tileIdx = Join-Path $mapDir 'tiles\tiles.json'
+$tileIdx = Join-Path $mapDir 'tiles\meta.json'
 if ($NoMap) {
   Say "Skipped (-NoMap)." "Yellow"
 } elseif (Test-Path $tileIdx) {

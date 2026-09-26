@@ -1,4 +1,4 @@
-TESLES NPC OVERHAUL 2.0.0
+TESLES NPC OVERHAUL 2.0.1
 =========================
 
 Living squads for SCUM dedicated servers.
@@ -96,10 +96,9 @@ http://127.0.0.1:8777/  (START_LIVEMAP.bat starts it again if you closed it)
   or remove a squad.
 - The panel on the right shows what the mod has proven works on your server.
 
-Sharper map (optional): the package has a 2048 x 2048 map. For the full
-14k x 14k map by TripplExN, download it from
-  https://drive.google.com/file/d/1XqRochYxs4I5M1Lek0R-JWifUXXDwqVv/view
-save it as livemap\map\scum_map_hires.png and run tools\SETUP_HIRES_MAP.bat.
+The map is the full 14k x 14k island map by TripplExN, cut into tiles: it
+stays sharp down to single buildings. (The original image:
+https://drive.google.com/file/d/1XqRochYxs4I5M1Lek0R-JWifUXXDwqVv/view)
 
 
 IF NOTHING HAPPENS
@@ -117,7 +116,7 @@ Tools (in tools\):
                       SCUM build (-Auto finds them in SCUMServer.exe)
   INSTALL_UE4SS.bat   reinstall UE4SS (-ZipFile to use a downloaded zip)
   UPDATE_UE4SS.bat    get the newest UE4SS pre-release from GitHub
-  SETUP_HIRES_MAP.bat cut the 14k map into tiles for the live map
+  SETUP_HIRES_MAP.bat re-cut the map tiles from your own map image
 
 
 GOOD TO KNOW

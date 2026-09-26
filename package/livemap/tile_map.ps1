@@ -143,7 +143,7 @@ try {
 
   for ($z = 0; $z -lt $levels.Count; $z++) {
     $lw = $levels[$z]
-    Write-Host ("  Taso {0} : {1} x {1} ..." -f $z, $lw) -NoNewline
+    Write-Host ("  Level {0} : {1} x {1} ..." -f $z, $lw) -NoNewline
 
     $bmp = New-Object System.Windows.Media.Imaging.BitmapImage
     $bmp.BeginInit()
@@ -181,7 +181,7 @@ try {
     $bmp = $null
     [System.GC]::Collect()
     [System.GC]::WaitForPendingFinalizers()
-    Write-Host (" {0} ruutua" -f ($cols * $rows))
+    Write-Host (" {0} tiles" -f ($cols * $rows))
   }
 
   $json = $meta | ConvertTo-Json -Depth 5 -Compress
