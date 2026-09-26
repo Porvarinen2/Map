@@ -871,6 +871,12 @@ function B.spawn_npc(req)
 end
 
 function B.despawn(handle)
+    -- Its weapon stops firing first (a despawn must not leave a shot running).
+    local fw = B.firing and B.firing[handle]
+    if fw then
+        if valid(fw) then pcall(function() fw:StopFire() end) end
+        B.firing[handle] = nil
+    end
     local rec = handles[handle]
     if not rec then return false end
     crumb("K2_DestroyActor h" .. tostring(handle))

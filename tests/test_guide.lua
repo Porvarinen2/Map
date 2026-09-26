@@ -206,11 +206,14 @@ check(hi == "PHYSICAL" and d == 0, "korkeus ei vaikuta etaisyyteen")
 
 -- Exactly two states on either side of the line.
 check(Physical.wants_physical({ physical = false }, 99999), "99.99 m sisalla: fyysinen")
-check(not Physical.wants_physical({ physical = true }, 100001), "yli 1 km: virtuaalinen")
+check(not Physical.wants_physical({ physical = false }, 100001), "yli 1 km: ei fyysiseksi")
+-- A squad with bodies keeps them until 15 % past the line (no flicker).
+check(Physical.wants_physical({ physical = true }, 110000), "fyysinen ryhma pysyy 1.1 km:iin")
+check(not Physical.wants_physical({ physical = true }, 116000), "yli 1.15 km: virtuaalinen")
 -- A state younger than hold_sec is kept, so the edge does not flicker.
-check(Physical.wants_physical({ physical = true, lod_changed_at = 100 }, 100001, 105),
+check(Physical.wants_physical({ physical = true, lod_changed_at = 100 }, 120000, 105),
       "juuri spawnattu ryhma ei katoa heti reunalla")
-check(not Physical.wants_physical({ physical = true, lod_changed_at = 100 }, 100001, 111),
+check(not Physical.wants_physical({ physical = true, lod_changed_at = 100 }, 120000, 131),
       "pito-ajan jalkeen ryhma virtualisoituu")
 
 section("combat and buildings")

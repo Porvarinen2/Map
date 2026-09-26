@@ -17,7 +17,8 @@ local Ph = {}
 
 Ph.tuning = {
     render_uu = 100000,           -- 1 km render circle around each player
-    hold_sec = 10,                -- minimum time between state changes
+    hold_sec = 30,                -- minimum time between state changes
+    release_factor = 1.15,        -- bodies go only this much further out
     spawn_spacing_uu = 260,
     spawn_retry_sec = 25,
     -- One spawn per tick until this server has proven it can materialise an
@@ -60,7 +61,12 @@ end
 -- Inside the render circle: physical. Outside: virtual. A state younger than
 -- hold_sec is kept.
 function Ph.wants_physical(group, distance, now)
-    local inside = distance <= Ph.tuning.render_uu
+    -- A squad with bodies keeps them until it is clearly out of range (15 %
+    -- further): at the very edge it was made and removed every 10 s, and
+    -- the server crashed in one of those rounds (1.9.45).
+    local limit = Ph.tuning.render_uu
+    if group.physical then limit = limit * Ph.tuning.release_factor end
+    local inside = distance <= limit
     if now and group.lod_changed_at and inside ~= (group.physical == true)
         and now - group.lod_changed_at < Ph.tuning.hold_sec then
         return group.physical == true
