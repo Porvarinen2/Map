@@ -168,10 +168,22 @@ end
 -- it: 2.5 seconds for 130 KB on a desktop, about 8 seconds inside the server.
 -- That ran on the game thread every two seconds, and it is what the engine
 -- reported as a hung game thread.
+-- Only plain data is written. A table with a metatable is an engine value
+-- (a UE4SS struct or object wrapper) or a helper object (an RNG) - it is
+-- written as null: walking an engine wrapper broke the save now and then
+-- (1.9.45: "attempt to index a _UBOX*", a function in the output).
+local function plain(v)
+    local t = type(v)
+    if t == "table" then return getmetatable(v) == nil end
+    return t == "nil" or t == "boolean" or t == "number" or t == "string"
+end
+
 local function encode(v, buf)
     local n = #buf
     local tv = type(v)
-    if v == nil then
+    if not plain(v) then
+        buf[n + 1] = "null"
+    elseif v == nil then
         buf[n + 1] = "null"
     elseif tv == "boolean" then
         buf[n + 1] = v and "true" or "false"
@@ -199,12 +211,12 @@ local function encode(v, buf)
             local ks = U.keys(v)
             table.sort(ks, function(a, b) return tostring(a) < tostring(b) end)
             for _, k in ipairs(ks) do
-                local val = v[k]
-                local tval = type(val)
-                if tval ~= "function" and tval ~= "userdata" and tval ~= "thread" then
+                local val = rawget(v, k)
+                local tk = type(k)
+                if plain(val) and (tk == "string" or tk == "number") then
                     if not first then buf[#buf + 1] = "," end
                     first = false
-                    buf[#buf + 1] = '"' .. esc(k) .. '":'
+                    buf[#buf + 1] = '"' .. esc(tostring(k)) .. '":'
                     encode(val, buf)
                 end
             end

@@ -1006,6 +1006,15 @@ function D:tick(now)
         Population.ensure_reserved(world, function(m) Log.event("RESERVED", "", m) end)
         Population.ensure_custom(world, function(m) Log.event("OWN_CLASS", "", m) end)
         Population.grow(world, function(m) Log.event("GROW", "", m) end)
+        -- Keeping the island populated: while there are fewer NPCs than the
+        -- target, a couple of new ordinary squads a minute (a wiped squad
+        -- is also replaced at once, below).
+        if self.cfg.EnableReplenish then
+            for _ = 1, 2 do
+                if Population.alive_npc_count(world) >= (world.target_npcs or 0) then break end
+                if Population.replenish(world, function(m) Log.event("REPLENISH", m, "") end) == 0 then break end
+            end
+        end
     end
 
     -- Survivors band together before the empty group is pruned away.
