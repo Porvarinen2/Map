@@ -177,7 +177,7 @@ local function group_row(group, world)
 
     return {
         gid = group.gid,
-        name = group.name,
+        name = Lang.t(group.name),
         class = group.class,
         class_fi = cls and Lang.t(cls.fi) or group.class,
         tactics = group.tactics,

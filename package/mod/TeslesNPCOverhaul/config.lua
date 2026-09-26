@@ -1,7 +1,7 @@
 -- TESLES NPC OVERHAUL - server configuration.
 -- Distances are Unreal units unless a name says otherwise. 100 UU = 1 metre.
 return {
-    Version = "2.0.1",
+    Version = "2.0.2",
 
     -- Language of the live map and messages: "en" or "fi".
     Language = "en",
