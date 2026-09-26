@@ -81,7 +81,7 @@ function ConvertTo-Pattern($aob) {
   foreach ($tok in ($aob -split '\s+' | Where-Object { $_ })) {
     if ($tok -match '^\?\??$') { [void]$out.Add([short](-1)) }
     elseif ($tok -match '^[0-9A-Fa-f]{2}$') { [void]$out.Add([short][Convert]::ToInt32($tok, 16)) }
-    else { throw "Kelvoton tavu kuviossa: $tok" }
+    else { throw "Invalid byte in pattern: $tok" }
   }
   return ,([short[]]$out.ToArray())
 }
@@ -89,13 +89,13 @@ function ConvertTo-Pattern($aob) {
 function Invoke-AutoSignature($win64, $iniPath) {
   $exe = Join-Path $win64 'SCUMServer.exe'
   if (-not (Test-Path -LiteralPath $exe)) {
-    Say "SCUMServer.exe ei loydy: $exe" "Red"
+    Say "SCUMServer.exe not found: $exe" "Red"
     return
   }
   Write-Host ""
-  Say "Etsitaan FText::FText(FString&&) suoraan palvelimen exe:sta." "Cyan"
-  Say "Tiedosto: $exe" "DarkGray"
-  Say ("Koko    : {0:N0} tavua" -f (Get-Item $exe).Length) "DarkGray"
+  Say "Looking for FText::FText(FString&&) in the server exe." "Cyan"
+  Say "File: $exe" "DarkGray"
+  Say ("Size: {0:N0} bytes" -f (Get-Item $exe).Length) "DarkGray"
   Write-Host ""
 
   $bytes = [System.IO.File]::ReadAllBytes($exe)
@@ -107,12 +107,12 @@ function Invoke-AutoSignature($win64, $iniPath) {
     $hits = [TeslesAob]::Find($bytes, $pat, 2)
     $short = if ($aob.Length -gt 46) { $aob.Substring(0, 46) + "..." } else { $aob }
     if ($hits.Count -eq 1) {
-      Say ("{0,2}. yksi osuma  0x{1:X}  {2}" -f $i, $hits[0], $short) "Green"
+      Say ("{0,2}. one match   0x{1:X}  {2}" -f $i, $hits[0], $short) "Green"
       $unique += [pscustomobject]@{ aob = $aob; offset = $hits[0] }
     } elseif ($hits.Count -eq 0) {
-      Say ("{0,2}. ei osumia   {1}" -f $i, $short) "DarkGray"
+      Say ("{0,2}. no match    {1}" -f $i, $short) "DarkGray"
     } else {
-      Say ("{0,2}. monta osumaa {1}" -f $i, $short) "DarkGray"
+      Say ("{0,2}. many matches {1}" -f $i, $short) "DarkGray"
     }
   }
   $bytes = $null
@@ -120,24 +120,24 @@ function Invoke-AutoSignature($win64, $iniPath) {
 
   Write-Host ""
   if ($unique.Count -eq 0) {
-    Say "Yksikaan tunnettu kuvio ei osu tahan exe:hen yksiselitteisesti." "Red"
-    Say "Talle palvelimen buildille tarvitaan oma tavukuvio. Se pitaa" "Yellow"
-    Say "etsia purkamalla exe (IDA/Ghidra) - arvaus kaataisi palvelimen." "Yellow"
+    Say "No known pattern matches this exe unambiguously." "Red"
+    Say "This server build needs its own byte pattern, found by" "Yellow"
+    Say "disassembling the exe (IDA/Ghidra) - a guess would crash the server." "Yellow"
     return
   }
 
   $offsets = @($unique | ForEach-Object { $_.offset } | Sort-Object -Unique)
   if ($offsets.Count -gt 1) {
-    Say "Kuviot ovat eri mielta funktion osoitteesta:" "Red"
+    Say "The patterns disagree about the function's address:" "Red"
     foreach ($o in $offsets) { Say ("  0x{0:X}" -f $o) "Red" }
-    Say "Yhtakaan ei kirjoiteta - vaara osoite kaataisi palvelimen." "Yellow"
+    Say "Nothing is written - a wrong address would crash the server." "Yellow"
     return
   }
 
   # Several candidates matching the same single address is the strongest signal
   # available without symbols; pick the longest, it has the fewest wildcards.
   $best = $unique | Sort-Object { $_.aob.Length } -Descending | Select-Object -First 1
-  Say ("Kaikki {0} osuvaa kuviota osoittavat samaan kohtaan: 0x{1:X}" -f
+  Say ("All {0} matching patterns point to the same place: 0x{1:X}" -f
        $unique.Count, $best.offset) "Green"
 
   $sigDir = Join-Path (Split-Path $iniPath -Parent) 'UE4SS_Signatures'
@@ -156,9 +156,9 @@ function Invoke-AutoSignature($win64, $iniPath) {
     "end"
   ) | Set-Content -LiteralPath $sigFile -Encoding ASCII
   Write-Host ""
-  Say "Kirjoitettu: $sigFile" "Green"
-  Say "Kaynnista palvelin ja aja lisatyokalut\CHECK.bat." "Cyan"
-  Say "Peruminen: lisatyokalut\FIX_UE4SS_SCAN.bat -Revert" "DarkGray"
+  Say "Written: $sigFile" "Green"
+  Say "Start the server and run tools\CHECK.bat." "Cyan"
+  Say "To undo: tools\FIX_UE4SS_SCAN.bat -Revert" "DarkGray"
 }
 
 
@@ -199,17 +199,17 @@ function Get-IniValue {
 
 try {
   Write-Host ""
-  Write-Host "  UE4SS - skannauskorjaus" -ForegroundColor Yellow
+  Write-Host "  UE4SS - scan fix" -ForegroundColor Yellow
   Write-Host "  -----------------------"
 
   if (Get-Process -Name "SCUMServer" -ErrorAction SilentlyContinue) {
-    Say "SCUMServer on kaynnissa. Sammuta palvelin ensin." "Red"
+    Say "SCUMServer is running. Stop the server first." "Red"
     return
   }
 
   if (-not $Win64) { $Win64 = Find-ServerWin64 }
   if (-not $Win64 -or -not (Test-Path $Win64)) {
-    Say "Palvelimen Win64-kansiota ei loytynyt. Anna se -Win64 parametrilla." "Red"
+    Say "The server's Win64 folder was not found. Give it with -Win64." "Red"
     return
   }
 
@@ -219,10 +219,10 @@ try {
     if (Test-Path $p) { $ini = $p; break }
   }
   if (-not $ini) {
-    Say "UE4SS-settings.ini ei loydy kansiosta $Win64" "Red"
+    Say "UE4SS-settings.ini not found in $Win64" "Red"
     return
   }
-  Say "Asetustiedosto: $ini"
+  Say "Settings file: $ini"
   $backup = "$ini.tesles-backup"
 
   # ------------------------------------------------------------- revert ----
@@ -231,7 +231,7 @@ try {
     if (Test-Path $backup) {
       Copy-Item $backup $ini -Force
       Remove-Item $backup -Force
-      Say "Alkuperaiset asetukset palautettiin." "Green"
+      Say "The original settings were restored." "Green"
       $did = $true
     }
     foreach ($c in @('Mods\cache', 'cache', 'ue4ss\cache')) {
@@ -240,7 +240,7 @@ try {
       if (Test-Path "$p.tesles-backup") {
         if (Test-Path $p) { Remove-Item $p -Recurse -Force -ErrorAction SilentlyContinue }
         Move-Item "$p.tesles-backup" $p -Force -ErrorAction SilentlyContinue
-        Say "AOB-valimuisti palautettiin: $p" "Green"
+        Say "AOB cache restored: $p" "Green"
         $did = $true
       }
     }
@@ -251,11 +251,11 @@ try {
               Where-Object { (Get-Content $_.FullName -TotalCount 1) -match 'TESLES' }
       foreach ($f in $mine) {
         Remove-Item $f.FullName -Force
-        Say "Poistettu signature-ohitus: $($f.Name)" "Green"
+        Say "Removed signature override: $($f.Name)" "Green"
         $did = $true
       }
     }
-    if (-not $did) { Say "Mitaan palautettavaa ei loytynyt." "Yellow" }
+    if (-not $did) { Say "Nothing to restore." "Yellow" }
     return
   }
 
@@ -268,8 +268,8 @@ try {
   # --------------------------------------------------- signature override --
   if ($Signature) {
     if (-not $Aob) {
-      Say "-Signature vaatii myos -Aob tavukuvion." "Red"
-      Say 'Esim: -Signature FText_Constructor -Aob "48 89 5C 24 ?? 57 48 83 EC 20"' "Yellow"
+      Say "-Signature also needs an -Aob byte pattern." "Red"
+      Say 'E.g.: -Signature FText_Constructor -Aob "48 89 5C 24 ?? 57 48 83 EC 20"' "Yellow"
       return
     }
     $sigDir = Join-Path (Split-Path $ini -Parent) 'UE4SS_Signatures'
@@ -286,23 +286,23 @@ try {
       "    return MatchAddress",
       "end"
     ) | Set-Content -LiteralPath $sigFile -Encoding ASCII
-    Say "Kirjoitettu: $sigFile" "Green"
-    Say "Kaynnista palvelin ja katso UE4SS.log."
+    Say "Written: $sigFile" "Green"
+    Say "Start the server and look at UE4SS.log."
     return
   }
 
   # ------------------------------------------------------------- apply -----
   if (-not (Test-Path $backup)) {
     Copy-Item $ini $backup -Force
-    Say "Varmuuskopio: $backup"
+    Say "Backup: $backup"
   } else {
-    Say "Varmuuskopio oli jo olemassa - sailytetaan alkuperainen." "DarkGray"
+    Say "A backup already exists - keeping the original." "DarkGray"
   }
 
   $lines = @(Get-Content -LiteralPath $ini)
   $threadsBefore = Get-IniValue $lines 'SigScannerNumThreads'
   $secsBefore = Get-IniValue $lines 'SecondsToScanBeforeGivingUp'
-  Say "Ennen: SigScannerNumThreads = $threadsBefore, SecondsToScanBeforeGivingUp = $secsBefore"
+  Say "Before: SigScannerNumThreads = $threadsBefore, SecondsToScanBeforeGivingUp = $secsBefore"
 
   $r = Set-IniValue $lines 'SigScannerNumThreads' '1'
   $lines = $r.lines
@@ -325,7 +325,7 @@ try {
   if ($ServerTuning) {
     $r = Set-IniValue $lines 'GuiConsoleEnabled' '0'
     $lines = $r.lines
-    if ($r.changed) { $applied += "GuiConsoleEnabled = 0  (headless-palvelin)" }
+    if ($r.changed) { $applied += "GuiConsoleEnabled = 0  (headless server)" }
   }
 
   Set-Content -LiteralPath $ini -Value $lines -Encoding UTF8
@@ -344,29 +344,29 @@ try {
 
   Write-Host ""
   if ($applied.Count -eq 0) {
-    Say "Mitaan ei muutettu - avaimia ei loytynyt tiedostosta." "Yellow"
+    Say "Nothing changed - the keys were not in the file." "Yellow"
   } else {
-    Say "Muutettu:" "Green"
+    Say "Changed:" "Green"
     foreach ($a in $applied) { Say "  $a" "Green" }
-    if ($cleared -gt 0) { Say "  AOB-valimuisti tyhjennettiin ($cleared kansiota)" "Green" }
+    if ($cleared -gt 0) { Say "  AOB cache cleared ($cleared folders)" "Green" }
   }
 
   Write-Host ""
-  Say "Kaynnista palvelin ja ODOTA $ScanSeconds sekuntia ennen lisatyokalut\CHECK.bat:ia." "Cyan"
-  Say "Yksi saie skannaa hitaammin, joten lopputulos nakyy vasta aikarajan"
-  Say "jalkeen. Sita ennen CHECK nayttaa tilan SCANNING, mika on normaalia."
+  Say "Start the server and WAIT $ScanSeconds seconds before tools\CHECK.bat." "Cyan"
+  Say "One thread scans slower, so the result only shows after the time"
+  Say "limit. Until then CHECK shows SCANNING, which is normal."
   Write-Host ""
-  Say "Jos UE4SS yha kaatuu samaan riviin, skannaus ei ollut saikeiden vika:"
-  Say "  lisatyokalut\INSTALL_UE4SS.bat -Force -Experimental" "Cyan"
+  Say "If UE4SS still stops at the same line, the threads were not the cause:"
+  Say "  tools\INSTALL_UE4SS.bat -Force -Experimental" "Cyan"
   Write-Host ""
-  Say "Peruminen: lisatyokalut\FIX_UE4SS_SCAN.bat -Revert" "DarkGray"
+  Say "To undo: tools\FIX_UE4SS_SCAN.bat -Revert" "DarkGray"
   Write-Host ""
 }
 catch {
   Write-Host ""
-  Say "VIRHE: $($_.Exception.Message)" "Red"
+  Say "ERROR: $($_.Exception.Message)" "Red"
   if ($_.InvocationInfo) {
-    Say "Rivi $($_.InvocationInfo.ScriptLineNumber): $($_.InvocationInfo.Line.Trim())" "DarkGray"
+    Say "Line $($_.InvocationInfo.ScriptLineNumber): $($_.InvocationInfo.Line.Trim())" "DarkGray"
   }
   Write-Host ""
 }

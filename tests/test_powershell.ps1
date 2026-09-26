@@ -46,7 +46,7 @@ $empty = Join-Path ([System.IO.Path]::GetTempPath()) ("tesles_ue4ss_" + [guid]::
 New-Item -ItemType Directory -Path $empty -Force | Out-Null
 $h2 = Get-UE4SSHealth $empty
 Check ($h2.verdict -eq "NO_LOG") "a missing log is reported as NO_LOG (got $($h2.verdict))"
-Check (($h2.action -join " ") -like "*proxy-DLL*") "a missing loader is named as the likely cause"
+Check (($h2.action -join " ") -like "*proxy DLL*") "a missing loader is named as the likely cause"
 
 # A healthy server that started the mod.
 $good = Join-Path ([System.IO.Path]::GetTempPath()) ("tesles_ue4ss_" + [guid]::NewGuid().ToString("N"))
@@ -113,10 +113,19 @@ Set-Content (Join-Path $modsDir "mods.txt") `
 New-Item -ItemType Directory -Path (Join-Path $modsDir "SomeThirdPartyMod") -Force | Out-Null
 Set-Content (Join-Path (Join-Path $modsDir "SomeThirdPartyMod") "enabled.txt") ""
 
+# By default other people's mods are left alone.
+& (Join-Path $pkg "INSTALL.ps1") -ServerRoot (Join-Path $lab "server") `
+  -SkipUE4SS -NoMap -Yes -NoPause | Out-Null
+$mt1 = Get-Content (Join-Path $modsDir "mods.txt")
+Check (($mt1 | Where-Object { $_ -match '^SomeThirdPartyMod\s*:\s*1' }).Count -eq 1) `
+      "by default a third-party Lua mod stays on"
+Get-ChildItem (Join-Path (Join-Path $lab "server") "TeslesNPCOverhaul_Backups") -Directory -ErrorAction SilentlyContinue |
+  Remove-Item -Recurse -Force
+
 # -SkipUE4SS: the loader install is exercised above from a fixed zip, and the
 # one-click path must not depend on GitHub inside the test.
 & (Join-Path $pkg "INSTALL.ps1") -ServerRoot (Join-Path $lab "server") `
-  -SkipUE4SS -NoMap -Yes -NoPause | Out-Null
+  -SkipUE4SS -NoMap -Yes -NoPause -DisableOtherMods | Out-Null
 
 $modDir = Join-Path $modsDir "TeslesNPCOverhaul"
 Check (Test-Path (Join-Path (Join-Path $modDir "Scripts") "main.lua")) "the mod's entry point is installed"
@@ -131,8 +140,7 @@ Check ((Get-ChildItem $modDir -Recurse -File).Count -ge 30) `
 Check (Test-Path (Join-Path (Join-Path $pkg "livemap") "livemap_paths.txt")) `
       "the live map is pointed at the mod's output folder"
 
-# The user asked for one installer that also makes sure nothing else runs
-# alongside this mod.
+# -DisableOtherMods makes sure nothing else runs alongside this mod.
 Check (($mt2 | Where-Object { $_ -match '^SomeThirdPartyMod\s*:\s*0' }).Count -eq 1) `
       "a third-party Lua mod is switched off"
 Check (($mt2 | Where-Object { $_ -match '^Keybinds\s*:\s*0' }).Count -eq 1) `
@@ -157,76 +165,36 @@ Set-Content -LiteralPath (Join-Path (Join-Path $modDir "output") "live_state.jso
 Set-Content -LiteralPath (Join-Path (Join-Path $modDir "output") "director.log") -Value "LOG"
 Set-Content -LiteralPath (Join-Path (Join-Path $modDir "output") "boot.log") -Value "STALE"
 Set-Content (Join-Path (Join-Path $modDir "state") "world_state.json") '{"groups":[]}'
-# An owner's gear file from 1.6.0: their own line, no KAIKKI section.
+# An owner's files from before 2.0 (Finnish names) become loadouts.lua and
+# squads.lua, with their own lines.
 Set-Content -LiteralPath (Join-Path $modDir "varusteet.lua") -Value @"
 return {
+    KAIKKI = {},
     police_patrol = { Clothes = { "My_Own_Shirt" }, Weapons = {}, Items = {} },
 }
 "@
 Set-Content -LiteralPath (Join-Path $modDir "ryhmat.lua") -Value 'return { { avain = "omat_testit" } }'
 & (Join-Path $pkg "INSTALL.ps1") -ServerRoot (Join-Path $lab "server") `
   -SkipUE4SS -NoMap -Yes -NoPause | Out-Null
-$gear = Get-Content -Raw (Join-Path $modDir "varusteet.lua")
-Check ($gear -match 'My_Own_Shirt') "a reinstall keeps the owner's own gear lines"
-Check ($gear -match 'KAIKKI') `
-      "an old varusteet.lua gets the (empty) KAIKKI section"
-Check ((Get-Content -Raw (Join-Path $modDir "ryhmat.lua")) -match 'omat_testit') `
-      "a reinstall keeps the owner's own squad classes"
-# The shipped example classes (firefighters, doctors) leave the owner's file.
-Set-Content -LiteralPath (Join-Path $modDir "ryhmat.lua") -Value @"
-return {
-    {
-        avain = "palomiehet",
-        koko = { 2, 4 },
-        kohteet = { CITY = 4, INDUSTRIAL = 3 },
-    },
-    {
-        avain = "laakarit",
-        tausta = { "civilian", "survivor" },
-    },
-    { avain = "omat_testit" },
-}
-"@
+Check (-not (Test-Path (Join-Path $modDir "varusteet.lua")) -and
+       ((Get-Content -Raw (Join-Path $modDir "loadouts.lua")) -match 'My_Own_Shirt')) `
+      "an old varusteet.lua becomes loadouts.lua with the owner's lines"
+Check (-not (Test-Path (Join-Path $modDir "ryhmat.lua")) -and
+       ((Get-Content -Raw (Join-Path $modDir "squads.lua")) -match 'omat_testit')) `
+      "an old ryhmat.lua becomes squads.lua with the owner's classes"
+# The owner's config values survive an update.
+$cfgPath = Join-Path $modDir "config.lua"
+$cfg = (Get-Content -Raw $cfgPath) -replace 'Language = "en"', 'Language = "fi"' -replace 'TargetNPCs = 200', 'TargetNPCs = 150'
+[System.IO.File]::WriteAllText($cfgPath, $cfg)
 & (Join-Path $pkg "INSTALL.ps1") -ServerRoot (Join-Path $lab "server") `
   -SkipUE4SS -NoMap -Yes -NoPause | Out-Null
-$gr = Get-Content -Raw (Join-Path $modDir "ryhmat.lua")
-$grKeys = "omat_testit"
-if (Get-Command lua5.4 -ErrorAction SilentlyContinue) {
-  $gp = (Join-Path $modDir "ryhmat.lua") -replace '\\','/'
-  $grKeys = (& lua5.4 -e "local o = {} for _, d in ipairs(dofile('$gp')) do o[#o + 1] = d.avain end print(table.concat(o, ','))")
-}
-Check ($gr -notmatch 'palomiehet|laakarit' -and $grKeys -eq "omat_testit") `
-      "the example classes leave ryhmat.lua, the owner's own class stays"
-# The gear file must still be valid Lua after the insert.
-$luaOk = $true
-if (Get-Command lua5.4 -ErrorAction SilentlyContinue) {
-  & lua5.4 -e "assert(loadfile('$((Join-Path $modDir 'varusteet.lua') -replace '\\','/')'))" 2>$null
-  $luaOk = ($LASTEXITCODE -eq 0)
-}
-Check $luaOk "and the patched varusteet.lua still loads"
-# Every earlier test block (ghillie, M1911 with an empty list after it,
-# SCAR + Asu) is emptied; the owner's own lines stay.
-function Get-LuaKaikkiCount($path) {
-  if (-not (Get-Command lua5.4 -ErrorAction SilentlyContinue)) { return "0" }
-  $p = $path -replace '\\','/'
-  return (& lua5.4 -e "local n = 0 for _ in pairs(dofile('$p').KAIKKI) do n = n + 1 end print(n)")
-}
-foreach ($kaikki in @(
-    '        Clothes = { "Ghillie_Suit_Pants_01" },`n        Weapons = {},`n        Items = {},',
-    '        Weapons = { "Weapon_M1911" },`n        Weapons = {},`n        Items = {},',
-    '        Asu = 0,`n        Weapons = { "Weapon_SCAR_DMR", "Weapon_AS_Val" },')) {
-  $body = $kaikki -replace '`n', "`n"
-  Set-Content -LiteralPath (Join-Path $modDir "varusteet.lua") -Value ("return {`n    KAIKKI = {`n" + $body + "`n    },`n    police_patrol = { Clothes = { `"My_Own_Shirt`" } },`n}")
-  & (Join-Path $pkg "INSTALL.ps1") -ServerRoot (Join-Path $lab "server") `
-    -SkipUE4SS -NoMap -Yes -NoPause | Out-Null
-  $gear = Get-Content -Raw (Join-Path $modDir "varusteet.lua")
-  Check ((Get-LuaKaikkiCount (Join-Path $modDir "varusteet.lua")) -eq "0" -and $gear -match 'My_Own_Shirt' -and
-         $gear -notmatch 'Ghillie|SCAR|M1911|Asu') `
-        ("an old test block is emptied, the owner's lines stay: " + ($body -split "`n")[0].Trim())
-}
+$cfg2 = Get-Content -Raw $cfgPath
+Check ($cfg2 -match 'Language = "fi"' -and $cfg2 -match 'TargetNPCs = 150') `
+      "an update keeps the owner's Language and TargetNPCs"
+$gear = Get-Content -Raw (Join-Path $modDir "loadouts.lua")
 & (Join-Path $pkg "INSTALL.ps1") -ServerRoot (Join-Path $lab "server") `
   -SkipUE4SS -NoMap -Yes -NoPause | Out-Null
-$gear2 = Get-Content -Raw (Join-Path $modDir "varusteet.lua")
+$gear2 = Get-Content -Raw (Join-Path $modDir "loadouts.lua")
 Check ($gear2 -eq $gear) "a second install changes nothing more"
 
 # DIAGNOSE packs the gear files and the gear log.
@@ -240,8 +208,8 @@ if ($dz) {
   $za = [System.IO.Compression.ZipFile]::OpenRead($dz.FullName)
   $names = $za.Entries | ForEach-Object { $_.Name }
   $za.Dispose()
-  Check ($names -contains "varusteet.lua") "the diagnostics zip carries varusteet.lua"
-  Check ($names -contains "ryhmat.lua") "and ryhmat.lua"
+  Check ($names -contains "loadouts.lua") "the diagnostics zip carries loadouts.lua"
+  Check ($names -contains "squads.lua") "and squads.lua"
   Check ($names -contains "npc_loadout.txt") "and the gear log"
   Remove-Item $dz.FullName -Force
 }
@@ -403,7 +371,7 @@ for ($i = 1; $i -le 40; $i++) {
 $scanLines | Set-Content (Join-Path $sp "UE4SS.log")
 $hs2 = Get-UE4SSHealth $sp
 Check ($hs2.verdict -eq "SCANNING") "an unfinished scan reports SCANNING, not a failure (got $($hs2.verdict))"
-Check ((($hs2.action -join " ") -match "Odota")) "the advice says to wait, not to change anything"
+Check ((($hs2.action -join " ") -match "Wait")) "the advice says to wait, not to change anything"
 Check ($hs2.logLastEntry -ne $null) "the last timestamp is read from inside the log"
 
 # The same log with the fatal line appended is a failure again.

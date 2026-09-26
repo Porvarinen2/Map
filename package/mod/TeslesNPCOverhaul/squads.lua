@@ -1,0 +1,34 @@
+-- TESLES NPC OVERHAUL - your own squad types
+--
+-- This file is KEPT on updates: INSTALL.bat never overwrites it.
+-- A new squad type = a new { ... } block in the list below. After a server
+-- restart the squads appear on the map, can be spawned from the live map's
+-- right-click menu, and can get their own weapons in loadouts.lua under the
+-- same key.
+--
+-- Fields (only key is required):
+--   key          id, lower case letters and _ (e.g. "guards")
+--   name         name shown on the map
+--   size         { smallest, largest } number of members, 1-5
+--   archetypes   who the squad is made of: civilian, scavenger, survivor,
+--                hunter, bandit, police, security, militia, ex_military,
+--                veteran, radiation_specialist, bunker_specialist, elite
+--   poi_weights  where the squad goes and how gladly (bigger = more often):
+--                CITY, VILLAGE, HUNTING, MILITARY, BUNKER, ABANDONED_BUNKER,
+--                RESEARCH, INDUSTRIAL, MEDICAL, LANDMARK
+--   count        how many squads of this type are always on the map (default 1)
+--   body         "Guard" or "Drifter" (SCUM's NPC model)
+--   hostile_to   list of squad types it is extra hostile to
+--   authority    true = bandits hate it most
+--   color        colour on the map, e.g. "#ff8040"
+-- Example:
+--   {
+--       key = "guards",
+--       name = "Guards",
+--       size = { 2, 4 },
+--       archetypes = { "security" },
+--       poi_weights = { CITY = 4, INDUSTRIAL = 3 },
+--       count = 2,
+--   },
+return {
+}

@@ -700,5 +700,25 @@ do
           "the wiped ordinary squad is replaced by a random ordinary squad")
 end
 
+do
+    -- The public build speaks English; "fi" keeps the Finnish names.
+    local Lang = require("core.lang")
+    local was = Lang.lang
+    Lang.lang = "en"
+    check(Lang.t("Rosvojoukko") == "Bandit gang" and Lang.t("Matkalla: A1 Village 1") == "Travelling: A1 Village 1"
+          and Lang.t("Lähestyy pelaajaa") == "Closing in on a player", "labels are shown in English")
+    Lang.lang = "fi"
+    check(Lang.t("Rosvojoukko") == "Rosvojoukko", "and in Finnish when the config says fi")
+    Lang.lang = was
+    local Groups = require("npc.groups")
+    Lang.lang = "en"
+    local missing = {}
+    for _, c in ipairs(Groups.list) do if Lang.t(c.fi) == c.fi and not c.custom then missing[#missing + 1] = c.fi end end
+    for _, t in pairs(require("sim.behaviour").MOOD_FI) do if Lang.t(t) == t then missing[#missing + 1] = t end end
+    for _, t in pairs(require("sim.activity").fi) do if Lang.t(t) == t then missing[#missing + 1] = t end end
+    Lang.lang = was
+    check(#missing == 0, "every class, mood and activity has an English name (" .. table.concat(missing, ", ") .. ")")
+end
+
 print("")
 os.exit(fails == 0 and 0 or 1)

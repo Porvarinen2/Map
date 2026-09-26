@@ -13,8 +13,8 @@ $MOD = "TeslesNPCOverhaul"
 function Say($t, $c = "Gray") { Write-Host "  $t" -ForegroundColor $c }
 
 Write-Host ""
-Write-Host "  TESLES NPC OVERHAUL - diagnostiikka" -ForegroundColor Yellow
-Write-Host "  ==================================="
+Write-Host "  TESLES NPC OVERHAUL - diagnostics" -ForegroundColor Yellow
+Write-Host "  ================================="
 Write-Host ""
 
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
@@ -71,7 +71,7 @@ if ($out) {
   }
 
   # The owner's own gear and squad files, as the mod reads them.
-  foreach ($f in @("varusteet.lua", "ryhmat.lua")) {
+  foreach ($f in @("loadouts.lua", "squads.lua", "config.lua")) {
     $p = Join-Path (Split-Path $out -Parent) $f
     if (Test-Path $p) {
       Copy-Item $p (Join-Path $tmp $f) -Force
@@ -157,7 +157,7 @@ if ($out) {
     }
   } else {
     $report += ""
-    $report += "--- SCUM server log: ei loytynyt (SCUM\Saved\Logs) ---"
+    $report += "--- SCUM server log: not found (SCUM\Saved\Logs) ---"
   }
   if ($health.logPath -and (Test-Path $health.logPath)) {
     # Copy a bounded slice; the scan loop makes these files enormous.
@@ -206,10 +206,10 @@ $zip = Join-Path $here "TeslesNPC_Diagnostics_$stamp.zip"
 Compress-Archive -Path (Join-Path $tmp '*') -DestinationPath $zip -Force
 Remove-Item $tmp -Recurse -Force
 
-Say "Raportti: $zip" "Green"
+Say "Report: $zip" "Green"
 if ($health) { Write-UE4SSHealth $health }
-Say "Modin oma tila:" "Cyan"
+Say "The mod's own status:" "Cyan"
 $report | Where-Object { $_ -match "^--- (boot|director)\.log" } |
   ForEach-Object { Write-Host "    $_" }
 Write-Host ""
-if (-not $NoPause) { Read-Host "  Enter sulkee" }
+if (-not $NoPause) { Read-Host "  Press Enter to close" }

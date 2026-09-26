@@ -1437,7 +1437,7 @@ local function tune_sight(a)
     local upd = perc and valid(perc) and pcall(function() perc:RequestStimuliListenerUpdate() end)
     if not sight_logged then
         sight_logged = true
-        B.loadout_note(string.format("NPC:n nako: ennen %s (sade/katoaa/kulma), nyt %.0f/%.0f/%.0f, paivitys %s",
+        B.loadout_note(string.format("NPC sight: before %s (radius/lose/angle), now %.0f/%.0f/%.0f, update %s",
             tostring(before), radius, radius + 2000, angle, tostring(upd)))
     end
 end
@@ -2583,7 +2583,7 @@ local function load_rounds(obj, want, cap_fn)
             return n, wdef[1]
         end
     end
-    return 0, "ei mikaan tapa"
+    return 0, "no way worked"
 end
 
 -- The NPC is dead: its weapon must not be empty - it should look used, not
@@ -2612,16 +2612,16 @@ function B.top_up(handle)
             pcall(function() cap = tonumber(mag._capacity) or 0 end)
             local want = some_rounds(cap > 0 and cap or 10)
             call_ok(mag, "FillWithDefaultAmmo", want)
-            note = string.format("lipas 0 -> %s", tostring(num(mag, "GetAmmoCount")))
+            note = string.format("magazine 0 -> %s", tostring(num(mag, "GetAmmoCount")))
         end
     elseif Weapons.magazine_for(name) == nil then
         local n = num(w, "GetAmmoCount") or 0
         if n == 0 then
             call_ok(w, "FillUpWithDefaultAmmo")
-            note = string.format("sisainen 0 -> %s", tostring(num(w, "GetAmmoCount")))
+            note = string.format("internal 0 -> %s", tostring(num(w, "GetAmmoCount")))
         end
     end
-    if note then lnote(string.format("%s: kuoli, %s: %s", tostring(rec.npcId), name, note)) end
+    if note then lnote(string.format("%s: died, %s: %s", tostring(rec.npcId), name, note)) end
 end
 
 function B.fit_weapon(w, weapon_name, loadout, label, pos)
@@ -2630,7 +2630,7 @@ function B.fit_weapon(w, weapon_name, loadout, label, pos)
     local notes = {}
     local cond = tonumber(loadout.Kunto)
     local c = set_condition(w, cond)
-    if c then notes[#notes + 1] = "kunto " .. c .. " %" end
+    if c then notes[#notes + 1] = "condition " .. c .. " %" end
     local mname = type(loadout.Lipas) == "string" and loadout.Lipas or Weapons.magazine_for(weapon_name)
     if loadout.Lipas ~= false and mname then
         local want, cap, got, how = 0, 0, 0, ""
@@ -2643,10 +2643,10 @@ function B.fit_weapon(w, weapon_name, loadout, label, pos)
             pcall(function() m.InitialAmmo = want end)
         end)
         if mag then
-            notes[#notes + 1] = string.format("lipas %s %s (%s/%s panosta, %s)", mname,
-                ok and "kiinni" or ("EI kiinni: " .. tostring(err):sub(1, 80)), tostring(got), tostring(cap), how)
+            notes[#notes + 1] = string.format("magazine %s %s (%s/%s rounds, %s)", mname,
+                ok and "attached" or ("NOT attached: " .. tostring(err):sub(1, 80)), tostring(got), tostring(cap), how)
         else
-            notes[#notes + 1] = "lipasta " .. mname .. " ei loytynyt"
+            notes[#notes + 1] = "magazine " .. mname .. " not found"
         end
     elseif Weapons.kind(weapon_name) and loadout.Lipas ~= false then
         -- Built-in magazine (revolvers, shotguns, bolt-action rifles): the
@@ -2656,7 +2656,7 @@ function B.fit_weapon(w, weapon_name, loadout, label, pos)
         local want = B.want_rounds[full_name(w)] or 0
         if n and n == 0 and want > 0 then n = load_rounds(w, want) end
         B.want_rounds[full_name(w)] = nil
-        if n then notes[#notes + 1] = string.format("sisainen lipas: %s panosta", tostring(n)) end
+        if n then notes[#notes + 1] = string.format("internal magazine: %s rounds", tostring(n)) end
     end
     local scopes = loadout.Tahtaimet or Weapons.scopes_for(weapon_name)
     local want_scope = loadout.Tahtain
@@ -2665,7 +2665,7 @@ function B.fit_weapon(w, weapon_name, loadout, label, pos)
         for _, sname in ipairs(scopes) do
             if B.find_item_class(sname) then
                 local sc, ok = put_on_weapon(w, sname, label, pos, function(x) set_condition(x, cond) end)
-                if sc then notes[#notes + 1] = "tahtain " .. sname .. (ok and " kiinni" or " EI kiinni") end
+                if sc then notes[#notes + 1] = "scope " .. sname .. (ok and " attached" or " NOT attached") end
                 break
             end
         end
@@ -2747,7 +2747,7 @@ local function manual_of(name)
     local cdo = nil
     pcall(function() cdo = cls:GetCDO() end)
     if not (cdo and valid(cdo)) then
-        if not cdo_noted then cdo_noted = true; lnote("GetCDO ei toimi: aseen kasikirjaa ei voi lukea") end
+        if not cdo_noted then cdo_noted = true; lnote("GetCDO does not work: the weapon manual cannot be read") end
         manual_cache[key] = false
         return false
     end
@@ -2827,7 +2827,7 @@ function B.preset_weapon(npccls, names)
     pcall(function() cd = cdo._armedNPCBaseCommonData end)
     pcall(function() arr = cd.PossibleItemInHands end)
     if not (path and arr) then
-        if not B.preset_noted then B.preset_noted = true; lnote("aseen esiasetus: NPC-luokan listaa ei loytynyt") end
+        if not B.preset_noted then B.preset_noted = true; lnote("weapon preset: no list found on the NPC class") end
         return nil
     end
     local short = (path:match("%.([%w_]+)$") or wname):gsub("_C$", "")
@@ -2843,12 +2843,12 @@ function B.preset_weapon(npccls, names)
     end)
     if soft_way == nil and not all_ok then
         soft_way = false
-        lnote("aseen esiasetus EI toimi (" .. table.concat(notes or {}, ", ") .. "): NPC:t pitavat SCUMin aseet")
+        lnote("weapon preset does NOT work (" .. table.concat(notes or {}, ", ") .. "): NPCs keep SCUM's weapons")
         return nil
     end
     if not B.preset_ok_noted and all_ok then
         B.preset_ok_noted = true
-        lnote("aseen esiasetus toimii (" .. tostring(soft_way and soft_way[1]) .. "): " .. wname)
+        lnote("weapon preset works (" .. tostring(soft_way and soft_way[1]) .. "): " .. wname)
     end
     return all_ok and wname or nil
 end
@@ -2968,7 +2968,7 @@ local function ghost_weapon(a, h, own, name, label, pos)
     for _, part in ipairs(items_owned_by(own)) do pcall(function() part:SetActorHiddenInGame(true) end) end
     local rec = handles[h]
     if rec then rec.ghost = { own = own, prop = prop } end
-    lnote(string.format("%s: haamuase - nakyva %s, piilotettu %s (kiinni %s, kadessa %s, piilossa %s)", label, name,
+    lnote(string.format("%s: ghost weapon - shown %s, hidden %s (attached %s, in hands %s, hidden %s)", label, name,
         (full_name(own:GetClass()):match("([%w_]+)$") or "?"):gsub("_C$", ""), tostring(att), tostring(inhands), tostring(hid)))
     return prop
 end
@@ -3020,7 +3020,7 @@ local function lay_down(item, floor, body)
         if ok and res ~= false then
             local p = nil
             pcall(function() p = vec(item:K2_GetActorLocation()) end)
-            return string.format("SCUMin pudotus, korkeus %s (lattia %.0f)", p and string.format("%.0f", p.Z) or "?", floor)
+            return string.format("SCUM's own drop, height %s (floor %.0f)", p and string.format("%.0f", p.Z) or "?", floor)
         end
         crumb("DropAround refused: " .. tostring(res))
     end
@@ -3028,7 +3028,7 @@ local function lay_down(item, floor, body)
     local p = nil
     pcall(function() p = vec(item:K2_GetActorLocation()) end)
     if p then pcall(function() item:K2_SetActorLocation({ X = p.X, Y = p.Y, Z = floor + 5 }, false, {}, true) end) end
-    return string.format("kasin maahan, lattia %.0f", floor)
+    return string.format("laid on the floor, floor %.0f", floor)
 end
 
 local function lay_weapon(l, at)
@@ -3055,7 +3055,7 @@ local function lay_weapon(l, at)
     local here = at
     pcall(function() here = vec(item:K2_GetActorLocation()) or at end)
     local okf, err = pcall(B.fit_weapon, item, name, l.lo or {}, l.label, here)
-    if not okf then lnote("haamuase: varustus - error: " .. tostring(err)) end
+    if not okf then lnote("ghost weapon: fitting - error: " .. tostring(err)) end
     return true, okl and how or ("asettelu - error: " .. tostring(how))
 end
 
@@ -3100,10 +3100,10 @@ function B.ghost_drop(handle)
             ok, how = lay_weapon({ name = name, lo = g.lo, label = g.label or tostring(rec.npcId), floor = z, body = a }, at)
             where = tostring(how)
         else
-            where = "lattiaa ei loytynyt"
+            where = "no floor found"
         end
     end
-    lnote(string.format("haamuase pudotettu (%s): %s maassa %s (%s)", tostring(rec.npcId), tostring(name),
+    lnote(string.format("ghost weapon dropped (%s): %s on the ground %s (%s)", tostring(rec.npcId), tostring(name),
         tostring(ok), where))
 end
 
@@ -3192,7 +3192,7 @@ function B.tick_weapons(now)
                         -- Scope decided once: the weapon dropped at death gets the same.
                         if lo.Tahtain == nil then lo.Tahtain = math.random() < (tonumber(lo.TahtainOsuus) or 0) end
                         local okf, err = pcall(B.fit_weapon, prop, gpick, lo, p.label, gpos)
-                        if not okf then lnote(p.label .. ": varustus - error: " .. tostring(err)) end
+                        if not okf then lnote(p.label .. ": fitting - error: " .. tostring(err)) end
                         local rec = handles[h]
                         if rec and rec.ghost then rec.ghost.name = gpick; rec.ghost.lo = lo; rec.ghost.label = p.label end
                         goto continue
@@ -3202,7 +3202,7 @@ function B.tick_weapons(now)
                 local rec = handles[h]
                 if rec then rec.weapon = w end
                 if rec and rec.wanted and rec.wanted:lower() ~= wname:lower() then
-                    lnote(string.format("%s: pyydetty %s, SCUM antoi %s", p.label, rec.wanted, wname))
+                    lnote(string.format("%s: asked for %s, SCUM gave %s", p.label, rec.wanted, wname))
                 end
                 local pos = nil
                 pcall(function() pos = vec(a:K2_GetActorLocation()) end)
@@ -3211,7 +3211,7 @@ function B.tick_weapons(now)
                     for k, v in pairs(p.loadout or {}) do lo[k] = v end
                     lo.Tahtain = nil
                     local okf, err = pcall(B.fit_weapon, w, wname, lo, p.label, pos)
-                    if not okf then lnote(p.label .. ": varustus - error: " .. tostring(err)) end
+                    if not okf then lnote(p.label .. ": fitting - error: " .. tostring(err)) end
                 end
                 goto continue
             end
@@ -3255,15 +3255,15 @@ function B.tick_weapons(now)
                             lo = lo2
                         end
                         local okf, err = pcall(B.fit_weapon, item, pick, lo, p.label, pos)
-                        if not okf then lnote(p.label .. ": varustus - error: " .. tostring(err)) end
+                        if not okf then lnote(p.label .. ": fitting - error: " .. tostring(err)) end
                     end
                 elseif pos then
-                    lnote(string.format("%s: oma ase pidetaan (kasikirja %s; listassa ei samaa tyyppia)",
+                    lnote(string.format("%s: own weapon kept (manual %s; no weapon of that type on the list)",
                         p.label, own:match("([%w_]+)$") or "-"))
                 end
             elseif now > p.deadline then
                 B.pending_weapons[h] = nil
-                lnote(p.label .. ": " .. p.name .. " - NPC:n omaa asetta ei tullut " .. B.weapon_wait_sec .. " s:ssa, ase jatettiin vaihtamatta")
+                lnote(p.label .. ": " .. p.name .. " - the NPC's own weapon did not arrive in " .. B.weapon_wait_sec .. " s, left unchanged")
             end
         end
         ::continue::
@@ -3361,7 +3361,7 @@ function B.apply_loadout(handle, loadout, label)
             end
         elseif body_logged == 0 then
             body_logged = 1
-            lnote(label .. ": asun asetus ei onnistunut: " .. tostring(idx))
+            lnote(label .. ": outfit could not be set: " .. tostring(idx))
         end
     end
     if #names == 0 then return given end

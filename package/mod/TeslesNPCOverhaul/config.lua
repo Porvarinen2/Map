@@ -1,14 +1,18 @@
 -- TESLES NPC OVERHAUL - server configuration.
 -- Distances are Unreal units unless a name says otherwise. 100 UU = 1 metre.
 return {
-    Version = "1.9.47",
+    Version = "2.0.0",
+
+    -- Language of the live map and messages: "en" or "fi".
+    Language = "en",
 
     -- ---------------------------------------------------------- population --
     Enabled = true,
-    TargetNPCs = 200,               -- hard cap is 250
-    -- TAYDENNYS: kun kokonainen squad kuolee, jonnekin satunnaiseen paikkaan
-    -- tulee uusi satunnaisen tyyppinen squad (ei sateily- eika saariryhma;
-    -- C0:n ja Z4:n squadit palaavat aina omalle paikalleen).
+    TargetNPCs = 200,               -- NPCs on the island (hard cap 250)
+    -- REPLENISH: a squad wiped out is replaced by a new squad of a random
+    -- type somewhere on the map, and while there are fewer NPCs than
+    -- TargetNPCs a couple of new squads arrive every minute. The radiation
+    -- zone (C0) and island (Z4) squads always come back in their own place.
     EnableReplenish = true,
     WorldSeed = 0,                  -- 0 = derive from first start, then stored
 
@@ -92,27 +96,27 @@ return {
     -- the squad's weapon of the same type is shown in its hand; on death
     -- the hidden one is removed and the shown one drops as loot.
     GhostWeapons = true,
-    -- HAAMUASEEN TODENNAKOISYYS: 0 = ei kellaan (vanilla, SCUMin omat
-    -- aseet), 0.5 = puolella, 1.0 = kaikilla (kun sopiva loytyy).
-    -- Sailyy paivityksissa.
+    -- CUSTOM WEAPON CHANCE: 0 = nobody (vanilla: SCUM's own weapons),
+    -- 0.5 = half of the NPCs, 1.0 = everyone (when a matching one exists).
+    -- Kept on updates.
     GhostWeaponChance = 0.0,
-    -- HUIPPUASEET (SVD, tarkkuuskiväärit, parhaat rynnäkkökiväärit ja
-    -- konekiväärit): vain tämä osuus NPC:istä, joille sellainen kuuluisi,
-    -- saa sen - muut tasoa heikomman. 0.2 = joka viides, 1.0 = kaikki.
+    -- TOP WEAPONS (SVD, sniper rifles, the best assault rifles and machine
+    -- guns): only this share of the NPCs that would carry one get it, the
+    -- rest one tier lower. 0.2 = one in five, 1.0 = all.
     TopWeaponChance = 0.2,
 
-    -- NAKO JA AMPUMINEN: NPC huomaa pelaajan tasta etaisyydesta (metria),
-    -- vain edessaan (kulma sivulle) ja jos valissa ei ole esteita. Aivan
-    -- vierelta (CloseSenseM) se huomaa myos selan takaa. Ampuminen alkaa
-    -- FireRangeM:sta, tahtaimella ScopedFireRangeM:sta. Nahdessaan zombeja
-    -- tai elaimia squad lahtee niita kohti.
+    -- SIGHT AND FIRE: an NPC notices a player this far away (metres), only
+    -- in front of it (angle to either side) and with a clear line of sight.
+    -- Right next to it (CloseSenseM) it notices even from behind. It opens
+    -- fire at FireRangeM, with a scope at ScopedFireRangeM. Hunters go after
+    -- the animals they see.
     NPCDetectRangeM = 300,
     NPCFireRangeM = 100,
     NPCScopedFireRangeM = 250,
     NPCViewAngleDeg = 45,
     NPCCloseSenseM = 5,
 
-    -- Omat varusteet: katso varusteet.lua (sailyy paivityksissa).
+    -- Your own squad weapons: see loadouts.lua (kept on updates).
 
     EnableCombat = true,
     ContactRadiusUU = 12000,        -- 120 m hostile group contact
@@ -121,8 +125,7 @@ return {
     MoraleRetreatThreshold = 0.25,
 
     -- ---------------------------------------------------------- buildings --
-    -- Off by default: the door and interior steps are not proven on this
-    -- server yet, and the guide is explicit that a timer is not proof.
+    -- Squads go through the houses at the places they visit.
     EnableBuildingSearch = true,    -- squads go through houses at the places they visit
     BuildingSearchRadiusUU = 12000,
     MaxBuildingsPerTarget = 8,

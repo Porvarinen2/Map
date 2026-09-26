@@ -18,6 +18,7 @@ local Physical = require("sim.physical")
 local Utility = require("npc.utility")
 local Archetypes = require("npc.archetypes")
 local GroupClasses = require("npc.groups")
+local Lang = require("core.lang")
 local Buildings = require("sim.buildings")
 
 local REACTION_FI = {
@@ -61,7 +62,7 @@ local function npc_row(m, group)
     local dominant = {}
     for i = 1, math.min(5, #top_traits) do
         local t = Traits.index[top_traits[i].k]
-        dominant[#dominant + 1] = { name = t and t.fi or top_traits[i].k,
+        dominant[#dominant + 1] = { name = t and Lang.t(t.fi) or top_traits[i].k,
                                     value = round(top_traits[i].v, 2) }
     end
 
@@ -84,24 +85,24 @@ local function npc_row(m, group)
         npcId = m.npcId,
         name = m.name,
         archetype = m.archetype,
-        archetype_fi = arch and arch.fi or m.archetype,
+        archetype_fi = arch and Lang.t(arch.fi) or m.archetype,
         level = m.level,
-        level_name = Skills.level_name[m.level] or "",
+        level_name = Lang.t(Skills.level_name[m.level] or ""),
         alive = m.alive,
         leader = m.is_leader or false,
         health = round(m.health or 0, 0),
         stress = round(m.stress or 0, 2),
         stress_state = stress_key,
-        stress_fi = stress_fi,
+        stress_fi = Lang.t(stress_fi),
         stress_state = stress_key,
         -- What last shook this NPC, while it is still fresh.
         reaction = (m.reaction and m.reaction_at and os.time() - m.reaction_at < 120)
-            and (REACTION_FI[m.reaction] or m.reaction) or nil,
+            and Lang.t(REACTION_FI[m.reaction] or m.reaction) or nil,
         morale = round(m.morale or 0, 2),
         action = m.action or "IDLE",
-        action_fi = Utility.fi[m.action or ""] or "",
+        action_fi = Lang.t(Utility.fi[m.action or ""] or ""),
         physical = m.materialized == true,
-        traumas = Trauma.summary(m),
+        traumas = Trauma.summary(m, Lang.t),
         dominant = dominant,
         traits = traits,
         skills = skills,
@@ -161,7 +162,7 @@ local function group_row(group, world)
     end
 
     local history = {}
-    for _, h in ipairs(act.history or {}) do history[#history + 1] = h.text end
+    for _, h in ipairs(act.history or {}) do history[#history + 1] = Lang.t(h.text) end
 
     -- The places planned after the current goal, in order.
     local queue = {}
@@ -178,7 +179,7 @@ local function group_row(group, world)
         gid = group.gid,
         name = group.name,
         class = group.class,
-        class_fi = cls and cls.fi or group.class,
+        class_fi = cls and Lang.t(cls.fi) or group.class,
         tactics = group.tactics,
         x = round(group.position and group.position.X or 0, 0),
         y = round(group.position and group.position.Y or 0, 0),
@@ -197,7 +198,7 @@ local function group_row(group, world)
         leader = group.leader_id,
         leaderless = group.leaderless or false,
         state = act.state or "IDLE",
-        state_fi = Activity.fi[act.state or ""] or act.state or "",
+        state_fi = Lang.t(Activity.fi[act.state or ""] or act.state or ""),
         goal = act.goal_poi and act.goal_poi.label or nil,
         goal_id = act.goal_poi and act.goal_poi.id or nil,
         goal_kind = act.goal_poi and act.goal_poi.kind or nil,
@@ -205,15 +206,15 @@ local function group_row(group, world)
         goal_y = goal_pos and round(goal_pos.Y, 0) or nil,
         queue = queue,
         mood = group.mood or "CALM",
-        mood_fi = Behaviour.MOOD_FI[group.mood or "CALM"] or "",
-        zombie_note = (group.zombie_at and os.time() - group.zombie_at < 180) and group.zombie_note or nil,
+        mood_fi = Lang.t(Behaviour.MOOD_FI[group.mood or "CALM"] or ""),
+        zombie_note = (group.zombie_at and os.time() - group.zombie_at < 180) and Lang.t(group.zombie_note) or nil,
         -- Krsko sweep: the area being worked and how far through the city.
         sweep_area = act.sweep_dir and act.tour_area and act.tour_area[act.tour_index or 0] or nil,
         sweep_dir = act.sweep_dir,
         sweep_done = act.sweep_dir and act.tour and
             round(100 * (act.tour_index or 0) / math.max(1, #act.tour), 0) or nil,
         recent = #(act.recent or {}),
-        intent = Activity.describe(group, act),
+        intent = Lang.t(Activity.describe(group, act)),
         route = route,
         route_kind = mv.route and mv.route.kind or nil,
         route_km = mv.route and round(mv.route.length / 100000, 2) or 0,
@@ -257,16 +258,16 @@ function T.snapshot(world, bridge, director, extra)
     local events = {}
     for _, e in ipairs(Log.recent_events(60)) do
         events[#events + 1] = { t = e.t, kind = e.kind, subject = e.subject,
-                                detail = e.detail }
+                                detail = Lang.t(e.detail) }
     end
 
     local traitDefs = {}
     for i, t in ipairs(Traits.list) do
-        traitDefs[i] = { name = t.fi, key = t.key, effect = t.effect }
+        traitDefs[i] = { name = Lang.t(t.fi), key = t.key, effect = t.effect }
     end
     local skillDefs = {}
     for i, s in ipairs(Skills.list) do
-        skillDefs[i] = { name = s.fi, key = s.key, group = s.group }
+        skillDefs[i] = { name = Lang.t(s.fi), key = s.key, group = s.group }
     end
 
     -- Players as the director sees them (after the join grace), and the
@@ -290,7 +291,7 @@ function T.snapshot(world, bridge, director, extra)
 
     local classDefs = {}
     for _, c in ipairs(GroupClasses.list) do
-        classDefs[#classDefs + 1] = { key = c.key, fi = c.fi, min = c.size[1], max = c.size[2],
+        classDefs[#classDefs + 1] = { key = c.key, fi = Lang.t(c.fi), min = c.size[1], max = c.size[2],
                                       color = c.color, custom = c.custom or nil }
     end
     return {

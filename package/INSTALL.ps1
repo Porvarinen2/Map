@@ -1,20 +1,21 @@
 <#
-  TESLES NPC OVERHAUL - yhden klikkauksen asennus.
+  TESLES NPC OVERHAUL - one-click install.
 
-  Tekee kaiken: etsii palvelimen, asentaa tai paivittaa UE4SS:n, ottaa muut
-  modit pois kaytosta, asentaa modin, pilkkoo tarkan kartan ja kaynnistaa
-  live mapin.
+  Finds the SCUM dedicated server, installs or updates UE4SS, installs the
+  mod, prepares the map and starts the live map.
 
-  Palvelimen tallennusta, tietokantaa tai asetuksia ei kosketa. Kaikki mita
-  korvataan, varmuuskopioidaan kansioon <SCUM Server>\TeslesNPCOverhaul_Backups.
+  The server's save game, database and settings are never touched.
+  Everything that is replaced is backed up to
+  <SCUM Server>\TeslesNPCOverhaul_Backups. UNINSTALL.bat removes it all.
 #>
 param(
-  [string]$ServerRoot = "",   # SCUM Server -kansio; etsitaan automaattisesti
-  [switch]$SkipUE4SS,         # ala kosketa UE4SS-asennukseen
-  [switch]$KeepOtherMods,     # jata muut Lua-modit paalle
-  [switch]$NoMap,             # ala pilko karttaa ala kaynnista live mapia
-  [switch]$Yes,               # ala kysy mitaan
-  [switch]$NoPause            # ala odota Enteria lopussa
+  [string]$ServerRoot = "",   # SCUM Server folder; found automatically
+  [switch]$SkipUE4SS,         # leave the UE4SS installation alone
+  [switch]$DisableOtherMods,  # switch other UE4SS Lua mods off
+  [switch]$KeepOtherMods,     # (default) leave other Lua mods on
+  [switch]$NoMap,             # no map tiles, no live map
+  [switch]$Yes,               # ask nothing
+  [switch]$NoPause            # do not wait for Enter at the end
 )
 
 $ErrorActionPreference = "Stop"
@@ -32,7 +33,7 @@ function Die($t) {
   Write-Host ""
   Say $t "Red"
   Write-Host ""
-  if (-not $NoPause) { Read-Host "  Enter sulkee" }
+  if (-not $NoPause) { Read-Host "  Press Enter to close" }
   exit 1
 }
 
@@ -40,21 +41,29 @@ $warnings = @()
 $ue4ssUnchanged = $false
 
 Write-Host ""
-Write-Host "  TESLES NPC OVERHAUL - asennus" -ForegroundColor Yellow
-Write-Host "  =============================="
-Say "Tama asentaa kaiken tarvittavan. Sinun ei tarvitse tehda muuta." "DarkGray"
+Write-Host "  TESLES NPC OVERHAUL - install" -ForegroundColor Yellow
+Write-Host "  ============================="
+Say "This installs everything the mod needs:" "DarkGray"
+Say "  - UE4SS (the Lua mod loader) into your SCUM server" "DarkGray"
+Say "  - the mod itself, and the live map" "DarkGray"
+Say "Everything replaced is backed up; UNINSTALL.bat undoes it all." "DarkGray"
+if (-not $Yes) {
+  Write-Host ""
+  $ans = Read-Host "  Continue? [Y/n]"
+  if ($ans -match '^\s*[nN]') { exit 0 }
+}
 
 # ---------------------------------------------------------------- guards ---
 
 if (Get-Process -Name "SCUMServer" -ErrorAction SilentlyContinue) {
-  Die "SCUMServer on kaynnissa. Sammuta palvelin ja aja INSTALL.bat uudestaan."
+  Die "SCUMServer is running. Stop the server and run INSTALL.bat again."
 }
 if ($here -match "\\AppData\\Local\\Temp\\" -or $here -match "\.zip\\") {
-  Die "Ala aja asennusta ZIPin sisalta. Pura paketti omaan kansioon ensin."
+  Die "Do not run the installer from inside the ZIP. Extract the package to a folder first."
 }
 
-# =========================================================== 1. palvelin ===
-Step 1 "Etsitaan SCUM-palvelin"
+# ============================================================= 1. server ===
+Step 1 "Finding the SCUM server"
 
 $candidates = @(
   'F:\SteamLibrary\steamapps\common\SCUM Server',
@@ -77,10 +86,10 @@ $server = $ServerRoot.Trim('"').Trim()
 if (-not (Test-ServerRoot $server)) {
   $server = $candidates | Where-Object { Test-ServerRoot $_ } | Select-Object -First 1
 }
-# Ei tavallisista poluista: katsotaan Steamin kirjastoluettelo ja jokaisen levyn
-# steamapps\common-kansiot. Koko levyn lapikaynti kestaisi minuutteja.
+# Not in the usual places: Steam's library list and every drive's
+# steamapps\common folders (a whole-disk search would take minutes).
 if (-not $server) {
-  Say "Ei tavallisissa poluissa. Etsitaan Steam-kirjastoista..." "Yellow"
+  Say "Not in the usual places. Searching the Steam libraries..." "Yellow"
   $roots = New-Object System.Collections.ArrayList
 
   foreach ($vdf in @(
@@ -112,15 +121,15 @@ if (-not $server) {
 }
 if (-not $server) {
   Write-Host ""
-  Say "SCUM-palvelinta ei loytynyt automaattisesti." "Yellow"
-  $server = (Read-Host "  Anna SCUM Server -kansion polku").Trim('"').Trim()
+  Say "The SCUM server was not found automatically." "Yellow"
+  $server = (Read-Host "  Path of the SCUM Server folder").Trim('"').Trim()
 }
 if (-not (Test-ServerRoot $server)) {
-  Die "Polusta ei loydy SCUMServer.exe:ta: $server"
+  Die "SCUMServer.exe not found under: $server"
 }
 
 $win64 = Join-Path $server 'SCUM\Binaries\Win64'
-Say "Palvelin: $server" "Green"
+Say "Server: $server" "Green"
 
 function Resolve-ModsDir($w) {
   foreach ($n in @(@('ue4ss', 'Mods'), @('Mods'))) {
@@ -143,65 +152,65 @@ function Get-LoaderStamp($w) {
 }
 
 # ============================================================== 2. UE4SS ===
-Step 2 "UE4SS (Lua-modien lataaja)"
+Step 2 "UE4SS (Lua mod loader)"
 
 if ($SkipUE4SS) {
-  Say "Ohitettu (-SkipUE4SS)." "Yellow"
+  Say "Skipped (-SkipUE4SS)." "Yellow"
 } else {
-  # Aiempi skannauskorjaus on kumottu hypoteesi: se ei auttanut ja hidastaa
-  # kaynnistysta kahdella minuutilla. Perutaan se ennen paivitysta.
+  # An earlier scan fix from this package did not help and slowed the start
+  # by two minutes; it is reverted before the update.
   $fix = Join-Path $here 'FIX_UE4SS_SCAN.ps1'
   if (Test-Path $fix) {
     $ini = Join-Path $win64 'UE4SS-settings.ini'
     if (Test-Path "$ini.tesles-backup") {
-      Say "Perutaan aiempi skannauskorjaus (ei auttanut)..." "Yellow"
+      Say "Reverting an earlier scan fix..." "Yellow"
       try { & $fix -Win64 $win64 -Revert | Out-Null } catch {}
     }
   }
 
   $installer = Join-Path $here 'INSTALL_UE4SS.ps1'
   if (-not (Test-Path $installer)) {
-    Die "Paketista puuttuu INSTALL_UE4SS.ps1."
+    Die "INSTALL_UE4SS.ps1 is missing from the package."
   }
 
   $global:TeslesLoaderAlreadyCurrent = $false
   $had = Test-Loader $win64
   $beforeHash = Get-LoaderStamp $win64
   if ($had) {
-    Say "UE4SS on jo asennettu - vaihdetaan paketin mukana tulleeseen." "Gray"
+    Say "UE4SS is installed - replacing it with the version in this package." "Gray"
   } else {
-    Say "UE4SS puuttuu - asennetaan." "Gray"
+    Say "UE4SS is missing - installing it." "Gray"
   }
   try {
     & $installer -Win64 $win64 -Yes -Force -Chained
   } catch {
-    Say "UE4SS-asennus keskeytyi: $($_.Exception.Message)" "Red"
+    Say "UE4SS install stopped: $($_.Exception.Message)" "Red"
   }
   $afterHash = Get-LoaderStamp $win64
   if ($global:TeslesLoaderAlreadyCurrent) {
-    Say "UE4SS on ajan tasalla." "Green"
+    Say "UE4SS is up to date." "Green"
   } elseif ($had -and $beforeHash -and $beforeHash -eq $afterHash) {
     # 1.0.8 said it updated the loader while the file on disk never changed.
     # Whatever the cause, the summary has to show it instead of hiding it.
     $ue4ssUnchanged = $true
-    Say "VAROITUS: UE4SS.dll ei vaihtunut." "Red"
+    Say "WARNING: UE4SS.dll did not change." "Red"
   } elseif ($afterHash) {
-    Say "UE4SS-lataaja on nyt vaihdettu." "Green"
+    Say "The UE4SS loader has been replaced." "Green"
   }
 
   if (-not (Test-Loader $win64)) {
     Write-Host ""
-    Say "UE4SS ei ole asennettuna, joten modi ei voi toimia." "Red"
-    Say "Lataus ei onnistunut (verkko, palomuuri tai GitHubin tuntiraja)." "Yellow"
+    Say "UE4SS is not installed, so the mod cannot run." "Red"
+    Say "The download failed (network, firewall or GitHub's rate limit)." "Yellow"
     Write-Host ""
-    Say "Tee nain:" "Cyan"
-    Say "  1. Avaa https://github.com/UE4SS-RE/RE-UE4SS/releases" "Cyan"
-    Say "  2. Lataa uusin UE4SS_vX.Y.Z.zip" "Cyan"
-    Say "  3. lisatyokalut\INSTALL_UE4SS.bat -Force -ZipFile C:\polku\UE4SS.zip" "Cyan"
-    Say "  4. Aja INSTALL.bat uudestaan." "Cyan"
-    Die "Asennus keskeytyi."
+    Say "Do this:" "Cyan"
+    Say "  1. Open https://github.com/UE4SS-RE/RE-UE4SS/releases" "Cyan"
+    Say "  2. Download the latest UE4SS_vX.Y.Z.zip" "Cyan"
+    Say "  3. tools\INSTALL_UE4SS.bat -Force -ZipFile C:\path\UE4SS.zip" "Cyan"
+    Say "  4. Run INSTALL.bat again." "Cyan"
+    Die "Install stopped."
   }
-  if (-not $had) { Say "UE4SS asennettu." "Green" }
+  if (-not $had) { Say "UE4SS installed." "Green" }
 }
 
 $mods = Resolve-ModsDir $win64
@@ -209,7 +218,7 @@ if (-not $mods) {
   $mods = Join-Path $win64 'Mods'
   New-Item -ItemType Directory -Path $mods -Force | Out-Null
   Set-Content -LiteralPath (Join-Path $mods 'mods.txt') -Value @("Keybinds : 1") -Encoding ASCII
-  Say "Mods-kansio luotiin." "Yellow"
+  Say "Created the Mods folder." "Yellow"
 }
 Say "Mods: $mods" "Green"
 
@@ -285,23 +294,22 @@ function Set-MinimalUE4SSHooks($w) {
 if (-not $SkipUE4SS) {
   $hooksOff = Set-MinimalUE4SSHooks $win64
   if ($null -eq $hooksOff) {
-    Say "UE4SS-settings.ini ei loytynyt - koukkuja ei muutettu." "Yellow"
+    Say "UE4SS-settings.ini not found - hooks unchanged." "Yellow"
   } elseif ($hooksOff.Count -gt 0) {
-    Say ("UE4SS:n turhat koukut pois ({0} kpl) - vain EngineTick jaa." -f $hooksOff.Count) "Green"
+    Say ("UE4SS hooks the mod does not need switched off ({0}) - EngineTick stays." -f $hooksOff.Count) "Green"
   } else {
-    Say "UE4SS:n koukut jo minimissa (vain EngineTick)." "Green"
+    Say "UE4SS hooks already minimal (EngineTick only)." "Green"
   }
 }
 
-# ======================================================== 3. muut modit ====
-Step 3 "Muut modit pois paalta"
+# ========================================================= 3. other mods ===
+Step 3 "Other Lua mods"
 
-if ($KeepOtherMods) {
-  Say "Ohitettu (-KeepOtherMods)." "Yellow"
+if (-not $DisableOtherMods) {
+  Say "Other UE4SS Lua mods are left as they are (-DisableOtherMods switches them off)." "Gray"
 } else {
-  # Kaksi modia jotka komentavat samoja NPC:ita riitelevat keskenaan, ja jokainen
-  # ylimaarainen Lua-modi on yksi asia lisaa joka voi kaatua ennen tata. Mitaan
-  # ei poisteta, vain otetaan pois kaytosta.
+  # Two mods commanding the same NPCs fight each other. Nothing is deleted,
+  # only switched off (the list is saved with the backup).
   $off = @()
   $lines = @()
   if (Test-Path -LiteralPath $modsTxt) { $lines = @(Get-Content -LiteralPath $modsTxt) }
@@ -314,8 +322,8 @@ if ($KeepOtherMods) {
   }
   if ($lines.Count -gt 0) { Set-Content -LiteralPath $modsTxt -Value $out -Encoding ASCII }
 
-  # UE4SS kaynnistaa myos minka tahansa kansion jossa on enabled.txt, riippumatta
-  # siita mita mods.txt sanoo, joten ne merkit on siirrettava syrjaan.
+  # UE4SS also starts any folder with an enabled.txt, whatever mods.txt says,
+  # so those markers are parked.
   $parked = 0
   foreach ($d in (Get-ChildItem -LiteralPath $mods -Directory -ErrorAction SilentlyContinue)) {
     if ($d.Name -eq $MOD) { continue }
@@ -339,22 +347,22 @@ if ($KeepOtherMods) {
     }
     if ($changed) {
       Write-ModsJson $modsJson $jsonEntries
-      Say "mods.json paivitetty samaan tilaan kuin mods.txt." "Gray"
+      Say "mods.json updated to match mods.txt." "Gray"
     }
   }
 
   if ($off.Count -gt 0) {
-    Say ("Pois kaytosta ({0}): {1}" -f $off.Count, ($off -join ', ')) "Yellow"
+    Say ("Switched off ({0}): {1}" -f $off.Count, ($off -join ', ')) "Yellow"
     Set-Content -LiteralPath (Join-Path $backup 'disabled_mods.txt') `
                 -Value $off -Encoding ASCII
-    Say "Lista talletettiin: $backup\disabled_mods.txt" "DarkGray"
+    Say "List saved: $backup\disabled_mods.txt" "DarkGray"
   } else {
-    Say "Muita modeja ei ollut paalla." "Green"
+    Say "No other mods were on." "Green"
   }
 }
 
-# ============================================================== 4. modi ====
-Step 4 "Asennetaan TESLES NPC OVERHAUL"
+# ================================================================ 4. mod ===
+Step 4 "Installing TESLES NPC OVERHAUL"
 
 $target = Join-Path $mods $MOD
 $keepState = $null
@@ -363,13 +371,13 @@ $keepUser = @{}
 $keepCfg = @{}
 if (Test-Path -LiteralPath $target) {
   Copy-Item -LiteralPath $target -Destination (Join-Path $backup $MOD) -Recurse -Force
-  Say "Vanha versio varmuuskopioitiin." "Gray"
+  Say "The previous version was backed up." "Gray"
   # Two folders have to survive an update: the saved world, and the output the
   # live map reads. Wiping output\ made the map say "live_state.json does not
   # exist yet" after every reinstall, which looked like the mod had never run.
   # The owner's own files survive every update: squad gear and own classes.
   $keepUser = @{}
-  foreach ($uf in @('varusteet.lua', 'ryhmat.lua')) {
+  foreach ($uf in @('loadouts.lua', 'squads.lua', 'varusteet.lua', 'ryhmat.lua')) {
     $ufPath = Join-Path $target $uf
     if (Test-Path -LiteralPath $ufPath) {
       $tmp = Join-Path ([System.IO.Path]::GetTempPath()) "tesles_${stamp}_$uf"
@@ -385,15 +393,15 @@ if (Test-Path -LiteralPath $target) {
       if ($keep -eq 'state') { $keepState = $dst } else { $keepOutput = $dst }
     }
   }
-  if ($keepState) { Say "Maailman tila otettiin talteen." "Green" }
+  if ($keepState) { Say "Saved world kept." "Green" }
   # The owner's ghost weapon chance survives an update (1.9.21 had 0.5 as
   # its default; from 1.9.22 on the default is 1.0, so that one is not kept).
   $oldCfg = Join-Path $target 'config.lua'
   if (Test-Path -LiteralPath $oldCfg) {
     $oc = Get-Content -LiteralPath $oldCfg -Raw
     $mv = [regex]::Match($oc, 'Version\s*=\s*"([^"]+)"')
-    foreach ($key in @('GhostWeaponChance', 'TopWeaponChance', 'NPCDetectRangeM', 'NPCFireRangeM', 'NPCScopedFireRangeM', 'NPCViewAngleDeg', 'NPCCloseSenseM')) {
-      $mg = [regex]::Match($oc, "$key\s*=\s*([0-9.]+)")
+    foreach ($key in @('Language', 'TargetNPCs', 'EnableReplenish', 'GhostWeaponChance', 'TopWeaponChance', 'NPCDetectRangeM', 'NPCFireRangeM', 'NPCScopedFireRangeM', 'NPCViewAngleDeg', 'NPCCloseSenseM')) {
+      $mg = [regex]::Match($oc, "$key\s*=\s*(`"[a-z]+`"|true|false|[0-9.]+)")
       if (-not $mg.Success) { continue }
       # Up to 1.9.31 GhostWeaponChance held an old default (0.5 / 1.0); from
       # 1.9.32 on the default is 0 (vanilla weapons), so older values are not kept.
@@ -411,7 +419,7 @@ if (Test-Path -LiteralPath $target) {
 }
 
 $src = Join-Path $here "mod\$MOD"
-if (-not (Test-Path -LiteralPath $src)) { Die "Paketista puuttuu mod\$MOD" }
+if (-not (Test-Path -LiteralPath $src)) { Die "mod\$MOD is missing from the package" }
 Copy-Item -LiteralPath $src -Destination $target -Recurse -Force
 New-Item -ItemType Directory -Path (Join-Path $target 'state') -Force | Out-Null
 $outDirEarly = Join-Path $target 'output'
@@ -420,14 +428,14 @@ New-Item -ItemType Directory -Path $outDirEarly -Force | Out-Null
 if ($keepState) {
   Copy-Item -Path (Join-Path $keepState '*') -Destination (Join-Path $target 'state') -Recurse -Force
   Remove-Item -LiteralPath $keepState -Recurse -Force
-  Say "Maailman tila palautettiin." "Green"
+  Say "Saved world restored." "Green"
 }
 if ($keepCfg.Count -gt 0) {
   $newCfg = Join-Path $target 'config.lua'
   $nc = Get-Content -LiteralPath $newCfg -Raw
   foreach ($key in $keepCfg.Keys) {
-    $nc = [regex]::Replace($nc, "$key\s*=\s*[0-9.]+", "$key = $($keepCfg[$key])")
-    Say "Oma asetus sailytettiin: $key = $($keepCfg[$key])" "Green"
+    $nc = [regex]::Replace($nc, "$key\s*=\s*(`"[a-z]+`"|true|false|[0-9.]+)", "$key = $($keepCfg[$key])")
+    Say "Your setting kept: $key = $($keepCfg[$key])" "Green"
   }
   [System.IO.File]::WriteAllText($newCfg, $nc, (New-Object System.Text.UTF8Encoding($false)))
 }
@@ -436,55 +444,30 @@ foreach ($uf in $keepUser.Keys) {
   if (Test-Path -LiteralPath $tmp) {
     Copy-Item -LiteralPath $tmp -Destination (Join-Path $target $uf) -Force
     Remove-Item -LiteralPath $tmp -Force
-    Say "Omat asetukset sailytettiin: $uf" "Green"
+    Say "Your file kept: $uf" "Green"
   }
 }
-# The outfit and weapon tests of 1.7-1.8 (Christmas / ghillie pants, Asu = 0,
-# M1911 / SCAR for everyone) end here: the KAIKKI test block is emptied, so the
-# squad classes' own weapons (npc/weapons.lua) are used.
-$gearPath0 = Join-Path $target 'varusteet.lua'
-if (Test-Path -LiteralPath $gearPath0) {
-  $g0 = [System.IO.File]::ReadAllText($gearPath0)
-  $reK = [regex]'KAIKKI\s*=\s*\{(?:[^{}]|\{[^{}]*\})*\}'
-  $m0 = $reK.Match($g0)
-  if ($m0.Success -and $m0.Value -match 'Christmas_Pants_02|Ghillie_Suit_Pants_01|Asu\s*=|Weapon_M1911|Weapon_SCAR_DMR|Weapon_AS_Val') {
-    $new = "KAIKKI = {`r`n    }"
-    [System.IO.File]::WriteAllText($gearPath0, $g0.Substring(0, $m0.Index) + $new + $g0.Substring($m0.Index + $m0.Length))
-    Say "varusteet.lua: testiaseet ja -asut poistettu (KAIKKI tyhjennetty)." "Green"
-  }
-}
-# The example squad classes (firefighters, doctors) are removed from the
-# owner's ryhmat.lua; their own classes stay.
-$groupsPath = Join-Path $target 'ryhmat.lua'
-if (Test-Path -LiteralPath $groupsPath) {
-  $gr = [System.IO.File]::ReadAllText($groupsPath)
-  $reG = [regex]'\{(?:[^{}]|\{[^{}]*\})*avain\s*=\s*"(palomiehet|laakarit)"(?:[^{}]|\{[^{}]*\})*\}\s*,?'
-  if ($reG.IsMatch($gr)) {
-    [System.IO.File]::WriteAllText($groupsPath, $reG.Replace($gr, ''))
-    Say "ryhmat.lua: esimerkkiryhmat (palomiehet, laakarit) poistettu." "Green"
-  }
-}
-# An older varusteet.lua has no KAIKKI section (gear for every squad). Add it
-# right after "return {" with the owner's test item - their own lines stay.
-$gearPath = Join-Path $target 'varusteet.lua'
-if ((Test-Path -LiteralPath $gearPath)) {
-  $gearText = [System.IO.File]::ReadAllText($gearPath)
-  if ($gearText -notmatch 'KAIKKI' -and $gearText -match 'return\s*\{') {
-    $block = "return {`r`n    -- KAIKKI: nama saa jokainen NPC jokaisessa ryhmassa (lisaksi ryhman omat).`r`n    KAIKKI = {`r`n    },"
-    $gearText = ([regex]'return\s*\{').Replace($gearText, $block, 1)
-    [System.IO.File]::WriteAllText($gearPath, $gearText)
-    Say "varusteet.lua: lisattiin KAIKKI-kohta (tyhja)." "Green"
+# Older installs kept their files under Finnish names (varusteet.lua,
+# ryhmat.lua): they become loadouts.lua and squads.lua.
+foreach ($pair in @(@('varusteet.lua', 'loadouts.lua'), @('ryhmat.lua', 'squads.lua'))) {
+  $old = Join-Path $target $pair[0]
+  $new = Join-Path $target $pair[1]
+  # The old file is still there only until it has been moved once, so it
+  # holds the owner's lines and wins over the new name.
+  if (Test-Path -LiteralPath $old) {
+    Move-Item -LiteralPath $old -Destination $new -Force
+    Say ("{0} is now {1}" -f $pair[0], $pair[1]) "Green"
   }
 }
 if ($keepOutput) {
   Copy-Item -Path (Join-Path $keepOutput '*') -Destination $outDirEarly -Recurse -Force `
             -ErrorAction SilentlyContinue
   Remove-Item -LiteralPath $keepOutput -Recurse -Force
-  Say "Live mapin tiedot sailytettiin." "Green"
+  Say "Live map data kept." "Green"
 }
 
 $files = (Get-ChildItem -LiteralPath $target -Recurse -File).Count
-Say "Kopioitu $files tiedostoa." "Green"
+Say "Copied $files files." "Green"
 
 $lines = @()
 if (Test-Path -LiteralPath $modsTxt) { $lines = @(Get-Content -LiteralPath $modsTxt) }
@@ -501,25 +484,25 @@ if ($jsonEntries) {
   Write-ModsJson $modsJson $jsonEntries
   $registered = "mods.json + mods.txt + enabled.txt"
 }
-Say "Rekisteroity: $registered" "Green"
+Say "Registered: $registered" "Green"
 
 $outDir = Join-Path $target 'output'
 Set-Content -LiteralPath (Join-Path $here 'livemap\livemap_paths.txt') `
             -Value $outDir -Encoding UTF8
 
-# Vanha kaynnistysloki luettaisiin taman kaynnistyksen lokina.
+# An old boot log would be read as this start's log.
 $oldBoot = Join-Path $outDir 'boot.log'
 if (Test-Path $oldBoot) { Remove-Item $oldBoot -Force }
 
-# ============================================================= 5. kartta ===
-Step 5 "Kartta"
+# ================================================================ 5. map ===
+Step 5 "Map"
 
 $mapDir = Join-Path $here 'livemap\map'
 $tileIdx = Join-Path $mapDir 'tiles\tiles.json'
 if ($NoMap) {
-  Say "Ohitettu (-NoMap)." "Yellow"
+  Say "Skipped (-NoMap)." "Yellow"
 } elseif (Test-Path $tileIdx) {
-  Say "Tarkka kartta on jo pilkottu." "Green"
+  Say "The high resolution map is ready." "Green"
 } else {
   $hires = $null
   if (Test-Path $mapDir) {
@@ -528,21 +511,21 @@ if ($NoMap) {
              Sort-Object Length -Descending | Select-Object -First 1
   }
   if ($hires) {
-    Say "Pilkotaan $($hires.Name) - tama kestaa muutaman minuutin..." "Yellow"
+    Say "Cutting $($hires.Name) into tiles - this takes a few minutes..." "Yellow"
     try {
       & (Join-Path $here 'livemap\tile_map.ps1') -Source $hires.FullName
     } catch {
-      Say "Pilkkominen epaonnistui: $($_.Exception.Message)" "Red"
-      $warnings += "Tarkan kartan pilkkominen epaonnistui; live map kayttaa peruskarttaa."
+      Say "Tiling failed: $($_.Exception.Message)" "Red"
+      $warnings += "Tiling the high resolution map failed; the live map uses the basic map."
     }
   } else {
-    Say "Tarkkaa karttaa ei ole - kaytetaan paketin peruskarttaa." "Gray"
-    Say "Halutessasi: tallenna 14k-kartta nimella scum_map_hires.png" "DarkGray"
-    Say "kansioon livemap\map\ ja aja INSTALL.bat uudestaan." "DarkGray"
+    Say "No high resolution map - using the package's basic map." "Gray"
+    Say "Optional: save the 14k map as scum_map_hires.png" "DarkGray"
+    Say "in livemap\map\ and run INSTALL.bat again (see README)." "DarkGray"
   }
 }
 if (-not (Test-Path (Join-Path $mapDir 'scum_map.png'))) {
-  $warnings += "livemap\map\scum_map.png puuttuu - pura paketti uudestaan."
+  $warnings += "livemap\map\scum_map.png is missing - extract the package again."
 }
 
 # =========================================================== 6. live map ===
@@ -550,14 +533,14 @@ Step 6 "Live map"
 
 $mapStarted = $false
 if ($NoMap) {
-  Say "Ohitettu (-NoMap)." "Yellow"
+  Say "Skipped (-NoMap)." "Yellow"
 } else {
   $busy = $null
   try {
     $busy = Get-NetTCPConnection -LocalPort 8777 -State Listen -ErrorAction SilentlyContinue
   } catch {}
   if ($busy) {
-    Say "Live map on jo kaynnissa portissa 8777." "Green"
+    Say "The live map is already running on port 8777." "Green"
     $mapStarted = $true
   } else {
     try {
@@ -567,61 +550,59 @@ if ($NoMap) {
       ) | Out-Null
       Start-Sleep -Seconds 2
       Start-Process "http://127.0.0.1:8777/" | Out-Null
-      Say "Live map kaynnistettiin omaan ikkunaansa." "Green"
-      Say "Osoite: http://127.0.0.1:8777/" "Green"
-      Say "Ala sulje sita ikkunaa niin kauan kuin haluat kartan nakyvan." "DarkGray"
+      Say "The live map started in its own window." "Green"
+      Say "Address: http://127.0.0.1:8777/" "Green"
+      Say "Keep that window open while you want the map." "DarkGray"
       $mapStarted = $true
     } catch {
-      Say "Live mapia ei saatu kaynnistettya: $($_.Exception.Message)" "Yellow"
-      Say "Kaynnista se kasin: START_LIVEMAP.bat" "Yellow"
+      Say "Could not start the live map: $($_.Exception.Message)" "Yellow"
+      Say "Start it by hand: START_LIVEMAP.bat" "Yellow"
     }
   }
 }
 
-# ============================================================== yhteenveto =
+# ============================================================== summary ===
 
-# Modi on paikallaan, mutta se voi toimia vain jos UE4SS paasee modien
-# lataamiseen asti. Jos edellinen kaynnistys todisti ettei paase, se on
-# parempi sanoa nyt kuin antaa kayttajan huomata se uuden uudelleenkaynnistyksen
-# jalkeen.
+# The mod is in place, but it only runs if UE4SS gets as far as loading mods.
+# If the previous start proved it does not, better to say so now.
 $health = $null
 try { $health = Get-UE4SSHealth $win64 } catch {}
 
 Write-Host ""
 Write-Host "  ================================================" -ForegroundColor Green
-Write-Host "   VALMIS - kaikki asennettu" -ForegroundColor Green
+Write-Host "   DONE - everything is installed" -ForegroundColor Green
 Write-Host "  ================================================" -ForegroundColor Green
 Write-Host ""
 
 if ($ue4ssUnchanged -and -not $global:TeslesLoaderAlreadyCurrent) {
-  Say "UE4SS.dll on edelleen sama tiedosto kuin ennen asennusta." "Red"
-  Say "Aja: lisatyokalut\INSTALL_UE4SS.bat -Force   ja katso mita se sanoo." "Yellow"
+  Say "UE4SS.dll is still the same file as before the install." "Red"
+  Say "Run: tools\INSTALL_UE4SS.bat -Force   and see what it says." "Yellow"
   Write-Host ""
 } elseif ($health -and $health.verdict -in @("SCAN_ABORTED", "SCAN_LOOP")) {
-  Say "HUOM: UE4SS ei edellisella kaynnistyksella paassyt modien lataukseen." "Yellow"
-  Say "Lataaja vaihdettiin juuri uudempaan, joten kokeile kaynnistysta." "Yellow"
-  Say "Jos sama toistuu, aja:  lisatyokalut\FIX_UE4SS_SCAN.bat -Auto" "Yellow"
-  Say "Se etsii puuttuvan tavukuvion suoraan SCUMServer.exe:sta." "Yellow"
+  Say "NOTE: on the last start UE4SS did not get as far as loading mods." "Yellow"
+  Say "The loader was just replaced, so try starting the server." "Yellow"
+  Say "If it happens again, run:  tools\FIX_UE4SS_SCAN.bat -Auto" "Yellow"
+  Say "It finds the missing byte pattern in SCUMServer.exe itself." "Yellow"
   Write-Host ""
 }
-foreach ($w in $warnings) { Say "VAROITUS: $w" "Yellow" }
+foreach ($w in $warnings) { Say "WARNING: $w" "Yellow" }
 if ($warnings.Count -gt 0) { Write-Host "" }
 
-Say "Sinulle jaa vain yksi asia:" "Cyan"
-Say "  ->  Kaynnista SCUM-palvelin normaalisti." "Cyan"
+Say "One thing left for you:" "Cyan"
+Say "  ->  Start the SCUM server as usual." "Cyan"
 Write-Host ""
-Say "Modi kirjoittaa heti kaynnistyessaan tiedoston"
+Say "The mod writes this file as soon as the server starts"
 Say "  $outDir\boot.log"
-Say "ja alkaa toimia 25 sekunnin kuluttua."
+Say "and starts working 25 seconds later."
 if ($mapStarted) {
   Say "Live map paivittyy itsestaan: http://127.0.0.1:8777/"
 } else {
   Say "Live map: START_LIVEMAP.bat  ->  http://127.0.0.1:8777/"
 }
 Write-Host ""
-Say "Jos jokin ei toimi, aja DIAGNOSE.bat." "DarkGray"
-Say "Asetukset: $target\config.lua" "DarkGray"
-Say "Omat varusteet: $target\varusteet.lua" "DarkGray"
-Say "Omat ryhmatyypit: $target\ryhmat.lua" "DarkGray"
+Say "If something does not work, run DIAGNOSE.bat." "DarkGray"
+Say "Settings: $target\config.lua" "DarkGray"
+Say "Your squad weapons: $target\loadouts.lua" "DarkGray"
+Say "Your own squad types: $target\squads.lua" "DarkGray"
 Write-Host ""
-if (-not $NoPause) { Read-Host "  Enter sulkee" }
+if (-not $NoPause) { Read-Host "  Press Enter to close" }

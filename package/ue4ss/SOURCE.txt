@@ -1,0 +1,11 @@
+UE4SS_v3.0.1-1140-gf58e8f84.zip
+
+Downloaded: https://github.com/UE4SS-RE/RE-UE4SS/releases/download/experimental-latest/UE4SS_v3.0.1-1140-gf58e8f84.zip
+Release   : experimental-latest, built 2026-09-21
+SHA256    : b954f036b10e9abb0c0c41599311ab1accc53e30515aeed7e48ee22c5b3b1280
+
+UE4SS is MIT licensed (UE4SS_LICENSE.txt). It ships with this package so the
+install works without a network connection and always uses the exact build
+this mod was tested against.
+
+Official releases: https://github.com/UE4SS-RE/RE-UE4SS/releases

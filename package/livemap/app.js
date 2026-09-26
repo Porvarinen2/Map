@@ -31,17 +31,17 @@ const CLASS_COLOR = {
 
 // Point-of-interest kinds on the hand-marked map (tools/poi_source.json).
 const POI_STYLE = {
-  CITY:             { c: "#ffd166", fi: "Kaupunki",          shape: "square",  r: 6.5 },
-  MILITARY:         { c: "#ff6b5b", fi: "Sotilasalue",       shape: "tri",     r: 6.5 },
-  BUNKER:           { c: "#ff3b3b", fi: "Bunkkeri",          shape: "square",  r: 5 },
-  ABANDONED_BUNKER: { c: "#a07cff", fi: "Hylätty bunkkeri",  shape: "square",  r: 5 },
-  RESEARCH:         { c: "#4fd1a5", fi: "Tutkimuslaitos",    shape: "hex",     r: 5.5 },
-  INDUSTRIAL:       { c: "#c9a27a", fi: "Teollisuus",        shape: "square",  r: 4.5 },
-  MEDICAL:          { c: "#ff8fc2", fi: "Sairaala",          shape: "cross",   r: 5.5 },
-  LANDMARK:         { c: "#f4a340", fi: "Maamerkki",         shape: "dot",     r: 4 },
-  VILLAGE:          { c: "#6cc070", fi: "Kylä",              shape: "dot",     r: 3.2 },
-  HUNTING:          { c: "#b5d86a", fi: "Metsästystorni",    shape: "tick",    r: 3 },
-  OUTPOST:          { c: "#3ee07a", fi: "Outpost (ei NPC:itä)", shape: "ring", r: 7 },
+  CITY:             { c: "#ffd166", fi: "City",              shape: "square",  r: 6.5 },
+  MILITARY:         { c: "#ff6b5b", fi: "Military base",     shape: "tri",     r: 6.5 },
+  BUNKER:           { c: "#ff3b3b", fi: "Bunker",            shape: "square",  r: 5 },
+  ABANDONED_BUNKER: { c: "#a07cff", fi: "Abandoned bunker",  shape: "square",  r: 5 },
+  RESEARCH:         { c: "#4fd1a5", fi: "Research facility", shape: "hex",     r: 5.5 },
+  INDUSTRIAL:       { c: "#c9a27a", fi: "Industrial",        shape: "square",  r: 4.5 },
+  MEDICAL:          { c: "#ff8fc2", fi: "Hospital",          shape: "cross",   r: 5.5 },
+  LANDMARK:         { c: "#f4a340", fi: "Landmark",          shape: "dot",     r: 4 },
+  VILLAGE:          { c: "#6cc070", fi: "Village",           shape: "dot",     r: 3.2 },
+  HUNTING:          { c: "#b5d86a", fi: "Hunting tower",     shape: "tick",    r: 3 },
+  OUTPOST:          { c: "#3ee07a", fi: "Outpost (no NPCs)", shape: "ring", r: 7 },
 };
 // The mod keeps its groups this far from every outpost (world/pois.lua).
 const OUTPOST_MARGIN_UU = 45000;
@@ -50,9 +50,9 @@ const POIS = (window.TESLES_POIS || []).map(p => Object.assign({
   named: !/^[A-Z][0-4] /.test(p.n) }, p));
 
 const STATE_FI = {
-  IDLE: "Odottaa", TRAVEL: "Matkalla", SEARCH: "Tutkii rakennuksia",
-  HUNT: "Metsästää", CAMP: "Leiriytyy", PATROL: "Partioi", REST: "Lepää",
-  HOLD: "Vartioi aluetta", COMBAT: "Taistelee", RETREAT: "Vetäytyy",
+  IDLE: "Waiting", TRAVEL: "Travelling", SEARCH: "Searching buildings",
+  HUNT: "Hunting", CAMP: "Camping", PATROL: "Patrolling", REST: "Resting",
+  HOLD: "Guarding the area", COMBAT: "Fighting", RETREAT: "Retreating",
 };
 
 const canvas = document.getElementById("map");
@@ -110,7 +110,7 @@ mapImg.onerror = () => {
     mapImg.src = MAP_CANDIDATES[mapCandidate];
   } else {
     mapMissing = true;
-    lastError = "karttakuvaa ei löytynyt kansiosta livemap\\map\\";
+    lastError = "no map image in livemap\\map\\";
     draw();
   }
 };
@@ -225,19 +225,19 @@ function drawBase(r) {
   } else {
     ctx.fillStyle = "#6d7684";
     ctx.font = "13px Inter, sans-serif";
-    ctx.fillText("Ladataan karttaa…", 20, 30);
+    ctx.fillText("Loading the map…", 20, 30);
   }
 }
 
 // The grid alone looks like a broken page; say what is actually wrong.
 function drawMissingMap(r) {
   const lines = [
-    "Karttakuvaa ei löytynyt.",
+    "No map image found.",
     "",
-    "Tallenna kartta tiedostoksi  livemap\\map\\scum_map.png",
-    "tai aja SETUP_HIRES_MAP.bat, joka luo sen tarkasta kartasta.",
+    "Save the map as  livemap\\map\\scum_map.png",
+    "or run tools\\SETUP_HIRES_MAP.bat to make it from the 14k map.",
     "",
-    "Ryhmien sijainnit piirtyvät silti ruudukkoon.",
+    "Squads are still drawn on the grid.",
   ];
   ctx.save();
   ctx.textAlign = "center";
@@ -368,7 +368,7 @@ function drawZones(moving) {
     ctx.font = "600 11px Inter, sans-serif";
     ctx.textAlign = "left"; ctx.textBaseline = "top";
     ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,.85)";
-    const t = "☢ SÄTEILYALUE · vain säteilyryhmät";
+    const t = "☢ RADIATION ZONE · radiation squads only";
     ctx.strokeText(t, a.x + 6, a.y + 18);
     ctx.fillStyle = "#d9a8ff"; ctx.fillText(t, a.x + 6, a.y + 18);
   }
@@ -681,8 +681,8 @@ function drawPlayer(p) {
   ctx.restore();
   ctx.font = "12px system-ui, sans-serif";
   ctx.fillStyle = "#fff"; ctx.strokeStyle = "rgba(0,0,0,0.8)"; ctx.lineWidth = 3;
-  const label = "PELAAJA" + (p.nearest_m != null
-    ? `  lähin ryhmä ${(p.nearest_m / 1000).toFixed(1)} km` : "");
+  const label = "PLAYER" + (p.nearest_m != null
+    ? `  nearest squad ${(p.nearest_m / 1000).toFixed(1)} km` : "");
   ctx.strokeText(label, s.x + 12, s.y - 10);
   ctx.fillText(label, s.x + 12, s.y - 10);
 }
@@ -718,29 +718,29 @@ function renderWorld() {
   const s = state.stats || {};
   const lod = state.lod || {};
   const players = (state.players || []).map(p => `
-      <div class="h"><div><div class="k">Pelaaja kartalla</div>
-        <div class="d">lähin ryhmä ${esc(p.nearest_gid || "-")} · ${
+      <div class="h"><div><div class="k">Player on the map</div>
+        <div class="d">nearest squad ${esc(p.nearest_gid || "-")} · ${
           p.nearest_m != null ? (p.nearest_m / 1000).toFixed(2) + " km" : "-"} ·
           fyysinen alle ${esc(lod.render_m || 1000)} m</div></div>
         <div class="s OK">ONLINE</div></div>`).join("");
   const playersSection = `
-    <div class="section"><h2>Pelaajat</h2><div class="health">${players ||
-      '<div class="h"><div><div class="k">Ei pelaajia</div><div class="d">Pelaaja näkyy ' +
-      'muutama sekunti liittymisen jälkeen.</div></div><div class="s PENDING">-</div></div>'}</div></div>`;
+    <div class="section"><h2>Players</h2><div class="health">${players ||
+      '<div class="h"><div><div class="k">No players</div><div class="d">A player shows up ' +
+      'a few seconds after joining.</div></div><div class="s PENDING">-</div></div>'}</div></div>`;
   const waiting = state.waiting ? `
     <div class="section">
-      <h2>Odottaa dataa</h2>
+      <h2>Waiting for data</h2>
       <div class="health">
         <div class="h"><div><div class="k">${esc(state.reason || "")}</div>
-          <div class="d">Mod-output: ${esc(state.output || "tuntematon")}</div></div>
-          <div class="s PENDING">ODOTTAA</div></div>
+          <div class="d">Mod output: ${esc(state.output || "unknown")}</div></div>
+          <div class="s PENDING">WAITING</div></div>
       </div>
       <div class="note">
-        1. Onko SCUM-palvelin kaynnissa? Mod kaynnistyy 25 s viiveella.<br>
-        2. Katso mod-kansion output\\boot.log - se kertoo mihin asti mod paasi.<br>
-        3. Jos boot.log puuttuu kokonaan, UE4SS ei lataa modia: tarkista
-           Mods\\mods.txt rivi "TeslesNPCOverhaul : 1" ja UE4SS.log.<br>
-        4. DIAGNOSE.bat kerää nama tiedot yhteen.
+        1. Is the SCUM server running? The mod starts 25 s after the server.<br>
+        2. Look at output\\boot.log in the mod folder - it shows how far the mod got.<br>
+        3. If boot.log is missing, UE4SS does not load the mod: check the line
+           "TeslesNPCOverhaul : 1" in Mods\\mods.txt, and UE4SS.log.<br>
+        4. DIAGNOSE.bat collects all of this into one zip.
       </div>
     </div>` : "";
   const health = (state.health || []).map(h => `
@@ -753,43 +753,43 @@ function renderWorld() {
     ${waiting}
     ${playersSection}
     <div class="section">
-      <h2>Populaatio</h2>
+      <h2>Population</h2>
       <div class="grid2">
-        <div class="stat"><div class="v">${s.alive ?? 0}</div><div class="l">NPC elossa</div></div>
-        <div class="stat"><div class="v">${s.groups ?? 0}</div><div class="l">Ryhmää</div></div>
-        <div class="stat"><div class="v">${s.physical ?? 0}</div><div class="l">Fyysisiä</div></div>
-        <div class="stat"><div class="v">${s.arrivals ?? 0}</div><div class="l">Saapumisia</div></div>
+        <div class="stat"><div class="v">${s.alive ?? 0}</div><div class="l">NPCs alive</div></div>
+        <div class="stat"><div class="v">${s.groups ?? 0}</div><div class="l">Squads</div></div>
+        <div class="stat"><div class="v">${s.physical ?? 0}</div><div class="l">Physical</div></div>
+        <div class="stat"><div class="v">${s.arrivals ?? 0}</div><div class="l">Arrivals</div></div>
       </div>
     </div>
 
     <div class="section">
-      <h2>Osajärjestelmät</h2>
-      <div class="health">${health || '<div class="empty">Ei tietoja</div>'}</div>
-      <div class="note">Tila kertoo vain mitä palvelimella on todennettu.
-        OK spawn-katalogissa tarkoittaa löytynyttä luokkaa, ei onnistunutta
-        spawnia, liikettä tai taistelua.</div>
+      <h2>Subsystems</h2>
+      <div class="health">${health || '<div class="empty">No data</div>'}</div>
+      <div class="note">Only what the server has proven. OK in spawnCatalog
+        means the NPC classes were found, not that spawning, movement or
+        combat work.</div>
     </div>
 
     <div class="section">
-      <h2>Reititys ja liike</h2>
+      <h2>Routing and movement</h2>
       <div class="kv">
-        <b>Reittejä</b><span>${s.routes ?? 0} (epäonnistui ${s.route_fail ?? 0})</span>
-        <b>Liikekäskyjä</b><span>${s.commands ?? 0}</span>
-        <b>Uudelleenreititys</b><span>${s.replans ?? 0}</span>
-        <b>Spawnit</b><span>${s.spawns ?? 0} (epäonnistui ${s.spawn_fail ?? 0})</span>
-        <b>Kohtaamisia</b><span>${s.contacts ?? 0}</span>
-        <b>Kuolemia</b><span>${s.deaths ?? 0}</span>
+        <b>Routes</b><span>${s.routes ?? 0} (failed ${s.route_fail ?? 0})</span>
+        <b>Move orders</b><span>${s.commands ?? 0}</span>
+        <b>Re-plans</b><span>${s.replans ?? 0}</span>
+        <b>Spawns</b><span>${s.spawns ?? 0} (failed ${s.spawn_fail ?? 0})</span>
+        <b>Encounters</b><span>${s.contacts ?? 0}</span>
+        <b>Deaths</b><span>${s.deaths ?? 0}</span>
       </div>
     </div>
 
     <div class="section">
-      <h2>Render-ympyrä</h2>
+      <h2>Render circle</h2>
       <div class="kv">
-        <b>Fyysinen</b><span>≤ ${lod.render_m ?? "–"} m pelaajasta (kartalla, korkeus ei vaikuta)</span>
-        <b>Virtuaalinen</b><span>&gt; ${lod.render_m ?? "–"} m</span>
+        <b>Physical</b><span>≤ ${lod.render_m ?? "–"} m from a player (on the map, height ignored)</span>
+        <b>Virtual</b><span>&gt; ${lod.render_m ?? "–"} m</span>
       </div>
-      <div class="note">Kartan piste on virtuaalinen sijainti, ellei ryhmä ole
-        merkitty fyysiseksi. Vihreä rengas = ryhmällä on pelissä oikea hahmo.</div>
+      <div class="note">A marker is a virtual position unless the squad is
+        marked physical. Green ring = the squad has real bodies in the game.</div>
     </div>
   </div>`;
 }
@@ -797,18 +797,18 @@ function renderWorld() {
 function groupCard(g) {
   const sel = selected && selected.gid === g.gid ? " sel" : "";
   const phys = g.physical_members > 0
-    ? `<span class="pill phys">FYYSINEN ${g.physical_members}</span>`
-    : `<span class="pill virt">VIRTUAALINEN</span>`;
+    ? `<span class="pill phys">PHYSICAL ${g.physical_members}</span>`
+    : `<span class="pill virt">VIRTUAL</span>`;
   return `<div class="card${sel}" data-gid="${esc(g.gid)}">
     <div class="top">
       <span class="name" style="color:${colorFor(g)}">${esc(g.gid)}</span>
       ${phys}
     </div>
     <div class="meta">
-      ${esc(g.class_fi)} · taso ${g.level} · ${g.members_alive}/${g.members_total} NPC · ${esc(g.sector)}<br>
+      ${esc(g.class_fi)} · level ${g.level} · ${g.members_alive}/${g.members_total} NPCs · ${esc(g.sector)}<br>
       ${esc(g.intent || STATE_FI[g.state] || g.state)}
       ${g.route_km ? ` · ${g.route_km} km (${esc(g.route_kind || "")})` : ""}
-      ${(g.queue || []).length ? `<br><span class="q">Seuraavaksi: ${g.queue.map(q => esc(q.label)).join(" → ")}</span>` : ""}
+      ${(g.queue || []).length ? `<br><span class="q">Next: ${g.queue.map(q => esc(q.label)).join(" → ")}</span>` : ""}
     </div>
     ${bar(g.morale, 1)}
   </div>`;
@@ -819,12 +819,12 @@ function renderGroups() {
   const btn = (k, label) =>
     `<button data-filter="${k}" class="${filter === k ? "on" : ""}">${label}</button>`;
   return `<div class="pad">
-    <input id="search" placeholder="Hae ryhmää, hahmoa tai kohdetta…" value="${esc(query)}">
+    <input id="search" placeholder="Search squads, characters or places…" value="${esc(query)}">
     <div class="filters">
-      ${btn("all", "Kaikki")}${btn("travel", "Matkalla")}${btn("working", "Kohteessa")}
-      ${btn("physical", "Fyysiset")}${btn("combat", "Taistelu")}
+      ${btn("all", "All")}${btn("travel", "Travelling")}${btn("working", "At a place")}
+      ${btn("physical", "Physical")}${btn("combat", "Fighting")}
     </div>
-    ${list.length ? list.map(groupCard).join("") : '<div class="empty">Ei osumia</div>'}
+    ${list.length ? list.map(groupCard).join("") : '<div class="empty">No matches</div>'}
   </div>`;
 }
 
@@ -854,33 +854,33 @@ function memberBlock(m) {
     <div class="top">
       <div>
         <div class="nm">${esc(m.name)}${m.leader ? " ★" : ""}</div>
-        <div class="rl">${esc(m.archetype_fi)} · taso ${m.level} ${esc(m.level_name || "")}
-          ${m.physical ? " · fyysinen" : ""}${m.alive ? "" : " · kuollut"}</div>
+        <div class="rl">${esc(m.archetype_fi)} · level ${m.level} ${esc(m.level_name || "")}
+          ${m.physical ? " · physical" : ""}${m.alive ? "" : " · dead"}</div>
       </div>
       <span class="pill">${esc(m.action_fi || m.action || "")}</span>
     </div>
     <div class="kv" style="margin-top:7px">
-      <b>Terveys</b><span>${m.health}</span>
-      <b>Stressi</b><span>${m.stress.toFixed(2)} · ${esc(m.stress_fi)}${m.reaction ? ` <i style="color:#e8a060">(${esc(m.reaction)})</i>` : ""}</span>
-      <b>Moraali</b><span>${m.morale.toFixed(2)}</span>
-      ${m.traumas ? `<b>Traumat</b><span>${esc(m.traumas)}</span>` : ""}
-      <b>Kokemus</b><span>${(m.xp && m.xp.fights) || 0} taistelua ·
+      <b>Health</b><span>${m.health}</span>
+      <b>Stress</b><span>${m.stress.toFixed(2)} · ${esc(m.stress_fi)}${m.reaction ? ` <i style="color:#e8a060">(${esc(m.reaction)})</i>` : ""}</span>
+      <b>Morale</b><span>${m.morale.toFixed(2)}</span>
+      ${m.traumas ? `<b>Traumas</b><span>${esc(m.traumas)}</span>` : ""}
+      <b>Experience</b><span>${(m.xp && m.xp.fights) || 0} fights ·
         ${Math.round(((m.xp && m.xp.distance) || 0) / 100000)} km</span>
     </div>
     <div class="section" style="margin:10px 0 0">
-      <h2>Taidot (12)</h2><div class="traitgrid">${skills}</div>
+      <h2>Skills (12)</h2><div class="traitgrid">${skills}</div>
     </div>
     <div class="section" style="margin:10px 0 0">
-      <h2>Luonteenpiirteet (38)</h2><div class="traitgrid">${traits}</div>
-      <div class="note">Haalennetut piirteet ovat taustapersoonallisuutta:
-        niillä ei ole omaa toimintoa päätöspisteytyksessä.</div>
+      <h2>Personality traits (38)</h2><div class="traitgrid">${traits}</div>
+      <div class="note">Faded traits are background personality: they
+        have no action of their own in the decision scoring.</div>
     </div>
-    ${mem ? `<div class="section" style="margin:10px 0 0"><h2>Muistot</h2>${mem}</div>` : ""}
+    ${mem ? `<div class="section" style="margin:10px 0 0"><h2>Memories</h2>${mem}</div>` : ""}
   </div>`;
 }
 
 function renderDetail() {
-  if (!selected) return `<div class="pad"><div class="empty">Valitse ryhmä kartalta tai listasta.</div></div>`;
+  if (!selected) return `<div class="pad"><div class="empty">Pick a squad on the map or in the list.</div></div>`;
   const g = state.groups.find(x => x.gid === selected.gid) || selected;
   const rel = (g.relations || []).map(r =>
     `<div class="feedrow"><span class="k">${esc(r.tier)}</span>${esc(r.gid)} (${r.value})</div>`
@@ -888,54 +888,54 @@ function renderDetail() {
   const hist = (g.history || []).slice().reverse()
     .map(h => `<div class="feedrow">${esc(h)}</div>`).join("");
   const STEP_FI = {
-    BUILDING_DISCOVERY: "Rakennus loydetty",
-    DOOR_DISCOVERY: "Ovi loydetty",
-    DOOR_APPROACH: "Ovelle kuljettu",
-    DOOR_INTERACTION: "Ovi kasitelty",
-    INTERIOR_NAVIGATION: "Sisapisteet",
+    BUILDING_DISCOVERY: "Building found",
+    DOOR_DISCOVERY: "Door found",
+    DOOR_APPROACH: "Walked to the door",
+    DOOR_INTERACTION: "Door handled",
+    INTERIOR_NAVIGATION: "Inside",
   };
   const proof = g.search_proof ? Object.entries(g.search_proof).map(([k, v]) =>
     `<div class="h"><div class="k">${esc(STEP_FI[k] || k)}</div>
-      <div class="s ${v ? "OK" : "PENDING"}">${v ? "TODENNETTU" : "EI TODISTETTU"}</div></div>`
+      <div class="s ${v ? "OK" : "PENDING"}">${v ? "PROVEN" : "NOT PROVEN"}</div></div>`
   ).join("") : "";
 
   return `<div class="pad">
     <div class="section">
       <h2>${esc(g.gid)} · ${esc(g.class_fi)}</h2>
       <div class="kv">
-        <b>Tila</b><span>${esc(g.intent || g.state)}</span>
-        <b>Mieliala</b><span>${esc(g.mood_fi || "–")}${g.zombie_note ? " · " + esc(g.zombie_note) : ""}</span>
-        <b>Kohde</b><span>${esc(g.goal || "ei valittua kohdetta")}
+        <b>State</b><span>${esc(g.intent || g.state)}</span>
+        <b>Mood</b><span>${esc(g.mood_fi || "–")}${g.zombie_note ? " · " + esc(g.zombie_note) : ""}</span>
+        <b>Destination</b><span>${esc(g.goal || "none chosen")}
           ${g.goal_kind ? `(${esc((POI_STYLE[g.goal_kind] || {}).fi || g.goal_kind)})` : ""}</span>
-        <b>Jonossa</b><span>${(g.queue || []).length
+        <b>Queued</b><span>${(g.queue || []).length
           ? g.queue.map((q, i) => `${i + 1}. ${esc(q.label)} <i style="color:${(POI_STYLE[q.kind] || {}).c || "#ccc"}">${esc((POI_STYLE[q.kind] || {}).fi || q.kind)}</i>`).join("<br>")
           : "–"}</span>
-        <b>Muisti</b><span>${g.recent ?? 0} / ${g.class === "radiation_group" ? 2 : 10} viimeksi käytyä paikkaa</span>
-        ${g.sweep_dir ? `<b>Krsko-sweep</b><span>alue ${g.sweep_area ?? "–"} · suunta ${g.sweep_dir > 0 ? "1→5" : "5→1"} · ${g.sweep_done ?? 0} % käyty</span>` : ""}
-        <b>Reitti</b><span>${g.route_km || 0} km · ${esc(g.route_kind || "–")}
-          · piste ${g.route_index}</span>
-        <b>Sijainti</b><span>${g.x}, ${g.y} · ${esc(g.sector)}</span>
-        <b>Etäisyystila</b><span>${esc(g.lod)}${g.player_distance_m >= 0
-          ? ` · pelaaja ${g.player_distance_m} m` : " · ei pelaajaa lähellä"}</span>
-        <b>Fyysisiä</b><span>${g.physical_members} / ${g.members_alive}</span>
-        <b>Johtaja</b><span>${esc(g.leader || (g.leaderless ? "ei johtajaa" : "–"))}</span>
-        <b>Moraali</b><span>${g.morale} · koheesio ${g.cohesion}</span>
-        <b>Ryhmästressi</b><span>${g.stress}</span>
-        <b>Voima</b><span>${g.power}</span>
-        <b>Väsymys</b><span>${g.fatigue} / 100</span>
-        <b>Huoltovara</b><span>${g.supply} / 100</span>
-        <b>Matkaa</b><span>${g.distance_km} km · ${g.journeys} matkaa</span>
-        <b>Liikekäskyt</b><span>${g.commands} · jumitukset ${g.stalls}</span>
+        <b>Memory</b><span>${g.recent ?? 0} / ${g.class === "radiation_group" ? 2 : 10} places visited last</span>
+        ${g.sweep_dir ? `<b>Krsko-sweep</b><span>area ${g.sweep_area ?? "–"} · direction ${g.sweep_dir > 0 ? "1→5" : "5→1"} · ${g.sweep_done ?? 0} % done</span>` : ""}
+        <b>Route</b><span>${g.route_km || 0} km · ${esc(g.route_kind || "–")}
+          · point ${g.route_index}</span>
+        <b>Position</b><span>${g.x}, ${g.y} · ${esc(g.sector)}</span>
+        <b>Distance state</b><span>${esc(g.lod)}${g.player_distance_m >= 0
+          ? ` · player ${g.player_distance_m} m` : " · no player near"}</span>
+        <b>Physical</b><span>${g.physical_members} / ${g.members_alive}</span>
+        <b>Leader</b><span>${esc(g.leader || (g.leaderless ? "no leader" : "–"))}</span>
+        <b>Morale</b><span>${g.morale} · cohesion ${g.cohesion}</span>
+        <b>Squad stress</b><span>${g.stress}</span>
+        <b>Strength</b><span>${g.power}</span>
+        <b>Fatigue</b><span>${g.fatigue} / 100</span>
+        <b>Supplies</b><span>${g.supply} / 100</span>
+        <b>Travelled</b><span>${g.distance_km} km · ${g.journeys} journeys</span>
+        <b>Move orders</b><span>${g.commands} · stalls ${g.stalls}</span>
         ${g.spawn_note ? `<b>Spawn</b><span class="s DEGRADED">${esc(g.spawn_note)}</span>` : ""}
       </div>
     </div>
-    ${proof ? `<div class="section"><h2>Rakennushaku</h2>
+    ${proof ? `<div class="section"><h2>Building search</h2>
       <div class="health">${proof}</div>
-      <div class="note">${esc(g.search_note || "vaiheet merkitaan vasta kun peli vahvistaa ne")}</div></div>` : ""}
-    ${rel ? `<div class="section"><h2>Suhteet muihin ryhmiin</h2>${rel}</div>` : ""}
-    ${hist ? `<div class="section"><h2>Ryhmän historia</h2>${hist}</div>` : ""}
+      <div class="note">${esc(g.search_note || "steps are marked only once the game confirms them")}</div></div>` : ""}
+    ${rel ? `<div class="section"><h2>Relations to other squads</h2>${rel}</div>` : ""}
+    ${hist ? `<div class="section"><h2>Squad history</h2>${hist}</div>` : ""}
     <div class="section">
-      <h2>Jäsenet (${g.members_alive}/${g.members_total})</h2>
+      <h2>Members (${g.members_alive}/${g.members_total})</h2>
       ${(g.members || []).map(memberBlock).join("")}
     </div>
   </div>`;
@@ -950,7 +950,7 @@ function renderFeed() {
     return `<div class="feedrow"><time>${hh}:${mm}:${ss}</time>
       <span class="k">${esc(e.kind)}</span>${esc(e.subject)} ${esc(e.detail)}</div>`;
   }).join("");
-  return `<div class="pad">${rows || '<div class="empty">Ei tapahtumia vielä</div>'}</div>`;
+  return `<div class="pad">${rows || '<div class="empty">No events yet</div>'}</div>`;
 }
 
 // The panel is rebuilt on every poll. Replacing identical HTML still makes the
@@ -982,19 +982,19 @@ function renderLegend() {
   const kinds = Object.entries(POI_STYLE).map(([k, st]) =>
     `<span class="row"><i class="sw poi ${st.shape}" style="background:${st.c}"></i>${esc(st.fi)}</span>`
   ).join("");
-  document.getElementById("legend").innerHTML = (rows || "Odotetaan ryhmätietoja…") +
+  document.getElementById("legend").innerHTML = (rows || "Waiting for squad data…") +
     (show.pois ? `<div class="lg2">${kinds}</div>` : "");
 }
 
 function renderHud() {
   const s = state.stats || {};
   document.getElementById("chipPop").innerHTML =
-    `NPC <b>${s.alive ?? 0}</b> · Ryhmät <b>${s.groups ?? 0}</b>`;
+    `NPCs <b>${s.alive ?? 0}</b> · Squads <b>${s.groups ?? 0}</b>`;
   document.getElementById("chipPhys").innerHTML =
-    `Fyysisiä <b>${s.physical ?? 0}</b> · Zoom <b>${view.scale.toFixed(2)}</b>`;
+    `Physical <b>${s.physical ?? 0}</b> · Zoom <b>${view.scale.toFixed(2)}</b>`;
   document.getElementById("chipTick").textContent =
     `tick ${state.tick || 0} · ${state.uptime ? Math.round(state.uptime / 60) + " min" : "–"}`;
-  document.getElementById("verLabel").textContent = state.version || "–";
+  document.getElementById("verLabel").textContent = state.version ? "v" + state.version : "–";
 }
 
 /* ---------------------------------------------------------------- polling */
@@ -1009,10 +1009,10 @@ async function poll() {
     if (data.waiting) {
       // The server answered, the mod has not written a snapshot yet.
       document.getElementById("chipLink").innerHTML =
-        `<b style="color:#e8c25a">ODOTTAA</b> · ${esc(data.reason || "ei tilatietoa")}`;
+        `<b style="color:#e8c25a">WAITING</b> · ${esc(data.reason || "no state yet")}`;
     } else {
       document.getElementById("chipLink").innerHTML =
-        `<b style="color:#5fd67f">LIVE</b> · päivitetty ${new Date().toLocaleTimeString()}`;
+        `<b style="color:#5fd67f">LIVE</b> · updated ${new Date().toLocaleTimeString()}`;
     }
     (data.groups || []).forEach(g => {
       let t = trails.get(g.gid);
@@ -1034,7 +1034,7 @@ async function poll() {
     lastError = String(e.message || e);
     document.getElementById("chipLink").innerHTML =
       `<b style="color:#f07070">OFFLINE</b> · ${esc(lastError)} ` +
-      `· onko START_LIVEMAP.bat auki?`;
+      `· is START_LIVEMAP.bat running?`;
     if (pollFails === 1) draw();
   }
 }
@@ -1095,7 +1095,7 @@ wrap.appendChild(ctxMenu);
 let toastTimer = null;
 
 function copyText(text) {
-  const done = () => showToast("Kopioitu: " + text);
+  const done = () => showToast("Copied: " + text);
   if (navigator.clipboard && window.isSecureContext) {
     navigator.clipboard.writeText(text).then(done, () => fallbackCopy(text, done));
   } else fallbackCopy(text, done);
@@ -1107,7 +1107,7 @@ function fallbackCopy(text, done) {
   let ok = false;
   try { ok = document.execCommand("copy"); } catch (e) {}
   ta.remove();
-  if (ok) done(); else window.prompt("Kopioi komento:", text);
+  if (ok) done(); else window.prompt("Copy the command:", text);
 }
 function showToast(text) {
   let t = document.getElementById("toast");
@@ -1130,12 +1130,12 @@ wrap.addEventListener("contextmenu", e => {
   ctxMenu.dataset.x = x; ctxMenu.dataset.y = y;
   ctxMenu.innerHTML = `
     <div class="hd">${esc(sectorOf(w.x, w.y))} · X ${x} / Y ${y}</div>
-    <button data-copy="${esc(tp)}">Kopioi teleport-komento</button>
-    ${gtp ? `<button data-copy="${esc(gtp)}">Teleporttaa ryhmän ${esc(g.gid)} luo</button>` : ""}
-    <button data-copy="${x} ${y} 0">Kopioi koordinaatit</button>
+    <button data-copy="${esc(tp)}">Copy teleport command</button>
+    ${gtp ? `<button data-copy="${esc(gtp)}">Teleport to squad ${esc(g.gid)}</button>` : ""}
+    <button data-copy="${x} ${y} 0">Copy coordinates</button>
     <div class="sep"></div>
-    <button data-open-spawn="1">Spawnaa ryhmä tähän…</button>
-    ${g ? `<button class="danger" data-remove="${esc(g.gid)}">Poista ryhmä ${esc(g.gid)}</button>` : ""}
+    <button data-open-spawn="1">Spawn a squad here…</button>
+    ${g ? `<button class="danger" data-remove="${esc(g.gid)}">Remove squad ${esc(g.gid)}</button>` : ""}
     <div class="spawnform" id="spawnForm" style="display:none"></div>`;
   ctxMenu.style.display = "block";
   ctxMenu.style.left = Math.min(sx, wrap.clientWidth - 250) + "px";
@@ -1149,7 +1149,7 @@ ctxMenu.addEventListener("click", e => {
   if (e.target.closest("[data-open-spawn]")) { openSpawnForm(); return; }
   const r = e.target.closest("[data-remove]");
   if (r) {
-    if (confirm(`Poistetaanko ryhmä ${r.dataset.remove} pysyvästi?`)) {
+    if (confirm(`Remove squad ${r.dataset.remove} for good?`)) {
       sendCommand({ op: "remove", gid: r.dataset.remove });
     }
     hideCtx();
@@ -1187,13 +1187,13 @@ function classDefs() {
 function openSpawnForm() {
   const f = document.getElementById("spawnForm");
   const defs = classDefs();
-  if (!defs.length) { showToast("Luokkatiedot puuttuvat - odota että kartta on LIVE"); return; }
+  if (!defs.length) { showToast("No class data yet - wait until the map is LIVE"); return; }
   const last = localStorageGet("spawnClass") || "police_patrol";
   f.innerHTML = `
-    <label>Luokka<select id="spawnClass">${defs.map(d =>
+    <label>Squad type<select id="spawnClass">${defs.map(d =>
       `<option value="${esc(d.key)}"${d.key === last ? " selected" : ""}>${esc(d.fi)}</option>`).join("")}</select></label>
-    <label>Koko<select id="spawnSize"></select></label>
-    <button class="go" data-do-spawn="1">Spawnaa</button>`;
+    <label>Size<select id="spawnSize"></select></label>
+    <button class="go" data-do-spawn="1">Spawn</button>`;
   f.style.display = "block";
   fillSizes();
 }
@@ -1214,20 +1214,20 @@ function localStorageSet(k, v) { try { localStorage.setItem("tesles." + k, v); }
 
 async function sendCommand(params) {
   if (!cmdToken) await fetchToken();
-  if (!cmdToken) { showToast("Karttapalvelin ei vastaa - onko START_LIVEMAP.bat auki?"); return; }
+  if (!cmdToken) { showToast("The map server does not answer - is START_LIVEMAP.bat running?"); return; }
   const q = new URLSearchParams(Object.assign({}, params, { token: cmdToken }));
   try {
     const r = await fetch("api/command?" + q.toString(), { cache: "no-store" });
     const j = await r.json();
     if (j.ok) {
       pendingCmds.set(j.id, Date.now());
-      showToast("Pyyntö lähetetty modille…");
+      showToast("Request sent to the mod…");
     } else {
       if ((j.error || "").includes("token")) cmdToken = null;
-      showToast("Ei onnistunut: " + (j.error || "tuntematon virhe"));
+      showToast("Failed: " + (j.error || "unknown error"));
     }
   } catch (e) {
-    showToast("Ei yhteyttä karttapalvelimeen");
+    showToast("No connection to the map server");
   }
 }
 
@@ -1242,7 +1242,7 @@ function checkCommandResults() {
   for (const [id, t] of pendingCmds) {
     if (Date.now() - t > 20000) {
       pendingCmds.delete(id);
-      showToast("Modi ei vastannut - onko palvelin käynnissä?");
+      showToast("The mod did not answer - is the server running?");
     }
   }
 }
@@ -1278,7 +1278,7 @@ function showPoiTip(p, x, y) {
     g.goal_id === p.id || (g.queue || []).some(q => q.id === p.id)).map(g => g.gid);
   tipEl.innerHTML = `<b>${esc(p.n)}</b><br>
     <span style="color:${st.c}">${esc(st.fi || p.k)}</span> · ${esc(sectorOf(p.x, p.y))}<br>
-    ${heading.length ? "Tulossa: " + heading.map(esc).join(", ") : "Ei ryhmiä matkalla"}`;
+    ${heading.length ? "Coming: " + heading.map(esc).join(", ") : "No squads heading here"}`;
   tipEl.style.display = "block";
   tipEl.style.left = Math.min(x + 16, wrap.clientWidth - 330) + "px";
   tipEl.style.top = Math.min(y + 16, wrap.clientHeight - 120) + "px";
@@ -1287,13 +1287,13 @@ function showPoiTip(p, x, y) {
 function showTip(g, x, y) {
   const lead = (g.members || []).find(m => m.leader);
   tipEl.innerHTML = `<b>${esc(g.gid)} · ${esc(g.class_fi)}</b><br>
-    ${g.members_alive}/${g.members_total} NPC · taso ${g.level} ·
-    ${g.physical_members > 0 ? "fyysinen" : "virtuaalinen"}<br>
+    ${g.members_alive}/${g.members_total} NPCs · level ${g.level} ·
+    ${g.physical_members > 0 ? "physical" : "virtual"}<br>
     ${esc(g.intent || g.state)}${g.mood && g.mood !== "CALM" ? " · <b>" + esc(g.mood_fi) + "</b>" : ""}<br>
-    ${g.sweep_dir ? `Krsko: alue ${g.sweep_area ?? "–"} (${g.sweep_dir > 0 ? "1→5" : "5→1"}), ${g.sweep_done ?? 0} %<br>` : ""}
-    ${(g.queue || []).length ? "Jono: " + g.queue.map(q => esc(q.label)).join(" → ") + "<br>" : ""}
-    ${lead ? "Johtaja: " + esc(lead.name) + " (" + esc(lead.archetype_fi) + ")<br>" : ""}
-    Moraali ${g.morale} · stressi ${g.stress} · voima ${g.power}`;
+    ${g.sweep_dir ? `Krsko: area ${g.sweep_area ?? "–"} (${g.sweep_dir > 0 ? "1→5" : "5→1"}), ${g.sweep_done ?? 0} %<br>` : ""}
+    ${(g.queue || []).length ? "Queue: " + g.queue.map(q => esc(q.label)).join(" → ") + "<br>" : ""}
+    ${lead ? "Leader: " + esc(lead.name) + " (" + esc(lead.archetype_fi) + ")<br>" : ""}
+    Morale ${g.morale} · stress ${g.stress} · strength ${g.power}`;
   tipEl.style.display = "block";
   tipEl.style.left = Math.min(x + 16, wrap.clientWidth - 330) + "px";
   tipEl.style.top = Math.min(y + 16, wrap.clientHeight - 120) + "px";

@@ -46,7 +46,7 @@ function Get-UE4SSHealth {
 
   if (-not (Test-Path $Win64)) {
     $h.verdict = "NO_WIN64"
-    $h.action += "Win64-kansiota ei loydy: $Win64"
+    $h.action += "Win64 folder not found: $Win64"
     return $h
   }
 
@@ -203,114 +203,114 @@ function Get-UE4SSHealth {
   # --- verdict ---
   if (-not $h.logPath) {
     $h.verdict = "NO_LOG"
-    $h.action += "UE4SS ei ole kirjoittanut lokia lainkaan."
+    $h.action += "UE4SS has not written a log at all."
     if ($h.proxyDlls.Count -eq 0) {
-      $h.action += "Win64-kansiossa ei ole UE4SS:n proxy-DLL:aa (dwmapi.dll tai xinput1_3.dll)."
-      $h.action += "Asenna UE4SS uudelleen palvelimelle."
+      $h.action += "There is no UE4SS proxy DLL (dwmapi.dll or xinput1_3.dll) in the Win64 folder."
+      $h.action += "Install UE4SS on the server again."
     } else {
-      $h.action += "Proxy-DLL on paikallaan, mutta se ei kaynnisty. Tarkista virustorjunta."
+      $h.action += "The proxy DLL is in place but does not start. Check your antivirus."
     }
   }
   elseif ($h.serverStart -and -not $h.logIsFromThisRun) {
     $h.verdict = "STALE_LOG"
-    $h.action += ("UE4SS.log:n viimeinen merkinta on {0}, mutta palvelin kaynnistyi {1}." -f
+    $h.action += ("The last UE4SS.log entry is {0}, but the server started {1}." -f
                   ($(if ($h.logLastEntry) { $h.logLastEntry } else { $h.logTime })), $h.serverStart)
-    $h.action += "UE4SS ei siis kirjoittanut mitaan tassa ajossa."
+    $h.action += "So UE4SS wrote nothing during this run."
     if ($h.loaderInProcess -eq $true) {
       $h.action += ""
-      $h.action += "MUTTA: proxy-DLL ON ladattu palvelinprosessiin"
+      $h.action += "BUT: the proxy DLL IS loaded in the server process"
       $h.action += ("  ({0})" -f ($h.loadedProxies -join ", "))
-      $h.action += "eli UE4SS latautui ja kaatui ennen lokin avaamista."
-      $h.action += "Todennakoisin syy on UE4SS-settings.ini."
+      $h.action += "so UE4SS loaded and crashed before opening its log."
+      $h.action += "The likeliest cause is UE4SS-settings.ini."
       if ($h.scanFixApplied) {
-        $h.action += "Skannauskorjaus on kaytossa - peru se ensin:"
-        $h.action += "  lisatyokalut\FIX_UE4SS_SCAN.bat -Revert"
-        $h.action += "Kaynnista palvelin ja aja lisatyokalut\CHECK.bat uudestaan."
+        $h.action += "The scan fix is on - undo it first:"
+        $h.action += "  tools\FIX_UE4SS_SCAN.bat -Revert"
+        $h.action += "Start the server and run tools\CHECK.bat again."
       }
     } elseif ($h.loaderInProcess -eq $false) {
       $h.action += ""
-      $h.action += "Palvelinprosessi EI ole ladannut UE4SS:n proxy-DLL:aa."
-      $h.action += ("  ladattuja moduuleja: {0}" -f $h.processModules)
-      $h.action += "Syy on injektiossa, ei UE4SS:n asetuksissa:"
-      $h.action += "  - onko dwmapi.dll yha Win64-kansiossa (virustorjunta?)"
-      $h.action += "  - kaynnistetaanko palvelin samasta Win64-kansiosta"
+      $h.action += "The server process has NOT loaded the UE4SS proxy DLL."
+      $h.action += ("  loaded modules: {0}" -f $h.processModules)
+      $h.action += "The cause is the injection, not UE4SS's settings:"
+      $h.action += "  - is dwmapi.dll still in the Win64 folder (antivirus?)"
+      $h.action += "  - is the server started from this same Win64 folder"
       if ($h.gameExeDate) {
-        $h.action += ("  - SCUMServer.exe on paivitetty {0}" -f $h.gameExeDate.ToString("yyyy-MM-dd"))
+        $h.action += ("  - SCUMServer.exe was updated {0}" -f $h.gameExeDate.ToString("yyyy-MM-dd"))
       }
     } else {
-      $h.action += "Prosessin moduuleja ei voitu lukea (oikeudet)."
-      $h.action += "Aja lisatyokalut\CHECK.bat yllapitajana nahdaksesi latautuiko proxy-DLL."
-      $h.action += "Tarkista etta proxy-DLL on paikallaan ja palvelin kaynnistyy"
-      $h.action += "samasta Win64-kansiosta."
+      $h.action += "The process modules could not be read (permissions)."
+      $h.action += "Run tools\CHECK.bat as administrator to see whether the proxy DLL loaded."
+      $h.action += "Check that the proxy DLL is in place and the server starts"
+      $h.action += "from the same Win64 folder."
     }
     if ($h.scanFixApplied -and $h.loaderInProcess -ne $false) {
       $h.action += ""
-      $h.action += "Jos mikaan muu ei selita tata, peru skannauskorjaus:"
-      $h.action += "  lisatyokalut\FIX_UE4SS_SCAN.bat -Revert"
+      $h.action += "If nothing else explains this, undo the scan fix:"
+      $h.action += "  tools\FIX_UE4SS_SCAN.bat -Revert"
     }
   }
   elseif ($h.startedLuaMods -contains "TeslesNPCOverhaul") {
     $h.verdict = "MOD_STARTED"
-    $h.action += "UE4SS kaynnisti modin. Ongelma on modin sisalla - katso boot.log."
+    $h.action += "UE4SS started the mod. The problem is inside the mod - see boot.log."
   }
   elseif ($h.scanAttempts -ge 5 -and -not $h.fatalError -and $h.scanIsFresh) {
     # The scan has not resolved yet. With a single thread and a raised
     # deadline that legitimately takes minutes, so it is not a failure.
     $h.verdict = "SCANNING"
-    $h.action += ("UE4SS skannaa parhaillaan ({0} yritysta, ei viela lopputulosta)." -f
+    $h.action += ("UE4SS is scanning ({0} attempts, no result yet)." -f
                   $h.scanAttempts)
-    $h.action += ("Odota {0} s ja aja lisatyokalut\CHECK.bat uudestaan." -f
+    $h.action += ("Wait {0} s and run tools\CHECK.bat again." -f
                   $(if ($h.scanSeconds) { $h.scanSeconds } else { 60 }))
-    $h.action += "Tama ei ole viela virhe."
+    $h.action += "This is not an error yet."
   }
   elseif ($h.fatalError -and $h.fatalError -match "scan") {
     $h.verdict = "SCAN_ABORTED"
-    $h.action += "UE4SS LOPETTI kaynnistyksen omaan virheeseensa:"
+    $h.action += "UE4SS STOPPED starting on its own error:"
     $h.action += ("  {0}" -f $h.fatalError)
     if ($h.scanFailure) { $h.action += ("  {0}" -f $h.scanFailure) }
-    $h.action += ("Se ehti {0} skannausyritysta ennen aikakatkaisua." -f $h.scanAttempts)
-    $h.action += "UE4SS ei siis ladannut yhtaan Lua-modia - ei tata eika muita."
-    $h.action += "Kyse on UE4SS:n ja pelin buildin valisesta yhteensopivuudesta,"
-    $h.action += "ei taman modin koodista."
+    $h.action += ("It made {0} scan attempts before timing out." -f $h.scanAttempts)
+    $h.action += "So UE4SS loaded no Lua mod at all - neither this one nor others."
+    $h.action += "This is about compatibility between UE4SS and the game build,"
+    $h.action += "not about this mod's code."
     $h.action += ""
-    $h.action += "Korjaus jarjestyksessa:"
-    $h.action += "  1. INSTALL.bat  - asentaa paketin mukana tulevan uudemman"
-    $h.action += "     UE4SS:n. Tee tama ensin, jos et ole jo tehnyt."
-    $h.action += "  2. lisatyokalut\FIX_UE4SS_SCAN.bat -Auto"
+    $h.action += "Fix, in this order:"
+    $h.action += "  1. INSTALL.bat  - installs the newer UE4SS shipped with this"
+    $h.action += "     package. Do this first if you have not."
+    $h.action += "  2. tools\FIX_UE4SS_SCAN.bat -Auto"
     if ($h.scanFailure -and $h.scanFailure -match "FText") {
-      $h.action += "     UE4SS kaatui juuri FText-kuvioon. -Auto etsii sen"
-      $h.action += "     suoraan SCUMServer.exe:sta ja kirjoittaa sen UE4SS:lle."
+      $h.action += "     UE4SS failed on the FText pattern. -Auto finds it"
+      $h.action += "     in SCUMServer.exe itself and writes it for UE4SS."
     } else {
-      $h.action += "     Etsii puuttuvan tavukuvion suoraan SCUMServer.exe:sta."
+      $h.action += "     Finds the missing byte pattern in SCUMServer.exe itself."
     }
-    $h.action += "     Se kirjoittaa kuvion vain jos se on yksiselitteinen."
-    $h.action += "     Peruminen: lisatyokalut\FIX_UE4SS_SCAN.bat -Revert"
+    $h.action += "     It writes the pattern only if it is unambiguous."
+    $h.action += "     To undo: tools\FIX_UE4SS_SCAN.bat -Revert"
     if ($h.scanFixApplied) {
-      $h.action += "  3. Saiekorjaus on jo kokeiltu eika se auttanut. Peru se,"
-      $h.action += "     jottei kaynnistys hidastu turhaan:"
-      $h.action += "     lisatyokalut\FIX_UE4SS_SCAN.bat -Revert"
+      $h.action += "  3. The thread fix was tried and did not help. Undo it,"
+      $h.action += "     so the start is not slowed for nothing:"
+      $h.action += "     tools\FIX_UE4SS_SCAN.bat -Revert"
     }
-    if ($h.version) { $h.action += ("Asennettu nyt: {0}" -f $h.version) }
-    if ($h.loaderDate) { $h.action += ("Lataajan paivays: {0}" -f $h.loaderDate) }
+    if ($h.version) { $h.action += ("Installed now: {0}" -f $h.version) }
+    if ($h.loaderDate) { $h.action += ("Loader date: {0}" -f $h.loaderDate) }
   }
   elseif ($h.scanAttempts -ge 5) {
     $h.verdict = "SCAN_LOOP"
-    $h.action += ("UE4SS juuttui AOB-skannaukseen: {0} yritysta." -f $h.scanAttempts)
+    $h.action += ("UE4SS got stuck in the AOB scan: {0} attempts." -f $h.scanAttempts)
     if ($h.scanFailure) { $h.action += $h.scanFailure }
-    $h.action += "Se ei paase kayttamaan yhtaan Lua-modia ennen kuin skannaus onnistuu."
-    $h.action += "Tama ei ole taman modin vika: sama estaa kaikki muutkin Lua-modit."
-    $h.action += "Korjaus: lisatyokalut\UPDATE_UE4SS.bat"
-    if ($h.version) { $h.action += ("Asennettu versio: {0}" -f $h.version) }
+    $h.action += "It cannot run any Lua mod before the scan succeeds."
+    $h.action += "This is not this mod's fault: it blocks every other Lua mod too."
+    $h.action += "Fix: tools\UPDATE_UE4SS.bat"
+    if ($h.version) { $h.action += ("Installed version: {0}" -f $h.version) }
   }
   elseif ($h.startedLuaMods.Count -gt 0) {
     $h.verdict = "MOD_NOT_IN_LIST"
-    $h.action += ("UE4SS kaynnisti nama Lua-modit: {0}" -f ($h.startedLuaMods -join ", "))
-    $h.action += "TeslesNPCOverhaul ei ole listalla - tarkista mods.txt ja kansion nimi."
+    $h.action += ("UE4SS started these Lua mods: {0}" -f ($h.startedLuaMods -join ", "))
+    $h.action += "TeslesNPCOverhaul is not on the list - check mods.txt and the folder name."
   }
   else {
     $h.verdict = "NO_MODS_STARTED"
-    $h.action += "UE4SS latautui mutta ei kaynnistanyt yhtaan Lua-modia."
-    $h.action += "Katso UE4SS.log kokonaan: syy on siella ennen ensimmaista modia."
+    $h.action += "UE4SS loaded but started no Lua mod."
+    $h.action += "Read the whole UE4SS.log: the cause is there, before the first mod."
   }
 
   return $h
@@ -331,49 +331,49 @@ function Write-UE4SSHealth {
   }
   Write-Host ""
   Say "UE4SS: $($h.verdict)" $col
-  if ($h.version) { Say "  versio        : $($h.version)" }
+  if ($h.version) { Say "  version       : $($h.version)" }
   if ($h.ue4ssDll) {
     Say "  UE4SS.dll     : $($h.ue4ssDll)"
-    Say "  lataaja teht. : $($h.loaderDate)"
+    Say "  loader built  : $($h.loaderDate)"
   }
   if ($h.proxyDlls.Count -gt 0) {
     Say "  proxy-DLL     : $($h.proxyDlls -join ', ')"
   } else {
-    Say "  proxy-DLL     : EI LOYDY" "Red"
+    Say "  proxy-DLL     : NOT FOUND" "Red"
   }
   if ($h.logPath) {
-    Say "  loki          : $($h.logPath)"
+    Say "  log           : $($h.logPath)"
     if ($h.logLastEntry) {
-      Say "  viim. merkinta: $($h.logLastEntry)"
+      Say "  last entry    : $($h.logLastEntry)"
     }
-    Say "  tiedosto muok.: $($h.logTime)"
+    Say "  file modified : $($h.logTime)"
   }
   if ($null -ne $h.loaderInProcess) {
     if ($h.loaderInProcess) {
-      Say "  prosessissa   : $($h.loadedProxies -join ', ')" "Green"
+      Say "  in process    : $($h.loadedProxies -join ', ')" "Green"
     } else {
-      Say "  prosessissa   : UE4SS:aa EI ladattu ($($h.processModules) moduulia)" "Red"
+      Say "  in process    : UE4SS NOT loaded ($($h.processModules) modules)" "Red"
     }
   } elseif ($h.serverStart) {
-    Say "  prosessissa   : moduulilistaa ei voitu lukea" "DarkGray"
+    Say "  in process    : module list could not be read" "DarkGray"
   }
   if ($h.logClockOffsetMinutes) {
-    Say "  loki kirjaa UTC-aikaa ($($h.logClockOffsetMinutes) min ero paikalliseen)" "DarkGray"
+    Say "  log uses UTC ($($h.logClockOffsetMinutes) min from local time)" "DarkGray"
   }
   if ($h.gameExeDate) { Say "  SCUMServer.exe: $($h.gameExeDate.ToString('yyyy-MM-dd'))" }
-  if ($h.serverStart) { Say "  palvelin alkoi: $($h.serverStart)" }
-  if ($h.modsDirectoryInLog) { Say "  mods (lokista): $($h.modsDirectoryInLog)" }
+  if ($h.serverStart) { Say "  server started: $($h.serverStart)" }
+  if ($h.modsDirectoryInLog) { Say "  mods (in log) : $($h.modsDirectoryInLog)" }
   foreach ($m in $h.modsDirs) {
-    Say "  mods-kansio   : $($m.path)  ($($m.folders) modia)"
+    Say "  mods folder   : $($m.path)  ($($m.folders) mods)"
   }
-  if ($h.scanAttempts -gt 0) { Say "  AOB-skannaus  : $($h.scanAttempts) yritysta" "Yellow" }
+  if ($h.scanAttempts -gt 0) { Say "  AOB scan      : $($h.scanAttempts) attempts" "Yellow" }
   if ($h.scanThreads) {
-    $note = if ($h.scanFixApplied) { " (skannauskorjaus kaytossa)" } else { "" }
-    Say "  skannerisaikeet: $($h.scanThreads), aikaraja $($h.scanSeconds) s$note"
+    $note = if ($h.scanFixApplied) { " (scan fix on)" } else { "" }
+    Say "  scan threads  : $($h.scanThreads), time limit $($h.scanSeconds) s$note"
   }
-  if ($h.fatalError) { Say "  UE4SS-virhe   : $($h.fatalError)" "Red" }
+  if ($h.fatalError) { Say "  UE4SS error   : $($h.fatalError)" "Red" }
   if ($h.startedLuaMods.Count -gt 0) {
-    Say "  kaynnistetyt  : $($h.startedLuaMods -join ', ')"
+    Say "  started       : $($h.startedLuaMods -join ', ')"
   }
   Write-Host ""
   foreach ($a in $h.action) { Say $a $col }

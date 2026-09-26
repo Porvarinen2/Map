@@ -805,7 +805,7 @@ function D:watch_creatures(g, R, now)
                     g.act.until_t = now + 60
                 end
                 Log.event("SPOTTED", g.gid, string.format("%s %s %.0f m", eyes.npcId,
-                    c.kind == "animal" and "elain" or "zombi", d / 100))
+                    c.kind == "animal" and "animal" or "zombie", d / 100))
                 return
             end
         end

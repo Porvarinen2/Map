@@ -4,7 +4,7 @@
   A 14336 x 14336 PNG is far too heavy for a browser canvas, so the live map
   loads 512 px tiles per zoom level instead. Drop the map into livemap\map\ as
   scum_map_hires.png (any common image extension works) and run
-  lisatyokalut\SETUP_HIRES_MAP.bat.
+  tools\SETUP_HIRES_MAP.bat.
 
   Each level is decoded directly at that level's width (DecodePixelWidth) and
   cut with WPF imaging, so only one level is ever in memory and there is no
@@ -29,11 +29,11 @@ try {
   Add-Type -AssemblyName WindowsBase
 
   Write-Host ""
-  Write-Host "  TESLES NPC OVERHAUL - kartan pilkkominen" -ForegroundColor Yellow
-  Write-Host "  ----------------------------------------"
+  Write-Host "  TESLES NPC OVERHAUL - map tiles" -ForegroundColor Yellow
+  Write-Host "  -------------------------------"
 
   if (-not (Test-Path $mapDir)) {
-    throw "Kansiota ei loydy: $mapDir"
+    throw "Folder not found: $mapDir"
   }
 
   # Accept any image the user dropped in, whatever the extension.
@@ -52,17 +52,17 @@ try {
       Sort-Object Length -Descending | Select-Object -First 1
     if ($cand) {
       $Source = $cand.FullName
-      Say "Kaytetaan loydettya kuvaa: $($cand.Name)" "Yellow"
+      Say "Using the image found: $($cand.Name)" "Yellow"
     }
   }
 
   if (-not $Source -or -not (Test-Path $Source -PathType Leaf)) {
     Write-Host ""
-    Say "Tarkkaa karttakuvaa ei loytynyt." "Yellow"
-    Say "Tallenna kuva nimella scum_map_hires.png tahan kansioon:"
+    Say "No high resolution map image found." "Yellow"
+    Say "Save the image as scum_map_hires.png in this folder:"
     Say "  $mapDir"
     Write-Host ""
-    Say "Kansiossa on nyt:"
+    Say "The folder now holds:"
     Get-ChildItem $mapDir -File | ForEach-Object {
       Say ("  {0}  ({1:N1} MB)" -f $_.Name, ($_.Length / 1MB))
     }
@@ -70,7 +70,7 @@ try {
     return
   }
 
-  Say "Lahde : $Source"
+  Say "Source: $Source"
 
   # Read the dimensions without decoding the pixels.
   $uri = New-Object System.Uri((Resolve-Path $Source).Path)
@@ -81,21 +81,21 @@ try {
   $srcW = $dec.Frames[0].PixelWidth
   $srcH = $dec.Frames[0].PixelHeight
   $dec = $null
-  Say "Koko  : $srcW x $srcH"
+  Say "Size  : $srcW x $srcH"
 
   if ($srcW -lt 2048) {
-    Say "Kuva on pienempi kuin mukana tuleva kartta. Pilkkomista ei tarvita." "Yellow"
+    Say "The image is smaller than the bundled map. No tiles needed." "Yellow"
     return
   }
   if ([math]::Abs($srcW - $srcH) -gt 4) {
-    Say "VAROITUS: kuva ei ole nelio. Merkit voivat osua vaarin." "Yellow"
+    Say "WARNING: the image is not square. Markers may be off." "Yellow"
   }
 
   # The live map needs a base image even when tiles exist (it is the fallback
   # while tiles load). Recreate it from the source if it went missing.
   $baseMap = Join-Path $mapDir "scum_map.png"
   if (-not (Test-Path $baseMap)) {
-    Say "scum_map.png puuttuu - luodaan se lahdekuvasta." "Yellow"
+    Say "scum_map.png missing - making it from the source image." "Yellow"
     $b = New-Object System.Windows.Media.Imaging.BitmapImage
     $b.BeginInit()
     $b.UriSource = $uri
@@ -109,7 +109,7 @@ try {
     try { $penc.Save($fs) } finally { $fs.Close() }
     $b = $null
     [System.GC]::Collect()
-    Say "scum_map.png luotu." "Green"
+    Say "scum_map.png made." "Green"
   }
 
   # One level is held in memory as 32-bit pixels while its tiles are cut.
@@ -124,11 +124,11 @@ try {
   while ($target -gt 2048) {
     $needMb = [int](($target * $target * 4) / 1MB * 1.6)
     if ($needMb -lt $avail - 512) { break }
-    Say ("Taso {0} vaatisi noin {1} MB, vapaana {2} MB - pudotetaan tasolle {3}." -f
+    Say ("Level {0} would need about {1} MB, {2} MB free - dropping to {3}." -f
          $target, $needMb, $avail, ($target / 2)) "Yellow"
     $target = [int]($target / 2)
   }
-  Say ("Suurin taso: {0} x {0}  (noin {1} MB muistia)" -f
+  Say ("Largest level: {0} x {0}  (about {1} MB of memory)" -f
        $target, [int](($target * $target * 4) / 1MB * 1.6))
   $levels = @()
   $w = 2048
@@ -188,25 +188,25 @@ try {
   [System.IO.File]::WriteAllText((Join-Path $tileDir "meta.json"), $json)
 
   Write-Host ""
-  Say "Valmis. Live map kayttaa nyt tarkkaa karttaa." "Green"
-  Say "Paivita selain Ctrl+F5."
+  Say "Done. The live map now uses the high resolution map." "Green"
+  Say "Refresh the browser with Ctrl+F5."
   Write-Host ""
 }
 catch [System.OutOfMemoryException] {
   Write-Host ""
-  Say "Muisti loppui kesken." "Red"
-  Say "Aja uudestaan pienemmalla tarkkuudella, esimerkiksi:" "Yellow"
+  Say "Out of memory." "Red"
+  Say "Run again at a lower resolution, e.g.:" "Yellow"
   Say "  powershell -ExecutionPolicy Bypass -File livemap\tile_map.ps1 -MaxSize 4096"
   Write-Host ""
 }
 catch {
   Write-Host ""
-  Say "VIRHE: $($_.Exception.Message)" "Red"
+  Say "ERROR: $($_.Exception.Message)" "Red"
   if ($_.InvocationInfo) {
-    Say "Rivi $($_.InvocationInfo.ScriptLineNumber): $($_.InvocationInfo.Line.Trim())" "DarkGray"
+    Say "Line $($_.InvocationInfo.ScriptLineNumber): $($_.InvocationInfo.Line.Trim())" "DarkGray"
   }
   Write-Host ""
 }
 finally {
-  Read-Host "  Enter sulkee"
+  Read-Host "  Press Enter to close"
 }

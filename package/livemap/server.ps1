@@ -41,25 +41,25 @@ if (-not $ModOutput -or -not (Test-Path $ModOutput)) {
 Write-Host ""
 Write-Host "  TESLES NPC OVERHAUL - Live Map" -ForegroundColor Yellow
 Write-Host "  ------------------------------"
-Say "Sivu      : http://127.0.0.1:$Port/"
+Say "Page      : http://127.0.0.1:$Port/"
 if ($ModOutput) {
   Say "Mod-output: $ModOutput" "Green"
   $stateFile = Join-Path $ModOutput "live_state.json"
   if (Test-Path $stateFile) {
-    Say "live_state.json loytyy." "Green"
+    Say "live_state.json found." "Green"
   } else {
-    Say "live_state.json puuttuu viela - kartta nayttaa OFFLINE kunnes" "Yellow"
-    Say "palvelin on kaynnistynyt ja director on kirjoittanut tilan." "Yellow"
+    Say "live_state.json not there yet - the map shows OFFLINE until" "Yellow"
+    Say "the server has started and the mod has written its state." "Yellow"
   }
 } else {
-  Say "Mod-output: EI LOYTYNYT - aja INSTALL.bat ensin." "Red"
+  Say "Mod output: NOT FOUND - run INSTALL.bat first." "Red"
 }
 $baseMap = Join-Path $root "map\scum_map.png"
 if (-not (Test-Path $baseMap)) {
-  Say "map\scum_map.png puuttuu - kartta nakyy tyhjana ruudukkona." "Yellow"
-  Say "Aja lisatyokalut\SETUP_HIRES_MAP.bat, se luo peruskartan uudestaan." "Yellow"
+  Say "map\scum_map.png missing - the map shows an empty grid." "Yellow"
+  Say "Run tools\SETUP_HIRES_MAP.bat, it rebuilds the basic map." "Yellow"
 }
-Say "Sulje tama ikkuna kun lopetat."
+Say "Close this window when you are done."
 Write-Host ""
 
 $types = @{
@@ -106,9 +106,9 @@ $listener = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Lo
 try {
   $listener.Start()
 } catch {
-  Say "Portti $Port on varattu tai estetty: $($_.Exception.Message)" "Red"
-  Say "Kokeile toista porttia: START_LIVEMAP.bat 8899" "Yellow"
-  Read-Host "  Enter sulkee"
+  Say "Port $Port is taken or blocked: $($_.Exception.Message)" "Red"
+  Say "Try another port: START_LIVEMAP.bat 8899" "Yellow"
+  Read-Host "  Press Enter to close"
   exit 1
 }
 
@@ -222,7 +222,7 @@ while ($true) {
         if ($line) {
           [System.IO.File]::AppendAllText((Join-Path $ModOutput "commands.txt"), $line + "`n")
           $reply = @{ ok = $true; id = $id }
-          if ($Verbose) { Say "komento: $line" "Cyan" }
+          if ($Verbose) { Say "command: $line" "Cyan" }
         } else {
           $reply = @{ ok = $false; error = "invalid command" }
         }
@@ -267,7 +267,7 @@ while ($true) {
     $client.Close()
   } catch {
     # One bad request must never take the server down.
-    if ($Verbose) { Say "pyynto epaonnistui: $($_.Exception.Message)" "DarkYellow" }
+    if ($Verbose) { Say "request failed: $($_.Exception.Message)" "DarkYellow" }
     if ($client) { try { $client.Close() } catch {} }
   }
 }

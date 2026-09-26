@@ -8,112 +8,112 @@ $MOD = "TeslesNPCOverhaul"
 function Say($t, $c = "Gray") { Write-Host "  $t" -ForegroundColor $c }
 
 Write-Host ""
-Write-Host "  TESLES NPC OVERHAUL - tilanne" -ForegroundColor Yellow
-Write-Host "  ============================="
+Write-Host "  TESLES NPC OVERHAUL - status" -ForegroundColor Yellow
+Write-Host "  ============================"
 Write-Host ""
 
 $pathFile = Join-Path $here 'livemap\livemap_paths.txt'
 $out = $null
 if (Test-Path $pathFile) { $out = (Get-Content $pathFile -First 1).Trim() }
 if (-not $out -or -not (Test-Path $out)) {
-  Say "Mod-output -kansiota ei loydy. Onko INSTALL.bat ajettu?" "Red"
-  Read-Host "  Enter sulkee"
+  Say "The mod output folder is not found. Has INSTALL.bat been run?" "Red"
+  Read-Host "  Press Enter to close"
   exit 1
 }
 Say "Output: $out"
 
 $proc = Get-Process -Name "SCUMServer" -ErrorAction SilentlyContinue
-if ($proc) { Say "SCUMServer: kaynnissa (PID $($proc.Id))" "Green" }
-else { Say "SCUMServer: ei kaynnissa" "Yellow" }
+if ($proc) { Say "SCUMServer: running (PID $($proc.Id))" "Green" }
+else { Say "SCUMServer: not running" "Yellow" }
 
 # boot.log is written before any module loads, so it is the first thing to
 # read when the mod is quiet.
 $boot = Join-Path $out 'boot.log'
 if (Test-Path $boot) {
-  Say "boot.log loytyy - mod kaynnistyi. Viimeiset rivit:" "Green"
+  Say "boot.log found - the mod started. Last lines:" "Green"
   Get-Content $boot -Tail 14 | ForEach-Object { Write-Host "    $_" }
 } else {
-  Say "boot.log PUUTTUU - UE4SS ei ole ajanut modin main.lua:ta lainkaan." "Red"
+  Say "boot.log MISSING - UE4SS has not run the mod's main.lua at all." "Red"
   Write-Host ""
-  Say "Tarkista tassa jarjestyksessa:" "Yellow"
+  Say "Check in this order:" "Yellow"
   $modRoot = Split-Path $out -Parent
   $modsDir = Split-Path $modRoot -Parent
-  Say "  1. Onko tiedosto olemassa:"
+  Say "  1. Does this file exist:"
   Say "     $modRoot\Scripts\main.lua"
   if (Test-Path (Join-Path $modRoot 'Scripts\main.lua')) {
-    Say "     -> on olemassa" "Green"
+    Say "     -> it exists" "Green"
   } else {
-    Say "     -> PUUTTUU. Aja INSTALL.bat uudestaan." "Red"
+    Say "     -> MISSING. Run INSTALL.bat again." "Red"
   }
-  Say "  2. Onko mods.txt:ssa rivi  TeslesNPCOverhaul : 1"
+  Say "  2. Does mods.txt have the line  TeslesNPCOverhaul : 1"
   $modsTxt = Join-Path $modsDir 'mods.txt'
   if (Test-Path $modsTxt) {
     $hit = Select-String -Path $modsTxt -Pattern "TeslesNPCOverhaul" -SimpleMatch
     if ($hit) { Say "     -> $($hit.Line.Trim())" "Green" }
-    else { Say "     -> rivi PUUTTUU" "Red" }
+    else { Say "     -> the line is MISSING" "Red" }
   } else {
-    Say "     -> mods.txt puuttuu: $modsTxt" "Red"
+    Say "     -> mods.txt missing: $modsTxt" "Red"
   }
-  Say "  3. UE4SS:n tila:"
+  Say "  3. UE4SS status:"
   $win64 = Split-Path $modsDir -Parent
   if ((Split-Path $modsDir -Leaf) -eq 'Mods' -and
       (Split-Path $win64 -Leaf) -eq 'ue4ss') {
     $win64 = Split-Path $win64 -Parent
   }
   Write-UE4SSHealth (Get-UE4SSHealth $win64)
-  Say "  4. Aja DIAGNOSE.bat ja laheta syntyva zip jos tama ei riita."
+  Say "  4. Run DIAGNOSE.bat and share the zip it makes if this is not enough."
   Write-Host ""
 }
 
 $state = Join-Path $out 'live_state.json'
 if (-not (Test-Path $state)) {
-  Say "live_state.json puuttuu - director ei ole viela kirjoittanut tilaa." "Yellow"
-  Say "Jos boot.log loppuu riviin 'startup deferred', odota 25 s ja aja uudestaan." "Yellow"
+  Say "live_state.json missing - the director has not written its state yet." "Yellow"
+  Say "If boot.log ends with 'startup deferred', wait 25 s and run this again." "Yellow"
 } else {
   $age = [int]((Get-Date) - (Get-Item $state).LastWriteTime).TotalSeconds
-  if ($age -le 15) { Say "live_state.json: paivitetty $age s sitten" "Green" }
-  else { Say "live_state.json: vanha ($age s) - tickaako director?" "Yellow" }
+  if ($age -le 15) { Say "live_state.json: updated $age s ago" "Green" }
+  else { Say "live_state.json: old ($age s) - is the director ticking?" "Yellow" }
 
   try {
     $j = Get-Content $state -Raw | ConvertFrom-Json
     Write-Host ""
-    Say "Versio      : $($j.version)"
+    Say "Version     : $($j.version)"
     Say "Tick        : $($j.tick)   uptime $([int]($j.uptime/60)) min"
-    Say "NPC         : $($j.stats.alive) elossa / $($j.stats.npcs)"
-    Say "Ryhmat      : $($j.stats.groups)"
-    Say "Fyysisia    : $($j.stats.physical)"
-    Say "Reitit      : $($j.stats.routes) (epaonnistui $($j.stats.route_fail))"
-    Say "Liikekaskyt : $($j.stats.commands)"
-    Say "Spawnit     : $($j.stats.spawns) (epaonnistui $($j.stats.spawn_fail))"
+    Say "NPCs        : $($j.stats.alive) alive / $($j.stats.npcs)"
+    Say "Squads      : $($j.stats.groups)"
+    Say "Physical    : $($j.stats.physical)"
+    Say "Routes      : $($j.stats.routes) (failed $($j.stats.route_fail))"
+    Say "Move orders : $($j.stats.commands)"
+    Say "Spawns      : $($j.stats.spawns) (failed $($j.stats.spawn_fail))"
     Write-Host ""
-    Say "Osajarjestelmat:"
+    Say "Subsystems:"
     foreach ($h in $j.health) {
       $col = switch ($h.status) { "OK" { "Green" } "PENDING" { "Cyan" }
                                   "DEGRADED" { "Yellow" } default { "Red" } }
       Write-Host ("    {0,-24} {1,-9} {2}" -f $h.key, $h.status, $h.detail) -ForegroundColor $col
     }
   } catch {
-    Say "live_state.json ei jasenny: $_" "Red"
+    Say "live_state.json could not be parsed: $_" "Red"
   }
 }
 
 Write-Host ""
 $log = Join-Path $out 'director.log'
 if (Test-Path $log) {
-  Say "director.log viimeiset rivit:" "Cyan"
+  Say "director.log, last lines:" "Cyan"
   Get-Content $log -Tail 12 | ForEach-Object { Write-Host "    $_" }
 } else {
-  Say "director.log puuttuu (kirjoitetaan vasta kun director kaynnistyy)." "Yellow"
+  Say "director.log missing (written once the director starts)." "Yellow"
 }
 
 Write-Host ""
 $world = Join-Path (Split-Path $out -Parent) 'state\world_state.json'
 if (Test-Path $world) {
   $kb = [math]::Round((Get-Item $world).Length / 1KB, 1)
-  Say "Maailman tallennus: $kb KB, $((Get-Item $world).LastWriteTime)" "Green"
+  Say "Saved world: $kb KB, $((Get-Item $world).LastWriteTime)" "Green"
 } else {
-  Say "Maailmaa ei ole viela tallennettu (tallennus 45 s valein)." "Yellow"
+  Say "The world has not been saved yet (every 45 s)." "Yellow"
 }
 
 Write-Host ""
-Read-Host "  Enter sulkee"
+Read-Host "  Press Enter to close"

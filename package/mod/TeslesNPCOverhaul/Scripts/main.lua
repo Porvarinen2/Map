@@ -113,6 +113,12 @@ do
     end
 end
 
+-- Language of what the mod shows (config Language: "en" or "fi").
+do
+    local ok, Lang = pcall(require, "core.lang")
+    if ok and type(Lang) == "table" then Lang.lang = (CFG.Language == "fi") and "fi" or "en" end
+end
+
 -- ----------------------------------------------------------------- modules --
 
 -- Loaded one at a time so a failure names the module that broke instead of
@@ -165,9 +171,22 @@ Physical.tuning.render_uu = CFG.RenderRadiusUU or Physical.tuning.render_uu
 need("sim.commands").configure(OUTPUT_DIR, SEP)
 need("npc.stress").tuning.recovery_per_5min = CFG.StressRecoveryPer5Min
     or need("npc.stress").tuning.recovery_per_5min
--- The owner's own squad classes (ryhmat.lua, kept across updates).
+-- The owner's own squad classes (squads.lua - ryhmat.lua in older
+-- installs - kept across updates).
+local function require_first(names)
+    local last = nil
+    for _, n in ipairs(names) do
+        local f = io.open(MOD_DIR .. SEP .. n .. ".lua", "r")
+        if f then
+            f:close()
+            return pcall(require, n)
+        end
+        last = n
+    end
+    return true, nil
+end
 do
-    local okr, defs = pcall(require, "ryhmat")
+    local okr, defs = require_first({ "squads", "ryhmat" })
     if okr and type(defs) == "table" then
         local Groups = need("npc.groups")
         local Diplomacy = need("npc.diplomacy")
@@ -181,16 +200,26 @@ do
             end
         end
     elseif not okr then
-        boot("ryhmat.lua could not be read: " .. tostring(defs))
+        boot("squads.lua could not be read: " .. tostring(defs))
     end
 end
 
 -- Squad gear lives in its own file so an update never overwrites it.
 do
-    local okv, gear = pcall(require, "varusteet")
-    local header = { "TESLES NPC OVERHAUL - varusteet (" .. os.date("%Y-%m-%d %H:%M:%S") .. ")",
-                     "varusteet.lua: " .. MOD_DIR .. SEP .. "varusteet.lua" }
+    local okv, gear = require_first({ "loadouts", "varusteet" })
+    local header = { "TESLES NPC OVERHAUL - loadouts (" .. os.date("%Y-%m-%d %H:%M:%S") .. ")",
+                     "loadouts.lua: " .. MOD_DIR .. SEP .. "loadouts.lua" }
+    -- English keys are the same settings as the Finnish ones.
+    local ALIAS = { Outfit = "Asu", Body = "Runko", Magazine = "Lipas", Scopes = "Tahtaimet",
+                    ScopeChance = "TahtainOsuus" }
     if okv and type(gear) == "table" then
+        for _, lo in pairs(gear) do
+            if type(lo) == "table" then
+                for en, fi in pairs(ALIAS) do
+                    if lo[en] ~= nil and lo[fi] == nil then lo[fi] = lo[en] end
+                end
+            end
+        end
         CFG.Loadouts = gear
         for _, line in ipairs(need("npc.groups").apply_bodies(gear)) do boot(line) end
         local n = 0
@@ -208,16 +237,16 @@ do
             if lo.Asu ~= nil then
                 parts[#parts + 1] = "Asu: " .. (type(lo.Asu) == "table" and table.concat(lo.Asu, ", ") or tostring(lo.Asu))
             end
-            header[#header + 1] = "  " .. key .. " = " .. (#parts > 0 and table.concat(parts, " | ") or "(tyhja)")
+            header[#header + 1] = "  " .. key .. " = " .. (#parts > 0 and table.concat(parts, " | ") or "(empty)")
         end
-        if not gear.KAIKKI then
-            header[#header + 1] = "  (KAIKKI-kohtaa ei ole: vain ryhmakohtaiset varusteet kaytossa)"
+        if not (gear.KAIKKI or gear.ALL) then
+            header[#header + 1] = "  (no ALL section: only per-squad loadouts)"
         end
-        header[#header + 1] = "yhteensa " .. n .. " esinetta"
-        boot("varusteet.lua: " .. n .. " items configured")
+        header[#header + 1] = n .. " items in total"
+        boot("loadouts.lua: " .. n .. " items configured")
     elseif not okv then
-        header[#header + 1] = "EI VOITU LUKEA: " .. tostring(gear)
-        boot("varusteet.lua could not be read: " .. tostring(gear))
+        header[#header + 1] = "COULD NOT BE READ: " .. tostring(gear)
+        boot("loadouts.lua could not be read: " .. tostring(gear))
     end
     Bridge.loadout_header = header
 end

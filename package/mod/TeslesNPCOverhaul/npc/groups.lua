@@ -129,9 +129,9 @@ function G.register_custom(defs)
     for i, d in ipairs(defs or {}) do
         local key = d.key or d.avain
         if type(key) ~= "string" or not key:match("^[a-z][a-z0-9_]*$") then
-            notes[#notes + 1] = "ryhmat.lua #" .. i .. ": avain puuttuu tai on virheellinen (pienet kirjaimet ja _)"
+            notes[#notes + 1] = "squads.lua #" .. i .. ": key missing or invalid (lower case letters and _)"
         elseif G.by_key[key] and not G.by_key[key].custom then
-            notes[#notes + 1] = "ryhmat.lua: " .. key .. " on jo modin oma luokka - valitse toinen avain"
+            notes[#notes + 1] = "squads.lua: " .. key .. " is already a built-in class - pick another key"
         else
             local size = d.koko or d.size or { 2, 4 }
             local lo = math.max(1, math.min(5, math.floor(tonumber(size[1]) or 2)))
@@ -139,18 +139,18 @@ function G.register_custom(defs)
             local arche = {}
             for _, a in ipairs(d.tausta or d.archetypes or { "survivor" }) do
                 if Archetypes.get(a) then arche[#arche + 1] = a
-                else notes[#notes + 1] = "ryhmat.lua: " .. key .. ": tuntematon tausta " .. tostring(a) end
+                else notes[#notes + 1] = "squads.lua: " .. key .. ": unknown archetype " .. tostring(a) end
             end
             if #arche == 0 then arche = { "survivor" } end
             local weights = {}
             for kind, w in pairs(d.kohteet or d.poi_weights or { VILLAGE = 3, CITY = 2 }) do
                 if POI_KINDS[kind] and tonumber(w) and tonumber(w) > 0 then weights[kind] = tonumber(w)
-                else notes[#notes + 1] = "ryhmat.lua: " .. key .. ": tuntematon kohde " .. tostring(kind) end
+                else notes[#notes + 1] = "squads.lua: " .. key .. ": unknown place kind " .. tostring(kind) end
             end
             if next(weights) == nil then weights = { VILLAGE = 3, CITY = 2 } end
             local body, variant = G.parse_body(d.runko or d.body)
             local cls = {
-                key = key, fi = d.nimi or d.fi or key, size = { lo, hi },
+                key = key, fi = d.nimi or d.name or d.fi or key, size = { lo, hi },
                 archetypes = arche, tactics = d.taktiikka or d.tactics or "mixed",
                 weight = tonumber(d.yleisyys or d.weight) or 0,
                 poi_weights = weights,
@@ -168,7 +168,7 @@ function G.register_custom(defs)
                 G.list[#G.list + 1] = cls
             end
             G.by_key[key] = cls
-            notes[#notes + 1] = string.format("ryhmat.lua: %s (%s) %d-%d NPC, %d ryhmaa kartalla",
+            notes[#notes + 1] = string.format("squads.lua: %s (%s) %d-%d NPCs, %d squads on the map",
                 key, cls.fi, lo, hi, cls.guaranteed)
         end
     end
@@ -197,11 +197,11 @@ function G.apply_bodies(gear)
     local function set(cls, runko)
         local body, variant = G.parse_body(runko)
         if not (body or variant) then
-            notes[#notes + 1] = "varusteet.lua: " .. cls.key .. ": tuntematon Runko " .. tostring(runko)
+            notes[#notes + 1] = "loadouts.lua: " .. cls.key .. ": unknown Body " .. tostring(runko)
             return
         end
         cls.body, cls.variant = body, variant
-        notes[#notes + 1] = "varusteet.lua: " .. cls.key .. " Runko = " .. tostring(body or variant)
+        notes[#notes + 1] = "loadouts.lua: " .. cls.key .. " Body = " .. tostring(body or variant)
     end
     local all = gear.KAIKKI or gear.ALL
     if type(all) == "table" and all.Runko then
@@ -212,7 +212,7 @@ function G.apply_bodies(gear)
     for key, lo in pairs(gear) do
         if type(lo) == "table" and lo.Runko and G.by_key[key] then
             if key == "radiation_group" then
-                notes[#notes + 1] = "varusteet.lua: radiation_group pysyy sateilypuvussa"
+                notes[#notes + 1] = "loadouts.lua: radiation_group keeps the radiation suit"
             else
                 set(G.by_key[key], lo.Runko)
             end

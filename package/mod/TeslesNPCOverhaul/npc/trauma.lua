@@ -106,12 +106,13 @@ function Tr.trait(npc, key)
     return U.clamp(base + delta, 0, 1)
 end
 
-function Tr.summary(npc)
+function Tr.summary(npc, tr)
     if not npc.traumas then return "" end
+    tr = tr or function(x) return x end
     local parts = {}
     for kind, rec in pairs(npc.traumas) do
         local def = Tr.KINDS[kind]
-        parts[#parts + 1] = (def and def.fi or kind) ..
+        parts[#parts + 1] = tr(def and def.fi or kind) ..
             (rec.count > 1 and (" x" .. rec.count) or "")
     end
     table.sort(parts)

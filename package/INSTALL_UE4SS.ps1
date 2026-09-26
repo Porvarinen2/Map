@@ -45,24 +45,24 @@ function Find-ServerWin64 {
 
 try {
   Write-Host ""
-  Write-Host "  UE4SS - asennus SCUM-palvelimelle" -ForegroundColor Yellow
+  Write-Host "  UE4SS - install on the SCUM server" -ForegroundColor Yellow
   Write-Host "  ---------------------------------"
 
   if (Get-Process -Name "SCUMServer" -ErrorAction SilentlyContinue) {
-    Say "SCUMServer on kaynnissa. Sammuta palvelin ensin." "Red"
+    Say "SCUMServer is running. Stop the server first." "Red"
     return
   }
 
   if (-not $Win64) { $Win64 = Find-ServerWin64 }
   if (-not $Win64) {
-    $root = Read-Host "  Anna SCUM Server -kansion polku"
+    $root = Read-Host "  Path of the SCUM Server folder"
     $Win64 = Join-Path ($root.Trim('"').Trim()) 'SCUM\Binaries\Win64'
   }
   if (-not (Test-Path (Join-Path $Win64 'SCUMServer.exe'))) {
-    Say "SCUMServer.exe ei loydy polusta: $Win64" "Red"
+    Say "SCUMServer.exe not found in: $Win64" "Red"
     return
   }
-  Say "Palvelin: $Win64" "Green"
+  Say "Server: $Win64" "Green"
 
   # Record what is installed now, so the end of the run can prove whether the
   # update actually replaced anything. "I updated it" and "the loader on disk
@@ -82,19 +82,19 @@ try {
   }
   $before = Get-LoaderInfo $Win64
   if ($before) {
-    Say ("Asennettuna nyt: UE4SS.dll  {0:N0} B  {1}" -f $before.size,
+    Say ("Installed now: UE4SS.dll  {0:N0} B  {1}" -f $before.size,
          $before.date.ToString("yyyy-MM-dd")) "DarkGray"
   }
 
   if ($before -and -not $Force) {
-    Say "UE4SS on jo asennettu. Aja -Force jos haluat asentaa uudelleen." "Yellow"
+    Say "UE4SS is already installed. Use -Force to reinstall." "Yellow"
     return
   }
 
   # ------------------------------------------------------------- download ---
 
   $zip = $ZipFile
-  $tag = "(paikallinen zip)"
+  $tag = "(local zip)"
   # Only a zip this run downloaded into TEMP may be deleted afterwards. The
   # bundled copy and a zip the user pointed at are theirs, not ours.
   $zipIsTemp = $false
@@ -109,15 +109,15 @@ try {
     if ($bundle) {
       $zip = $bundle.FullName
       $tag = [IO.Path]::GetFileNameWithoutExtension($bundle.Name)
-      Say "Kaytetaan paketin mukana tullutta UE4SS:aa: $($bundle.Name)" "Cyan"
-      Say "Verkosta haku: lisatyokalut\INSTALL_UE4SS.bat -Force -Online" "DarkGray"
+      Say "Using the UE4SS shipped with this package: $($bundle.Name)" "Cyan"
+      Say "To download instead: tools\INSTALL_UE4SS.bat -Force -Online" "DarkGray"
     }
   }
 
   if (-not $zip) {
     [Net.ServicePointManager]::SecurityProtocol =
       [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls11
-    Say "Haetaan julkaisulista: $API"
+    Say "Fetching the release list: $API"
     $headers = @{ "User-Agent" = "TeslesNPCOverhaul-Installer"
                   "Accept" = "application/vnd.github+json" }
     $releases = $null
@@ -125,16 +125,16 @@ try {
       $releases = Invoke-RestMethod -Uri "$API`?per_page=15" -Headers $headers -TimeoutSec 60
     } catch {
       Write-Host ""
-      Say "Julkaisulistaa ei saatu haettua:" "Red"
+      Say "Could not fetch the release list:" "Red"
       Say "  $($_.Exception.Message)" "Red"
       Write-Host ""
-      Say "Yleisimmat syyt: verkko, palomuuri, tai GitHubin tuntirajoitus" "Yellow"
-      Say "(60 pyyntoa tunnissa ilman kirjautumista)." "Yellow"
+      Say "Usual causes: network, firewall, or GitHub's rate limit" "Yellow"
+      Say "(60 requests an hour without logging in)." "Yellow"
       Write-Host ""
-      Say "Lataa zip kasin ja asenna siita:" "Cyan"
-      Say "  1. Avaa https://github.com/$REPO/releases" "Cyan"
-      Say "  2. Lataa uusin UE4SS_vX.Y.Z.zip" "Cyan"
-      Say "  3. lisatyokalut\INSTALL_UE4SS.bat -Force -ZipFile C:\polku\UE4SS.zip" "Cyan"
+      Say "Download the zip by hand and install from it:" "Cyan"
+      Say "  1. Open https://github.com/$REPO/releases" "Cyan"
+      Say "  2. Download the latest UE4SS_vX.Y.Z.zip" "Cyan"
+      Say "  3. tools\INSTALL_UE4SS.bat -Force -ZipFile C:\path\UE4SS.zip" "Cyan"
       Write-Host ""
       return
     }
@@ -154,9 +154,9 @@ try {
       if ($a) { $chosen = $r; $asset = $a; break }
     }
     if (-not $asset) {
-      Say "Sopivaa UE4SS-pakettia ei loytynyt julkaisuista." "Red"
-      Say "Lataa se kasin osoitteesta https://github.com/$REPO/releases" "Yellow"
-      Say "ja aja: lisatyokalut\INSTALL_UE4SS.bat -ZipFile <polku zipiin>" "Yellow"
+      Say "No suitable UE4SS package in the releases." "Red"
+      Say "Download it by hand from https://github.com/$REPO/releases" "Yellow"
+      Say "and run: tools\INSTALL_UE4SS.bat -ZipFile <path to zip>" "Yellow"
       return
     }
 
@@ -164,40 +164,40 @@ try {
     $published = $null
     try { $published = ([datetime]$chosen.published_at).ToString("yyyy-MM-dd") } catch {}
     Write-Host ""
-    Say "Versio  : $tag$(if ($chosen.prerelease) { '  (pre-release)' })" "Cyan"
-    if ($published) { Say "Julkaistu: $published" "Cyan" }
+    Say "Version : $tag$(if ($chosen.prerelease) { '  (pre-release)' })" "Cyan"
+    if ($published) { Say "Published: $published" "Cyan" }
     if ($before) {
-      Say ("Nykyinen : {0}" -f $before.date.ToString("yyyy-MM-dd")) "DarkGray"
+      Say ("Current  : {0}" -f $before.date.ToString("yyyy-MM-dd")) "DarkGray"
       if ($published -and $published -le $before.date.ToString("yyyy-MM-dd")) {
-        Say "Tama ei ole uudempi kuin asennettu versio." "Yellow"
+        Say "This is not newer than the installed version." "Yellow"
         if (-not $Experimental) {
-          Say "Kokeile: lisatyokalut\INSTALL_UE4SS.bat -Force -Experimental" "Yellow"
+          Say "Try: tools\INSTALL_UE4SS.bat -Force -Experimental" "Yellow"
         }
       }
     }
-    Say "Tiedosto: $($asset.name)  ($([math]::Round($asset.size/1MB,2)) MB)"
-    Say "Osoite  : $($asset.browser_download_url)"
+    Say "File    : $($asset.name)  ($([math]::Round($asset.size/1MB,2)) MB)"
+    Say "URL     : $($asset.browser_download_url)"
     Write-Host ""
 
     if (-not $Yes) {
-      $ans = Read-Host "  Ladataanko ja asennetaanko tama? (K/e)"
-      if ($ans -and $ans -notmatch '^[kKyY]') { Say "Peruttu." "Yellow"; return }
+      $ans = Read-Host "  Download and install this? (Y/n)"
+      if ($ans -and $ans -notmatch '^[kKyY]') { Say "Cancelled." "Yellow"; return }
     }
 
     $zip = Join-Path ([System.IO.Path]::GetTempPath()) ("ue4ss_" + $asset.name)
     $zipIsTemp = $true
-    Say "Ladataan..."
+    Say "Downloading..."
     Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zip `
                       -Headers @{ "User-Agent" = "TeslesNPCOverhaul-Installer" } `
                       -TimeoutSec 600
   }
 
   if (-not (Test-Path $zip)) {
-    Say "Zip-tiedostoa ei loydy: $zip" "Red"
+    Say "Zip file not found: $zip" "Red"
     return
   }
   $hash = (Get-FileHash $zip -Algorithm SHA256).Hash
-  Say ("{0}: {1:N2} MB" -f $(if ($zipIsTemp) { "Ladattu" } else { "Paketti" }),
+  Say ("{0}: {1:N2} MB" -f $(if ($zipIsTemp) { "Downloaded" } else { "Package" }),
        ((Get-Item $zip).Length / 1MB)) "Green"
   Say "SHA256 : $hash" "DarkGray"
 
@@ -217,16 +217,16 @@ try {
                Where-Object { $proxyNames -contains $_.Name } |
                Sort-Object { $_.FullName.Length } | Select-Object -First 1
   if (-not $proxyFile) {
-    Say "Paketista ei loydy proxy-DLL:aa - vaara zip?" "Red"
-    Say "Sisalto: $((Get-ChildItem $tmp | Select-Object -First 12 | ForEach-Object { $_.Name }) -join ', ')" "DarkGray"
+    Say "No proxy DLL in the package - wrong zip?" "Red"
+    Say "Contents: $((Get-ChildItem $tmp | Select-Object -First 12 | ForEach-Object { $_.Name }) -join ', ')" "DarkGray"
     return
   }
   $srcRoot = $proxyFile.Directory.FullName
   $proxy = @($proxyFile)
   $rel = $srcRoot.Substring($tmp.Length).Trim('\', '/')
-  Say "Paketin juuri: $(if ($rel) { $rel } else { '(arkiston juuri)' })" "DarkGray"
+  Say "Package root: $(if ($rel) { $rel } else { '(archive root)' })" "DarkGray"
   $nested = Test-Path (Join-Path (Join-Path $srcRoot 'ue4ss') 'UE4SS.dll')
-  if ($nested) { Say "Uusi rakenne: lataaja kansiossa ue4ss\" "DarkGray" }
+  if ($nested) { Say "New layout: loader in the ue4ss\ folder" "DarkGray" }
 
   # Back up anything we are about to overwrite.
   $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
@@ -238,11 +238,11 @@ try {
   if ($existing) {
     New-Item -ItemType Directory -Path $backup -Force | Out-Null
     foreach ($e in $existing) { Copy-Item $e $backup -Recurse -Force }
-    Say "Varmuuskopio korvattavista: $backup"
+    Say "Backup of replaced files: $backup"
   }
 
   Copy-Item (Join-Path $srcRoot '*') $Win64 -Recurse -Force
-  Say "UE4SS kopioitu palvelimelle." "Green"
+  Say "UE4SS copied to the server." "Green"
 
   # An older flat install leaves UE4SS.dll and Mods\ directly in Win64. The new
   # proxy loads ue4ss\UE4SS.dll instead, so those are dead weight that would
@@ -254,7 +254,7 @@ try {
         $dest = "$sp.vanha-rakenne"
         if (Test-Path -LiteralPath $dest) { Remove-Item $dest -Recurse -Force -ErrorAction SilentlyContinue }
         Move-Item -LiteralPath $sp -Destination $dest -Force -ErrorAction SilentlyContinue
-        Say "Vanha rakenne siirrettiin syrjaan: $stale -> $stale.vanha-rakenne" "Yellow"
+        Say "Old layout moved aside: $stale -> $stale.vanha-rakenne" "Yellow"
       }
     }
   }
@@ -267,12 +267,12 @@ try {
   }
   if (-not (Test-Path $modsDir)) {
     New-Item -ItemType Directory -Path $modsDir -Force | Out-Null
-    Say "Mods-kansio luotiin: $modsDir" "Yellow"
+    Say "Created the Mods folder: $modsDir" "Yellow"
   }
   $modsTxt = Join-Path $modsDir 'mods.txt'
   if (-not (Test-Path $modsTxt)) {
     Set-Content -LiteralPath $modsTxt -Value @("Keybinds : 1") -Encoding ASCII
-    Say "mods.txt luotiin." "Yellow"
+    Say "Created mods.txt." "Yellow"
   }
 
   # A server does not need UE4SS's sample mods, and every extra Lua mod is one
@@ -301,41 +301,41 @@ try {
     }
     if ($changed -or $parked -gt 0) {
       if ($changed) { Set-Content -LiteralPath $modsTxt -Value $out -Encoding ASCII }
-      Say "UE4SS:n omat esimerkkimodit otettiin pois kaytosta ($parked enabled.txt siirretty)." "Yellow"
-      Say "Palauta ne ajamalla -KeepSampleMods, tai muokkaa mods.txt kasin."
+      Say "UE4SS's own sample mods switched off ($parked enabled.txt moved)." "Yellow"
+      Say "Get them back with -KeepSampleMods, or edit mods.txt by hand."
     }
   }
 
   $after = Get-LoaderInfo $Win64
   Write-Host ""
   if (-not $after) {
-    Say "UE4SS.dll ei loydy asennuksen jalkeen - jokin meni pieleen." "Red"
+    Say "UE4SS.dll is missing after the install - something went wrong." "Red"
   } elseif ($before -and $before.hash -eq $after.hash -and -not $zipIsTemp) {
     # Reinstalling the bundled build over itself is the normal case once the
     # server is up to date. That is not a warning.
-    Say ("UE4SS oli jo tama versio ({0:N0} B, {1}) - ei muutosta." -f
+    Say ("UE4SS already was this version ({0:N0} B, {1}) - no change." -f
          $after.size, $after.date.ToString("yyyy-MM-dd")) "Green"
     Say "proxy-DLL : $($proxy.Name -join ', ')"
     Say "Mods      : $modsDir"
     $global:TeslesLoaderAlreadyCurrent = $true
   } elseif ($before -and $before.hash -eq $after.hash) {
-    Say "VAROITUS: lataaja ei muuttunut." "Yellow"
-    Say ("UE4SS.dll on yha sama tiedosto ({0:N0} B, {1})." -f
+    Say "WARNING: the loader did not change." "Yellow"
+    Say ("UE4SS.dll is still the same file ({0:N0} B, {1})." -f
          $after.size, $after.date.ToString("yyyy-MM-dd")) "Yellow"
-    Say "Latasit siis saman version uudelleen. Jos ongelma oli"
-    Say "yhteensopivuudessa, se ei korjaannu talla."
+    Say "So the same version was installed again. If the problem was"
+    Say "compatibility, this does not fix it."
   } else {
-    Say "VALMIS - UE4SS $tag asennettu." "Green"
+    Say "DONE - UE4SS $tag installed." "Green"
     if ($before) {
-      Say ("Lataaja vaihtui: {0} -> {1}" -f $before.date.ToString("yyyy-MM-dd"),
+      Say ("Loader changed: {0} -> {1}" -f $before.date.ToString("yyyy-MM-dd"),
            $after.date.ToString("yyyy-MM-dd")) "Green"
     }
     Say "proxy-DLL : $($proxy.Name -join ', ')"
     Say "Mods      : $modsDir"
     if (-not $Chained) {
       Write-Host ""
-      Say "Seuraavaksi: aja INSTALL.bat asentaaksesi itse modin,"
-      Say "kaynnista palvelin ja aja lisatyokalut\CHECK.bat."
+      Say "Next: run INSTALL.bat to install the mod itself,"
+      Say "start the server and run tools\CHECK.bat."
     }
   }
   Write-Host ""
@@ -345,16 +345,16 @@ try {
 }
 catch {
   Write-Host ""
-  Say "VIRHE: $($_.Exception.Message)" "Red"
+  Say "ERROR: $($_.Exception.Message)" "Red"
   if ($_.InvocationInfo) {
-    Say "Rivi $($_.InvocationInfo.ScriptLineNumber): $($_.InvocationInfo.Line.Trim())" "DarkGray"
+    Say "Line $($_.InvocationInfo.ScriptLineNumber): $($_.InvocationInfo.Line.Trim())" "DarkGray"
   }
   Write-Host ""
   if (-not $Chained) {
-    Say "Voit myos ladata UE4SS:n kasin:" "Yellow"
+    Say "You can also download UE4SS by hand:" "Yellow"
     Say "  https://github.com/UE4SS-RE/RE-UE4SS/releases" "Yellow"
-    Say "ja asentaa sen komennolla:" "Yellow"
-    Say "  lisatyokalut\INSTALL_UE4SS.bat -ZipFile C:\polku\UE4SS.zip" "Yellow"
+    Say "and install it with:" "Yellow"
+    Say "  tools\INSTALL_UE4SS.bat -ZipFile C:\path\UE4SS.zip" "Yellow"
   }
   Write-Host ""
 }
