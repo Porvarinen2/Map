@@ -573,12 +573,38 @@ local function resolve_class(family, level, variant)
     return nil
 end
 
+-- A class whose spawns keep coming back empty (1.9.47: every plain level 5
+-- Guard, at every spot, for hours) is benched for a while and the NPC wears
+-- the nearest body that works: the same level in another variant, then one
+-- level lower, then Drifter.
+B.class_fails = {}
+local BENCH_AFTER, BENCH_SEC = 2, 900
+local function benched(key)
+    local f = B.class_fails[key]
+    return f and f.n >= BENCH_AFTER and os.time() < (f.until_t or 0)
+end
+local function try_class(family, level, variant)
+    if level < 1 then return nil end
+    if benched(ckey(family, level, variant)) then return nil end
+    return resolve_class(family, level, variant)
+end
 function B.class_for(level, variant, family)
     family = family or "Drifter"
-    local c = resolve_class(family, level, variant)
-    if c then return c, family, variant end
-    if variant then return B.class_for(level, nil, family) end
-    if family ~= "Drifter" then return B.class_for(level, nil, "Drifter") end
+    local lv = clamp_level(level)
+    local tries = { { family, lv, variant } }
+    if variant then tries[#tries + 1] = { family, lv, nil } end
+    if family == "Guard" and lv >= 4 and variant ~= "AbandonedBunker" and variant ~= "Radiation" then
+        tries[#tries + 1] = { family, lv, "AbandonedBunker" }
+    end
+    tries[#tries + 1] = { family, lv - 1, nil }
+    if family ~= "Drifter" then
+        tries[#tries + 1] = { "Drifter", lv, nil }
+        tries[#tries + 1] = { "Drifter", lv - 1, nil }
+    end
+    for _, t in ipairs(tries) do
+        local c = try_class(t[1], t[2], t[3])
+        if c then return c, t[1], t[3], t[2] end
+    end
     return nil
 end
 
@@ -807,7 +833,7 @@ function B.spawn_npc(req)
         return nil, "NO_WORLD"
     end
     local variant = req.variant
-    local cls, used_family, used_variant = B.class_for(req.level, variant, req.family)
+    local cls, used_family, used_variant, used_level = B.class_for(req.level, variant, req.family)
     if not cls then
         set_health("physicalVirtualization", "DEGRADED", "NPC_CLASS_UNAVAILABLE: "
             .. short_name(req.family or "Drifter", req.level, variant))
@@ -846,12 +872,28 @@ function B.spawn_npc(req)
             (ok and valid(actor)) and ("actor " .. full_name(actor))
             or ("FAILED: " .. tostring(actor))))
     end
+    local key = ckey(used_family, used_level or req.level, used_variant)
+    local label = short_name(used_family, used_level or req.level, used_variant)
     if not ok or not valid(actor) then
         B.stats.spawn_fail = B.stats.spawn_fail + 1
+        -- The cached class may be a stale pointer: load it again next time.
+        class_cache[key] = nil
+        local f = B.class_fails[key] or { n = 0 }
+        f.n = f.n + 1
+        if f.n >= BENCH_AFTER then f.until_t = os.time() + BENCH_SEC end
+        B.class_fails[key] = f
+        B.fail_logged = (B.fail_logged or 0) + 1
+        if B.fail_logged <= 40 and B.on_debug then
+            pcall(B.on_debug, string.format("spawn FAILED %s at %.0f %.0f %.0f (%s, fail %d of this class%s)",
+                label, pos.X, pos.Y, pos.Z, tostring(actor), f.n,
+                f.n >= BENCH_AFTER and ", benched for 15 min" or ""))
+        end
         set_health("physicalVirtualization", "DEGRADED",
-            "spawn returned no actor: " .. U.json(tostring(actor)))
+            "spawn returned no actor for " .. label .. " (" .. B.stats.spawn_fail .. " failed, "
+            .. B.stats.spawns .. " ok)")
         return nil, "SPAWN_FAILED"
     end
+    B.class_fails[key] = nil
 
     local h = next_handle
     next_handle = next_handle + 1

@@ -98,6 +98,23 @@ function Ph.member_spawn_point(group, index, count)
     return p
 end
 
+-- A spot that keeps refusing spawns (inside a bunker's shell, under a
+-- roof) is left behind: after two failed rounds the squad is placed a few
+-- metres further out each round, in a new direction, up to 60 m.
+function Ph.nudge_after_failures(group, pos)
+    local n = group.spawn_failures or 0
+    if not pos or n < 2 then return pos end
+    local dist = math.min(6000, 800 * (n - 1))
+    local ang = n * 2.4
+    local p = { X = pos.X + math.cos(ang) * dist, Y = pos.Y + math.sin(ang) * dist, Z = pos.Z }
+    if not Grid.is_passable(p) then
+        local q = Grid.snap_to_land(p)
+        if not q then return pos end
+        p = { X = q.X, Y = q.Y, Z = pos.Z }
+    end
+    return p
+end
+
 -- Which SCUM body an NPC wears. Uniformed and trained archetypes use the
 -- Guard bodies, everyone else the Drifter bodies; the variant follows where
 -- the group is and what the NPC is. The bridge falls back to the plain body,
@@ -173,6 +190,7 @@ function Ph.materialize(group, bridge, ctx)
         if not m.materialized and bridge.spawn_ready and not bridge.spawn_ready() then break end
         if not m.materialized then
             local pos = Ph.member_spawn_point(group, i, #alive)
+            pos = Ph.nudge_after_failures(group, pos)
             local ground = bridge.ground_at and bridge.ground_at(pos) or nil
             -- No proven ground means the actor would be dropped from a guessed
             -- height. A falling NPC is a failed spawn dressed up as a live one,
