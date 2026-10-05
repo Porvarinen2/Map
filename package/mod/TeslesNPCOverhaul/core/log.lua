@@ -24,6 +24,52 @@ local function write(name, line)
     f:close()
 end
 
+-- events.tsv gets a line for every move refusal, stall and arrival: opened
+-- and closed per line that was dozens of file opens a second on the game
+-- thread. Its lines are collected and written once a tick (L.flush), and a
+-- file past 5 MB is moved aside (events.old.tsv), so it never grows without
+-- end (9.7 MB in the 2.0.3 diagnostics).
+L.MAX_BYTES = 5 * 1024 * 1024
+local pending = {}
+local function rotate_if_big(name)
+    local path = U.join(L.dir, name)
+    local f = io.open(path, "r")
+    if not f then return end
+    local size = f:seek("end") or 0
+    f:close()
+    if size > L.MAX_BYTES then
+        local old = U.join(L.dir, (name:gsub("(%.%w+)$", ".old%1")))
+        os.remove(old)
+        os.rename(path, old)
+    end
+end
+function L.flush()
+    if not L.dir then pending = {}; return end
+    for name, lines in pairs(pending) do
+        if #lines > 0 then
+            local f = io.open(U.join(L.dir, name), "a")
+            if f then
+                f:write(table.concat(lines, "\n"), "\n")
+                f:close()
+            end
+        end
+    end
+    pending = {}
+    local now = os.time()
+    if now - (L.rotated_at or 0) >= 60 then
+        L.rotated_at = now
+        rotate_if_big("events.tsv")
+        rotate_if_big("director.log")
+    end
+end
+local function queue(name, line)
+    if not L.dir then return end
+    local q = pending[name]
+    if not q then q = {}; pending[name] = q end
+    q[#q + 1] = line
+    if #q >= 500 then L.flush() end
+end
+
 local function emit(kind, msg)
     local line = string.format("[%s] %-5s %s", stamp(), kind, msg)
     if L.echo and print then print("[TeslesNPC] " .. line) end
@@ -46,7 +92,7 @@ function L.event(kind, subject, detail)
     }
     L._events[#L._events + 1] = e
     if #L._events > 400 then table.remove(L._events, 1) end
-    write("events.tsv", string.format("%d\t%s\t%s\t%s", e.t, e.kind, e.subject, e.detail))
+    queue("events.tsv", string.format("%d\t%s\t%s\t%s", e.t, e.kind, e.subject, e.detail))
     return e
 end
 

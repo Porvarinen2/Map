@@ -356,8 +356,13 @@ function Bh.react(director, group, now, sense, fighting)
         group.act.goal_poi, group.act.queue = nil, {}
         group.act.until_t = group.flee_until
         director:solve_route(group, dest, { prefer_roads = false, direct_max = 400000 })
-        -- Every body runs for it, not just the leader.
+        -- Every body runs for it, not just the leader - one shooting at a
+        -- player on SCUM's own AI is taken back first, or it never hears
+        -- the order.
         for _, m in ipairs(list) do
+            if m.native_fight and director.release_native then
+                director:release_native(group, m, "flees")
+            end
             if m.runtime_id and director.bridge.move_to then
                 local spread = { X = dest.X + director.rng:range(-800, 800),
                                  Y = dest.Y + director.rng:range(-800, 800),
@@ -393,6 +398,7 @@ function Bh.react(director, group, now, sense, fighting)
             if m.runtime_id and director.bridge.face then
                 director.bridge.face(m.runtime_id, threat_pos)
                 group.focused = true
+                group.focus_until = now + 3
             end
             m.action = "COVER"
         end
@@ -477,7 +483,11 @@ function Bh.fight_zombies(director, group, now, list)
             if d < best then target, best = z, d end
         end
         if target and courage >= 0.55 and best <= t.zombie_fire_uu then
-            if m.runtime_id and director.bridge.face then director.bridge.face(m.runtime_id, target.pos) end
+            if m.runtime_id and director.bridge.face then
+                director.bridge.face(m.runtime_id, target.pos)
+                group.focused = true
+                group.focus_until = now + 3
+            end
             if director.rng:chance(0.6) then
                 if m.runtime_id and director.bridge.fire_once then director.bridge.fire_once(m.runtime_id) end
                 Bh.noise(director, mp, "gunfire", 1)

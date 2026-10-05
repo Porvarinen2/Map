@@ -549,7 +549,19 @@ B.class_reloads = 0
 local function resolve_class(family, level, variant)
     local key = ckey(family, level, variant)
     local c = class_cache[key]
-    if c and valid(c) then return c end
+    if c and valid(c) then
+        -- A cached pointer can outlive its class (2.0.3: a freed Guard L4
+        -- still answered IsValid and the spawn came back empty); the class
+        -- is looked up again by path, a cheap hash lookup.
+        local folder = family_folder[family]
+        if not folder then return c end
+        local fresh = find_class(class_path(family, level, variant, folder))
+        if fresh then
+            class_cache[key] = fresh
+            return fresh
+        end
+        class_cache[key] = nil
+    end
     if catalog_failed[key] then return nil end
     local known = false
     for _, e in ipairs(catalog_order) do
@@ -1507,6 +1519,10 @@ function B.set_native(handle, on)
         rec.native = false
         pcall(function() c:StopMovement() end)
         ok = pcall(function() c.BrainComponent:StopLogic("TeslesDirector") end)
+        -- SCUM's AI leaves its focus on the player and the body in combat
+        -- mode; with either left on the NPC walks the director's route
+        -- looking back at where the player was (walking backwards).
+        B.release_pose(handle)
         crumb("set_native h" .. tostring(handle) .. " off " .. tostring(ok))
     end
     B.native_switches = (B.native_switches or 0) + 1
@@ -1620,6 +1636,10 @@ end
 -- seconds per actor: a running brain is stopped again.
 B.brain_restarts = 0
 function B.keep_ownership(handle)
+    -- An NPC in a fight with a player runs on SCUM's own AI on purpose
+    -- (set_native). 2.0.3 stopped that brain here every 4 s: the NPC froze
+    -- with its eyes on the player, and walked on backwards after the fight.
+    if in_native(handle) then return false end
     local a = B.actor(handle)
     if not a then return false end
     local c = B.controller(a)
@@ -1746,6 +1766,22 @@ function B.aim_at(handle, pos)
     rec.aiming = true
     return true
 end
+-- Everything that turns an NPC towards something is let go: every focus
+-- priority (default, move, gameplay), combat mode and the replicated aim.
+function B.release_pose(handle)
+    local rec = handles[handle]
+    local a = B.actor(handle)
+    if not a then return false end
+    local c = B.controller(a)
+    if c then
+        for p = 0, 2 do pcall(function() c:ClearFocus(p) end) end
+    end
+    pcall(function() a._assignAimLocationOnSimulatedProxy = false end)
+    pcall(function() a._isInCombatMode = false end)
+    if rec then rec.aiming = nil end
+    return true
+end
+
 function B.stop_aim(handle)
     local rec = handles[handle]
     local a = B.actor(handle)

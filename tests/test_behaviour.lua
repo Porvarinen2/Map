@@ -378,6 +378,79 @@ do
     Bridge.players = { { X = g.position.X + 60000, Y = g.position.Y, Z = 0 } }
     for _ = 1, 25 do sim = sim + 1; Bridge.step(1); d:tick(sim) end
     check(not m.runtime_id or not Bridge.native[h], "the player gone for a while: the director takes the NPC back")
+    check((Bridge.released[h] or 0) >= 1, "taken back, its focus and combat pose are let go (no walking backwards)")
+end
+
+section("an NPC fighting a player is left to SCUM's AI (2.0.3 froze it)")
+do
+    local world, d = fresh(52)
+    local g = first_group(world, function(x) return #x.members >= 3 end)
+    local sim = os.time()
+    Bridge.players = { { X = g.position.X + 50000, Y = g.position.Y, Z = 0 } }
+    for _ = 1, 15 do sim = sim + 1; Bridge.step(1); d:tick(sim) end
+    check(g.physical, "the squad has bodies")
+    local lead = d:driver(g)
+    Bridge.native[lead.runtime_id] = true
+    lead.native_fight = true
+    local other = d:driver(g)
+    check(other and other ~= lead and not other.native_fight, "a leader fighting a player does not lead the column")
+    Bridge.owned_checks = {}
+    for _ = 1, 10 do sim = sim + 1; Bridge.step(1); d:tick(sim) end
+    check((Bridge.owned_checks[lead.runtime_id] or 0) == 0, "its SCUM brain is never stopped while it fights")
+    check((Bridge.owned_checks[other.runtime_id] or 0) > 0, "the others stay under the director")
+end
+
+section("the saved world stays small")
+do
+    local Diplomacy = require("npc.diplomacy")
+    local world, d = fresh(53)
+    local a, b = world.groups[1], world.groups[2]
+    Diplomacy.standing(world.diplomacy, a, b)
+    check(next(world.diplomacy.pairs) == nil, "looking a standing up stores nothing")
+    Diplomacy.adjust(world.diplomacy, a, b, -0.2, "test")
+    check(U.count(world.diplomacy.pairs) == 1, "a changed standing is stored")
+    world.diplomacy.pairs["SQD_9998|SQD_9999"] = -0.9
+    world.diplomacy.pairs[a.gid < b.gid and (a.gid .. "|SQD_9999") or ("SQD_9999|" .. a.gid)] = -0.9
+    local saved = Population.serialize(world)
+    check(U.count(saved.diplomacy) == 1, "standings of squads that are gone are not saved (" .. U.count(saved.diplomacy) .. ")")
+end
+
+section("the event log is written once a tick and rotated")
+do
+    local dir = (os.getenv("TMPDIR") or "/tmp") .. "/tesles_log_test"
+    os.execute("rm -rf '" .. dir .. "' && mkdir -p '" .. dir .. "'")
+    Log.configure(dir, "error", false)
+    for i = 1, 20 do Log.event("TEST", "SQD", tostring(i)) end
+    local f = io.open(dir .. "/events.tsv", "r")
+    check(f == nil, "nothing is written before the flush")
+    if f then f:close() end
+    Log.flush()
+    local n = 0
+    for _ in io.lines(dir .. "/events.tsv") do n = n + 1 end
+    check(n == 20, "the flush writes every line (" .. n .. ")")
+    local was = Log.MAX_BYTES
+    Log.MAX_BYTES = 10
+    Log.rotated_at = 0
+    Log.event("TEST", "SQD", "x")
+    Log.flush()
+    local old = io.open(dir .. "/events.old.tsv", "r")
+    check(old ~= nil, "a big events.tsv is moved aside")
+    if old then old:close() end
+    Log.MAX_BYTES = was
+    Log.configure(nil, "error", false)
+end
+
+section("live map snapshots: details every fifth write")
+do
+    local Telemetry = require("bridge.telemetry")
+    local world, d = fresh(54)
+    local full = Telemetry.snapshot(world, Bridge, d, { detail = true })
+    local brief = Telemetry.snapshot(world, Bridge, d, { detail = false })
+    local fm, bm = full.groups[1].members[1], brief.groups[1].members[1]
+    check(fm.traits and fm.skills and full.traitDefs, "a full snapshot carries personality and skills")
+    check(bm.traits == nil and bm.health ~= nil and brief.traitDefs == nil and brief.detail == false,
+          "a brief one carries only what changes")
+    check(#U.json(brief) < #U.json(full) * 0.75, "and is much smaller")
 end
 
 section("a bigger population, lively Z sectors")

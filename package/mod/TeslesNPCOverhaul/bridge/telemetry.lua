@@ -53,7 +53,35 @@ local function round(v, d)
     return math.floor((tonumber(v) or 0) * m + 0.5) / m
 end
 
-local function npc_row(m, group)
+-- The slow-changing part of an NPC (personality, skills, experience,
+-- memories) is written in every fifth snapshot only; the live map keeps the
+-- last one it got. The rest (position, health, stress, action) every time.
+local function npc_brief(m)
+    local stress_key, stress_fi = Stress.state_of(m.stress)
+    local arch = Archetypes.get(m.archetype)
+    return {
+        npcId = m.npcId,
+        name = m.name,
+        archetype = m.archetype,
+        archetype_fi = arch and Lang.t(arch.fi) or m.archetype,
+        level = m.level,
+        alive = m.alive,
+        leader = m.is_leader or false,
+        health = round(m.health or 0, 0),
+        stress = round(m.stress or 0, 2),
+        stress_state = stress_key,
+        stress_fi = Lang.t(stress_fi),
+        reaction = (m.reaction and m.reaction_at and os.time() - m.reaction_at < 120)
+            and Lang.t(REACTION_FI[m.reaction] or m.reaction) or nil,
+        morale = round(m.morale or 0, 2),
+        action = m.action or "IDLE",
+        action_fi = Lang.t(Utility.fi[m.action or ""] or ""),
+        physical = m.materialized == true,
+    }
+end
+
+local function npc_row(m, group, detail)
+    if detail == false then return npc_brief(m) end
     local top_traits = {}
     for _, key in ipairs(Traits.keys) do
         top_traits[#top_traits + 1] = { k = key, v = Trauma.trait(m, key) }
@@ -123,7 +151,7 @@ end
 
 local Behaviour = require("sim.behaviour")
 
-local function group_row(group, world)
+local function group_row(group, world, detail)
     local act = group.act or {}
     local mv = group.mv or {}
     local alive, physical = 0, 0
@@ -145,20 +173,24 @@ local function group_row(group, world)
     local cls = GroupClasses.get(group.class)
     local members = {}
     for _, m in ipairs(group.members) do
-        members[#members + 1] = npc_row(m, group)
+        members[#members + 1] = npc_row(m, group, detail)
     end
 
+    -- Only standings that moved away from the default (everyone is hostile
+    -- by default; listing every squad made half of a 600 KB live_state.json,
+    -- written every two seconds), worst first, at most eight.
     local rel = {}
     if world then
         for _, other in ipairs(world.groups) do
             if other ~= group then
                 local v = Diplomacy.standing(world.diplomacy, group, other)
-                local tier = Diplomacy.tier(v)
-                if tier ~= "NEUTRAL" then
-                    rel[#rel + 1] = { gid = other.gid, value = round(v, 2), tier = tier }
+                if math.abs(v - Diplomacy.default_standing(group.class, other.class)) >= 0.01 then
+                    rel[#rel + 1] = { gid = other.gid, value = round(v, 2), tier = Diplomacy.tier(v) }
                 end
             end
         end
+        table.sort(rel, function(a, b) return a.value < b.value end)
+        for i = #rel, 9, -1 do rel[i] = nil end
     end
 
     local history = {}
@@ -238,10 +270,11 @@ end
 
 -- Builds the whole snapshot table.
 function T.snapshot(world, bridge, director, extra)
+    local detail = not (extra and extra.detail == false)
     local groups = {}
     local npcs, alive, physical, zombie_seen = 0, 0, 0, 0
     for _, g in ipairs(world.groups) do
-        groups[#groups + 1] = group_row(g, world)
+        groups[#groups + 1] = group_row(g, world, detail)
         for _, m in ipairs(g.members) do
             npcs = npcs + 1
             if m.alive then alive = alive + 1 end
@@ -261,13 +294,15 @@ function T.snapshot(world, bridge, director, extra)
                                 detail = Lang.t(e.detail) }
     end
 
-    local traitDefs = {}
-    for i, t in ipairs(Traits.list) do
-        traitDefs[i] = { name = Lang.t(t.fi), key = t.key, effect = t.effect }
-    end
-    local skillDefs = {}
-    for i, s in ipairs(Skills.list) do
-        skillDefs[i] = { name = Lang.t(s.fi), key = s.key, group = s.group }
+    local traitDefs, skillDefs = nil, nil
+    if detail then
+        traitDefs, skillDefs = {}, {}
+        for i, t in ipairs(Traits.list) do
+            traitDefs[i] = { name = Lang.t(t.fi), key = t.key, effect = t.effect }
+        end
+        for i, s in ipairs(Skills.list) do
+            skillDefs[i] = { name = Lang.t(s.fi), key = s.key, group = s.group }
+        end
     end
 
     -- Players as the director sees them (after the join grace), and the
@@ -295,6 +330,7 @@ function T.snapshot(world, bridge, director, extra)
                                       color = c.color, custom = c.custom or nil }
     end
     return {
+        detail = detail,
         classDefs = classDefs,
         commandResults = director and director.command_results or {},
         players = players,
@@ -332,8 +368,14 @@ end
 
 -- Writes the snapshot atomically enough for a polling reader: a temp file is
 -- written first, then renamed, so the browser never reads a half file.
+T.writes = 0
+T.DETAIL_EVERY = 5
 function T.write(world, bridge, director, extra)
-    local snap = T.snapshot(world, bridge, director, extra)
+    T.writes = T.writes + 1
+    local opts = {}
+    for k, v in pairs(extra or {}) do opts[k] = v end
+    if opts.detail == nil then opts.detail = (T.writes % T.DETAIL_EVERY) == 1 end
+    local snap = T.snapshot(world, bridge, director, opts)
     local json = U.json(snap)
     local ok = write_file("live_state.json.tmp", json)
     if not ok then return false end

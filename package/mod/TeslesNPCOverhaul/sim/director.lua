@@ -289,11 +289,17 @@ end
 
 -- The actor that drives a physical squad: the leader if it has a body,
 -- otherwise the first member who does.
+-- A member fighting a player runs on SCUM's own AI (native_fight): it is
+-- not steered, does not lead the column and is not waited for.
+local function steerable(m)
+    return m.alive and m.runtime_id and not m.native_fight
+end
+
 function D:driver(group)
     local leader = Leadership.leader(group)
-    if leader and leader.alive and leader.runtime_id then return leader end
+    if leader and steerable(leader) then return leader end
     for _, m in ipairs(group.members) do
-        if m.alive and m.runtime_id then return m end
+        if steerable(m) then return m end
     end
     return nil
 end
@@ -375,9 +381,18 @@ function D:move_physical(group, dt)
     if (group.flee_until and self.now < group.flee_until) or group.act.state == S.RETREAT then
         want = self.cfg.PhysicalRunSpeedUU or 450
     end
+    -- SCUM puts its own speed back (262 after a fight, read in the 2.0.3
+    -- log while the leader stood still), so the speed is checked every few
+    -- seconds, not only set once.
+    local recheck = self.bridge.walk_speed and now - (group.speed_checked_at or 0) >= 5
+    if recheck then
+        group.speed_checked_at = now
+        local ws = self.bridge.walk_speed(lead.runtime_id)
+        if ws and math.abs(ws - want) > 5 then group.speed_set = nil end
+    end
     if group.speed_set ~= want and self.bridge.set_speed then
         for _, m in ipairs(group.members) do
-            if m.alive and m.runtime_id then
+            if steerable(m) then
                 self.bridge.set_speed(m.runtime_id, m == lead and want or want * 1.05)
             end
         end
@@ -478,7 +493,7 @@ function D:move_physical(group, dt)
     local ahead = lead
     local k = 0
     for _, m in ipairs(group.members) do
-        if m.alive and m.runtime_id and m ~= lead then
+        if steerable(m) and m ~= lead then
             k = k + 1
             local f = st.follow[m.npcId]
             local gap = (ahead.position and m.position) and U.dist2d(ahead.position, m.position) or 0
@@ -519,7 +534,7 @@ function D:move_physical(group, dt)
         and now - (st.owned_at or 0) >= 4 then
         st.owned_at = now
         for _, m in ipairs(group.members) do
-            if m.alive and m.runtime_id then self.bridge.keep_ownership(m.runtime_id) end
+            if steerable(m) then self.bridge.keep_ownership(m.runtime_id) end
         end
     end
 
@@ -681,6 +696,19 @@ function D:sight_rules()
     }
 end
 
+-- An NPC comes back from SCUM's own AI to the director: its brain is
+-- stopped, its pose let go (bridge), and the squad re-sends speed and orders.
+function D:release_native(g, m, why)
+    m.native_fight, m.fight_far_since = nil, nil
+    if m.runtime_id then self.bridge.set_native(m.runtime_id, false) end
+    Log.event("FIGHT_END", g.gid, m.npcId .. (why and (" " .. why) or ""))
+    g.speed_set = nil
+    if g.steer then
+        g.steer.force = true
+        g.steer.follow[m.npcId] = nil
+    end
+end
+
 function D:player_fights(physical_groups, players, now)
     if not self.bridge.set_native then return end
     local F = D.FIGHT
@@ -719,7 +747,14 @@ function D:player_fights(physical_groups, players, now)
                     if seen then spotted = spotted or { pos = bp, d = best, who = m.npcId } end
                 end
                 local aware = (g.spotted and now <= g.spotted.until_t) or best <= R.close
-                if best <= reach and (aware or spotted or m.native_fight) then
+                -- A squad running for its life runs; SCUM's AI would turn
+                -- it round to shoot back.
+                local fleeing = g.flee_until and now < g.flee_until
+                if fleeing and m.native_fight then
+                    self:release_native(g, m, "flees")
+                elseif fleeing then
+                    m.fight_far_since = nil
+                elseif best <= reach and (aware or spotted or m.native_fight) then
                     m.fight_far_since = nil
                     if not m.native_fight then
                         m.native_fight = true
@@ -729,9 +764,7 @@ function D:player_fights(physical_groups, players, now)
                 elseif m.native_fight and best > reach * F.release_factor + F.release_extra_uu then
                     m.fight_far_since = m.fight_far_since or now
                     if now - m.fight_far_since >= F.release_after then
-                        m.native_fight, m.fight_far_since = nil, nil
-                        self.bridge.set_native(m.runtime_id, false)
-                        Log.event("FIGHT_END", g.gid, m.npcId)
+                        self:release_native(g, m)
                     end
                 end
             end
@@ -850,6 +883,7 @@ function D:run_combat(group, contact, zpressure)
             if self.bridge.face then
                 self.bridge.face(m.runtime_id, enemy_pos)
                 group.focused = true
+                group.focus_until = self.now + 3
             end
             -- Weapon up and aimed at the nearest enemy.
             if self.bridge.aim_at then
@@ -1191,14 +1225,18 @@ function D:tick_group(group, players, physical_groups, dt)
         end
         -- The fight is over: stop staring at where the enemy stood, or the
         -- squad walks on sideways.
-        if group.focused and group.act.state ~= S.COMBAT then
+        -- A few seconds after the last look at a target, so a squad taking
+        -- cover keeps facing the shooter but nobody walks on looking back.
+        if group.focused and group.act.state ~= S.COMBAT and now >= (group.focus_until or 0) then
             group.focused = nil
             for _, m in ipairs(group.members) do
-                if m.alive and m.runtime_id and self.bridge.clear_focus then
-                    self.bridge.clear_focus(m.runtime_id)
-                end
-                if m.alive and m.runtime_id and self.bridge.stop_aim then
-                    pcall(self.bridge.stop_aim, m.runtime_id)
+                if steerable(m) then
+                    if self.bridge.release_pose then
+                        pcall(self.bridge.release_pose, m.runtime_id)
+                    else
+                        if self.bridge.clear_focus then self.bridge.clear_focus(m.runtime_id) end
+                        if self.bridge.stop_aim then pcall(self.bridge.stop_aim, m.runtime_id) end
+                    end
                 end
             end
         end

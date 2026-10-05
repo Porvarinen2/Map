@@ -73,14 +73,13 @@ function D.new_registry()
     return { pairs = {} }
 end
 
+-- Only standings that differ from the default are stored. 2.0.3 stored
+-- every pair it ever looked up, wiped squads included: after a few days the
+-- saved world was 9.6 MB of pairs and every save froze the server for 5 s.
 function D.standing(reg, ga, gb)
     if not (ga and gb) or ga.gid == gb.gid then return 1.0 end
-    local k = key_of(ga.gid, gb.gid)
-    local v = reg.pairs[k]
-    if v == nil then
-        v = D.default_standing(ga.class, gb.class)
-        reg.pairs[k] = v
-    end
+    local v = reg.pairs[key_of(ga.gid, gb.gid)]
+    if v == nil then v = D.default_standing(ga.class, gb.class) end
     return v
 end
 
@@ -89,9 +88,33 @@ function D.adjust(reg, ga, gb, delta, reason)
     local k = key_of(ga.gid, gb.gid)
     local cur = D.standing(reg, ga, gb)
     local nv = U.clamp(cur + delta, -1, 1)
-    reg.pairs[k] = nv
+    if math.abs(nv - D.default_standing(ga.class, gb.class)) < 0.001 then
+        reg.pairs[k] = nil
+    else
+        reg.pairs[k] = nv
+    end
     reg.last_reason = reason
     return nv
+end
+
+-- Drops the standings of squads that no longer exist (and any default
+-- values an older save stored). Returns how many were dropped.
+function D.prune(reg, groups)
+    local class_of = {}
+    for _, g in ipairs(groups or {}) do
+        if g.gid then class_of[g.gid] = g.class end
+    end
+    local dropped = 0
+    for k, v in pairs(reg.pairs) do
+        local a, b = k:match("^(.-)|(.*)$")
+        local ca, cb = a and class_of[a], b and class_of[b]
+        if not (ca and cb) or type(v) ~= "number"
+            or math.abs(v - D.default_standing(ca, cb)) < 0.001 then
+            reg.pairs[k] = nil
+            dropped = dropped + 1
+        end
+    end
+    return dropped
 end
 
 function D.hostile(reg, ga, gb)

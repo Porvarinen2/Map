@@ -147,6 +147,7 @@ local function esc(s)
     -- something that is not a string; one bad value must not end the tick.
     local str = tostring(s)
     if type(str) ~= "string" then return "" end
+    if not str:find('[%c"\\]') then return str end
     return (str:gsub('[%c"\\]', function(c)
         return esc_map[c] or string.format('\\u%04X', c:byte())
     end))
@@ -208,8 +209,18 @@ local function encode(v, buf)
         else
             buf[n + 1] = "{"
             local first = true
-            local ks = U.keys(v)
-            table.sort(ks, function(a, b) return tostring(a) < tostring(b) end)
+            local ks, mixed = {}, false
+            for k in pairs(v) do
+                ks[#ks + 1] = k
+                if type(k) ~= "string" then mixed = true end
+            end
+            -- Plain string keys sort natively; tostring on every comparison
+            -- was a third of the encoding time of a live_state.json.
+            if mixed then
+                table.sort(ks, function(a, b) return tostring(a) < tostring(b) end)
+            else
+                table.sort(ks)
+            end
             for _, k in ipairs(ks) do
                 local val = rawget(v, k)
                 local tk = type(k)

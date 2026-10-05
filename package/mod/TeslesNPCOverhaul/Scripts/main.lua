@@ -328,6 +328,7 @@ local function safe_tick()
             Persist.save(Population.serialize(M.world))
         end
     end)
+    pcall(Log.flush)
 
     -- Telemetry is how anyone sees what is happening, so it must not depend on
     -- the tick having succeeded. A tick that fails is exactly when the live map

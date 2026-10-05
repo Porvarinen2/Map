@@ -322,6 +322,7 @@ function P.prune(world, log)
         end
     end
     world.groups = kept
+    if removed > 0 then Diplomacy.prune(world.diplomacy, world.groups) end
     return removed, ordinary
 end
 
@@ -398,6 +399,7 @@ end
 -- Only durable facts are saved. Routes, engine handles and derived values are
 -- rebuilt on load, so a saved world never carries a stale actor reference.
 function P.serialize(world)
+    Diplomacy.prune(world.diplomacy, world.groups)
     local out = {
         version = 1,
         seed = world.seed,
@@ -528,6 +530,7 @@ function P.deserialize(saved)
         end
       end
     end
+    Diplomacy.prune(world.diplomacy, world.groups)
     return world
 end
 

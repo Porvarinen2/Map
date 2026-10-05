@@ -1028,11 +1028,34 @@ function renderHud() {
 
 /* ---------------------------------------------------------------- polling */
 
+// The mod sends each NPC's personality, skills and memories in every fifth
+// snapshot only; the others carry the fast-changing values, and the last
+// full copy fills in the rest.
+const DETAIL_KEYS = ["dominant", "traits", "skills", "xp", "memories", "traumas", "level_name"];
+const memberDetail = new Map();
+let lastDefs = { traitDefs: null, skillDefs: null };
+function mergeDetail(data) {
+  if (data.traitDefs) lastDefs = { traitDefs: data.traitDefs, skillDefs: data.skillDefs };
+  else { data.traitDefs = lastDefs.traitDefs; data.skillDefs = lastDefs.skillDefs; }
+  (data.groups || []).forEach(g => (g.members || []).forEach(m => {
+    if (data.detail !== false) {
+      const d = {};
+      DETAIL_KEYS.forEach(k => { if (m[k] !== undefined) d[k] = m[k]; });
+      memberDetail.set(m.npcId, d);
+    } else {
+      const d = memberDetail.get(m.npcId);
+      if (d) DETAIL_KEYS.forEach(k => { if (m[k] === undefined && d[k] !== undefined) m[k] = d[k]; });
+    }
+  }));
+  if (memberDetail.size > 2000) memberDetail.clear();
+}
+
 async function poll() {
   try {
     const r = await fetch("api/state?t=" + Date.now(), { cache: "no-store" });
     if (!r.ok) throw new Error("HTTP " + r.status);
     const data = await r.json();
+    mergeDetail(data);
     state = data;
     pollFails = 0;
     if (data.waiting) {

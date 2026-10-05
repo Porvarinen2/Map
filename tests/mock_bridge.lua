@@ -58,6 +58,8 @@ function B.actor_health(h)
 end
 
 function B.move_to(h, dest, opts)
+    -- Like the real bridge: an NPC on SCUM's own AI ignores the director.
+    if B.native[h] then return true end
     local a = B.actors[h]
     if not a then return false end
     a.follow = nil
@@ -76,6 +78,7 @@ end
 -- Follow a moving actor until within radius, like MoveToActor: the request
 -- ends on arrival.
 function B.follow(h, target, radius)
+    if B.native[h] then return true end
     local a, t = B.actors[h], B.actors[target]
     if not (a and t) then return false end
     if B.rng:float() < B.move_reject_rate then return false end
@@ -112,6 +115,13 @@ end
 B.native = {}
 function B.set_native(h, on)
     B.native[h] = on or nil
+    if not on then B.release_pose(h) end
+    return true
+end
+function B.in_native(h) return B.native[h] == true end
+B.released = {}
+function B.release_pose(h)
+    B.released[h] = (B.released[h] or 0) + 1
     return true
 end
 B.loadouts_applied = {}
@@ -125,7 +135,9 @@ function B.fire_once() return true end
 function B.note_kill_result(how) B.kill_result = how end
 
 B.brain_checks = 0
+B.owned_checks = {}
 function B.keep_ownership(h)
+    B.owned_checks[h] = (B.owned_checks[h] or 0) + 1
     B.brain_checks = B.brain_checks + 1
     return false
 end
@@ -181,6 +193,9 @@ end
 
 function B.reset()
     B.actors = {}
+    B.native = {}
+    B.released = {}
+    B.owned_checks = {}
     B.owned = 0
     B.next = 1
     B.stats = { spawns = 0, fails = 0, moves = 0, rejects = 0, despawns = 0 }

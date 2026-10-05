@@ -89,7 +89,10 @@ for _ = 1, 600 do
     run(1, nil)
 end
 local first = #events
-run(20, 4000)
+-- The player keeps 500 m away: inside the render circle, outside the range
+-- where the squad would turn on the player (a fight hands the NPCs to
+-- SCUM's own AI, and the director stops steering them).
+run(20, 50000)
 check(squad.physical, "the squad materialised next to the player")
 do
     local alive, bodies = 0, 0
@@ -109,7 +112,7 @@ for _, m in ipairs(squad.members) do
 end
 local trail_mark = {}
 for i, a in ipairs(actors) do trail_mark[i] = #a.trail end
-run(1200, 4000)
+run(1200, 50000)
 
 local skips, replans, stalls = 0, 0, 0
 for i = start_events + 1, #events do
