@@ -1,7 +1,7 @@
 -- TESLES NPC OVERHAUL - server configuration.
 -- Distances are Unreal units unless a name says otherwise. 100 UU = 1 metre.
 return {
-    Version = "2.0.5",
+    Version = "2.0.6",
 
     -- Language of the live map and messages: "en" or "fi".
     Language = "en",
@@ -79,6 +79,11 @@ return {
     VanillaCleanupIntervalSec = 3,
 
     -- ------------------------------------------------------------- combat --
+    -- How deadly fights between squads are (hit chance multiplier, 1 = the
+    -- full hit chance). Near a player, where the squads have real bodies:
+    PlayerAreaCombatLethality = 0.75,
+    -- Away from every player (fought on the map only):
+    VirtualCombatLethality = 0.5,
     -- ------------------------------------------------------------- stress ---
     -- How much stress an average NPC sheds in five minutes out of danger
     -- (0.01 = one point). Veterans and soldiers recover faster, survivors,

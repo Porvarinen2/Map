@@ -435,6 +435,40 @@ do
           "the fight ends: shots, losses or breaking off")
 end
 
+section("closing in never crosses the C0 line or enters an outpost")
+do
+    local world, d = fresh(58)
+    local Zones = require("world.zones")
+    local POI = require("world.pois")
+    local g = first_group(world)
+    local res = nil
+    for _, r in ipairs(Zones.RESERVED) do if r.fence_out then res = r end end
+    local f = res and res.fence_out
+    if f then
+        -- Standing just outside C0, an enemy deep inside it.
+        local cx = (f.xMin + f.xMax) / 2
+        g.position = { X = cx, Y = f.yMax + 3000, Z = 0 }
+        if not Zones.on_right_side(g) then g.position = { X = cx, Y = f.yMin - 3000, Z = 0 } end
+        local enemy = { position = { X = cx, Y = (f.yMin + f.yMax) / 2, Z = 0 } }
+        local crossed = false
+        for _ = 1, 200 do
+            d:close_in(g, enemy)
+            if not Zones.on_right_side(g) then crossed = true end
+        end
+        check(not crossed, "a squad outside C0 does not follow an enemy into it")
+    end
+    local o = POI.outposts[1]
+    if o then
+        g.position = { X = o.pos.X + (o.radius or 0) + 60000, Y = o.pos.Y, Z = 0 }
+        local enemy = { position = U.copy_vec(o.pos) }
+        local start = U.copy_vec(g.position)
+        for _ = 1, 200 do d:close_in(g, enemy) end
+        check(not POI.near_outpost(g.position, 14000), string.format(
+            "nor walks into a trader outpost (walked %.0f m, stopped %.0f m from it)",
+            U.dist2d(start, g.position) / 100, U.dist2d(g.position, o.pos) / 100))
+    end
+end
+
 section("new squads never appear next to a player")
 do
     local world, d = fresh(56)

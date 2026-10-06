@@ -400,7 +400,7 @@ if (Test-Path -LiteralPath $target) {
   if (Test-Path -LiteralPath $oldCfg) {
     $oc = Get-Content -LiteralPath $oldCfg -Raw
     $mv = [regex]::Match($oc, 'Version\s*=\s*"([^"]+)"')
-    foreach ($key in @('Language', 'TargetNPCs', 'EnableReplenish', 'GhostWeaponChance', 'TopWeaponChance', 'NPCDetectRangeM', 'NPCFireRangeM', 'NPCScopedFireRangeM', 'NPCViewAngleDeg', 'NPCCloseSenseM')) {
+    foreach ($key in @('Language', 'TargetNPCs', 'EnableReplenish', 'GhostWeaponChance', 'TopWeaponChance', 'NPCDetectRangeM', 'NPCFireRangeM', 'NPCScopedFireRangeM', 'NPCViewAngleDeg', 'NPCCloseSenseM', 'PlayerAreaCombatLethality', 'VirtualCombatLethality')) {
       $mg = [regex]::Match($oc, "$key\s*=\s*(`"[a-z]+`"|true|false|[0-9.]+)")
       if (-not $mg.Success) { continue }
       # Up to 1.9.31 GhostWeaponChance held an old default (0.5 / 1.0); from

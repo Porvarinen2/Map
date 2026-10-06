@@ -304,8 +304,19 @@ local function away_point(from, threat, dist)
         local a = math.random() * math.pi * 2
         dir = { X = math.cos(a), Y = math.sin(a) }
     end
-    local p = { X = from.X + dir.X * dist, Y = from.Y + dir.Y * dist, Z = from.Z or 0 }
-    return Grid.snap_to_land(p) or p
+    -- Straight away from the threat, or turned aside when that would lead
+    -- into a trader outpost (a safe zone nobody armed belongs in).
+    local POI = require("world.pois")
+    local first = nil
+    for _, turn in ipairs({ 0, 0.8, -0.8, 1.6, -1.6 }) do
+        local c, s = math.cos(turn), math.sin(turn)
+        local dx, dy = dir.X * c - dir.Y * s, dir.X * s + dir.Y * c
+        local p = { X = from.X + dx * dist, Y = from.Y + dy * dist, Z = from.Z or 0 }
+        p = Grid.snap_to_land(p) or p
+        first = first or p
+        if not (POI.near_outpost and POI.near_outpost(p, 15000)) then return p end
+    end
+    return first
 end
 Bh.away_point = away_point
 
@@ -429,7 +440,9 @@ function Bh.react(director, group, now, sense, fighting)
         local cautious = mean(list, function(m) return Tr.trait(m, "cautiousness") end)
         local aggressive = mean(list, function(m) return Tr.trait(m, "aggression") end)
         local drive = curious * 0.5 + aggressive * 0.4 - cautious * 0.5 - (mean(list, function(m) return m.stress or 0 end)) * 0.6
-        if drive > 0.12 and sense.noise_d <= t.investigate_uu then
+        local POI = require("world.pois")
+        local at_outpost = POI.near_outpost and POI.near_outpost(sense.noise.pos, 15000)
+        if drive > 0.12 and sense.noise_d <= t.investigate_uu and not at_outpost then
             group.investigating = { pos = U.copy_vec(sense.noise.pos), until_t = now + 90 }
             director:solve_route(group, sense.noise.pos, { prefer_roads = false, direct_max = 400000 })
             group.act.state = S.PATROL

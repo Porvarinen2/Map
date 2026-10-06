@@ -572,6 +572,17 @@ function D:move_virtual(group, dt)
     speed = speed * U.clamp(1.05 - (group.act.fatigue or 0) / 260, 0.55, 1.1)
 
     local newpos, arrived = Movement.virtual_step(mv, group.position, dt, speed)
+    -- A step that only clips a water cell at a shore (the nav grid is about
+    -- 30 m a cell) is moved onto the land next to it and the walk goes on.
+    -- 2.0.5 discarded every such step, pulled the marker back and replanned:
+    -- markers hopped along the coasts about 110 times an hour.
+    if newpos and not Grid.is_passable(newpos) then
+        local land = Grid.snap_to_land(newpos)
+        if land and U.dist2d(land, newpos) <= 4000 and U.dist2d(land, group.position) <= speed * math.max(1, dt) * 1.5 + 500 then
+            land.Z = newpos.Z
+            newpos = land
+        end
+    end
     -- Safety net. The router checks every segment, but the nav grid is coarse,
     -- so a step can still land a marker on a water cell. Snapping to the
     -- nearest land could jump the marker across a bay, which would look like a
@@ -791,7 +802,9 @@ function D:player_fights(physical_groups, players, now)
             if first then
                 Log.event("SPOTTED", g.gid, string.format("%s %.0f m", spotted.who, spotted.d / 100))
             end
-            if first or (moved and now - (g.spotted.routed_at or 0) >= 10) then
+            -- A player inside a trader outpost is not followed in there.
+            local in_outpost = POI.near_outpost and POI.near_outpost(spotted.pos, 15000)
+            if not in_outpost and (first or (moved and now - (g.spotted.routed_at or 0) >= 10)) then
                 g.spotted.routed_at = now
                 g.chase_mood = { kind = "CHASE_PLAYER", until_t = now + 60 }
                 pcall(self.solve_route, self, g, spotted.pos, { prefer_roads = false, direct_max = 400000 })
@@ -917,7 +930,8 @@ function D:run_combat(group, contact, zpressure)
     -- Two squads far from every player fight at half the hit chance: in
     -- 2.0.4 about 140 NPCs died an hour, and the island was repopulated
     -- faster than anyone could meet the squads living on it.
-    local scale = (group.physical or enemy.physical) and 1
+    local scale = (group.physical or enemy.physical)
+        and (self.cfg.PlayerAreaCombatLethality or 0.75)
         or (self.cfg.VirtualCombatLethality or 0.5)
     local hits = Combat.exchange_fire(group, enemy, self.rng,
         function(m) return Behaviour.accuracy(m, fatigue) end, scale)
@@ -996,7 +1010,10 @@ function D:close_in(group, enemy)
     if not dir then return end
     local p = { X = group.position.X + dir.X * step, Y = group.position.Y + dir.Y * step,
                 Z = group.position.Z }
-    if not Grid.is_passable(p) then return end
+    -- Never across a zone line (C0: radiation squads in, everyone else out)
+    -- or into an outpost.
+    if not Grid.is_passable(p) or not Zones.on_right_side(group, p) then return end
+    if POI.near_outpost and POI.near_outpost(p, 15000) then return end
     group.position = p
     for _, m in ipairs(group.members) do
         if m.alive then m.position = U.copy_vec(p) end

@@ -65,6 +65,10 @@ function C.spawn(director, id, class, size, x, y)
         return result(director, id, false, class .. Lang.pick(" pysyy alueella ", " stays in ") .. Lang.t(own_zone.fi))
     end
     local world = director.world
+    local cap = Population.HARD_CAP or 250
+    if Population.alive_npc_count(world) >= cap then
+        return result(director, id, false, Lang.pick("NPC-katto täynnä (", "NPC cap reached (") .. cap .. ")")
+    end
     size = math.floor(tonumber(size) or cls.size[1])
     size = math.max(cls.size[1], math.min(cls.size[2], size))
     local g = Factory.new_group({
