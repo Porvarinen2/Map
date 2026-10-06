@@ -40,5 +40,12 @@ end
 check(B.class_fails["Guard5"] and B.class_fails["Guard5"].n >= 1, "the failing class is remembered")
 local c, fam, var, lv = B.class_for(3, nil, "Guard")
 check(c and fam == "Guard" and lv == 3 and var == nil, "other classes unaffected")
+for _, n in ipairs({ "BP_Bear_C", "BP_Bear_Mutant_C", "BP_BTBear_Mutant_ApexHunt_C", "BP_Wolf_C", "BP_Wolf_Mutant_C" }) do
+    check(B.is_predator(n), n .. " is shot by every squad")
+end
+for _, n in ipairs({ "BP_Deer_C", "BP_Deer_Mutant_C", "BP_Boar_C", "BP_Boar_Mutant_C", "BP_Goat_C", "BP_Chicken_C",
+                     "BP_Rabbit_C", "BP_Horse_C", "BP_Donkey_C" }) do
+    check(not B.is_predator(n), n .. " is game: hunters only")
+end
 if fails > 0 then os.exit(1) end
 print("spawn fallback: all ok")

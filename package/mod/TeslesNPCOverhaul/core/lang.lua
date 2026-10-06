@@ -26,7 +26,7 @@ L.EN = {
     -- moods
     ["Rauhallinen"] = "Calm", ["Valpas"] = "Alert", ["Jännittynyt"] = "Tense",
     ["Järkyttynyt"] = "Shaken", ["Paniikissa"] = "Panicking", ["Hajoaa pakoon"] = "Routing",
-    ["Torjuu zombeja"] = "Fighting off zombies", ["Tutkii ammuskelua"] = "Investigating gunfire",
+    ["Torjuu zombeja"] = "Fighting off zombies or beasts", ["Tutkii ammuskelua"] = "Investigating gunfire",
     ["Suojautuu tulelta"] = "Taking cover", ["Shokissa"] = "In shock",
     ["Väistää ammuskelua"] = "Avoiding gunfire", ["Odottaa hiljaa"] = "Holding still",
     ["Lähestyy pelaajaa"] = "Closing in on a player", ["Lähestyy zombeja"] = "Closing in on zombies",

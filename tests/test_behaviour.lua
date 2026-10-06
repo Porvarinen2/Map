@@ -500,6 +500,39 @@ do
     check(#world.groups <= before, "groups " .. before .. " -> " .. #world.groups)
 end
 
+section("animals: every squad defends itself from bears and wolves, hunters hunt")
+do
+    local function trial(seed, class, predator)
+        local world, d = fresh(seed)
+        local g = first_group(world, function(x) return x.class == class end)
+        if not g then return nil end
+        for _, m in ipairs(g.members) do
+            m.traits.courage, m.traits.combatConfidence, m.stress = 0.9, 0.9, 0
+        end
+        local sim = os.time()
+        Bridge.players = { { X = g.position.X + 60000, Y = g.position.Y, Z = 0 } }
+        for _ = 1, 15 do sim = sim + 1; Bridge.step(1); d:tick(sim) end
+        Bridge.zombie_damage = 0
+        local actor = { hp = 100000 }
+        Bridge.animals = { { pos = { X = g.position.X + 1500, Y = g.position.Y, Z = 0 },
+                             actor = actor, predator = predator } }
+        for _ = 1, 20 do
+            Bridge.animals[1].pos = { X = g.position.X + 1500, Y = g.position.Y, Z = 0 }
+            sim = sim + 1; Bridge.step(1); d:tick(sim)
+        end
+        Bridge.animals = {}
+        Bridge.players = {}
+        return Bridge.zombie_damage, g.physical
+    end
+    local deer, phys = trial(60, "survivor_group", nil)
+    local wolf = trial(60, "survivor_group", true)
+    local hunt = trial(61, "hunters", nil)
+    check(phys, "the test squad has bodies")
+    check(deer == 0, "an ordinary squad leaves a deer alone (" .. tostring(deer) .. " hits)")
+    check((wolf or 0) > 0, "but shoots a wolf that comes at it (" .. tostring(wolf) .. " hits)")
+    check(hunt == nil or hunt > 0, "hunters shoot the deer (" .. tostring(hunt) .. " hits)")
+end
+
 section("a spectator is not seen by NPCs")
 do
     local world, d = fresh(59)

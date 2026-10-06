@@ -99,10 +99,25 @@ function B.apply_damage(h, amount)
 end
 -- Zombies placed by a test: { pos = {X,Y,Z}, actor = { hp = 100 } }.
 B.zombies = {}
+-- Animals placed by a test: { pos, actor = { hp }, predator = true|nil }.
+B.animals = {}
 function B.zombies_near(pos, radius)
     local out = {}
     for _, z in ipairs(B.zombies) do
         if (z.actor.hp or 100) > 0 and U.dist2d(z.pos, pos) <= radius then out[#out + 1] = z end
+    end
+    -- Like the real bridge: bears and wolves attack, so they count here.
+    for _, a in ipairs(B.animals) do
+        if a.predator and (a.actor.hp or 100) > 0 and U.dist2d(a.pos, pos) <= radius then out[#out + 1] = a end
+    end
+    return out
+end
+function B.creatures_near(pos, radius)
+    local out = {}
+    for _, a in ipairs(B.animals) do
+        if (a.actor.hp or 100) > 0 and U.dist2d(a.pos, pos) <= radius then
+            out[#out + 1] = { pos = a.pos, kind = "animal", actor = a.actor, predator = a.predator }
+        end
     end
     return out
 end
@@ -193,6 +208,7 @@ end
 
 function B.reset()
     B.actors = {}
+    B.animals = {}
     B.native = {}
     B.released = {}
     B.owned_checks = {}

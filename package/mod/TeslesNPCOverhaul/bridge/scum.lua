@@ -1266,6 +1266,15 @@ local function classify(name)
 end
 B.classify_character = classify
 
+-- The animals every squad defends itself against: bears and wolves, the
+-- mutant ones included (BP_Bear, BP_Bear_Mutant, BP_BTBear_Mutant_ApexHunt,
+-- BP_Wolf, BP_Wolf_Mutant). Everything else (deer, boar, goats, chickens,
+-- rabbits, horses, donkeys...) is game, shot by hunters only.
+function B.is_predator(name)
+    local n = tostring(name):lower()
+    return n:find("bear", 1, true) ~= nil or n:find("wolf", 1, true) ~= nil
+end
+
 function B.census(now)
     now = now or os.time()
     local c = scan_cache.zombies
@@ -1301,7 +1310,8 @@ function B.census(now)
                         end
                     end
                     if (kind == "zombie" or kind == "animal") and not B.is_dead_actor(o) then
-                        table.insert(out[kind], { pos = v, actor = o })
+                        table.insert(out[kind], { pos = v, actor = o, kind = kind,
+                            predator = kind == "animal" and B.is_predator(cls) or nil })
                     end
                 end
             end
@@ -1317,11 +1327,16 @@ local function zombie_positions()
     return out
 end
 
--- Zombies (with their actors) within radius of a point.
+-- Everything that attacks a squad, with its actor, within radius of a point:
+-- zombies, and bears and wolves. Every squad stands and shoots these.
 function B.zombies_near(pos, radius)
     local out = {}
-    for _, z in ipairs(B.census().zombie) do
+    local c = B.census()
+    for _, z in ipairs(c.zombie) do
         if U.dist2d(z.pos, pos) <= radius then out[#out + 1] = z end
+    end
+    for _, a in ipairs(c.animal or {}) do
+        if a.predator and U.dist2d(a.pos, pos) <= radius then out[#out + 1] = a end
     end
     return out
 end
@@ -1332,7 +1347,9 @@ function B.creatures_near(pos, radius)
     local c = B.census()
     for _, kind in ipairs({ "zombie", "animal" }) do
         for _, z in ipairs(c[kind] or {}) do
-            if U.dist2d(z.pos, pos) <= radius then out[#out + 1] = { pos = z.pos, kind = kind } end
+            if U.dist2d(z.pos, pos) <= radius then
+                out[#out + 1] = { pos = z.pos, kind = kind, actor = z.actor, predator = z.predator }
+            end
         end
     end
     return out

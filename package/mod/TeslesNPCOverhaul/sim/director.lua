@@ -805,6 +805,7 @@ function D:player_fights(physical_groups, players, now)
         -- Nobody saw a player: zombies or animals in sight draw the squad
         -- towards them (checked every few seconds, one look per squad).
         if not spotted and not (g.spotted and now <= g.spotted.until_t) then
+            self:hunt_animals(g, now)
             self:watch_creatures(g, R, now)
         end
         -- One of them saw a player: the squad knows, turns towards them and
@@ -828,6 +829,57 @@ function D:player_fights(physical_groups, players, now)
                     g.act.until_t = now + 60
                 end
             end
+        end
+    end
+end
+
+-- Hunters shoot game in reach: any animal within 60 m of a hunter (bears
+-- and wolves are shot by every squad anyway, as attackers - fight_zombies).
+-- One volley every two seconds; the shots are real (fired and heard) and
+-- the hits go through the engine's own damage.
+D.HUNT_RANGE_UU = 6000
+function D:hunt_animals(g, now)
+    if g.class ~= "hunters" then return end
+    local near = self.bridge.creatures_near
+    if not near or now < (g.hunt_at or 0) then return end
+    g.hunt_at = now + 2
+    if (g.flee_until and now < g.flee_until) or (g.act and g.act.state == S.COMBAT) then return end
+    local fired = false
+    for _, m in ipairs(g.members) do
+        if m.alive and m.runtime_id and not m.native_fight then
+            local mp = m.position or g.position
+            local ok, all = pcall(near, mp, D.HUNT_RANGE_UU)
+            local target, best = nil, math.huge
+            for _, c in ipairs(ok and all or {}) do
+                if c.kind == "animal" and c.actor then
+                    local d = U.dist2d(mp, c.pos)
+                    if d < best then target, best = c, d end
+                end
+            end
+            if target then
+                if self.bridge.face then
+                    self.bridge.face(m.runtime_id, target.pos)
+                    g.focused = true
+                    g.focus_until = now + 3
+                end
+                if self.bridge.fire_once then pcall(self.bridge.fire_once, m.runtime_id) end
+                fired = true
+                local skill = math.max((m.skills or {}).rifle or 0, (m.skills or {}).shotgun or 0)
+                local p = 0.3 * (0.6 + skill) * (1 - 0.5 * best / D.HUNT_RANGE_UU)
+                if self.rng:chance(U.clamp(p, 0.08, 0.8)) and self.bridge.damage_actor then
+                    pcall(self.bridge.damage_actor, target.actor, self.rng:range(40, 80), m.runtime_id)
+                end
+                m.action = "ATTACK"
+            end
+        end
+    end
+    if fired then
+        g.chase = nil
+        Behaviour.noise(self, g.position, "gunfire", 0.5)
+        self.noises[#self.noises].from = g.gid
+        if now - (g.hunt_logged or 0) >= 60 then
+            g.hunt_logged = now
+            Log.event("HUNT", g.gid, "shooting game")
         end
     end
 end
