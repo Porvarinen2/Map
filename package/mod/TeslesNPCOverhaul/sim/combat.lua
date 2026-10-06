@@ -29,7 +29,6 @@ C.tuning = {
     morale_retreat = 0.25,
     retarget_sec = 6,
     disengage_uu = 26000,
-    point_blank_uu = 4000,         -- a broken-off squad this close still fights
     zombie_panic_count = 6,
 }
 
@@ -43,8 +42,13 @@ function C.find_contacts(group, groups, registry, now)
     for _, other in ipairs(groups) do
         if other ~= group and (other.physical == group.physical) and other.position then
             local d = U.dist2d(group.position, other.position)
+            -- A squad that broke off and runs is chased and shot at while
+            -- it is within reach of a squad at least as strong; a weaker
+            -- one lets it go.
             local away = other.disengaged_until and other.disengaged_until > (now or 0)
-            if d <= range and (not away or d <= C.tuning.point_blank_uu) then
+            local pursue = away and C.alive_count(group) >= C.alive_count(other)
+                and d <= C.reach(group)
+            if d <= range and (not away or pursue) then
                 local hostile, value, tier = Diplomacy.hostile(registry, group, other)
                 if hostile then
                     out[#out + 1] = { group = other, distance = d, standing = value, tier = tier }
@@ -301,6 +305,12 @@ end
 -- One second of shooting from `group` at `enemy`. Returns a list of hits
 -- { shooter, target, damage, killed }.
 -- How far the squad's best weapon reaches.
+function C.alive_count(group)
+    local n = 0
+    for _, m in ipairs(group.members or {}) do if m.alive then n = n + 1 end end
+    return n
+end
+
 function C.reach(group)
     local r = 0
     for _, m in ipairs(group.members) do
@@ -388,10 +398,14 @@ end
 
 -- A squad breaks off when it has lost its nerve: morale under the retreat
 -- line, or most of its living members retreating or fleeing.
-function C.should_disengage(group)
+function C.should_disengage(group, enemy)
     -- A squad that has not lost anyone in this fight stands (it breaks off
     -- only after casualties, the way it would against zombies).
     if not (group.loss_at and os.time() - group.loss_at < 120) then return false end
+    -- Still clearly the stronger side: it fights on unless its nerve is gone.
+    if enemy and C.alive_count(group) >= C.alive_count(enemy) * 1.5 then
+        return (group.morale or 1) < C.tuning.morale_retreat * 0.6
+    end
     if (group.morale or 1) < C.tuning.morale_retreat then return true end
     local n, back = 0, 0
     for _, m in ipairs(group.members) do

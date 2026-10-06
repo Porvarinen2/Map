@@ -2228,7 +2228,7 @@ local function aim_weapon(w, ta)
     end
 end
 
-function B.fire_once(handle, target)
+function B.fire_once(handle, target, hold_ms)
     local rec = handles[handle]
     local a = B.actor(handle)
     if not (rec and a) or rec.native then return false end
@@ -2245,7 +2245,21 @@ function B.fire_once(handle, target)
     end)
     crumb("StartFire h" .. tostring(handle))
     local ok = pcall(function() w:StartFire() end)
-    if ok then B.firing[handle] = w end
+    if ok then
+        B.firing[handle] = w
+        -- The trigger is let go after the burst (or at once for a single
+        -- shot), not at the next director tick: an automatic weapon held a
+        -- whole second emptied half a magazine into the air.
+        if ExecuteInGameThreadWithDelay then
+            local ms = math.max(60, math.floor(tonumber(hold_ms) or 60))
+            pcall(ExecuteInGameThreadWithDelay, ms, function()
+                if B.firing[handle] == w then
+                    B.firing[handle] = nil
+                    if valid(w) then pcall(function() w:StopFire() end) end
+                end
+            end)
+        end
+    end
     if not B.fire_noted then
         B.fire_noted = true
         if B.on_debug then pcall(B.on_debug, "npc weapon fire: Weapon.StartFire " .. tostring(ok)) end

@@ -1061,6 +1061,37 @@ end
 
 local function now_ge(now, t, sec) return t == nil or now - t >= sec end
 
+-- A squad that breaks off really leaves: away from the enemy at a jog, every
+-- member, the route redrawn from there. Up to 2.1.10 it only stopped
+-- fighting and stood where it was, staring at the enemy.
+function D:retreat(group, from_pos)
+    if not (group.position and from_pos) then return end
+    local dir = U.direction(from_pos, group.position)
+    if not dir then return end
+    local dist = 15000
+    local dest = { X = group.position.X + dir.X * dist, Y = group.position.Y + dir.Y * dist, Z = group.position.Z }
+    dest = Grid.snap_to_land(dest) or dest
+    group.flee_until = self.now + 40
+    group.act.state = S.RETREAT
+    group.act.goal_poi, group.act.queue = nil, {}
+    group.act.until_t = group.flee_until
+    pcall(self.solve_route, self, group, dest, { prefer_roads = false, direct_max = 400000 })
+    if not group.physical then return end
+    local run = self.cfg.PhysicalRunSpeedUU or 262
+    for _, m in ipairs(group.members) do
+        if m.alive and m.runtime_id and not m.native_fight then
+            if self.bridge.release_pose then pcall(self.bridge.release_pose, m.runtime_id) end
+            if self.bridge.set_speed then self.bridge.set_speed(m.runtime_id, run); m.speed_set = run end
+            local spot = { X = dest.X + self.rng:range(-700, 700), Y = dest.Y + self.rng:range(-700, 700),
+                           Z = m.position and m.position.Z or dest.Z }
+            self.bridge.move_to(m.runtime_id, spot, { direct = true, radius = 300 })
+            m.action = "RETREAT"
+        end
+    end
+    group.speed_set = run
+    group.flee_move = true
+end
+
 function D:run_combat(group, contact, zpressure)
     -- Nothing to react to: no scoring pass (it is the costliest thing a calm
     -- squad would do every second).
@@ -1139,7 +1170,11 @@ function D:run_combat(group, contact, zpressure)
             local reach = prof and prof.range or Combat.fire.range_uu
             local melee = reach <= (FIGHT.melee_uu * 2)
             local cm = ScumData.combat_move(m.body_level or m.level)
-            m.approach = m.approach or between(cm.approach) * 100
+            -- The distance it fights from: most of its weapon's reach, at
+            -- most 120 m - a rifleman opens up from 100 m and more, not from
+            -- ten (SCUM's own approach distance, 26-33 m, is for walking up
+            -- to a player with a pistol).
+            m.approach = math.min(reach * (0.7 + 0.15 * rng:float()), 12000)
             local moving = m.moving_until and now < m.moving_until
             local point, jog = nil, false
             if tpos and (m.action == "RETREAT" or m.action == "FLEE") then
@@ -1152,25 +1187,25 @@ function D:run_combat(group, contact, zpressure)
                     point = { X = tpos.X, Y = tpos.Y, Z = tpos.Z }
                     jog = bd > 1500
                 end
-            elseif tpos and (bd > reach or bd > m.approach * 1.2) then
-                -- Closing in: along the line to the enemy, to the approach
-                -- distance (or into its weapon's reach).
+            elseif tpos and (bd > reach or bd < m.approach * 0.55) then
+                -- Out of reach: closing in along the line to the enemy, to
+                -- its fighting distance. Too close: backing off to it - no
+                -- running into each other face to face.
                 if not moving then
-                    local want = math.min(m.approach, reach * 0.9)
+                    local want = m.approach
                     local dir = U.direction(tpos, mp)
                     if dir then
                         point = { X = tpos.X + dir.X * want, Y = tpos.Y + dir.Y * want, Z = mp.Z }
-                        jog = bd - want > 3000
+                        jog = math.abs(bd - want) > 3000
                     end
                 end
             elseif tpos and (m.cnext == nil or now >= m.cnext
                     or (m.no_los_since and now - m.no_los_since >= FIGHT.blind_sec)) and not moving then
-                -- Roaming: a new spot at the roaming distance from the enemy,
-                -- turned off the line by up to the level's angle, no more
-                -- than a step away.
+                -- Roaming (SCUM's own interval, angle and step): a new spot
+                -- about as far from the enemy as now, turned off the line.
                 local ang = math.atan(mp.Y - tpos.Y, mp.X - tpos.X)
                     + math.rad((rng:float() * 2 - 1) * cm.angle)
-                local r = between(cm.roam) * 100
+                local r = U.clamp(bd * (0.9 + 0.2 * rng:float()), m.approach * 0.6, reach * 0.95)
                 local spot = { X = tpos.X + math.cos(ang) * r, Y = tpos.Y + math.sin(ang) * r, Z = mp.Z }
                 local step = between(cm.step) * 100
                 local d = U.dist2d(mp, spot)
@@ -1246,9 +1281,9 @@ function D:run_combat(group, contact, zpressure)
             local st = ScumData.weapon(m.gear and m.gear.weapon)
             local f = ScumData.fire(diff, st and st.cat)
             local a = 1 / math.sqrt(math.max(0.5, f.spread or 1))
-            if walking[m] then a = a * 0.6 end
-            if rounds > 1 then a = a * 0.55 end
-            return a * 1.4
+            if walking[m] then a = a * 0.7 end
+            if rounds > 1 then a = a * 0.6 end
+            return a * 2.2
         end
         -- SCUM's firing rhythm: a row of shots (one a second at most, one
         -- director tick), then a pause; automatic weapons fire the whole
@@ -1269,8 +1304,10 @@ function D:run_combat(group, contact, zpressure)
             local f = ScumData.fire(diff, st.cat)
             if st.cat == "auto" or st.cat == "smg" then
                 c.next_at = now + 1 + between(f.pause)
+                m.burst_ms = math.floor(f.shots * 60000 / math.max(300, st.rof or 600))
                 return f.shots
             end
+            m.burst_ms = nil
             c.left = (c.left or f.shots) - 1
             if c.left <= 0 then
                 c.left = nil
@@ -1294,7 +1331,7 @@ function D:run_combat(group, contact, zpressure)
     for _, m in ipairs(hits.shooters or {}) do
         if m.runtime_id and self.bridge.fire_once then
             local t = aimed[m]
-            pcall(self.bridge.fire_once, m.runtime_id, t and t.runtime_id or nil)
+            pcall(self.bridge.fire_once, m.runtime_id, t and t.runtime_id or nil, m.burst_ms)
         end
     end
     for _, h in ipairs(hits) do
@@ -1344,11 +1381,10 @@ function D:run_combat(group, contact, zpressure)
     end
 
     -- Breaking off: the squad leaves and is left alone for a while.
-    if Combat.should_disengage(group) then
+    if Combat.should_disengage(group, enemy) then
         group.disengaged_until = self.now + 90
-        group.act.state = S.IDLE
-        group.act.until_t = self.now
         Log.event("DISENGAGE", group.gid, "from " .. enemy.gid)
+        self:retreat(group, enemy.position)
         return false
     end
     return true
@@ -1746,15 +1782,10 @@ function D:tick_group(group, players, physical_groups, dt)
 
     -- 3. Threat context.
     local contact = nil
-    do
-        -- A squad that broke off is left alone - unless it is still within
-        -- 40 m: then nobody stands staring at an enemy at arm's length.
+    if not (group.disengaged_until and group.disengaged_until > now) then
         local pool = group.physical and physical_groups or self.world.groups
         local list = Combat.find_contacts(group, pool, self.world.diplomacy, now)
-        local away = group.disengaged_until and group.disengaged_until > now
-        for _, c in ipairs(list) do
-            if not away or c.distance <= Combat.tuning.point_blank_uu then contact = c; break end
-        end
+        contact = list[1]
     end
     -- What the squad hears, sees and feels this second.
     local zlist = {}

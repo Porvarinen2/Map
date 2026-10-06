@@ -732,6 +732,30 @@ do
           "classes wear the body level whose weapons fit them")
 end
 
+section("a broken squad runs, and a stronger one keeps shooting at it")
+do
+    local C = require("sim.combat")
+    local function sq(n, x)
+        local g = { gid = "T" .. x, class = "bandit_gang", physical = true, position = { X = x, Y = 0, Z = 0 }, members = {} }
+        for i = 1, n do g.members[i] = { alive = true, npcId = g.gid .. i, gear = { weapon = "Weapon_AK47" } } end
+        return g
+    end
+    local strong, weak = sq(4, 0), sq(2, 6000)
+    weak.disengaged_until = os.time() + 60
+    local reg = { pairs = {} }
+    check(#C.find_contacts(strong, { weak }, reg, os.time()) == 1, "the stronger squad still has the runner in its sights")
+    check(#C.find_contacts(sq(1, 0), { weak }, reg, os.time()) == 0, "a weaker one lets it go")
+    strong.loss_at, strong.morale = os.time(), 0.2
+    check(not C.should_disengage(strong, weak), "a squad with twice the men does not break off over one loss")
+    local world, d = fresh(67)
+    local g = first_group(world)
+    g.physical = false
+    local start = U.copy_vec(g.position)
+    d.now = os.time()
+    d:retreat(g, { X = start.X + 2000, Y = start.Y, Z = 0 })
+    check(g.act.state == "RETREAT" and (g.flee_until or 0) > d.now, "breaking off is a retreat, not standing still")
+end
+
 section("a spectator is not seen by NPCs")
 do
     local world, d = fresh(59)
