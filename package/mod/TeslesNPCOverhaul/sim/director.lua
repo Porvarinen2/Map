@@ -222,7 +222,9 @@ function D:run_activity(group)
 
     -- A plan dropped in a flight (or cut short) is drawn again while the
     -- squad rests or waits, not only when it next sets off.
-    if #(act.queue or {}) < Activity.QUEUE_LENGTH and self.now >= (act.refill_at or 0) then
+    -- Also every ten seconds with a full queue: refill_queue drops a queued
+    -- place that a change of plan has brought back inside the memory.
+    if self.now >= (act.refill_at or 0) then
         act.refill_at = self.now + 10
         pcall(Activity.refill_queue, group, act)
     end
@@ -397,7 +399,7 @@ function D:move_physical(group, dt)
         or (self.cfg.PhysicalWalkSpeedUU or 135)
     -- Running away (or back): a run, not a walk.
     if (group.flee_until and self.now < group.flee_until) or group.act.state == S.RETREAT then
-        want = self.cfg.PhysicalRunSpeedUU or 300
+        want = self.cfg.PhysicalRunSpeedUU or 262
     end
     -- SCUM puts its own speed back (262 after a fight, read in the 2.0.3
     -- log while the leader stood still), so the speed is checked every few
@@ -411,7 +413,7 @@ function D:move_physical(group, dt)
     if group.speed_set ~= want and self.bridge.set_speed then
         for _, m in ipairs(group.members) do
             if steerable(m) then
-                local v = m == lead and want or want * 1.05
+                local v = want
                 self.bridge.set_speed(m.runtime_id, v)
                 m.speed_set = v
             end
@@ -545,7 +547,7 @@ function D:move_physical(group, dt)
     -- the leader went on alone) runs straight for its place in the column,
     -- steps aside when something blocks it, and the leader slows down until
     -- the squad has closed up.
-    local run = self.cfg.PhysicalRunSpeedUU or 300
+    local run = self.cfg.PhysicalRunSpeedUU or 262
     local lag = 0
     local ahead = lead
     local k = 0
@@ -566,7 +568,7 @@ function D:move_physical(group, dt)
             if f and m.position then f.last = U.copy_vec(m.position) end
             local stopped = moved < 25
             local far = behind > k * STEER.spacing + 1500
-            local v = far and run or want * 1.05
+            local v = far and run or want
             if m.speed_set ~= v and self.bridge.set_speed then
                 self.bridge.set_speed(m.runtime_id, v)
                 m.speed_set = v
@@ -1078,7 +1080,8 @@ function D:run_combat(group, contact, zpressure)
                         if d < bd then tgt, bd = e, d end
                     end
                 end
-                pcall(self.bridge.aim_at, m.runtime_id, (tgt and tgt.position) or enemy_pos)
+                pcall(self.bridge.aim_at, m.runtime_id, (tgt and tgt.position) or enemy_pos,
+                    tgt and tgt.runtime_id or nil)
             end
         end
     end
@@ -1542,7 +1545,7 @@ function D:tick_group(group, players, physical_groups, dt)
             if not reacting then self:move_physical(group, dt)
             elseif group.flee_until and now < group.flee_until and self.bridge.set_speed then
                 -- A squad running for it runs (the walk pace would crawl).
-                local run = self.cfg.PhysicalRunSpeedUU or 300
+                local run = self.cfg.PhysicalRunSpeedUU or 262
                 if group.speed_set ~= run then
                     for _, m in ipairs(group.members) do
                         if m.alive and m.runtime_id then self.bridge.set_speed(m.runtime_id, run) end

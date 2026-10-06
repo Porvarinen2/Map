@@ -1232,13 +1232,30 @@ function B.set_speed(handle, uu_per_sec)
             end
         end)
     end
+    -- SCUM moves its NPCs at a pace (_pace: 1 walk, 2 jog), not at a free
+    -- speed, and every player's game animates the NPC from that pace. 2.0-2.1
+    -- wrote MaxWalkSpeed alone (141, 300, 450...): the server moved the body
+    -- faster or slower than the pace the players' games were animating,
+    -- and the NPC slid. Now the pace is set and the speed is SCUM's own for
+    -- it (walk 135, jog 262 - both read from SCUM in earlier logs).
+    local pace = (uu_per_sec or 0) <= 170 and 1 or 2
+    local speed = pace == 1 and 135 or 262
+    local rec = handles[handle]
+    pcall(function() a._pace = pace end)
+    pcall(function() a:SetPace(pace) end)
     local ok = pcall(function()
         local mc = a.CharacterMovement
-        if mc then
-            mc.MaxWalkSpeed = uu_per_sec
-        end
+        if mc then mc.MaxWalkSpeed = speed end
     end)
-    return ok
+    if rec then rec.pace = pace end
+    if not B.pace_noted and B.on_debug then
+        B.pace_noted = true
+        local now_pace = nil
+        pcall(function() now_pace = a._pace end)
+        pcall(B.on_debug, string.format("npc pace: asked %.0f -> pace %d (%.0f UU/s), _pace now %s",
+            uu_per_sec or 0, pace, speed, tostring(now_pace)))
+    end
+    return ok, speed
 end
 
 -- --------------------------------------------------------------- sensing ---
@@ -1906,14 +1923,25 @@ local fire_fn = nil
 -- up) and every player's machine is told where it aims
 -- (_aimLocationTargetForSimulatedProxy - SCUM's own replicated aim point),
 -- so the rifle points at the enemy it shoots at. Plain fields, no calls.
-function B.aim_at(handle, pos)
+-- The aim every player's game shows: _aimLocationTargetForSimulatedProxy is
+-- an actor, not a point (2.1.2's npc_locomotion.txt). Up to 2.1.2 a point was
+-- written there, nothing took, and the NPCs fired wherever they happened to
+-- face. Now it is the enemy's body, and the controller keeps its eyes on it.
+function B.aim_at(handle, pos, target_handle)
     local rec = handles[handle]
     local a = B.actor(handle)
     if not (rec and a and pos) or rec.native then return false end
-    local target = { X = pos.X, Y = pos.Y, Z = (pos.Z or 0) + 120 }
+    local ta = target_handle and B.actor(target_handle) or nil
     pcall(function() a._isInCombatMode = true end)
-    pcall(function() a._aimLocationTargetForSimulatedProxy = target end)
-    pcall(function() a._assignAimLocationOnSimulatedProxy = true end)
+    if ta then
+        pcall(function() a._aimLocationTargetForSimulatedProxy = ta end)
+        pcall(function() a._assignAimLocationOnSimulatedProxy = true end)
+        local c = B.controller(a)
+        if c then
+            pcall(B.set_pose, handle, "face")
+            pcall(function() c:SetFocus(ta, 2) end)
+        end
+    end
     rec.aiming = true
     return true
 end

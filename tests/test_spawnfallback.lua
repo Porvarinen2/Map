@@ -45,6 +45,17 @@ do
               "walking / facing poses can be set on a spawned NPC")
     end
 end
+do
+    local h = B.spawn_npc(req)
+    local h2 = B.spawn_npc(req)
+    if h and h2 then
+        local ok, sp = B.set_speed(h, 135)
+        check(ok and sp == 135, "walking is SCUM's walk pace (135)")
+        ok, sp = B.set_speed(h, 450)
+        check(ok and sp == 262, "anything faster is SCUM's jog pace (262), never a speed of our own")
+        check(B.aim_at(h, { X = 0, Y = 0, Z = 0 }, h2) == true, "an NPC aims at another NPC's body")
+    end
+end
 local c, fam, var, lv = B.class_for(3, nil, "Guard")
 check(c and fam == "Guard" and lv == 3 and var == nil, "other classes unaffected")
 for _, n in ipairs({ "BP_Bear_C", "BP_Bear_Mutant_C", "BP_BTBear_Mutant_ApexHunt_C", "BP_Wolf_C", "BP_Wolf_Mutant_C" }) do

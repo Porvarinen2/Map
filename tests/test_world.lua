@@ -230,8 +230,11 @@ check(tn > 20, string.format("%d travel legs were long enough to measure", tn))
 -- Thresholds are set against the measured legacy behaviour (about 19 deg per
 -- 250 m and 4.5% reversals). Road hairpins are real corners, so a travel leg
 -- is never expected to score zero.
-check(travel_jitter < 5.5,
-      string.format("travel turn per 250 m = %.1f deg < 5.5", travel_jitter))
+-- Since 2.1.0 squads keep to the roads even the long way round, and road
+-- bends are real corners: the bar is 6.5 deg (was 5.5 for straighter
+-- cross-country legs).
+check(travel_jitter < 6.5,
+      string.format("travel turn per 250 m = %.1f deg < 6.5", travel_jitter))
 check(100 * travel_rev < 2.5,
       string.format("travel reversals = %.1f%% < 2.5%%", 100 * travel_rev))
 -- Working a POI walks house to house, so corners there are by design; the
