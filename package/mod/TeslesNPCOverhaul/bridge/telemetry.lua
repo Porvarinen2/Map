@@ -173,7 +173,14 @@ local function group_row(group, world, detail)
     local cls = GroupClasses.get(group.class)
     local members = {}
     for _, m in ipairs(group.members) do
-        members[#members + 1] = npc_row(m, group, detail)
+        local row = npc_row(m, group, detail)
+        -- Every NPC with a body is drawn where it really is, not only the
+        -- squad marker (2.0.6: a member next to a player showed nowhere).
+        if m.materialized and m.alive and m.position then
+            row.x, row.y = round(m.position.X, 0), round(m.position.Y, 0)
+            row.fight = m.native_fight or nil
+        end
+        members[#members + 1] = row
     end
 
     -- Only standings that moved away from the default (everyone is hostile
@@ -319,7 +326,7 @@ function T.snapshot(world, bridge, director, extra)
                 if not best or d < best.d then best = { d = d, gid = g.gid } end
             end
         end
-        players[#players + 1] = { x = p.X, y = p.Y,
+        players[#players + 1] = { x = p.X, y = p.Y, spectator = p.ghost or nil,
             nearest_gid = best and best.gid or nil,
             nearest_m = best and math.floor(best.d / 100) or nil }
     end

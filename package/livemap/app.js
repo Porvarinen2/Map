@@ -676,6 +676,7 @@ function drawNow() {
     if (!selected || g.gid !== selected.gid) drawQueue(g, false);
   });
   if (show.routes && !moving) list.forEach(g => { if (g !== selected) drawRoute(g); });
+  list.forEach(drawMembers);
   list.forEach(g => { if (!selected || g.gid !== selected.gid) drawGroup(g); });
   if (selected) {
     const live = state.groups.find(g => g.gid === selected.gid);
@@ -686,6 +687,31 @@ function drawNow() {
     }
   }
   (state.players || []).forEach(drawPlayer);
+}
+
+// Every NPC with a body, where it really stands: a small dot in the squad's
+// colour, tied to the squad marker with a faint line when it has strayed.
+// A red rim: fighting a player on SCUM's own AI.
+function drawMembers(g) {
+  if (!(g.physical_members > 0)) return;
+  const gp = worldToScreen(g.x, g.y);
+  const col = colorFor(g);
+  ctx.save();
+  (g.members || []).forEach(m => {
+    if (m.x == null || !m.alive) return;
+    const p = worldToScreen(m.x, m.y);
+    const far = Math.hypot(p.x - gp.x, p.y - gp.y);
+    if (far > 14) {
+      ctx.beginPath(); ctx.moveTo(gp.x, gp.y); ctx.lineTo(p.x, p.y);
+      ctx.strokeStyle = withAlpha(col, "55"); ctx.lineWidth = 1; ctx.stroke();
+    }
+    ctx.beginPath(); ctx.arc(p.x, p.y, 3.6, 0, Math.PI * 2);
+    ctx.fillStyle = col; ctx.fill();
+    ctx.lineWidth = m.fight ? 2.2 : 1.2;
+    ctx.strokeStyle = m.fight ? "rgba(255,70,70,.95)" : "rgba(0,0,0,.75)";
+    ctx.stroke();
+  });
+  ctx.restore();
 }
 
 // A player: white diamond with a dashed ring at the materialise distance, so
@@ -705,12 +731,12 @@ function drawPlayer(p) {
   }
   ctx.save();
   ctx.translate(s.x, s.y); ctx.rotate(Math.PI / 4);
-  ctx.fillStyle = "#ffffff"; ctx.strokeStyle = "#111"; ctx.lineWidth = 2;
+  ctx.fillStyle = p.spectator ? "#9aa3ad" : "#ffffff"; ctx.strokeStyle = "#111"; ctx.lineWidth = 2;
   ctx.fillRect(-6, -6, 12, 12); ctx.strokeRect(-6, -6, 12, 12);
   ctx.restore();
   ctx.font = "12px system-ui, sans-serif";
   ctx.fillStyle = "#fff"; ctx.strokeStyle = "rgba(0,0,0,0.8)"; ctx.lineWidth = 3;
-  const label = "PLAYER" + (p.nearest_m != null
+  const label = (p.spectator ? "SPECTATOR (unseen by NPCs)" : "PLAYER") + (p.nearest_m != null
     ? `  nearest squad ${(p.nearest_m / 1000).toFixed(1)} km` : "");
   ctx.strokeText(label, s.x + 12, s.y - 10);
   ctx.fillText(label, s.x + 12, s.y - 10);

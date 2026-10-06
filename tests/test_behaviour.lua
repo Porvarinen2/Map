@@ -500,6 +500,23 @@ do
     check(#world.groups <= before, "groups " .. before .. " -> " .. #world.groups)
 end
 
+section("a spectator is not seen by NPCs")
+do
+    local world, d = fresh(59)
+    local g = first_group(world)
+    local sim = os.time()
+    for _ = 1, 20 do
+        sim = sim + 1
+        Bridge.players = { { X = g.position.X + 1500, Y = g.position.Y, Z = 0, ghost = true } }
+        Bridge.step(1); d:tick(sim)
+    end
+    local native = 0
+    for _, m in ipairs(g.members) do if m.native_fight then native = native + 1 end end
+    check(g.physical, "squads near a spectator still get bodies (something to watch)")
+    check(native == 0 and not g.spotted, "but nobody spots or fights the spectator")
+    Bridge.players = {}
+end
+
 section("the saved world stays small")
 do
     local Diplomacy = require("npc.diplomacy")

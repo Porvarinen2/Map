@@ -638,6 +638,52 @@ end
 
 local join_seen = {}
 
+-- A player watching as a spectator / admin ghost / drone is not someone an
+-- NPC can see: the squads around them are still made real (so there is
+-- something to watch), but nobody spots, chases or shoots at them. 2.0.6
+-- had squads "closing in on a player" who was only a camera.
+-- Signs: the pawn is not a prisoner body, or it is hidden, or it has no
+-- collision (free flight). Each player's verdict is logged when it changes.
+local spectate_note = {}
+local function spectating(pawn)
+    local name = full_name(pawn)
+    local why = nil
+    if not name:find("Prisoner") then
+        why = "pawn " .. (name:match("([%w_]+)_C[_%d]*$") or name:match("([%w_]+)$") or "?")
+    else
+        local okh, hidden = pcall(function() return pawn.bHidden end)
+        if okh and hidden == true then why = "hidden" end
+        if not why then
+            -- No collision and not sitting in anything (a vehicle seat also
+            -- turns collision off, and a driver is plainly visible).
+            local okc, col = pcall(function() return pawn:GetActorEnableCollision() end)
+            if okc and col == false then
+                local oka, parent = pcall(function() return pawn:GetAttachParentActor() end)
+                if not (oka and parent and valid(parent)) then why = "no collision" end
+            end
+        end
+    end
+    local key = name
+    local verdict = why or "visible"
+    if spectate_note[key] ~= verdict then
+        spectate_note[key] = verdict
+        if B.on_debug then
+            pcall(B.on_debug, "player " .. (why and ("is a spectator (" .. why .. "): NPCs ignore them")
+                or "is visible to NPCs") .. " - " .. (name:match("([%w_]+)$") or name))
+        end
+    end
+    return why ~= nil, why
+end
+
+-- Players NPCs can see (spectators left out).
+function B.visible_players()
+    local out = {}
+    for _, p in ipairs(B.player_positions()) do
+        if not p.ghost then out[#out + 1] = p end
+    end
+    return out
+end
+
 function B.player_positions()
     local now = os.time()
     local c = scan_cache.players
@@ -690,7 +736,10 @@ function B.player_positions()
                     seen[key] = true
                     local first = join_seen[key] or now
                     join_seen[key] = first
-                    if now - first >= grace then out[#out + 1] = v end
+                    if now - first >= grace then
+                        v.ghost, v.why = spectating(pawn)
+                        out[#out + 1] = v
+                    end
                 end
             end
         end

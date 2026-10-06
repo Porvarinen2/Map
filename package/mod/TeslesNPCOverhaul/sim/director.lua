@@ -463,23 +463,38 @@ function D:move_physical(group, dt)
                 -- when a straight walk has stopped making ground.
                 local stuck = now - (st.still and st.still.at or now) >= 5
                 local pathfind = false
+                local goal_pt = carrot
                 if stuck then
-                    -- Alternate: pathfinding round the obstacle, then straight
-                    -- again, so neither can leave the leader standing for good.
+                    -- In turn: pathfinding round the obstacle, a step to one
+                    -- side (a wall, rock or fence straight ahead - 2.0.6 logs
+                    -- had a leader walk into the same spot for minutes), the
+                    -- same step to the other side, then straight again.
                     st.unstick = (st.unstick or 0) + 1
-                    pathfind = st.unstick % 2 == 1
+                    local phase = st.unstick % 4
+                    pathfind = phase == 1
+                    if phase == 2 or phase == 3 then
+                        local dir = U.direction(pos, carrot)
+                        if dir then
+                            local side = (phase == 2) and 1 or -1
+                            goal_pt = { X = pos.X - dir.Y * 700 * side + dir.X * 300,
+                                        Y = pos.Y + dir.X * 700 * side + dir.Y * 300, Z = pos.Z }
+                        end
+                    end
                 else
                     st.unstick = 0
                 end
-                local ok = self.bridge.move_to(lead.runtime_id, carrot,
+                local ok = self.bridge.move_to(lead.runtime_id, goal_pt,
                     { direct = not pathfind, radius = 120 })
                 if not ok and pathfind then
                     ok = self.bridge.move_to(lead.runtime_id, carrot, { direct = true, radius = 120 })
                 end
                 if ok then
-                    st.target, st.at, st.force, st.fails = carrot, now, false, 0
+                    -- A side step is a short detour: the next hop goes back
+                    -- to the route as soon as it is reached or goes stale.
+                    st.target, st.at, st.force, st.fails = goal_pt, now, false, 0
                     self.counters.commands = self.counters.commands + 1
-                    mv.issued_target, mv.issued_at = carrot, now
+                    mv.commands = (mv.commands or 0) + 1
+                    mv.issued_target, mv.issued_at = goal_pt, now
                 else
                     st.fails = (st.fails or 0) + 1
                     st.backoff_until = now + math.min(2 * st.fails, 8)
@@ -1069,8 +1084,12 @@ function D:tick(now)
 
     local players = (self.bridge and self.bridge.player_positions
         and self.bridge.player_positions()) or {}
-    self.players = players
+    -- All players make squads real around them (a spectator gets something
+    -- to watch); only players an NPC could see are spotted, chased or shot.
     Population.keep_away = players
+    local visible = {}
+    for _, p in ipairs(players) do if not p.ghost then visible[#visible + 1] = p end end
+    self.players = visible
     local world = self.world
 
     -- Contacts are evaluated once for the whole world.
@@ -1082,7 +1101,7 @@ function D:tick(now)
     for _, group in ipairs(world.groups) do
         self:tick_group(group, players, physical_groups, dt)
     end
-    self:player_fights(physical_groups, players, now)
+    self:player_fights(physical_groups, self.players, now)
 
     -- Group relations and leadership recovery are cheap; run them every tick.
     for _, group in ipairs(world.groups) do
