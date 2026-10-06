@@ -38,6 +38,13 @@ for _, n in ipairs(spawned) do
     check(n:find("BP_Guard_Lvl_5_AbandonedBunker") ~= nil, "fallback is the level 5 Abandoned Bunker Guard")
 end
 check(B.class_fails["Guard5"] and B.class_fails["Guard5"].n >= 1, "the failing class is remembered")
+do
+    local h = B.spawn_npc(req)
+    if h then
+        check(B.set_pose(h, "walk") == true and B.set_pose(h, "face") == true and B.release_pose(h) == true,
+              "walking / facing poses can be set on a spawned NPC")
+    end
+end
 local c, fam, var, lv = B.class_for(3, nil, "Guard")
 check(c and fam == "Guard" and lv == 3 and var == nil, "other classes unaffected")
 for _, n in ipairs({ "BP_Bear_C", "BP_Bear_Mutant_C", "BP_BTBear_Mutant_ApexHunt_C", "BP_Wolf_C", "BP_Wolf_Mutant_C" }) do

@@ -563,6 +563,63 @@ do
         at_end / 100, worst / 100))
 end
 
+section("soldiers and the elite carry guns, not sledgehammers")
+do
+    local world, d = fresh(63)
+    local g = first_group(world)
+    g.class = "military_group"
+    if g then
+        local n = 0
+        -- SCUM's dice: the first two rolls for every NPC are melee.
+        local rolls = {}
+        Bridge.weapon_roll = function(req)
+            rolls[req.npcId] = (rolls[req.npcId] or 0) + 1
+            if rolls[req.npcId] <= 2 then return "Sledgehammer" end
+            return "Weapon_AK47"
+        end
+        local sim = os.time()
+        for _ = 1, 60 do
+            sim = sim + 1
+            Bridge.players = { { X = g.position.X + 60000, Y = g.position.Y, Z = 0 } }
+            Bridge.step(1); d:tick(sim)
+        end
+        local armed, bodies = 0, 0
+        for _, m in ipairs(g.members) do
+            if m.alive and m.runtime_id then
+                bodies = bodies + 1
+                if Bridge.weapon_of(m.runtime_id) == "Weapon_AK47" then armed = armed + 1 end
+            end
+        end
+        check(bodies > 0 and armed == bodies, string.format("%s: %d of %d members end up with a gun", g.class, armed, bodies))
+        check(count("REARM", g.gid) > 0, "the melee rolls were spawned again")
+        Bridge.weapon_roll = nil
+        Bridge.players = {}
+    end
+    local D = require("sim.director")
+    check(D.is_firearm("Weapon_AK47") and not D.is_firearm("Sledgehammer") and not D.is_firearm("1H_Crowbar"),
+          "firearms are told from melee weapons")
+    check(D.is_firearm("Weapon_BlackHawk_Crossbow") and not D.is_firearm("Weapon_BlackHawk_Crossbow", true)
+          and not D.is_firearm("Weapon_Improvised_Rifle", true),
+          "the elite take no crossbows or improvised guns")
+end
+
+section("a squad stuck at a rock face routes round it")
+do
+    local Grid = require("world.navgrid")
+    local p = nil
+    for gy = 200, 300 do
+        for gx = 200, 300 do
+            if Grid.at(gx, gy) == Grid.LAND then p = Grid.grid_to_world(gx, gy, 0); break end
+        end
+        if p then break end
+    end
+    if p then
+        check(Grid.block_at(p, 100, 1000) and not Grid.is_passable(p), "a learned obstacle closes its cell")
+        Grid.expire_blocks(1200)
+        check(Grid.is_passable(p), "and opens again when its time is up")
+    end
+end
+
 section("a spectator is not seen by NPCs")
 do
     local world, d = fresh(59)

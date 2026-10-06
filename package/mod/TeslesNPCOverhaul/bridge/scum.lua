@@ -1466,6 +1466,62 @@ end
 -- Stops SCUM's own encounter logic from re-commanding an actor the director
 -- owns. Two authorities fighting over one pawn is the other half of the
 -- stutter problem; the path follower cannot fix that on its own.
+-- How the body turns and animates while the director walks it.
+-- Walking: the body faces where it goes (no walking backwards towards an old
+-- focus point), stands up (no crouched combat idle), and its path moves go
+-- through acceleration - the animation reads acceleration to choose walking
+-- over idle, and a velocity set directly slides an idle body along (the
+-- "sliding in the idle pose" in 2.0.9). Facing: turned to the controller's
+-- focus, for shooting and taking cover. Each field is set only where it
+-- exists; what it held before is logged once, for the next diagnosis.
+local pose_logged = false
+local function read_field(o, k)
+    local ok, v = pcall(function() return o[k] end)
+    if ok then return v end
+    return nil
+end
+function B.set_pose(handle, mode)
+    local rec = handles[handle]
+    local a = B.actor(handle)
+    if not a or (rec and rec.native) then return false end
+    if rec and rec.pose == mode then return true end
+    local mc = read_field(a, "CharacterMovement")
+    if not pose_logged and B.on_debug then
+        pose_logged = true
+        local function f(o, k) return k .. "=" .. tostring(o and read_field(o, k)) end
+        local nav = mc and read_field(mc, "NavMovementProperties")
+        pcall(B.on_debug, "npc pose before: " .. table.concat({
+            f(mc, "bOrientRotationToMovement"), f(mc, "bUseControllerDesiredRotation"),
+            f(a, "bUseControllerRotationYaw"), f(mc, "bRequestedMoveUseAcceleration"),
+            f(mc, "bUseAccelerationForPaths"), f(nav, "bUseAccelerationForPaths"),
+            f(a, "bIsCrouched"), f(a, "_isInCombatMode"), f(mc, "MaxAcceleration"),
+        }, ", "))
+    end
+    local walking = mode == "walk"
+    -- SCUM's own settings, kept to hand back when its AI takes over a fight.
+    if rec and not rec.pose_orig and mc then
+        rec.pose_orig = {
+            orient = read_field(mc, "bOrientRotationToMovement"),
+            desired = read_field(mc, "bUseControllerDesiredRotation"),
+            yaw = read_field(a, "bUseControllerRotationYaw"),
+        }
+    end
+    if mc then
+        pcall(function() mc.bOrientRotationToMovement = walking end)
+        pcall(function() mc.bUseControllerDesiredRotation = not walking end)
+        pcall(function() mc.bRequestedMoveUseAcceleration = true end)
+        pcall(function() mc.bUseAccelerationForPaths = true end)
+        pcall(function() mc.NavMovementProperties.bUseAccelerationForPaths = true end)
+    end
+    pcall(function() a.bUseControllerRotationYaw = false end)
+    if walking then
+        pcall(function() a:UnCrouch(false) end)
+        if not (rec and rec.aiming) then pcall(function() a._isInCombatMode = false end) end
+    end
+    if rec then rec.pose = mode end
+    return true
+end
+
 function B.take_ownership(handle)
     local a = B.actor(handle)
     if not a then return false, "NO_ACTOR" end
@@ -1487,6 +1543,7 @@ function B.take_ownership(handle)
         return false, "NOT_EXPOSED"
     end
     set_health("takeover", "OK", "director owns " .. table.concat(done, "+"))
+    pcall(B.set_pose, handle, "walk")
     return true
 end
 
@@ -1596,6 +1653,17 @@ function B.set_native(handle, on)
             if not pcall(function() bt:RestartLogic() end) then bt:StartLogic() end
         end)
         rec.native = true
+        -- SCUM's AI fights with its own turning settings.
+        local o = rec.pose_orig
+        if o then
+            pcall(function()
+                local mc = a.CharacterMovement
+                if o.orient ~= nil then mc.bOrientRotationToMovement = o.orient end
+                if o.desired ~= nil then mc.bUseControllerDesiredRotation = o.desired end
+            end)
+            if o.yaw ~= nil then pcall(function() a.bUseControllerRotationYaw = o.yaw end) end
+        end
+        rec.pose = nil
         crumb("set_native h" .. tostring(handle) .. " on " .. tostring(ok))
     else
         rec.native = false
@@ -1818,6 +1886,7 @@ function B.face(handle, pos)
     if not (a and pos) then return false end
     local c = B.controller(a)
     if not c then return false end
+    pcall(B.set_pose, handle, "face")
     return (pcall(function() c:SetFocalPoint({ X = pos.X, Y = pos.Y, Z = pos.Z }, 2) end))
 end
 
@@ -1854,13 +1923,16 @@ function B.release_pose(handle)
     local rec = handles[handle]
     local a = B.actor(handle)
     if not a then return false end
+    -- Already walking upright with nothing to let go of.
+    if rec and rec.pose == "walk" and not rec.aiming then return true end
     local c = B.controller(a)
     if c then
         for p = 0, 2 do pcall(function() c:ClearFocus(p) end) end
     end
     pcall(function() a._assignAimLocationOnSimulatedProxy = false end)
     pcall(function() a._isInCombatMode = false end)
-    if rec then rec.aiming = nil end
+    if rec then rec.aiming = nil; rec.pose = nil end
+    pcall(B.set_pose, handle, "walk")
     return true
 end
 

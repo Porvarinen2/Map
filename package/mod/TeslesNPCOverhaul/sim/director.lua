@@ -23,6 +23,7 @@ local Activity = require("sim.activity")
 local Population = require("sim.population")
 local Physical = require("sim.physical")
 local Combat = require("sim.combat")
+local GroupClasses = require("npc.groups")
 local Buildings = require("sim.buildings")
 local Leadership = require("npc.leadership")
 local Diplomacy = require("npc.diplomacy")
@@ -69,6 +70,12 @@ function D:solve_route(group, dest, opts)
     local o = {}
     for k, v in pairs(opts or {}) do o[k] = v end
     if o.fence == nil then o.fence = Zones.fence_for(group) end
+    -- Everyone but the hunters keeps to the roads: a straight walk only for
+    -- the last 250 m, and a road taken even when it is the longer way round.
+    if o.prefer_roads ~= false and group.class ~= "hunters" then
+        o.direct_max = o.direct_max or 25000
+        o.detour_limit = o.detour_limit or 3.5
+    end
     local route, why = Router.route(from, dest, o)
     if not route then
         self.counters.route_fail = self.counters.route_fail + 1
@@ -124,6 +131,10 @@ end
 -- can eat a whole tick's budget and still come back empty.
 local CROSS_COUNTRY_MAX = 150000
 function D:prefer_roads(group, poi)
+    -- Hunters live in the woods: cross-country to anything within 3 km.
+    if group.class == "hunters" then
+        return not (group.position and U.dist2d(group.position, poi.pos) <= 300000)
+    end
     if poi.kind ~= "HUNTING" then return true end
     return not (group.position and U.dist2d(group.position, poi.pos) <= CROSS_COUNTRY_MAX)
 end
@@ -431,6 +442,21 @@ function D:move_physical(group, dt)
             if status ~= "OK" then
                 local action = Movement.handle_stall(mv, pos)
                 Log.event("STALL", group.gid, action .. " stalls=" .. tostring(mv.stalls))
+                -- Stuck for good at the same spot (rock, cliff): the ground
+                -- just ahead is remembered as impassable and the route is
+                -- drawn round it.
+                if action == "REPLAN" or action == "ABANDON" then
+                    local carrot0 = Movement.carrot(mv, pos, STEER.look)
+                    local dir = carrot0 and U.direction(pos, carrot0)
+                    if dir then
+                        local ahead_pt = { X = pos.X + dir.X * 2500, Y = pos.Y + dir.Y * 2500, Z = pos.Z }
+                        local gx0, gy0 = Grid.world_to_grid(pos)
+                        local gx1, gy1 = Grid.world_to_grid(ahead_pt)
+                        if (gx0 ~= gx1 or gy0 ~= gy1) and Grid.block_at(ahead_pt, 3 * 3600, now) then
+                            Log.event("OBSTACLE", group.gid, string.format("%.0f %.0f closed for routes", ahead_pt.X, ahead_pt.Y))
+                        end
+                    end
+                end
                 if action == "REPLAN" then
                     self.counters.replans = self.counters.replans + 1
                     local goal = mv.goal
@@ -527,6 +553,12 @@ function D:move_physical(group, dt)
         if steerable(m) and m ~= lead then
             k = k + 1
             local f = st.follow[m.npcId]
+            -- A loose group, not a file: everyone keeps to the leader at a
+            -- distance of their own (from their seed), so they walk spread
+            -- out beside and behind it instead of one behind the other.
+            ahead = lead
+            local seed = (m.seed or k * 7919) % 1000
+            local keep = math.floor(STEER.spacing * (0.7 + 0.35 * k) + (seed % 300))
             local gap = (ahead.position and m.position) and U.dist2d(ahead.position, m.position) or 0
             local behind = (m.position and pos) and U.dist2d(m.position, pos) or 0
             lag = math.max(lag, behind - k * STEER.spacing)
@@ -569,19 +601,25 @@ function D:move_physical(group, dt)
                 -- walking: 1.4.4 renewed every second, each renewal
                 -- restarted the walk and the body slid in its idle animation.
                 local renew = target_changed
-                    or (gap > STEER.spacing + 180 and stopped and now - f.at >= 2)
+                    or (gap > keep + 180 and stopped and now - f.at >= 2)
                     or (stopped and now - f.at >= 15)
                 -- Two renewals without a step: SCUM took the follow request
                 -- and does not walk it; the footprints are used instead.
                 local fails = (f and renew and stopped and f.ahead == ahead.npcId) and ((f.idle or 0) + 1) or 0
                 if renew and fails < 2 and self.bridge.follow
-                    and self.bridge.follow(m.runtime_id, ahead.runtime_id, STEER.spacing) then
+                    and self.bridge.follow(m.runtime_id, ahead.runtime_id, keep) then
                     st.follow[m.npcId] = { ahead = ahead.npcId, at = now, idle = fails,
                                            last = m.position and U.copy_vec(m.position) }
                     self.counters.commands = self.counters.commands + 1
-                elseif renew and gap > STEER.follow_slack then
-                    local spot = footprint_back(st.trail, pos, k * STEER.spacing)
+                elseif renew and gap > keep + 50 then
+                    local spot = footprint_back(st.trail, pos, keep)
                     if spot and m.position then
+                        -- Beside the leader's footprints, on its own side.
+                        local dir = U.direction(spot, pos)
+                        if dir then
+                            local side = ((seed % 2) == 0 and 1 or -1) * (150 + seed % 250)
+                            spot = { X = spot.X - dir.Y * side, Y = spot.Y + dir.X * side }
+                        end
                         spot.Z = m.position.Z
                         if self.bridge.move_to(m.runtime_id, spot, { direct = true, radius = 150 }) then
                             st.follow[m.npcId] = { ahead = "trail", at = now,
@@ -591,7 +629,6 @@ function D:move_physical(group, dt)
                     end
                 end
             end
-            ahead = m
         end
     end
     -- The leader waits for stragglers: half pace while someone is more than
@@ -1017,18 +1054,24 @@ function D:run_combat(group, contact, zpressure)
         if m.alive and m.materialized and m.runtime_id then
             if reorder then
                 local point = Combat.tactical_point(m, group, enemy_pos, m.action)
-                if point then
+                if point and (not m.position or U.dist2d(m.position, point) > 300) then
                     self.bridge.move_to(m.runtime_id, point, { direct = true, radius = 150 })
                     self.counters.commands = self.counters.commands + 1
+                    -- Upright while it moves: the crouched aiming pose
+                    -- cannot walk, it slides (2.0.9).
+                    m.moving_until = self.now + 3
                 end
             end
-            if self.bridge.face then
+            local on_the_move = m.moving_until and self.now < m.moving_until
+            if on_the_move then
+                if self.bridge.release_pose then pcall(self.bridge.release_pose, m.runtime_id) end
+            elseif self.bridge.face then
                 self.bridge.face(m.runtime_id, enemy_pos)
                 group.focused = true
                 group.focus_until = self.now + 3
             end
-            -- Weapon up and aimed at the nearest enemy.
-            if self.bridge.aim_at then
+            -- Weapon up and aimed at the nearest enemy, once it stands.
+            if self.bridge.aim_at and not on_the_move then
                 local tgt, bd = nil, math.huge
                 for _, e in ipairs(enemy.members) do
                     if e.alive and e.position then
@@ -1116,6 +1159,42 @@ function D:run_combat(group, contact, zpressure)
     return true
 end
 
+
+-- Soldiers, police and the elite carry guns. SCUM hands an NPC a random
+-- weapon from its body's list, and for the level 5 Guards that is often a
+-- sledgehammer or a crowbar (2.0.9: four of five elite with melee weapons).
+-- A member of such a squad who got no firearm is spawned again, up to five
+-- times, while no player is within 300 m to see it; the elite do not count
+-- bows, crossbows or improvised guns.
+local function is_firearm(name, strict)
+    local n = tostring(name or "")
+    if not n:find("^Weapon_") then return false end
+    local l = n:lower()
+    if strict and (l:find("bow", 1, true) or l:find("improvised", 1, true)) then return false end
+    return true
+end
+D.is_firearm = is_firearm
+function D:check_armament(group)
+    local cls = GroupClasses.get(group.class)
+    if not (cls and cls.firearms) or not self.bridge.weapon_of then return end
+    if (group.player_distance or math.huge) < 30000 then return end
+    for _, m in ipairs(group.members) do
+        if m.alive and m.materialized and m.runtime_id and not m.armed_ok and not m.native_fight then
+            local w = self.bridge.weapon_of(m.runtime_id)
+            if w then
+                if is_firearm(w, cls.firearms == "strict") or (m.rearms or 0) >= 5 then
+                    m.armed_ok = true
+                else
+                    m.rearms = (m.rearms or 0) + 1
+                    Log.event("REARM", group.gid, string.format("%s got %s, spawned again (%d)", m.npcId, w, m.rearms))
+                    if self.bridge.despawn then self.bridge.despawn(m.runtime_id) end
+                    m.runtime_id, m.materialized = nil, false
+                    group.rearm_at = self.now
+                end
+            end
+        end
+    end
+end
 
 -- One second's walk of a virtual squad towards an enemy it cannot reach,
 -- stopping at four fifths of its best weapon's range.
@@ -1219,6 +1298,10 @@ function D:tick(now)
         end
     end
 
+    if now_ge(self.now, self.blocks_expired_at, 60) then
+        self.blocks_expired_at = self.now
+        Grid.expire_blocks(self.now)
+    end
     -- Where the squads are, for spreading them over the map (every 30 s).
     if now_ge(self.now, self.load_counted_at, 30) then
         self.load_counted_at = self.now
@@ -1384,8 +1467,11 @@ function D:tick_group(group, players, physical_groups, dt)
         Log.event("VIRTUALIZE", group.gid, tostring(released))
         group.mv.issued_target = nil
     end
+    if group.physical then self:check_armament(group) end
     group.physical_count = Physical.physical_count(group)
+    -- A squad whose members are being spawned again for a gun stays real.
     group.physical = group.physical_count > 0
+        or (group.rearm_at ~= nil and now - group.rearm_at < 30)
 
     -- 3. Threat context.
     local contact = nil

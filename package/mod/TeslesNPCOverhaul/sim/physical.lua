@@ -279,6 +279,7 @@ function Ph.virtualize(group, bridge, ctx)
             if bridge and bridge.despawn then bridge.despawn(m.runtime_id) end
             m.runtime_id = nil
             m.native_fight, m.fight_far_since = nil, nil
+            m.armed_ok, m.rearms = nil, nil
             m.materialized = false
             released = released + 1
         end

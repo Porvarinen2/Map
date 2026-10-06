@@ -32,13 +32,13 @@ G.list = {
         poi_weights = { VILLAGE = 4.0, CITY = 3.0, INDUSTRIAL = 3.0, MEDICAL = 1.6, LANDMARK = 1.0 },
     },
     {
-        key = "police_patrol", fi = "Poliisipartio", size = { 2, 4 },
+        key = "police_patrol", firearms = true, fi = "Poliisipartio", size = { 2, 4 },
         archetypes = { "police", "security" },
         tactics = "disciplined", weight = 8,
         poi_weights = { CITY = 5.0, VILLAGE = 3.2, MEDICAL = 1.8, INDUSTRIAL = 1.0, MILITARY = 0.8 },
     },
     {
-        key = "military_group", fi = "Sotilastaustainen ryhmä", size = { 3, 5 },
+        key = "military_group", firearms = true, fi = "Sotilastaustainen ryhmä", size = { 3, 5 },
         archetypes = { "ex_military", "veteran", "bunker_specialist" },
         tactics = "military", weight = 7,
         poi_weights = { MILITARY = 5.0, BUNKER = 3.0, ABANDONED_BUNKER = 2.4, RESEARCH = 2.0, INDUSTRIAL = 1.2 },
@@ -79,7 +79,7 @@ G.list = {
         poi_weights = { MILITARY = 3.0, INDUSTRIAL = 2.4, VILLAGE = 2.0, BUNKER = 1.6, ABANDONED_BUNKER = 1.2 },
     },
     {
-        key = "elite_unit", fi = "Eliittiyksikkö", size = { 3, 5 },
+        key = "elite_unit", firearms = "strict", fi = "Eliittiyksikkö", size = { 3, 5 },
         archetypes = { "elite", "ex_military" },
         -- The hardest squad: every member a level 5 Guard, about half of
         -- them in the Abandoned Bunker body.

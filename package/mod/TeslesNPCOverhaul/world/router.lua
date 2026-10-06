@@ -457,7 +457,7 @@ function Router.route_unfenced(from, to, opts)
                     local len = polyline_length(pts)
                     -- A road that loops the long way round is worse than
                     -- walking: fall through to the grid search instead.
-                    if len <= straight * Router.ROAD_DETOUR_LIMIT
+                    if len <= straight * (opts.detour_limit or Router.ROAD_DETOUR_LIMIT)
                         or not Grid.same_landmass(from, to) then
                         return finish(pts, "ROAD", from, to)
                     end

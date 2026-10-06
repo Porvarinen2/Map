@@ -32,9 +32,14 @@ function B.spawn_npc(req)
                                             reject_rate = B.move_reject_rate })
     B.actors[h].npcId = req.npcId
     B.actors[h].alive = true
+    -- The weapon SCUM hands out: a test may set B.weapon_roll(req) -> name.
+    B.weapons_given = B.weapons_given or {}
+    B.weapons_given[h] = B.weapon_roll and B.weapon_roll(req) or nil
     B.stats.spawns = B.stats.spawns + 1
     return h
 end
+
+function B.weapon_of(h) return B.weapons_given and B.weapons_given[h] end
 
 function B.despawn(h)
     if B.actors[h] then B.stats.despawns = B.stats.despawns + 1 end

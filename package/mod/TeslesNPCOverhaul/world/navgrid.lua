@@ -69,6 +69,36 @@ function G.is_passable(p)
     return G.classify(p) ~= G.WATER
 end
 
+-- Obstacles learned on the way: a cell where a squad with bodies kept
+-- running into rock (the nav grid knows only land and water) is closed for
+-- a few hours, so routes go round it. Roads are never closed.
+G.blocked = {}
+G.blocked_count = 0
+G.MAX_BLOCKS = 400
+function G.block_at(p, sec, now)
+    local gx, gy = G.world_to_grid(p)
+    if not gx or not G.in_bounds(gx, gy) then return false end
+    local id = gy * G.size + gx
+    local b = G.blocked[id]
+    if b then b.until_t = now + sec; return true end
+    local v = cells[id]
+    if not v or v == G.WATER or v == G.ROAD then return false end
+    if G.blocked_count >= G.MAX_BLOCKS then return false end
+    G.blocked[id] = { orig = v, until_t = now + sec }
+    G.blocked_count = G.blocked_count + 1
+    cells[id] = G.WATER
+    return true
+end
+function G.expire_blocks(now)
+    for id, b in pairs(G.blocked) do
+        if now >= b.until_t then
+            cells[id] = b.orig
+            G.blocked[id] = nil
+            G.blocked_count = G.blocked_count - 1
+        end
+    end
+end
+
 function G.is_road(p)
     return G.classify(p) == G.ROAD
 end
