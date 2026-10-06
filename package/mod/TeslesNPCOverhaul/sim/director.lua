@@ -63,7 +63,16 @@ end
 -- ------------------------------------------------------------- routing -----
 
 function D:solve_route(group, dest, opts)
-    if self.route_budget <= 0 then return false, "BUDGET" end
+    -- No search left this second. Logged once a minute per squad (2.1.5:
+    -- an investigating squad logged it every second for three minutes).
+    if self.route_budget <= 0 then
+        if self.now - (group.budget_logged or 0) >= 60 then
+            group.budget_logged = self.now
+            self.counters.route_fail = self.counters.route_fail + 1
+            Log.event("ROUTE_FAIL", group.gid, "BUDGET")
+        end
+        return false, "BUDGET"
+    end
     self.route_budget = self.route_budget - 1
     local from = group.position
     -- Every route honours the group's zone fence (C0: radiation in, others out).
@@ -78,6 +87,10 @@ function D:solve_route(group, dest, opts)
     end
     local route, why = Router.route(from, dest, o)
     if not route then
+        if why == "BUDGET" then
+            if self.now - (group.budget_logged or 0) < 60 then return false, why end
+            group.budget_logged = self.now
+        end
         self.counters.route_fail = self.counters.route_fail + 1
         Log.event("ROUTE_FAIL", group.gid, tostring(why))
         return false, why
@@ -340,6 +353,16 @@ end
 -- terrain-checked route. Followers do not get slots at all: each walks the
 -- leader's own footprints, a fixed distance behind, so the squad moves as a
 -- column along the path the leader actually took.
+local FIGHT = {
+    aim_sec = 1,          -- standing aimed this long before the first shot
+    move_min = 12,        -- a new firing spot every 12-22 s
+    move_max = 22,
+    move_max_sec = 8,     -- no shots for at most this long while moving
+    blind_sec = 6,        -- no sight of the enemy this long: move
+    melee_uu = 250,
+}
+D.FIGHT = FIGHT
+
 local STEER = {
     look = 3000,          -- carrot distance ahead of the leader
     reached = 1100,       -- close enough to the carrot to hand out the next
@@ -1064,41 +1087,74 @@ function D:run_combat(group, contact, zpressure)
     if group.physical and enemy.physical and self:native_squad_fight(group, enemy) then
         return true
     end
-    -- Tactical moves are re-issued every few seconds, not every tick: a new
-    -- order each second restarts the walk and the body slides.
-    local reorder = now_ge(self.now, group.combat_order_at, 4)
-    if reorder then group.combat_order_at = self.now end
+    -- Bodies fight the way SCUM's AI fights a player: each member picks an
+    -- enemy, moves to a firing spot now and then (not every few seconds -
+    -- 2.1.x had them walking three seconds in every four, firing on the
+    -- move), stops, turns its weapon on that one enemy and shoots only once
+    -- it has stood aimed for a moment and can see it. Hits land on the enemy
+    -- it aimed at, so a man falls where the shots were going.
+    local ready = {}
+    local aimed = {}
+    local now = self.now
     for _, m in ipairs(group.members) do
         if m.alive and m.materialized and m.runtime_id then
-            if reorder then
-                local point = Combat.tactical_point(m, group, enemy_pos, m.action)
-                if point and (not m.position or U.dist2d(m.position, point) > 300) then
+            local mp = m.position or group.position
+            local tgt, bd = nil, math.huge
+            for _, e in ipairs(enemy.members) do
+                if e.alive then
+                    local d = U.dist2d(mp, e.position or enemy_pos)
+                    if d < bd then tgt, bd = e, d end
+                end
+            end
+            local tpos = (tgt and tgt.position) or enemy_pos
+            if (m.ctarget or nil) ~= (tgt and tgt.npcId or nil) then
+                m.ctarget, m.aim_since = tgt and tgt.npcId or nil, nil
+            end
+            -- Line of sight, looked at every two seconds.
+            if self.bridge.sees and tpos and now_ge(now, m.los_at, 2) then
+                m.los_at = now
+                local okv, v = pcall(self.bridge.sees, m.runtime_id, tpos, 180)
+                m.los = not (okv and v == false)
+                if m.los then m.no_los_since = nil else m.no_los_since = m.no_los_since or now end
+            end
+            local prof = m.gear and m.gear.weapon and Weapons.profile(m.gear.weapon, m.gear.scoped) or nil
+            local reach = prof and prof.range or Combat.fire.range_uu
+            local melee = reach <= (FIGHT.melee_uu * 2)
+            local move = m.cnext == nil or now >= m.cnext
+                or (m.no_los_since and now - m.no_los_since >= FIGHT.blind_sec)
+                or bd > reach
+                or m.action == "RETREAT" or m.action == "FLEE"
+            local moving = m.moving_until and now < m.moving_until
+            if move and not moving then
+                local point
+                if melee or bd > reach then
+                    point = tpos and Combat.tactical_point(m, group, tpos, "ATTACK")
+                    if melee and tpos then point = { X = tpos.X, Y = tpos.Y, Z = tpos.Z } end
+                else
+                    point = Combat.tactical_point(m, group, tpos, m.action)
+                end
+                m.cnext = now + self.rng:range(FIGHT.move_min, FIGHT.move_max)
+                m.no_los_since = nil
+                if point and m.position and U.dist2d(m.position, point) > 300 then
+                    if self.bridge.release_pose then pcall(self.bridge.release_pose, m.runtime_id) end
                     self.bridge.move_to(m.runtime_id, point, { direct = true, radius = 150 })
                     self.counters.commands = self.counters.commands + 1
-                    -- Upright while it moves: the crouched aiming pose
-                    -- cannot walk, it slides (2.0.9).
-                    m.moving_until = self.now + 3
+                    local d = U.dist2d(m.position, point)
+                    m.moving_until = now + U.clamp(d / 200 + 1, 2, FIGHT.move_max_sec)
+                    m.aim_since = nil
+                    moving = true
                 end
             end
-            local on_the_move = m.moving_until and self.now < m.moving_until
-            if on_the_move then
-                if self.bridge.release_pose then pcall(self.bridge.release_pose, m.runtime_id) end
-            elseif self.bridge.face then
-                self.bridge.face(m.runtime_id, enemy_pos)
+            if not moving then
+                if self.bridge.face and tpos then self.bridge.face(m.runtime_id, tpos) end
+                if self.bridge.aim_at and tpos then
+                    pcall(self.bridge.aim_at, m.runtime_id, tpos, tgt and tgt.runtime_id or nil)
+                end
                 group.focused = true
-                group.focus_until = self.now + 3
-            end
-            -- Weapon up and aimed at the nearest enemy, once it stands.
-            if self.bridge.aim_at and not on_the_move then
-                local tgt, bd = nil, math.huge
-                for _, e in ipairs(enemy.members) do
-                    if e.alive and e.position then
-                        local d = U.dist2d(m.position or group.position, e.position)
-                        if d < bd then tgt, bd = e, d end
-                    end
-                end
-                pcall(self.bridge.aim_at, m.runtime_id, (tgt and tgt.position) or enemy_pos,
-                    tgt and tgt.runtime_id or nil)
+                group.focus_until = now + 3
+                m.aim_since = m.aim_since or now
+                aimed[m] = tgt
+                if now - m.aim_since >= FIGHT.aim_sec and m.los ~= false then ready[m] = true end
             end
         end
     end
@@ -1114,7 +1170,11 @@ function D:run_combat(group, contact, zpressure)
         and (self.cfg.PlayerAreaCombatLethality or 1.25)
         or (self.cfg.VirtualCombatLethality or 0.5)
     local hits = Combat.exchange_fire(group, enemy, self.rng,
-        function(m) return Behaviour.accuracy(m, fatigue) end, scale)
+        function(m) return Behaviour.accuracy(m, fatigue) end, scale,
+        group.physical and {
+            ready = function(m) return m.runtime_id == nil or ready[m] == true end,
+            target = function(m) return aimed[m] end,
+        } or nil)
     if (hits.shots or 0) > 0 then
         group.last_shot_at, enemy.last_shot_at = self.now, self.now
         Behaviour.noise(self, group.position, "gunfire", U.clamp(0.7 + hits.shots * 0.15, 0.7, 1.6))
@@ -1228,7 +1288,7 @@ local function squad_state(g)
     return hp, alive
 end
 function D:native_squad_fight(group, enemy)
-    if self.cfg.NativeSquadFights == false or self.native_squad_off then return false end
+    if self.cfg.NativeSquadFights ~= true or self.native_squad_off then return false end
     if not (self.bridge.set_team and self.bridge.set_native) then return false end
     if group.nsf_failed_until and self.now < group.nsf_failed_until then return false end
     local f = group.nsf

@@ -313,7 +313,10 @@ end
 
 -- scale: hit chance multiplier (fights between two squads far from every
 -- player are softened, see director).
-function C.exchange_fire(group, enemy, rng, accuracy, scale)
+-- opts (squads with bodies): ready(m) says whether the member can shoot
+-- this second (standing, aimed, in sight) and target(m) is the enemy it
+-- aimed at, which is the one its shots go to.
+function C.exchange_fire(group, enemy, rng, accuracy, scale, opts)
     local hits = {}
     local foes = alive_members(enemy)
     if #foes == 0 then return hits end
@@ -322,13 +325,19 @@ function C.exchange_fire(group, enemy, rng, accuracy, scale)
         -- Until the squad has lost someone, everyone fires, even those
         -- whose nerve says run.
         local holds = not (group.loss_at and os.time() - group.loss_at < 120)
-        if m.alive and (holds or (m.action ~= "RETREAT" and m.action ~= "FLEE")) then
+        if m.alive and (holds or (m.action ~= "RETREAT" and m.action ~= "FLEE"))
+            and not (opts and opts.ready and not opts.ready(m)) then
             local mp = m.position or group.position
             local target, best = nil, math.huge
-            for _, e in ipairs(foes) do
-                if e.alive then
-                    local d = U.dist2d(mp, e.position or enemy.position)
-                    if d < best then target, best = e, d end
+            local aimed = opts and opts.target and opts.target(m)
+            if aimed and aimed.alive then
+                target, best = aimed, U.dist2d(mp, aimed.position or enemy.position)
+            else
+                for _, e in ipairs(foes) do
+                    if e.alive then
+                        local d = U.dist2d(mp, e.position or enemy.position)
+                        if d < best then target, best = e, d end
+                    end
                 end
             end
             -- The member's own weapon sets its reach and aim: a scoped rifle

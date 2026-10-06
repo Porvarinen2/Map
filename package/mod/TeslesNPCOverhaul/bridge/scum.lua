@@ -1614,6 +1614,7 @@ function B.take_ownership(handle)
         set_health("takeover", "PENDING", "waiting for a Tesles-owned physical actor")
         return false, "NOT_EXPOSED"
     end
+    if B.cfg and B.cfg.BlindDirectedNPCs ~= false then pcall(B.set_senses, handle, false) end
     set_health("takeover", "OK", "director owns " .. table.concat(done, "+"))
     pcall(B.set_pose, handle, "walk")
     return true
@@ -1707,6 +1708,44 @@ local function tune_sight(a)
     end
 end
 
+-- SCUM's own senses. With the brain stopped, the NPC's AI still sees and
+-- hears: it went after every animal and zombie it noticed, turned and
+-- crouched to aim at them while the director walked the body on - the
+-- crouched sliding and the "every squad hunts deer" of 2.1.5. Outside a
+-- fight of SCUM's own the senses are switched off; the director sees for
+-- the squad. Turned back on before SCUM's AI is handed a fight.
+local sense_classes = nil
+local senses_logged = false
+function B.set_senses(handle, on)
+    local rec = handles[handle]
+    local a = B.actor(handle)
+    if not (rec and a) then return false end
+    if rec.senses == on then return true end
+    local c = B.controller(a)
+    local perc = nil
+    pcall(function() perc = c.PerceptionComponent end)
+    if not (perc and valid(perc)) then return false end
+    if not sense_classes then
+        sense_classes = {}
+        for _, path in ipairs({ "/Script/AIModule.AISense_Sight", "/Script/AIModule.AISense_Hearing" }) do
+            local ok, cls = pcall(StaticFindObject, path)
+            if ok and cls and valid(cls) then sense_classes[#sense_classes + 1] = cls end
+        end
+    end
+    local done = 0
+    for _, cls in ipairs(sense_classes) do
+        if pcall(function() perc:SetSenseEnabled(cls, on == true) end) then done = done + 1 end
+    end
+    if not on then pcall(function() perc:ForgetAll() end) end
+    rec.senses = on
+    if not senses_logged and B.on_debug then
+        senses_logged = true
+        pcall(B.on_debug, string.format("npc senses %s: %d of %d switched", on and "on" or "off",
+            done, #sense_classes))
+    end
+    return done > 0
+end
+
 function B.set_native(handle, on)
     local rec = handles[handle]
     local a = B.actor(handle)
@@ -1715,6 +1754,7 @@ function B.set_native(handle, on)
     local c = B.controller(a)
     local ok = false
     if on then
+        pcall(B.set_senses, handle, true)
         if not rec.sight_tuned then
             rec.sight_tuned = true
             pcall(tune_sight, a)
@@ -1741,6 +1781,7 @@ function B.set_native(handle, on)
         rec.native = false
         pcall(function() c:StopMovement() end)
         ok = pcall(function() c.BrainComponent:StopLogic("TeslesDirector") end)
+        if B.cfg and B.cfg.BlindDirectedNPCs ~= false then pcall(B.set_senses, handle, false) end
         -- SCUM's AI leaves its focus on the player and the body in combat
         -- mode; with either left on the NPC walks the director's route
         -- looking back at where the player was (walking backwards).
@@ -1866,6 +1907,10 @@ function B.keep_ownership(handle)
     if not a then return false end
     local c = B.controller(a)
     if not c then return false end
+    local rec = handles[handle]
+    if rec and rec.senses ~= false and B.cfg and B.cfg.BlindDirectedNPCs ~= false then
+        pcall(B.set_senses, handle, false)
+    end
     local ok, running = pcall(function()
         local bt = c.BrainComponent
         return bt and bt:IsRunning()

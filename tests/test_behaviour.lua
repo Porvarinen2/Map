@@ -644,6 +644,7 @@ end
 section("squad fights near players go to SCUM's own AI, with a fallback")
 do
     local world, d = fresh(65)
+    d.cfg.NativeSquadFights = true
     local a, b
     for _, g in ipairs(world.groups) do
         if not require("world.zones").reserved_by_class[g.class] and #g.members >= 2 then
@@ -669,6 +670,50 @@ do
     local any_native = false
     for _, m in ipairs(a.members) do if m.native_squad or (m.runtime_id and Bridge.teams[m.runtime_id]) then any_native = true end end
     check(not any_native, "and every member has its own team back")
+    Bridge.players = {}
+    d.cfg.NativeSquadFights = false
+end
+
+section("squads with bodies shoot from standing, aimed at the man they hit")
+do
+    local world, d = fresh(66)
+    local a, b
+    for _, g in ipairs(world.groups) do
+        if not require("world.zones").reserved_by_class[g.class] and #g.members >= 2 then
+            if not a then a = g elseif not b then b = g; break end
+        end
+    end
+    b.position = { X = a.position.X + 3000, Y = a.position.Y, Z = a.position.Z }
+    for _, m in ipairs(b.members) do m.position = U.copy_vec(b.position) end
+    local sim = os.time()
+    local moving_shots, aimed_ok, aimed_all, fights = 0, 0, 0, 0
+    local orig_fire = Bridge.fire_once
+    local orig_aim = Bridge.aim_at
+    local aim_of = {}
+    Bridge.aim_at = function(h, pos, th) aim_of[h] = th; return true end
+    Bridge.fire_once = function(h)
+        for _, g in ipairs({ a, b }) do
+            for _, m in ipairs(g.members) do
+                if m.runtime_id == h then
+                    if m.moving_until and sim < m.moving_until then moving_shots = moving_shots + 1 end
+                    aimed_all = aimed_all + 1
+                    if aim_of[h] then aimed_ok = aimed_ok + 1 end
+                end
+            end
+        end
+        return true
+    end
+    for _ = 1, 40 do
+        sim = sim + 1
+        Bridge.players = { { X = a.position.X + 60000, Y = a.position.Y, Z = 0 } }
+        Bridge.step(1); d:tick(sim)
+        if a.act.state == "COMBAT" or b.act.state == "COMBAT" then fights = fights + 1 end
+    end
+    Bridge.fire_once, Bridge.aim_at = orig_fire, orig_aim
+    check(fights > 0 and a.nsf == nil, "the director fights it (SCUM's AI is off by default)")
+    check(aimed_all > 0, string.format("they shoot (%d shots)", aimed_all))
+    check(moving_shots == 0, "nobody fires while walking to a new spot")
+    check(aimed_ok == aimed_all, "every shot comes from a man aiming at an enemy")
     Bridge.players = {}
 end
 
@@ -1034,7 +1079,10 @@ do
     check(f == "Guard" and l == 4, "the elite spawn in the level 4 Guard body (level 5 Guards get bows)")
     m.rearms = 1
     f, v, l = Physical.armed_body(m, g, "Guard", "AbandonedBunker", 5)
-    check(f == "Guard" and v == "AbandonedBunker" and l == 4, "and stay level 4 Guards when spawned again for a gun")
+    check(f == "Guard" and v == nil and l == 4, "and stay plain level 4 Guards when spawned again for a gun")
+    m.rearms = 2
+    f, v, l = Physical.armed_body(m, g, "Guard", nil, 5)
+    check(f == "Drifter" and l == 5, "still no gun after two tries: a level 5 Drifter (always armed)")
     local mg = Factory.new_group({ id = 991, class = "military_group", seed = 4998,
         position = { X = 0, Y = 0, Z = 0 }, home = { X = 0, Y = 0, Z = 0 } })
     local mm = mg.members[1]

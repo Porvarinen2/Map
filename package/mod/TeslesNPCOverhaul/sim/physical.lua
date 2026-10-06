@@ -155,9 +155,14 @@ end
 function Ph.armed_body(m, group, family, variant, level)
     local cls = group and GroupClasses.get(group.class)
     if not (cls and cls.firearms) or variant == "Radiation" then return family, variant, level end
-    -- The elite always wear the level 4 Guard body (the Abandoned Bunker
-    -- one for about half of them), re-rolls included.
+    -- The elite wear the plain level 4 Guard body. The Abandoned Bunker
+    -- Guards carry clubs, bows and crossbows (2.1.5: fifteen rolls in a row
+    -- without a gun), so that variant is never used for squads that should
+    -- be armed. An elite still without a gun after two tries comes back as
+    -- a level 5 Drifter: SCUM always gives those a firearm.
+    if family == "Guard" and variant == "AbandonedBunker" then variant = nil end
     if cls.firearms == "strict" then
+        if (m.rearms or 0) >= 2 then return "Drifter", nil, 5 end
         return "Guard", variant, 4
     end
     if (m.rearms or 0) >= 1 then

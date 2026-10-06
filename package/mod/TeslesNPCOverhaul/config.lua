@@ -1,7 +1,7 @@
 -- TESLES NPC OVERHAUL - server configuration.
 -- Distances are Unreal units unless a name says otherwise. 100 UU = 1 metre.
 return {
-    Version = "2.1.5",
+    Version = "2.1.6",
 
     -- Language of the live map and messages: "en" or "fi".
     Language = "en",
@@ -85,10 +85,16 @@ return {
     PlayerAreaCombatLethality = 1.25,
     -- Away from every player (fought on the map only):
     VirtualCombatLethality = 0.5,
-    -- Fights between two squads near players are fought by SCUM's own
-    -- combat AI (aiming, cover, real shots), as fights with players are.
-    -- false: the director's own fight (dice, shots for show).
-    NativeSquadFights = true,
+    -- true: fights between two squads near players are handed to SCUM's
+    -- own combat AI. Off since 2.1.6: SCUM's AI only takes players as
+    -- targets, and squads handed to it stood idle (2.1.5 log: no hits).
+    -- false: the director fights them - aimed, from standing, real shots.
+    NativeSquadFights = false,
+    -- true: SCUM's own sight and hearing are off while the director walks
+    -- an NPC (on again for a fight with a player). With them on, SCUM's AI
+    -- chased animals and zombies on its own and aimed at them crouched
+    -- while the body walked on - the crouched sliding.
+    BlindDirectedNPCs = true,
     -- The AI team trick for those fights: one side counts as the players'
     -- team (5) for the other side's AI. false: only the generic team ids.
     NativeSquadAITeam = true,
