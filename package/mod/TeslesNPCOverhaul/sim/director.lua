@@ -410,6 +410,19 @@ function D:move_physical(group, dt)
         local ws = self.bridge.walk_speed(lead.runtime_id)
         if ws and math.abs(ws - (lead.speed_set or want)) > 5 then group.speed_set = nil end
     end
+    -- SCUM puts its own jog speed (262.5) on NPCs now and then, and only the
+    -- leader was checked: followers kept it and raced along in their walking
+    -- animation (2.1.3). Every member is checked every three seconds.
+    if self.bridge.walk_speed and self.bridge.set_speed and now - (group.member_speed_at or 0) >= 3 then
+        group.member_speed_at = now
+        for _, m in ipairs(group.members) do
+            if steerable(m) and m.speed_set then
+                local expect = m.speed_set <= 170 and 135 or 262
+                local ws = self.bridge.walk_speed(m.runtime_id)
+                if ws and math.abs(ws - expect) > 5 then self.bridge.set_speed(m.runtime_id, m.speed_set) end
+            end
+        end
+    end
     if group.speed_set ~= want and self.bridge.set_speed then
         for _, m in ipairs(group.members) do
             if steerable(m) then
@@ -883,7 +896,7 @@ function D:player_fights(physical_groups, players, now)
                         self.bridge.set_native(m.runtime_id, true)
                         Log.event("FIGHT", g.gid, string.format("%s vs player %.0f m", m.npcId, best / 100))
                     end
-                elseif m.native_fight and best > reach * F.release_factor + F.release_extra_uu then
+                elseif m.native_fight and not m.native_squad and best > reach * F.release_factor + F.release_extra_uu then
                     m.fight_far_since = m.fight_far_since or now
                     if now - m.fight_far_since >= F.release_after then
                         self:release_native(g, m)
@@ -1047,6 +1060,11 @@ function D:run_combat(group, contact, zpressure)
 
     local enemy = contact.group
     local enemy_pos = enemy.position
+    -- Two squads with bodies: SCUM's own combat AI fights it out, as it
+    -- does against players (aiming, cover, real shots and real hits).
+    if group.physical and enemy.physical and self:native_squad_fight(group, enemy) then
+        return true
+    end
     -- Tactical moves are re-issued every few seconds, not every tick: a new
     -- order each second restarts the walk and the body slides.
     local reorder = now_ge(self.now, group.combat_order_at, 4)
@@ -1194,6 +1212,82 @@ function D:check_armament(group)
                     group.rearm_at = self.now
                 end
             end
+        end
+    end
+end
+
+-- A squad fight on SCUM's own AI. Each side gets a team of its own (see
+-- bridge.set_team) and its members are handed to SCUM's AI, like in a fight
+-- with a player. If nobody is hurt for 30 s, SCUM did not take the teams:
+-- the squad goes back to the director's fight for ten minutes, and after
+-- three such failures with no success the mod stops trying this session.
+local function squad_state(g)
+    local hp, alive = 0, 0
+    for _, m in ipairs(g.members) do
+        if m.alive then alive = alive + 1; hp = hp + (m.health or 0) end
+    end
+    return hp, alive
+end
+function D:native_squad_fight(group, enemy)
+    if self.cfg.NativeSquadFights == false or self.native_squad_off then return false end
+    if not (self.bridge.set_team and self.bridge.set_native) then return false end
+    if group.nsf_failed_until and self.now < group.nsf_failed_until then return false end
+    local f = group.nsf
+    if f and f.enemy ~= enemy.gid then self:end_native_squad(group, "new enemy"); f = nil end
+    if not f then
+        local hp1, a1 = squad_state(group)
+        local hp2, a2 = squad_state(enemy)
+        f = { enemy = enemy.gid, since = self.now, progress_at = self.now, hp = hp1 + hp2, alive = a1 + a2 }
+        group.nsf = f
+        Log.event("FIGHT", group.gid, "vs " .. enemy.gid .. " on SCUM's own AI")
+    end
+    local team = 1 + ((group.id or 0) % 250)
+    local ai_team = (self.cfg.NativeSquadAITeam ~= false and group.gid < enemy.gid) and 5 or nil
+    for _, m in ipairs(group.members) do
+        if m.alive and m.runtime_id and m.materialized and not m.native_squad then
+            self.bridge.set_team(m.runtime_id, team, ai_team)
+            m.native_squad = true
+            if not m.native_fight then
+                m.native_fight = true
+                self.bridge.set_native(m.runtime_id, true)
+            end
+        end
+    end
+    -- Anyone hurt or down on either side since the last look is progress.
+    local hp1, a1 = squad_state(group)
+    local hp2, a2 = squad_state(enemy)
+    if hp1 + hp2 < f.hp - 1 or a1 + a2 < f.alive then
+        f.progress_at = self.now
+        if not self.native_squad_ok then
+            self.native_squad_ok = true
+            if self.bridge.on_debug then
+                pcall(self.bridge.on_debug, "squad fights on SCUM's own AI work: hits seen between " .. group.gid .. " and " .. enemy.gid)
+            end
+        end
+    end
+    f.hp, f.alive = hp1 + hp2, a1 + a2
+    if self.now - f.progress_at >= 30 then
+        self:end_native_squad(group, "no hits")
+        group.nsf_failed_until = self.now + 600
+        self.native_squad_fails = (self.native_squad_fails or 0) + 1
+        if not self.native_squad_ok and self.native_squad_fails >= 3 then
+            self.native_squad_off = true
+            if self.bridge.on_debug then
+                pcall(self.bridge.on_debug, "squad fights on SCUM's own AI: no hits in 3 fights - the director fights them instead this session")
+            end
+        end
+        return false
+    end
+    return true
+end
+function D:end_native_squad(group, why)
+    if not group.nsf then return end
+    group.nsf = nil
+    for _, m in ipairs(group.members) do
+        if m.native_squad then
+            m.native_squad = nil
+            if m.runtime_id and self.bridge.restore_team then self.bridge.restore_team(m.runtime_id) end
+            if m.native_fight and m.runtime_id then self:release_native(group, m, why) end
         end
     end
 end
@@ -1504,6 +1598,7 @@ function D:tick_group(group, players, physical_groups, dt)
     end
     group.last_contact = contact and contact.group or nil
     local fighting = self:run_combat(group, contact, zpressure)
+    if group.nsf and not fighting then self:end_native_squad(group, "fight over") end
     -- Stress, morale and personality decide the reaction: flight, standing
     -- against zombies, going to look at gunfire, holding still.
     local reacting = Behaviour.react(self, group, now, sense, fighting)

@@ -1,7 +1,7 @@
 -- TESLES NPC OVERHAUL - server configuration.
 -- Distances are Unreal units unless a name says otherwise. 100 UU = 1 metre.
 return {
-    Version = "2.1.3",
+    Version = "2.1.4",
 
     -- Language of the live map and messages: "en" or "fi".
     Language = "en",
@@ -85,6 +85,13 @@ return {
     PlayerAreaCombatLethality = 1.25,
     -- Away from every player (fought on the map only):
     VirtualCombatLethality = 0.5,
+    -- Fights between two squads near players are fought by SCUM's own
+    -- combat AI (aiming, cover, real shots), as fights with players are.
+    -- false: the director's own fight (dice, shots for show).
+    NativeSquadFights = true,
+    -- The AI team trick for those fights: one side counts as the players'
+    -- team (5) for the other side's AI. false: only the generic team ids.
+    NativeSquadAITeam = true,
     -- ------------------------------------------------------------- stress ---
     -- How much stress an average NPC sheds in five minutes out of danger
     -- (0.01 = one point). Veterans and soldiers recover faster, survivors,

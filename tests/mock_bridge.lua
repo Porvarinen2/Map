@@ -141,6 +141,9 @@ function B.set_native(h, on)
     return true
 end
 function B.in_native(h) return B.native[h] == true end
+B.teams = {}
+function B.set_team(h, team, ai) B.teams[h] = { team = team, ai = ai }; return true end
+function B.restore_team(h) B.teams[h] = nil; return true end
 B.released = {}
 function B.release_pose(h)
     B.released[h] = (B.released[h] or 0) + 1
@@ -217,6 +220,7 @@ function B.reset()
     B.actors = {}
     B.animals = {}
     B.native = {}
+    B.teams = {}
     B.released = {}
     B.owned_checks = {}
     B.owned = 0

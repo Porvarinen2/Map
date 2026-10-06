@@ -968,6 +968,7 @@ function B.spawn_npc(req)
     B.last_spawn = { handle = h, at = os.clock(), t = os.time() }
     B.stats.spawns = B.stats.spawns + 1
     if not B.api_dumped then pcall(B.dump_api_once, h) end
+    if not B.ai_dumped then pcall(B.dump_ai_once, h) end
     set_health("physicalVirtualization", "OK",
         B.stats.spawns .. " actors materialized this session")
     return h
@@ -1483,6 +1484,98 @@ end
 -- Stops SCUM's own encounter logic from re-commanding an actor the director
 -- owns. Two authorities fighting over one pawn is the other half of the
 -- stutter problem; the path follower cannot fix that on its own.
+-- Teams for a fight between two squads on SCUM's own AI. SCUM's AI attacks
+-- whoever its team settings call hostile; all armed NPCs share one team
+-- (_aiTeam 10; players are 5), so out of the box they never fight each
+-- other. For a squad fight each side gets a team of its own - the generic
+-- team id (Unreal's: different ids are hostile) and the AI team - and gets
+-- its own back when the fight is over. Whether SCUM honours it is logged.
+local team_logged = 0
+function B.set_team(handle, team_id, ai_team)
+    local rec = handles[handle]
+    local a = B.actor(handle)
+    if not (rec and a) then return false end
+    if not rec.team_orig then
+        local tid, ait = nil, nil
+        pcall(function() tid = a._genericTeamId.TeamID end)
+        pcall(function() ait = a._aiTeam end)
+        rec.team_orig = { tid = tid, ai = ait }
+    end
+    local ok1 = pcall(function() a._genericTeamId.TeamID = team_id end)
+    local ok2 = false
+    if ai_team then ok2 = pcall(function() a._aiTeam = ai_team end) end
+    local c = B.controller(a)
+    local ok3 = c and pcall(function() c:SetGenericTeamId({ TeamID = team_id }) end) or false
+    if team_logged < 2 and B.on_debug then
+        team_logged = team_logged + 1
+        local now_tid, now_ai = nil, nil
+        pcall(function() now_tid = a._genericTeamId.TeamID end)
+        pcall(function() now_ai = a._aiTeam end)
+        pcall(B.on_debug, string.format(
+            "npc team: was %s/%s, set %s/%s -> now %s/%s (pawn %s, ai %s, controller %s)",
+            tostring(rec.team_orig.tid), tostring(rec.team_orig.ai), tostring(team_id), tostring(ai_team),
+            tostring(now_tid), tostring(now_ai), tostring(ok1), tostring(ok2), tostring(ok3)))
+    end
+    return ok1 or ok2 or ok3
+end
+function B.restore_team(handle)
+    local rec = handles[handle]
+    local a = B.actor(handle)
+    if not (rec and a and rec.team_orig) then return false end
+    local o = rec.team_orig
+    if o.tid ~= nil then
+        pcall(function() a._genericTeamId.TeamID = o.tid end)
+        local c = B.controller(a)
+        if c then pcall(function() c:SetGenericTeamId({ TeamID = o.tid }) end) end
+    end
+    if o.ai ~= nil then pcall(function() a._aiTeam = o.ai end) end
+    return true
+end
+
+-- SCUM's own AI, written once to output/npc_ai.txt: the controller's
+-- fields with their values, its state machine (_statesByEnum), the
+-- behaviour tree and blackboard keys. It is the map for letting SCUM's AI
+-- walk an NPC to a place itself instead of the director pushing it.
+function B.dump_ai_once(handle)
+    if B.ai_dumped or not B.write_file then return end
+    local a = B.actor(handle)
+    local c = a and B.controller(a)
+    if not c then return end
+    B.ai_dumped = true
+    local out = { "TESLES NPC OVERHAUL - SCUM NPC AI (" .. os.date("%Y-%m-%d %H:%M:%S") .. ")" }
+    pcall(dump_props, c, out, "controller", "/Script/Engine.Controller")
+    pcall(function()
+        local states = c._statesByEnum
+        out[#out + 1] = "--- _statesByEnum"
+        states:ForEach(function(k, v)
+            local key, val = "?", "?"
+            pcall(function() key = tostring(k:get()) end)
+            pcall(function() val = full_name(v:get()) end)
+            out[#out + 1] = "  " .. key .. " = " .. val
+            pcall(function() dump_props(v:get(), out, "    state", "/Script/CoreUObject.Object") end)
+        end)
+    end)
+    pcall(function()
+        local bt = c.BrainComponent
+        out[#out + 1] = "--- brain " .. full_name(bt)
+        pcall(dump_props, bt, out, "  brain", "/Script/Engine.ActorComponent")
+    end)
+    pcall(function()
+        local bb = c.Blackboard
+        out[#out + 1] = "--- blackboard " .. full_name(bb)
+        local asset = bb.BlackboardAsset
+        out[#out + 1] = "  asset " .. full_name(asset)
+        asset.Keys:ForEach(function(_, e)
+            local entry = e:get()
+            local n, kt = "?", "?"
+            pcall(function() n = entry.EntryName:ToString() end)
+            pcall(function() kt = full_name(entry.KeyType) end)
+            out[#out + 1] = "  key " .. n .. " : " .. kt
+        end)
+    end)
+    pcall(B.write_file, "npc_ai.txt", table.concat(out, "\n") .. "\n")
+end
+
 -- How the body turns and animates while the director walks it.
 -- Walking: the body faces where it goes (no walking backwards towards an old
 -- focus point), stands up (no crouched combat idle), and its path moves go

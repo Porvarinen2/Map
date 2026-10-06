@@ -641,6 +641,37 @@ do
     Bridge.players = {}
 end
 
+section("squad fights near players go to SCUM's own AI, with a fallback")
+do
+    local world, d = fresh(65)
+    local a, b
+    for _, g in ipairs(world.groups) do
+        if not require("world.zones").reserved_by_class[g.class] and #g.members >= 2 then
+            if not a then a = g elseif not b then b = g; break end
+        end
+    end
+    b.position = { X = a.position.X + 3000, Y = a.position.Y, Z = a.position.Z }
+    for _, m in ipairs(b.members) do m.position = U.copy_vec(b.position) end
+    local sim = os.time()
+    local started, teamed = false, false
+    for i = 1, 25 do
+        sim = sim + 1
+        Bridge.players = { { X = a.position.X + 60000, Y = a.position.Y, Z = 0 } }
+        Bridge.step(1); d:tick(sim)
+        if a.nsf then started = true end
+        for _, m in ipairs(a.members) do if m.runtime_id and Bridge.teams[m.runtime_id] then teamed = true end end
+    end
+    check(started, "two squads with bodies in contact fight on SCUM's own AI")
+    check(teamed, "each member got a team of its own side")
+    -- Nobody gets hurt: SCUM did not take the teams; back to the director.
+    for _ = 1, 40 do sim = sim + 1; Bridge.step(1); d:tick(sim) end
+    check(a.nsf == nil and (a.nsf_failed_until or 0) > sim, "no hits in 30 s: the director takes the fight back")
+    local any_native = false
+    for _, m in ipairs(a.members) do if m.native_squad or (m.runtime_id and Bridge.teams[m.runtime_id]) then any_native = true end end
+    check(not any_native, "and every member has its own team back")
+    Bridge.players = {}
+end
+
 section("a spectator is not seen by NPCs")
 do
     local world, d = fresh(59)
