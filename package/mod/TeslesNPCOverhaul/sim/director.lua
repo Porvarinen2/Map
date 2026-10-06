@@ -14,6 +14,7 @@ local U = require("core.util")
 local RNG = require("core.rng")
 local Log = require("core.log")
 local Weapons = require("npc.weapons")
+local ScumData = require("npc.scum_data")
 local Router = require("world.router")
 local Grid = require("world.navgrid")
 local POI = require("world.pois")
@@ -354,11 +355,8 @@ end
 -- leader's own footprints, a fixed distance behind, so the squad moves as a
 -- column along the path the leader actually took.
 local FIGHT = {
-    aim_sec = 1,          -- standing aimed this long before the first shot
-    move_min = 12,        -- a new firing spot every 12-22 s
-    move_max = 22,
-    move_max_sec = 8,     -- no shots for at most this long while moving
-    blind_sec = 6,        -- no sight of the enemy this long: move
+    aim_sec = 1,          -- held aim this long before the first shot
+    blind_sec = 6,        -- no sight of the enemy this long: a new spot
     melee_uu = 250,
 }
 D.FIGHT = FIGHT
@@ -1088,15 +1086,18 @@ function D:run_combat(group, contact, zpressure)
     if group.physical and enemy.physical and self:native_squad_fight(group, enemy) then
         return true
     end
-    -- Bodies fight the way SCUM's AI fights a player: each member picks an
-    -- enemy, moves to a firing spot now and then (not every few seconds -
-    -- 2.1.x had them walking three seconds in every four, firing on the
-    -- move), stops, turns its weapon on that one enemy and shoots only once
-    -- it has stood aimed for a moment and can see it. Hits land on the enemy
-    -- it aimed at, so a man falls where the shots were going.
-    local ready = {}
-    local aimed = {}
+    -- Bodies fight the way SCUM's own NPCs fight (their combat movement
+    -- settings, read from the game files): each member picks the nearest
+    -- enemy, closes in to its level's approach distance, then every few
+    -- seconds walks to a new spot at its roaming distance and angle - aimed
+    -- at its enemy all the while, and firing at a walk. A member that jogs
+    -- there holds fire. Shots come in SCUM's rhythm (rows and pauses, bursts
+    -- for automatic weapons), only once it has held its aim a moment with
+    -- the enemy in sight, and its hits land on the enemy it aimed at.
+    local ready, aimed, walking = {}, {}, {}
     local now = self.now
+    local rng = self.rng
+    local function between(r) return r[1] + (r[2] - r[1]) * rng:float() end
     for _, m in ipairs(group.members) do
         if m.alive and m.materialized and m.runtime_id then
             local mp = m.position or group.position
@@ -1121,40 +1122,78 @@ function D:run_combat(group, contact, zpressure)
             local prof = m.gear and m.gear.weapon and Weapons.profile(m.gear.weapon, m.gear.scoped) or nil
             local reach = prof and prof.range or Combat.fire.range_uu
             local melee = reach <= (FIGHT.melee_uu * 2)
-            local move = m.cnext == nil or now >= m.cnext
-                or (m.no_los_since and now - m.no_los_since >= FIGHT.blind_sec)
-                or bd > reach
-                or m.action == "RETREAT" or m.action == "FLEE"
+            local cm = ScumData.combat_move(m.body_level or m.level)
+            m.approach = m.approach or between(cm.approach) * 100
             local moving = m.moving_until and now < m.moving_until
-            if move and not moving then
-                local point
-                if melee or bd > reach then
-                    point = tpos and Combat.tactical_point(m, group, tpos, "ATTACK")
-                    if melee and tpos then point = { X = tpos.X, Y = tpos.Y, Z = tpos.Z } end
-                else
+            local point, jog = nil, false
+            if tpos and (m.action == "RETREAT" or m.action == "FLEE") then
+                if not moving then
                     point = Combat.tactical_point(m, group, tpos, m.action)
+                    jog = true
                 end
-                m.cnext = now + self.rng:range(FIGHT.move_min, FIGHT.move_max)
+            elseif tpos and melee then
+                if not moving or bd > 400 then
+                    point = { X = tpos.X, Y = tpos.Y, Z = tpos.Z }
+                    jog = bd > 1500
+                end
+            elseif tpos and (bd > reach or bd > m.approach * 1.2) then
+                -- Closing in: along the line to the enemy, to the approach
+                -- distance (or into its weapon's reach).
+                if not moving then
+                    local want = math.min(m.approach, reach * 0.9)
+                    local dir = U.direction(tpos, mp)
+                    if dir then
+                        point = { X = tpos.X + dir.X * want, Y = tpos.Y + dir.Y * want, Z = mp.Z }
+                        jog = bd - want > 3000
+                    end
+                end
+            elseif tpos and (m.cnext == nil or now >= m.cnext
+                    or (m.no_los_since and now - m.no_los_since >= FIGHT.blind_sec)) and not moving then
+                -- Roaming: a new spot at the roaming distance from the enemy,
+                -- turned off the line by up to the level's angle, no more
+                -- than a step away.
+                local ang = math.atan(mp.Y - tpos.Y, mp.X - tpos.X)
+                    + math.rad((rng:float() * 2 - 1) * cm.angle)
+                local r = between(cm.roam) * 100
+                local spot = { X = tpos.X + math.cos(ang) * r, Y = tpos.Y + math.sin(ang) * r, Z = mp.Z }
+                local step = between(cm.step) * 100
+                local d = U.dist2d(mp, spot)
+                if d > step then
+                    spot = { X = mp.X + (spot.X - mp.X) * step / d, Y = mp.Y + (spot.Y - mp.Y) * step / d, Z = mp.Z }
+                end
+                point = spot
+                jog = rng:chance(cm.jog)
+                m.cnext = now + between(cm.every)
                 m.no_los_since = nil
-                if point and m.position and U.dist2d(m.position, point) > 300 then
-                    if self.bridge.release_pose then pcall(self.bridge.release_pose, m.runtime_id) end
+            end
+            if point and m.position and U.dist2d(m.position, point) > 250 then
+                if Grid.is_passable(point) then
+                    if self.bridge.set_speed then
+                        local v = jog and (self.cfg.PhysicalRunSpeedUU or 262) or (self.cfg.PhysicalWalkSpeedUU or 135)
+                        if m.speed_set ~= v then self.bridge.set_speed(m.runtime_id, v); m.speed_set = v end
+                    end
+                    if jog and self.bridge.release_pose then pcall(self.bridge.release_pose, m.runtime_id) end
                     self.bridge.move_to(m.runtime_id, point, { direct = true, radius = 150 })
                     self.counters.commands = self.counters.commands + 1
-                    local d = U.dist2d(m.position, point)
-                    m.moving_until = now + U.clamp(d / 200 + 1, 2, FIGHT.move_max_sec)
-                    m.aim_since = nil
+                    local speed = jog and 262 or 135
+                    m.moving_until = now + U.clamp(U.dist2d(m.position, point) / speed + 0.5, 1, 12)
+                    m.jogging = jog
                     moving = true
                 end
             end
-            if not moving then
-                if self.bridge.face and tpos then self.bridge.face(m.runtime_id, tpos) end
+            if moving and m.jogging then
+                m.aim_since = nil
+            else
                 if self.bridge.aim_at and tpos then
                     pcall(self.bridge.aim_at, m.runtime_id, tpos, tgt and tgt.runtime_id or nil)
+                elseif self.bridge.face and tpos then
+                    self.bridge.face(m.runtime_id, tpos)
                 end
                 group.focused = true
                 group.focus_until = now + 3
                 m.aim_since = m.aim_since or now
                 aimed[m] = tgt
+                walking[m] = moving or nil
                 if now - m.aim_since >= FIGHT.aim_sec and m.los ~= false then ready[m] = true end
             end
         end
@@ -1170,12 +1209,66 @@ function D:run_combat(group, contact, zpressure)
     local scale = (group.physical or enemy.physical)
         and (self.cfg.PlayerAreaCombatLethality or 1.25)
         or (self.cfg.VirtualCombatLethality or 0.5)
+    local diff = tonumber(self.cfg.ScumNPCDifficulty) or 1
+    local dscale = tonumber(self.cfg.CombatDamageScale) or 1
+    local opts = {
+        -- Damage: SCUM's weapon (by calibre) against the target's level
+        -- health, as a share of the health the director keeps (0-100).
+        damage = function(m, target, dist)
+            local st = ScumData.weapon(m.gear and m.gear.weapon)
+            local hp = st and st.damage or ScumData.MELEE_DAMAGE
+            if st and st.cat == "shotgun" then hp = hp * U.clamp(1 - dist / 4000, 0.25, 1) end
+            hp = hp * (0.8 + 0.4 * rng:float())
+            if rng:chance(0.08) then hp = hp * 2.5 end
+            return hp * dscale * 100 / ScumData.max_health(target.body_level or target.level)
+        end,
+    }
+    if group.physical then
+        opts.ready = function(m) return m.runtime_id == nil or ready[m] == true end
+        opts.target = function(m) return aimed[m] end
+        opts.acc = function(m, rounds)
+            local st = ScumData.weapon(m.gear and m.gear.weapon)
+            local f = ScumData.fire(diff, st and st.cat)
+            local a = 1 / math.sqrt(math.max(0.5, f.spread or 1))
+            if walking[m] then a = a * 0.6 end
+            if rounds > 1 then a = a * 0.55 end
+            return a * 1.4
+        end
+        -- SCUM's firing rhythm: a row of shots (one a second at most, one
+        -- director tick), then a pause; automatic weapons fire the whole
+        -- burst at once. Melee: a blow every one and a half seconds or so.
+        opts.bullets = function(m)
+            if m.runtime_id == nil then return rng:chance(0.5) and 1 or 0 end
+            local st = ScumData.weapon(m.gear and m.gear.weapon)
+            local c = m.cadence
+            if not c or c.weapon ~= (m.gear and m.gear.weapon) then
+                c = { weapon = m.gear and m.gear.weapon, left = nil, next_at = 0 }
+                m.cadence = c
+            end
+            if now < c.next_at then return 0 end
+            if not st then
+                c.next_at = now + 1 + rng:float()
+                return 1
+            end
+            local f = ScumData.fire(diff, st.cat)
+            if st.cat == "auto" or st.cat == "smg" then
+                c.next_at = now + 1 + between(f.pause)
+                return f.shots
+            end
+            c.left = (c.left or f.shots) - 1
+            if c.left <= 0 then
+                c.left = nil
+                c.next_at = now + between(f.pause)
+            else
+                local gap = between(f.gap)
+                if st.rof and st.rof > 0 then gap = math.max(gap, 60 / st.rof) end
+                c.next_at = now + gap
+            end
+            return 1
+        end
+    end
     local hits = Combat.exchange_fire(group, enemy, self.rng,
-        function(m) return Behaviour.accuracy(m, fatigue) end, scale,
-        group.physical and {
-            ready = function(m) return m.runtime_id == nil or ready[m] == true end,
-            target = function(m) return aimed[m] end,
-        } or nil)
+        function(m) return Behaviour.accuracy(m, fatigue) end, scale, opts)
     if (hits.shots or 0) > 0 then
         group.last_shot_at, enemy.last_shot_at = self.now, self.now
         Behaviour.noise(self, group.position, "gunfire", U.clamp(0.7 + hits.shots * 0.15, 0.7, 1.6))
@@ -1188,7 +1281,10 @@ function D:run_combat(group, contact, zpressure)
     for _, h in ipairs(hits) do
         local handle = h.target.runtime_id
         if handle and self.bridge.apply_damage then
-            self.bridge.apply_damage(handle, h.killed and 1000 or h.damage, h.shooter.runtime_id)
+            -- The director keeps health as a share; the body has its
+            -- level's health points (160-240).
+            local real = h.damage * ScumData.max_health(h.target.body_level or h.target.level) / 100
+            self.bridge.apply_damage(handle, h.killed and 1000 or real, h.shooter.runtime_id)
         end
         if h.killed then
             if handle then

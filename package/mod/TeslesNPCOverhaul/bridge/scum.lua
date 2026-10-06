@@ -1607,11 +1607,50 @@ function B.pause_ai(handle, paused)
     return ok
 end
 
+-- A montage SCUM's idle actions started (the crouched nervous idles) keeps
+-- playing once its state machine is paused, and the body then walks in it:
+-- the montage playing is stopped on every player's game (SCUM's own
+-- NetMulticast_StopAnimationCustom) and on the server.
+local montage_logged = false
+function B.stop_montage(handle)
+    local a = B.actor(handle)
+    if not a then return false end
+    local m = nil
+    pcall(function()
+        local anim = a.Mesh:GetAnimInstance()
+        if anim and valid(anim) then m = anim:GetCurrentActiveMontage() end
+    end)
+    if not (m and valid(m)) then return false end
+    local ok1 = pcall(function() a:NetMulticast_StopAnimationCustom(m, FName("None")) end)
+    local ok2 = pcall(function() a:StopAnimMontage(m) end)
+    if not montage_logged and B.on_debug then
+        montage_logged = true
+        pcall(B.on_debug, string.format("npc montage stopped: %s (clients %s, server %s)",
+            full_name(m), tostring(ok1), tostring(ok2)))
+    end
+    return ok1 or ok2
+end
+
+-- Turning to face something with SCUM's AI paused: the controller does not
+-- tick, so its focus is not applied; the control rotation is set directly
+-- and the movement component turns the body to it (bUseControllerDesiredRotation).
+local function turn_to(handle, pos)
+    local a = B.actor(handle)
+    local c = a and B.controller(a)
+    if not (c and pos) then return false end
+    local p = nil
+    pcall(function() p = vec(a:K2_GetActorLocation()) end)
+    if not p then return false end
+    local yaw = math.deg(math.atan(pos.Y - p.Y, pos.X - p.X))
+    return (pcall(function() c:SetControlRotation({ Pitch = 0, Yaw = yaw, Roll = 0 }) end))
+end
+B.turn_to = turn_to
+
 function B.set_pose(handle, mode)
     local rec = handles[handle]
     local a = B.actor(handle)
     if not a or (rec and rec.native) then return false end
-    pcall(B.pause_ai, handle, mode == "walk")
+    pcall(B.pause_ai, handle, true)
     if rec and rec.pose == mode then return true end
     local mc = read_field(a, "CharacterMovement")
     if not pose_logged and B.on_debug then
@@ -1671,6 +1710,7 @@ function B.take_ownership(handle)
         return false, "NOT_EXPOSED"
     end
     if B.cfg and B.cfg.BlindDirectedNPCs ~= false then pcall(B.set_senses, handle, false) end
+    pcall(B.stop_montage, handle)
     set_health("takeover", "OK", "director owns " .. table.concat(done, "+"))
     pcall(B.set_pose, handle, "walk")
     return true
@@ -1839,6 +1879,7 @@ function B.set_native(handle, on)
         pcall(function() c:StopMovement() end)
         ok = pcall(function() c.BrainComponent:StopLogic("TeslesDirector") end)
         if B.cfg and B.cfg.BlindDirectedNPCs ~= false then pcall(B.set_senses, handle, false) end
+        pcall(B.stop_montage, handle)
         -- SCUM's AI leaves its focus on the player and the body in combat
         -- mode; with either left on the NPC walks the director's route
         -- looking back at where the player was (walking backwards).
@@ -1968,7 +2009,8 @@ function B.keep_ownership(handle)
     if rec and rec.senses ~= false and B.cfg and B.cfg.BlindDirectedNPCs ~= false then
         pcall(B.set_senses, handle, false)
     end
-    if rec and rec.pose == "walk" and rec.ai_paused == nil then pcall(B.pause_ai, handle, true) end
+    if rec and rec.ai_paused == nil then pcall(B.pause_ai, handle, true) end
+    pcall(B.stop_montage, handle)
     local ok, running = pcall(function()
         local bt = c.BrainComponent
         return bt and bt:IsRunning()
@@ -2062,6 +2104,7 @@ function B.face(handle, pos)
     local c = B.controller(a)
     if not c then return false end
     pcall(B.set_pose, handle, "face")
+    turn_to(handle, pos)
     return (pcall(function() c:SetFocalPoint({ X = pos.X, Y = pos.Y, Z = pos.Z }, 2) end))
 end
 
@@ -2100,6 +2143,7 @@ function B.aim_at(handle, pos, target_handle)
             pcall(function() c:SetFocus(ta, 2) end)
         end
     end
+    turn_to(handle, pos)
     rec.aiming = true
     return true
 end

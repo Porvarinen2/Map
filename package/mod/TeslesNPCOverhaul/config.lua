@@ -1,7 +1,7 @@
 -- TESLES NPC OVERHAUL - server configuration.
 -- Distances are Unreal units unless a name says otherwise. 100 UU = 1 metre.
 return {
-    Version = "2.1.7",
+    Version = "2.1.8",
 
     -- Language of the live map and messages: "en" or "fi".
     Language = "en",
@@ -86,12 +86,15 @@ return {
     -- Away from every player (fought on the map only):
     VirtualCombatLethality = 0.5,
     -- true: fights between two squads near players are handed to SCUM's
-    -- own combat AI, as fights with players are. One side is put on the
-    -- players' team for the other side's AI (NativeSquadAITeamId). If
-    -- nobody is hit for 30 s the director takes the fight back, and after
-    -- three such fights it fights them itself for the rest of the session.
-    -- false: always the director's fight - aimed, from standing, real shots.
-    NativeSquadFights = true,
+    -- own combat AI. Off: SCUM's AI never fired at another squad, with any
+    -- team setting (2.1.5 team 5, 2.1.7 the players' team 0 - no hits).
+    -- The director fights them instead, with SCUM's own combat numbers.
+    NativeSquadFights = false,
+    -- The server's NPC difficulty (0 easy, 1 normal, 2 hard): which of
+    -- SCUM's firing rhythms squads use against each other.
+    ScumNPCDifficulty = 1,
+    -- Damage of a hit between squads (1 = the weapon's own).
+    CombatDamageScale = 1.0,
     -- true: SCUM's own sight and hearing are off while the director walks
     -- an NPC (on again for a fight with a player). With them on, SCUM's AI
     -- chased animals and zombies on its own and aimed at them crouched
@@ -140,10 +143,11 @@ return {
     -- Right next to it (CloseSenseM) it notices even from behind. It opens
     -- fire at FireRangeM, with a scope at ScopedFireRangeM. Hunters go after
     -- the animals they see.
-    NPCDetectRangeM = 300,
+    -- 70 m and 80 degrees are SCUM's own NPC sight (its AI controllers).
+    NPCDetectRangeM = 70,
     NPCFireRangeM = 100,
     NPCScopedFireRangeM = 250,
-    NPCViewAngleDeg = 45,
+    NPCViewAngleDeg = 80,
     NPCCloseSenseM = 5,
 
     -- Your own squad weapons: see loadouts.lua (kept on updates).

@@ -313,23 +313,29 @@ end
 
 -- scale: hit chance multiplier (fights between two squads far from every
 -- player are softened, see director).
--- opts (squads with bodies): ready(m) says whether the member can shoot
--- this second (standing, aimed, in sight) and target(m) is the enemy it
--- aimed at, which is the one its shots go to.
+-- opts: ready(m) says whether the member can shoot this second (standing
+-- or walking aimed, enemy in sight), target(m) is the enemy it aimed at and
+-- its shots go to, bullets(m, dist) how many rounds it fires this second
+-- (SCUM's own firing rhythm: rows of shots and pauses, bursts for automatic
+-- weapons; 0 = holding fire), acc(m) an extra aim factor, and
+-- damage(m, target, dist) the health share one hit takes (SCUM's weapon
+-- damage against the target's level health). Without them: one aimed shot
+-- every two seconds and the old damage roll (fights off the map's bodies).
 function C.exchange_fire(group, enemy, rng, accuracy, scale, opts)
     local hits = {}
     local foes = alive_members(enemy)
     if #foes == 0 then return hits end
     local f = C.fire
+    opts = opts or {}
     for _, m in ipairs(group.members) do
         -- Until the squad has lost someone, everyone fires, even those
         -- whose nerve says run.
         local holds = not (group.loss_at and os.time() - group.loss_at < 120)
         if m.alive and (holds or (m.action ~= "RETREAT" and m.action ~= "FLEE"))
-            and not (opts and opts.ready and not opts.ready(m)) then
+            and not (opts.ready and not opts.ready(m)) then
             local mp = m.position or group.position
             local target, best = nil, math.huge
-            local aimed = opts and opts.target and opts.target(m)
+            local aimed = opts.target and opts.target(m)
             if aimed and aimed.alive then
                 target, best = aimed, U.dist2d(mp, aimed.position or enemy.position)
             else
@@ -345,25 +351,32 @@ function C.exchange_fire(group, enemy, rng, accuracy, scale, opts)
             local prof = m.gear and m.gear.weapon and Weapons.profile(m.gear.weapon, m.gear.scoped) or nil
             local range = prof and prof.range or f.range_uu
             if target and best <= range then
-                -- Roughly one aimed shot every two seconds.
-                if rng:chance(0.5) then
+                local rounds
+                if opts.bullets then rounds = opts.bullets(m, best)
+                else rounds = rng:chance(0.5) and 1 or 0 end
+                if rounds > 0 then
                     local skill = weapon_skill(m) + ((m.skills or {}).perception or 0) * 0.4
                         + (m.level or 1) * 0.06
                     local p = f.base_hit * (0.55 + skill) * (1 - 0.6 * best / range)
                         * (prof and prof.acc or 1)
                     if target.action == "COVER" then p = p * 0.6 end
                     if accuracy then p = p * accuracy(m) end
-                    p = p * (scale or 1)
+                    if opts.acc then p = p * opts.acc(m, rounds) end
+                    p = U.clamp(p * (scale or 1), 0.02, 0.8)
                     hits.shots = (hits.shots or 0) + 1
                     hits.shooters = hits.shooters or {}
                     hits.shooters[#hits.shooters + 1] = m
-                    if rng:chance(U.clamp(p, 0.02, 0.8)) then
-                        local dmg = rng:range(f.dmg_min, f.dmg_max) * (1 + (m.level or 1) * 0.05)
-                        target.health = (target.health or 100) - dmg
-                        local killed = target.health <= 0
-                        if killed then target.health = 0 end
-                        hits[#hits + 1] = { shooter = m, target = target, damage = dmg, killed = killed }
-                        if killed then target.alive = false end
+                    for _ = 1, rounds do
+                        if not target.alive then break end
+                        if rng:chance(p) then
+                            local dmg = opts.damage and opts.damage(m, target, best)
+                                or rng:range(f.dmg_min, f.dmg_max) * (1 + (m.level or 1) * 0.05)
+                            target.health = (target.health or 100) - dmg
+                            local killed = target.health <= 0
+                            if killed then target.health = 0 end
+                            hits[#hits + 1] = { shooter = m, target = target, damage = dmg, killed = killed }
+                            if killed then target.alive = false end
+                        end
                     end
                 end
             end

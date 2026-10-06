@@ -152,6 +152,14 @@ end
 -- (22 of 22). So such a squad's Guards wear the level 4 body at most (their
 -- own skills and level stay as they are), and a member that still got no
 -- gun (check_armament) is spawned again in a level 3-5 Drifter body.
+-- The body level a class wears (groups.lua body_levels).
+function Ph.class_level(group, level)
+    local cls = group and GroupClasses.get(group.class)
+    local r = cls and cls.body_levels
+    if not r then return level end
+    return math.max(r[1], math.min(r[2], math.floor(tonumber(level) or r[1])))
+end
+
 function Ph.armed_body(m, group, family, variant, level)
     local cls = group and GroupClasses.get(group.class)
     if not (cls and cls.firearms) or variant == "Radiation" then return family, variant, level end
@@ -232,8 +240,9 @@ function Ph.materialize(group, bridge, ctx)
             else
                 local variant = Ph.body_variant(group, m)
                 local lo = ctx.loadout_for and ctx.loadout_for(m) or ctx.loadout
-                local family, level = Ph.body_family(m, group), Ph.body_level(m.level, variant)
+                local family, level = Ph.body_family(m, group), Ph.body_level(Ph.class_level(group, m.level), variant)
                 family, variant, level = Ph.armed_body(m, group, family, variant, level)
+                m.body_level = level
                 local handle, err = bridge.spawn_npc({
                     weapons = lo and lo.Weapons or nil,
                     archetype = m.archetype,

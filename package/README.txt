@@ -1,4 +1,4 @@
-TESLES NPC OVERHAUL 2.1.7
+TESLES NPC OVERHAUL 2.1.8
 =========================
 
 Living squads for SCUM dedicated servers.

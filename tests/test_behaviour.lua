@@ -674,7 +674,7 @@ do
     d.cfg.NativeSquadFights = false
 end
 
-section("squads with bodies shoot from standing, aimed at the man they hit")
+section("squads with bodies fight by SCUM's numbers, aimed at the man they hit")
 do
     local world, d = fresh(66)
     d.cfg.NativeSquadFights = false
@@ -696,7 +696,7 @@ do
         for _, g in ipairs({ a, b }) do
             for _, m in ipairs(g.members) do
                 if m.runtime_id == h then
-                    if m.moving_until and sim < m.moving_until then moving_shots = moving_shots + 1 end
+                    if m.jogging and m.moving_until and sim < m.moving_until then moving_shots = moving_shots + 1 end
                     aimed_all = aimed_all + 1
                     if aim_of[h] then aimed_ok = aimed_ok + 1 end
                 end
@@ -713,9 +713,23 @@ do
     Bridge.fire_once, Bridge.aim_at = orig_fire, orig_aim
     check(fights > 0 and a.nsf == nil, "the director's own fight")
     check(aimed_all > 0, string.format("they shoot (%d shots)", aimed_all))
-    check(moving_shots == 0, "nobody fires while walking to a new spot")
+    check(moving_shots == 0, "nobody fires while jogging to a new spot (at a walk, aimed, they do - as SCUM's NPCs)")
     check(aimed_ok == aimed_all, "every shot comes from a man aiming at an enemy")
     Bridge.players = {}
+end
+
+section("SCUM's own numbers")
+do
+    local SD = require("npc.scum_data")
+    check(SD.weapon("Weapon_M1911_Gold") and SD.weapon("Weapon_M1911_Gold").cat == "handgun"
+          and SD.weapon("Recurve_Bow_70").cat == "bow" and SD.weapon("Weapon_AK47_ES").cat == "auto",
+          "weapon skins and variants find their base weapon")
+    check(SD.max_health(1) == 160 and SD.max_health(5) == 240, "level health 160-240")
+    check(SD.fire(1, "handgun").shots == 3 and SD.fire(1, "smg").shots == 6, "SCUM's firing rows at normal difficulty")
+    local Physical = require("sim.physical")
+    check(Physical.class_level({ class = "hunters" }, 5) == 3 and Physical.class_level({ class = "military_group" }, 2) == 5
+          and Physical.class_level({ class = "scavengers" }, 4) == 2,
+          "classes wear the body level whose weapons fit them")
 end
 
 section("a spectator is not seen by NPCs")
@@ -1101,7 +1115,7 @@ do
         end
     end
     check(other == 0 and lv[4] > 10 and lv[5] > 10, string.format("militia are level 4-5 (%d / %d)", lv[4], lv[5]))
-    check(bunker > n * 0.25 and bunker < n * 0.75, string.format("about half wear the bunker body (%d of %d)", bunker, n))
+    check(bunker == 0, string.format("no elite wears the Abandoned Bunker body (clubs and bows) (%d of %d)", bunker, n))
 end
 
 do
