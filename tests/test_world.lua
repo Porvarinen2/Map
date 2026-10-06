@@ -44,8 +44,9 @@ local Diplomacy = require("npc.diplomacy")
 for _, c in ipairs(require("npc.groups").list) do Diplomacy.set_default(c.key, c.key, 0) end
 local world = Population.new_world({ seed = 20260921, target_npcs = 100 })
 Population.generate(world)
+local initial_alive = Population.alive_npc_count(world)
 print(string.format("world: %d groups / %d NPCs",
-    #world.groups, Population.alive_npc_count(world)))
+    #world.groups, initial_alive))
 
 local director = Director.new({
     world = world, bridge = Bridge, seed = 4242,
@@ -275,7 +276,7 @@ do
         local small = cls and cls.reserved_zone
         for k = small and (#seq + 1) or (#seq - nq + 1), #seq do
             for j = math.max(1, k - mem), k - 1 do
-                if seq[j] == seq[k] then early = early + 1; if os.getenv("DEBUG_QUEUE") then print("  early", g.gid, g.class, table.concat(seq, ",")) end end
+                if seq[j] == seq[k] then early = early + 1; if os.getenv("DEBUG_QUEUE") then print("  early", g.gid, g.class, act.state, g.mood, #(act.recent or {}), act.goal_poi and act.goal_poi.id, table.concat(seq, ",")) end end
             end
         end
         -- A squad in flight has dropped its plan; it redraws it on arrival.
@@ -283,7 +284,7 @@ do
             open_groups = open_groups + 1
             if nq == Activity.QUEUE_LENGTH then full = full + 1 end
         end
-        if os.getenv("DEBUG_QUEUE") and nq < Activity.QUEUE_LENGTH then
+        if os.getenv("DEBUG_QUEUE") and nq ~= Activity.QUEUE_LENGTH then
             print("  queue", g.gid, g.class, act.state, table.concat(act.queue or {}, ","))
         end
     end
@@ -387,8 +388,13 @@ check(mh - ml > 0.10, string.format("morale varies across groups (%.2f spread)",
 check(sh - sl > 0.05, string.format("stress varies across NPCs (%.2f spread)", sh - sl))
 check(fh > 5, string.format("fatigue accumulates (peak %.0f)", fh))
 
+-- Squads now really fight (2.0.5 ended the standoffs): every NPC missing
+-- must be a recorded death, nobody may vanish.
 local alive_before = Population.alive_npc_count(world)
-check(alive_before >= 80,
-      string.format("population held at %d NPCs (no silent attrition)", alive_before))
+local deaths = director.counters.deaths or 0
+check(alive_before + deaths >= initial_alive,
+      string.format("no silent attrition (%d alive + %d recorded deaths of %d)", alive_before, deaths, initial_alive))
+check(alive_before >= initial_alive * 0.6,
+      string.format("fights thin the island out, not wipe it (%d of %d alive after 3 h)", alive_before, initial_alive))
 
 os.exit(fails == 0 and 0 or 1)

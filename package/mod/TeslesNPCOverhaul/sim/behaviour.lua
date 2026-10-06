@@ -39,9 +39,13 @@ Bh.tuning = {
 }
 
 -- Cooldowns stop one continuous stimulus from being counted every second.
+-- How often the same kind of shock can land again. People get used to what
+-- keeps happening: an enemy in sight is a shock when it appears, not every
+-- 30 s for as long as it stays (2.0.4 - in an island where every squad is
+-- hostile that alone kept half the NPCs in panic).
 local COOLDOWN = {
-    GUNSHOT_NEAR = 10, GUNSHOT_DISTANT = 20, ZOMBIE_CONTACT = 12, ZOMBIE_HORDE = 15,
-    ENEMY_SPOTTED = 30, OUTNUMBERED = 20, INJURY = 1, SEVERE_INJURY = 1, AMBUSHED = 30,
+    GUNSHOT_NEAR = 15, GUNSHOT_DISTANT = 60, ZOMBIE_CONTACT = 12, ZOMBIE_HORDE = 15,
+    ENEMY_SPOTTED = 180, OUTNUMBERED = 120, INJURY = 1, SEVERE_INJURY = 1, AMBUSHED = 60,
 }
 
 local function stim(m, event, now, scale)

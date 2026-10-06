@@ -299,7 +299,21 @@ end
 
 -- One second of shooting from `group` at `enemy`. Returns a list of hits
 -- { shooter, target, damage, killed }.
-function C.exchange_fire(group, enemy, rng, accuracy)
+-- How far the squad's best weapon reaches.
+function C.reach(group)
+    local r = 0
+    for _, m in ipairs(group.members) do
+        if m.alive then
+            local prof = m.gear and m.gear.weapon and Weapons.profile(m.gear.weapon, m.gear.scoped) or nil
+            r = math.max(r, prof and prof.range or C.fire.range_uu)
+        end
+    end
+    return r
+end
+
+-- scale: hit chance multiplier (fights between two squads far from every
+-- player are softened, see director).
+function C.exchange_fire(group, enemy, rng, accuracy, scale)
     local hits = {}
     local foes = alive_members(enemy)
     if #foes == 0 then return hits end
@@ -330,6 +344,7 @@ function C.exchange_fire(group, enemy, rng, accuracy)
                         * (prof and prof.acc or 1)
                     if target.action == "COVER" then p = p * 0.6 end
                     if accuracy then p = p * accuracy(m) end
+                    p = p * (scale or 1)
                     hits.shots = (hits.shots or 0) + 1
                     hits.shooters = hits.shooters or {}
                     hits.shooters[#hits.shooters + 1] = m

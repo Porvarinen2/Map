@@ -395,6 +395,9 @@ function A.mark_visited(act, poi, now, group)
         end
         if oldest then act.visited[oldest] = nil end
     end
+    -- The memory window just moved: a queued place now inside it is
+    -- planned again (a place visited twice shifted it by one before).
+    if group and act.queue then pcall(A.refill_queue, group, act) end
 end
 
 -- Fatigue and abstract supply. Neither is an inventory claim; they are

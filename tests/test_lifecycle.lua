@@ -156,12 +156,25 @@ check(moved >= 5, string.format("%d groups carried on travelling after the resta
 local f = io.open(U.join(dir, "world_state.json"), "w")
 f:write('{"groups":[{"broken":')
 f:close()
-local bad, why = Persist.load()
-check(bad == nil and why == "PARSE_ERROR", "a corrupt save is rejected, not crashed on")
-
 local backup = io.open(U.join(dir, "world_state.json.bak"), "r")
 check(backup ~= nil, "the previous save is kept as a rolling backup")
 if backup then backup:close() end
+
+local restored = Persist.load()
+check(restored and restored.groups and #restored.groups > 0,
+      "a corrupt save falls back to the backup, the world is not lost")
+Persist.rotate()
+backup = io.open(U.join(dir, "world_state.json.bak"), "r")
+local bak_text = backup and backup:read("*a") or ""
+if backup then backup:close() end
+check(bak_text:sub(-1) == "}", "a broken file never replaces a good backup")
+
+os.remove(U.join(dir, "world_state.json.bak"))
+f = io.open(U.join(dir, "world_state.json"), "w")
+f:write('{"groups":[{"broken":')
+f:close()
+local bad, why = Persist.load()
+check(bad == nil and why == "PARSE_ERROR", "a corrupt save with no backup is rejected, not crashed on")
 
 os.execute("rm -rf '" .. dir .. "'")
 os.exit(fails == 0 and 0 or 1)

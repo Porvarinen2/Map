@@ -141,36 +141,68 @@ P.parse = parse
 
 -- ---------------------------------------------------------------- saving ---
 
+-- Written to a temp file first and put in place only when complete: a
+-- server stopped in the middle of a save leaves the last good file, never a
+-- half one.
 function P.save(data, name)
-    local f = open_write(name)
+    name = name or P.file
+    local ok, text = pcall(U.json, data)
+    if not ok then
+        Log.error("world state serialise failed: " .. tostring(text))
+        return false
+    end
+    local tmp = name .. ".tmp"
+    local f = open_write(tmp)
     if not f then
         Log.warn("could not open world state for writing")
         return false
     end
-    local ok, text = pcall(U.json, data)
-    if not ok then
-        f:close()
-        Log.error("world state serialise failed: " .. tostring(text))
+    local okw = f:write(text)
+    f:close()
+    if not okw then
+        os.remove(path(tmp))
+        Log.warn("world state could not be written (disk full?)")
         return false
     end
-    f:write(text)
-    f:close()
+    if not os.rename(path(tmp), path(name)) then
+        -- Windows will not rename onto an existing file.
+        os.remove(path(name))
+        if not os.rename(path(tmp), path(name)) then
+            Log.warn("world state could not be put in place")
+            return false
+        end
+    end
     P.last_save = os.time()
     return true
 end
 
-function P.load(name)
+local function load_one(name)
     local f = open_read(name)
     if not f then return nil, "NO_FILE" end
     local text = f:read("*a")
     f:close()
     if not text or #text < 2 then return nil, "EMPTY" end
     local ok, data = pcall(parse, text)
-    if not ok then
-        Log.error("world state parse failed: " .. tostring(data))
+    if not ok or type(data) ~= "table" then
+        Log.error("world state parse failed (" .. tostring(name) .. "): " .. tostring(data))
         return nil, "PARSE_ERROR"
     end
     return data
+end
+
+-- The saved world, or the backup when the save itself is missing or broken:
+-- a damaged file must never cost the whole world.
+function P.load(name)
+    name = name or P.file
+    local data, why = load_one(name)
+    if data then return data end
+    local bak, why2 = load_one(name .. ".bak")
+    if bak then
+        Log.warn("world state " .. tostring(why) .. ": the backup was loaded instead")
+        P.loaded_backup = true
+        return bak
+    end
+    return nil, why
 end
 
 function P.due(now)
@@ -178,10 +210,24 @@ function P.due(now)
 end
 
 -- Keeps one rolling backup so a corrupted save is never the only copy.
+-- The last good save becomes the backup. A file that does not parse is not
+-- allowed to replace a good backup.
 function P.rotate()
     local a = path(P.file)
     local bak = path(P.file .. ".bak")
     if not a then return end
+    local f = io.open(a, "r")
+    if not f then return end
+    local head = f:read(1)
+    local size = f:seek("end") or 0
+    local tail = ""
+    if size >= 2 then
+        f:seek("set", size - 1)
+        tail = f:read(1) or ""
+    end
+    f:close()
+    -- A complete save starts with { and ends with }.
+    if head ~= "{" or tail ~= "}" then return end
     os.remove(bak)
     os.rename(a, bak)
 end

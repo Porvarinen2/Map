@@ -156,6 +156,17 @@ while ($true) {
       $client.Close(); continue
     }
 
+    # Only this machine's own address is answered. A web page elsewhere can
+    # point its own name at 127.0.0.1 (DNS rebinding) and would then read
+    # the command token; its requests carry its own name as Host.
+    $hostHdr = ""
+    $hm = [regex]::Match($text, "(?im)^Host:\s*([^\r\n]+)")
+    if ($hm.Success) { $hostHdr = $hm.Groups[1].Value.Trim().ToLower() }
+    if ($hostHdr -and $hostHdr -notmatch "^(127\.0\.0\.1|localhost|\[::1\])(:$Port)?$") {
+      Send-Text -Stream $stream -Code 403 -Status "Forbidden" -Text "open the map at http://127.0.0.1:$Port/"
+      $client.Close(); continue
+    }
+
     $url = $parts[1]
     $qs = $url.IndexOf("?")
     $query = ""
@@ -253,7 +264,9 @@ while ($true) {
     $rel = $url.TrimStart("/").Replace("/", "\")
     $full = $null
     try { $full = [System.IO.Path]::GetFullPath((Join-Path $root $rel)) } catch {}
-    $inside = $full -and $full.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)
+    # The folder itself plus its separator: "livemap2" is not inside "livemap".
+    $rootSep = $root.TrimEnd('\') + '\'
+    $inside = $full -and $full.StartsWith($rootSep, [StringComparison]::OrdinalIgnoreCase)
     if (-not $inside -or -not (Test-Path $full -PathType Leaf)) {
       Send-Text -Stream $stream -Code 404 -Status "Not Found" -Text "404 $url"
       $client.Close(); continue

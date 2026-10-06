@@ -209,6 +209,13 @@ function D:run_activity(group)
     local act = group.act
     local st = act.state
 
+    -- A plan dropped in a flight (or cut short) is drawn again while the
+    -- squad rests or waits, not only when it next sets off.
+    if #(act.queue or {}) < Activity.QUEUE_LENGTH and self.now >= (act.refill_at or 0) then
+        act.refill_at = self.now + 10
+        pcall(Activity.refill_queue, group, act)
+    end
+
     if st == S.TRAVEL then
         if group.mv.state == Movement.ARRIVED then
             self:on_arrival(group)
@@ -861,6 +868,10 @@ function D:run_combat(group, contact, zpressure)
     self.counters.contacts = self.counters.contacts + 1
     Combat.register_contact(self.world.diplomacy, group, contact.group, 1,
         1 + (ctx.power_ratio or 1) * 0.2)
+    if group.act.state ~= S.COMBAT or not group.combat_since then
+        group.combat_since = self.now
+        group.last_shot_at = nil
+    end
     group.act.state = S.COMBAT
     group.act.until_t = self.now + 20
     Movement.clear(group.mv)
@@ -903,9 +914,15 @@ function D:run_combat(group, contact, zpressure)
     -- killed NPC is checked a few seconds later, and a body that would not
     -- die is removed so no dead man keeps walking.
     local fatigue = group.act.fatigue or 0
+    -- Two squads far from every player fight at half the hit chance: in
+    -- 2.0.4 about 140 NPCs died an hour, and the island was repopulated
+    -- faster than anyone could meet the squads living on it.
+    local scale = (group.physical or enemy.physical) and 1
+        or (self.cfg.VirtualCombatLethality or 0.5)
     local hits = Combat.exchange_fire(group, enemy, self.rng,
-        function(m) return Behaviour.accuracy(m, fatigue) end)
+        function(m) return Behaviour.accuracy(m, fatigue) end, scale)
     if (hits.shots or 0) > 0 then
+        group.last_shot_at, enemy.last_shot_at = self.now, self.now
         Behaviour.noise(self, group.position, "gunfire", U.clamp(0.7 + hits.shots * 0.15, 0.7, 1.6))
         self.noises[#self.noises].from = group.gid
     end
@@ -935,6 +952,27 @@ function D:run_combat(group, contact, zpressure)
         end
     end
 
+    -- Out of reach: a squad off the map's bodies walks towards the enemy
+    -- until its weapons reach (bodies get tactical moves above). 2.0.4 had
+    -- squads 200 m apart, in contact but out of range, standing in combat
+    -- for hours - never shooting, never leaving, stress climbing.
+    if not group.physical and (hits.shots or 0) == 0 then
+        self:close_in(group, enemy)
+    end
+    -- A fight nobody fires in for a minute, or that drags on for five
+    -- minutes with no loss on either side, is broken off.
+    local quiet = self.now - math.max(group.last_shot_at or 0, group.combat_since or self.now)
+    local losses = (group.loss_at and group.loss_at >= (group.combat_since or 0))
+        or (enemy.loss_at and enemy.loss_at >= (group.combat_since or 0))
+    if quiet >= 60 or (not losses and self.now - (group.combat_since or self.now) >= 300) then
+        group.disengaged_until = self.now + 120
+        group.combat_since, group.last_shot_at = nil, nil
+        group.act.state = S.IDLE
+        group.act.until_t = self.now
+        Log.event("BREAK_OFF", group.gid, (quiet >= 60 and "no shots" or "stalemate") .. " with " .. enemy.gid)
+        return false
+    end
+
     -- Breaking off: the squad leaves and is left alone for a while.
     if Combat.should_disengage(group) then
         group.disengaged_until = self.now + 90
@@ -946,6 +984,24 @@ function D:run_combat(group, contact, zpressure)
     return true
 end
 
+
+-- One second's walk of a virtual squad towards an enemy it cannot reach,
+-- stopping at four fifths of its best weapon's range.
+function D:close_in(group, enemy)
+    local d = U.dist2d(group.position, enemy.position)
+    local want = Combat.reach(group) * 0.8
+    if d <= want then return end
+    local step = math.min(self.virtual_speed, d - want)
+    local dir = U.direction(group.position, enemy.position)
+    if not dir then return end
+    local p = { X = group.position.X + dir.X * step, Y = group.position.Y + dir.Y * step,
+                Z = group.position.Z }
+    if not Grid.is_passable(p) then return end
+    group.position = p
+    for _, m in ipairs(group.members) do
+        if m.alive then m.position = U.copy_vec(p) end
+    end
+end
 
 -- Bodies of NPCs killed by other squads: SCUM decides whether ApplyDamage
 -- killed them; what it decided is logged once, and a body still standing is
@@ -960,8 +1016,11 @@ function D:run_kill_checks()
                     self.bridge.note_kill_result("ApplyDamage did not kill; body removed")
                 end
                 if self.bridge.despawn then self.bridge.despawn(k.handle) end
-            elseif self.bridge.note_kill_result then
-                self.bridge.note_kill_result("ApplyDamage killed the NPC")
+            else
+                if self.bridge.note_kill_result then
+                    self.bridge.note_kill_result("ApplyDamage killed the NPC")
+                end
+                if self.bridge.forget then self.bridge.forget(k.handle) end
             end
         else
             keep[#keep + 1] = k
@@ -994,6 +1053,7 @@ function D:tick(now)
     local players = (self.bridge and self.bridge.player_positions
         and self.bridge.player_positions()) or {}
     self.players = players
+    Population.keep_away = players
     local world = self.world
 
     -- Contacts are evaluated once for the whole world.
@@ -1056,8 +1116,11 @@ function D:tick(now)
         Population.merge_stragglers(world, function(m) Log.event("JOINED", "", m) end)
     end
     local removed, ordinary = Population.prune(world, function(m) Log.event("WIPED", m, "") end)
+    -- A wiped squad is replaced only while the island is under its target
+    -- (2.0.4 replaced every one, and the count crept from 200 towards 250).
     if (ordinary or 0) > 0 and self.cfg.EnableReplenish then
         for _ = 1, ordinary do
+            if Population.alive_npc_count(world) >= (world.target_npcs or 0) then break end
             Population.replenish(world, function(m) Log.event("REPLENISH", m, "") end)
         end
     end
@@ -1120,6 +1183,7 @@ function D:tick_group(group, players, physical_groups, dt)
         if lost then
             for _, victim in ipairs(lost) do
                 group.loss_at = now
+                if self.bridge.forget then self.bridge.forget(victim.runtime_id) end
                 Combat.on_member_lost(group, victim, self.rng,
                     function(kind, gid, name) Log.event(kind, gid, name) end,
                     self.world.diplomacy, group.last_contact)
@@ -1273,8 +1337,10 @@ function D:tick_group(group, players, physical_groups, dt)
     local st = group.act.state
     local resting = (st == S.REST or st == S.CAMP or st == S.HOLD)
     Activity.tick_upkeep(group.act, dt, not resting)
+    -- Running away is not danger in itself: counted as danger (2.0.4) it
+    -- nearly stopped recovery, so a panicked squad stayed in panic, ran
+    -- again and never calmed down.
     local in_danger = fighting or zpressure > 0.2 or sense.zombies_near > 0
-        or (group.flee_until and now < group.flee_until)
     for _, m in ipairs(group.members) do
         if m.alive then
             Stress.recover(m, dt, in_danger)

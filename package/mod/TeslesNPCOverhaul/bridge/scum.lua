@@ -949,6 +949,22 @@ function B.despawn(handle)
     return true
 end
 
+-- A dead NPC's record is dropped (its body stays in the world as SCUM's
+-- own corpse, with its loot). Its name stays on the owned list so the
+-- vanilla cleanup never takes the body for one of SCUM's NPCs.
+function B.forget(handle)
+    if not handle then return end
+    local fw = B.firing and B.firing[handle]
+    if fw then
+        if valid(fw) then pcall(function() fw:StopFire() end) end
+        B.firing[handle] = nil
+    end
+    B.pending_weapons[handle] = nil
+    B.weapon_chosen[handle] = nil
+    if B.body_watch then B.body_watch[handle] = nil end
+    handles[handle] = nil
+end
+
 function B.actor(handle)
     local rec = handles[handle]
     if rec and valid(rec.actor) then return rec.actor end
@@ -3216,18 +3232,30 @@ function B.tick_weapons(now)
         if not a then
             B.pending_weapons[h] = nil
         else
-            if not by_owner then
-                by_owner = {}
-                for _, it in ipairs(find_all("Item", nil, true) or {}) do
-                    local ok, own = pcall(function() return it:GetOwner() end)
-                    if ok and own then
-                        local on = full_name(own)
-                        by_owner[on] = by_owner[on] or {}
-                        table.insert(by_owner[on], it)
+            -- The weapon SCUM gave the NPC is read from its hands. Only
+            -- when that is empty is the world's item list walked, at most
+            -- every 3 s: walking every item on the server each tick while
+            -- a weapon was pending made the slow "Item" ticks in 2.0.3.
+            local olds = {}
+            local inhand = nil
+            pcall(function() inhand = a._itemInHands end)
+            if inhand and valid(inhand) then
+                olds = { inhand }
+            elseif now - (B.item_scan_at or 0) >= 3 or by_owner then
+                if not by_owner then
+                    B.item_scan_at = now
+                    by_owner = {}
+                    for _, it in ipairs(find_all("Item", nil, true) or {}) do
+                        local ok, own = pcall(function() return it:GetOwner() end)
+                        if ok and own then
+                            local on = full_name(own)
+                            by_owner[on] = by_owner[on] or {}
+                            table.insert(by_owner[on], it)
+                        end
                     end
                 end
+                olds = by_owner[full_name(a)] or {}
             end
-            local olds = by_owner[full_name(a)] or {}
             -- SCUM's own weapon is kept and fitted out (config SwapWeapons
             -- off, the default): a weapon put in the NPC's hands later never
             -- fires, because the NPC's weapon manual stays bound to the one

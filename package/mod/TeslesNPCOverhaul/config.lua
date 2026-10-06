@@ -1,7 +1,7 @@
 -- TESLES NPC OVERHAUL - server configuration.
 -- Distances are Unreal units unless a name says otherwise. 100 UU = 1 metre.
 return {
-    Version = "2.0.4",
+    Version = "2.0.5",
 
     -- Language of the live map and messages: "en" or "fi".
     Language = "en",
@@ -83,7 +83,9 @@ return {
     -- How much stress an average NPC sheds in five minutes out of danger
     -- (0.01 = one point). Veterans and soldiers recover faster, survivors,
     -- hunters and civilians slower; every trauma slows it further.
-    StressRecoveryPer5Min = 0.01,
+    -- 0.10 from 2.0.5: at 0.01 a panicked survivor needed up to ten hours to
+    -- calm down, and half the island was in panic all the time.
+    StressRecoveryPer5Min = 0.10,
     -- false: NPCs keep the weapon SCUM gives them (it fires) and the mod adds
     -- a magazine, random rounds, condition and sometimes a scope.
     -- true: the old way, a weapon swapped in afterwards - such NPCs do not

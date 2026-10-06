@@ -277,6 +277,9 @@ local M = { world = nil, director = nil, started_at = os.time(),
 
 local function boot_world()
     local saved = Persist.load()
+    if saved and Persist.loaded_backup then
+        boot("world_state.json was damaged: the backup (world_state.json.bak) was loaded")
+    end
     if saved and saved.groups and #saved.groups > 0 then
         local ok, world = pcall(Population.deserialize, saved)
         if ok and world then

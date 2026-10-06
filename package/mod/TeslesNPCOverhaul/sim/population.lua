@@ -41,6 +41,19 @@ end
 -- over the map (the south row has fewer marked places than the middle, and
 -- drawing places alone left it nearly empty).
 local sector_keys = nil
+-- Players' positions (set by the director every tick). A squad is never
+-- created or moved closer to a player than this: inside the render circle it
+-- would appear out of thin air in front of them.
+P.keep_away = {}
+P.KEEP_AWAY_UU = 150000
+local function clear_of_players(p)
+    for _, pp in ipairs(P.keep_away or {}) do
+        if U.dist2d(p, pp) < P.KEEP_AWAY_UU then return false end
+    end
+    return true
+end
+P.clear_of_players = clear_of_players
+
 local function anchor_point(rng, allow_sector)
     if not sector_keys then
         sector_keys = {}
@@ -63,7 +76,7 @@ local function anchor_point(rng, allow_sector)
                 Y = poi.pos.Y + math.sin(ang) * d,
                 Z = poi.pos.Z,
             }
-            if Grid.is_passable(p) then return p, poi end
+            if Grid.is_passable(p) and clear_of_players(p) then return p, poi end
         end
     end
     return nil
@@ -208,7 +221,13 @@ function P.ensure_reserved(world, log)
     local rng = RNG.new((world.seed or 1) + (world.next_group_id or 0) * 7919)
     for _, res in ipairs(Zones.RESERVED) do
         if res.exclusive then
-            local function inside_point() return Zones.zone_point(res, rng) end
+            local function inside_point()
+                for _ = 1, 25 do
+                    local p = Zones.zone_point(res, rng)
+                    if p and clear_of_players(p) then return p end
+                end
+                return nil
+            end
             local own = 0
             for _, g in ipairs(world.groups) do
                 if P.group_alive(g) and g.position and not g.physical then

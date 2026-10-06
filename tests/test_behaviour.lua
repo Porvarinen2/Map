@@ -93,8 +93,8 @@ do
     surv.stress, vet.stress = 0.8, 0.8
     for _ = 1, 300 do Stress.recover(surv, 1, false); Stress.recover(vet, 1, false) end
     local ds, dv = 0.8 - surv.stress, 0.8 - vet.stress
-    check(ds > 0.002 and ds < 0.02, string.format(
-        "a survivor sheds about one point in five minutes (%.3f)", ds))
+    check(ds > 0.03 and ds < 0.12, string.format(
+        "a survivor sheds several points in five minutes (%.3f)", ds))
     check(dv > ds * 2, string.format("a veteran recovers much faster (%.3f vs %.3f)", dv, ds))
     local d0 = npc("survivor", 2); d0.stress = 0.8
     for _ = 1, 300 do Stress.recover(d0, 1, true) end
@@ -398,6 +398,72 @@ do
     for _ = 1, 10 do sim = sim + 1; Bridge.step(1); d:tick(sim) end
     check((Bridge.owned_checks[lead.runtime_id] or 0) == 0, "its SCUM brain is never stopped while it fights")
     check((Bridge.owned_checks[other.runtime_id] or 0) > 0, "the others stay under the director")
+end
+
+section("no endless standoffs between squads (2.0.4)")
+do
+    local world, d = fresh(55)
+    local a, b
+    for _, g in ipairs(world.groups) do
+        if not require("world.zones").reserved_by_class[g.class] and #g.members >= 2 then
+            if not a then a = g elseif not b then b = g; break end
+        end
+    end
+    -- Two squads 210 m apart, pistols only (50 m): in contact, out of reach.
+    for _, g in ipairs({ a, b }) do
+        for _, m in ipairs(g.members) do m.gear = { weapon = "Weapon_M1911", scoped = false } end
+        g.act.state = "IDLE"
+    end
+    local base = U.copy_vec(a.position)
+    b.position = { X = base.X + 21000, Y = base.Y, Z = base.Z }
+    for _, m in ipairs(b.members) do m.position = U.copy_vec(b.position) end
+    local sim = os.time()
+    local start = U.dist2d(a.position, b.position)
+    local in_combat, longest, since = false, 0, nil
+    Bridge.players = {}
+    for _ = 1, 400 do
+        sim = sim + 1; Bridge.step(1); d:tick(sim)
+        if a.act.state == "COMBAT" then
+            in_combat = true
+            since = since or sim
+            longest = math.max(longest, sim - since)
+        else since = nil end
+    end
+    check(in_combat, "the two squads made contact")
+    check(longest <= 305, "no fight lasts for ever (" .. longest .. " s)")
+    check(count("BREAK_OFF") + count("KILL") + count("DISENGAGE") > 0,
+          "the fight ends: shots, losses or breaking off")
+end
+
+section("new squads never appear next to a player")
+do
+    local world, d = fresh(56)
+    local POI = require("world.pois")
+    local player = U.copy_vec(POI.points[1].pos)
+    Population.keep_away = { player }
+    local near = 0
+    for _ = 1, 60 do
+        Population.replenish(world, nil)
+        local g = world.groups[#world.groups]
+        if U.dist2d(g.position, player) < Population.KEEP_AWAY_UU then near = near + 1 end
+    end
+    check(near == 0, "60 new squads, none inside 1.5 km of the player (" .. near .. ")")
+    Population.keep_away = {}
+end
+
+section("wiped squads are replaced only up to the target")
+do
+    local world, d = fresh(57)
+    world.target_npcs = Population.alive_npc_count(world)
+    local g = first_group(world)
+    for _, m in ipairs(g.members) do m.alive = false end
+    local before = #world.groups
+    d.cfg.EnableReplenish = true
+    d.reserve_check_at = os.time() + 9999
+    d:tick(os.time() + 1)
+    check(Population.alive_npc_count(world) <= world.target_npcs + 5,
+          "a wiped squad under a full island is not topped over the target")
+    check(#world.groups <= before, "groups " .. before .. " -> " .. #world.groups)
 end
 
 section("the saved world stays small")

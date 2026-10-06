@@ -143,14 +143,19 @@ if ($again.Count -gt 0) {
 }
 
 # ------------------------------------------------------ UE4SS settings ---
+# Two tools may each have kept a copy (INSTALL: hooks, FIX_UE4SS_SCAN: scan
+# fix). The older copy is the original settings; that one is put back.
 foreach ($ini in @((Join-Path $win64 'ue4ss\UE4SS-settings.ini'), (Join-Path $win64 'UE4SS-settings.ini'))) {
+  $baks = @()
   foreach ($suffix in @('.tesles-hooks-backup', '.tesles-backup')) {
     $bak = "$ini$suffix"
-    if (Test-Path -LiteralPath $bak) {
-      Copy-Item -LiteralPath $bak -Destination $ini -Force
-      Remove-Item -LiteralPath $bak -Force
-      Say "UE4SS settings restored ($(Split-Path $ini -Leaf))." "Green"
-    }
+    if (Test-Path -LiteralPath $bak) { $baks += Get-Item -LiteralPath $bak }
+  }
+  if ($baks.Count -gt 0) {
+    $orig = $baks | Sort-Object LastWriteTime | Select-Object -First 1
+    Copy-Item -LiteralPath $orig.FullName -Destination $ini -Force
+    foreach ($b in $baks) { Remove-Item -LiteralPath $b.FullName -Force }
+    Say "UE4SS settings restored ($(Split-Path $ini -Leaf))." "Green"
   }
 }
 

@@ -60,7 +60,7 @@ St.BACKGROUND = {
 -- figure: one point (0.01) per five minutes. A frightened survivor is still on
 -- edge hours after a firefight; a veteran shakes it off about three times
 -- faster.
-St.tuning = { recovery_per_5min = 0.01 }
+St.tuning = { recovery_per_5min = 0.10 }
 
 local function background(npc)
     return St.BACKGROUND[npc.archetype or ""] or { react = 1.0, recover = 1.0 }
