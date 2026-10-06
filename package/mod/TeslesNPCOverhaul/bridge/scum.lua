@@ -1621,6 +1621,8 @@ function B.stop_montage(handle)
         if anim and valid(anim) then m = anim:GetCurrentActiveMontage() end
     end)
     if not (m and valid(m)) then return false end
+    -- Only SCUM's idle actions: a shot, a reload or a blow is left alone.
+    if not full_name(m):find("Idle", 1, true) then return false end
     local ok1 = pcall(function() a:NetMulticast_StopAnimationCustom(m, FName("None")) end)
     local ok2 = pcall(function() a:StopAnimMontage(m) end)
     if not montage_logged and B.on_debug then
@@ -1650,7 +1652,10 @@ function B.set_pose(handle, mode)
     local rec = handles[handle]
     local a = B.actor(handle)
     if not a or (rec and rec.native) then return false end
-    pcall(B.pause_ai, handle, true)
+    -- Paused for a walk; ticking whenever it aims: the controller keeps
+    -- the weapon's aim on the focus point only while it ticks (2.1.8 paused
+    -- it in fights too, and shots went into the ground).
+    pcall(B.pause_ai, handle, mode == "walk")
     if rec and rec.pose == mode then return true end
     local mc = read_field(a, "CharacterMovement")
     if not pose_logged and B.on_debug then
@@ -2009,8 +2014,10 @@ function B.keep_ownership(handle)
     if rec and rec.senses ~= false and B.cfg and B.cfg.BlindDirectedNPCs ~= false then
         pcall(B.set_senses, handle, false)
     end
-    if rec and rec.ai_paused == nil then pcall(B.pause_ai, handle, true) end
-    pcall(B.stop_montage, handle)
+    if rec and rec.pose == "walk" and not rec.aiming then
+        if rec.ai_paused == nil then pcall(B.pause_ai, handle, true) end
+        pcall(B.stop_montage, handle)
+    end
     local ok, running = pcall(function()
         local bt = c.BrainComponent
         return bt and bt:IsRunning()
@@ -2144,6 +2151,12 @@ function B.aim_at(handle, pos, target_handle)
         end
     end
     turn_to(handle, pos)
+    -- With the controller ticking again SCUM's idle actions could start a
+    -- montage mid-fight: it is stopped now and then.
+    if os.time() - (rec.montage_at or 0) >= 3 then
+        rec.montage_at = os.time()
+        pcall(B.stop_montage, handle)
+    end
     rec.aiming = true
     return true
 end

@@ -1,7 +1,7 @@
 -- TESLES NPC OVERHAUL - server configuration.
 -- Distances are Unreal units unless a name says otherwise. 100 UU = 1 metre.
 return {
-    Version = "2.1.8",
+    Version = "2.1.9",
 
     -- Language of the live map and messages: "en" or "fi".
     Language = "en",
@@ -102,7 +102,8 @@ return {
     BlindDirectedNPCs = true,
     -- true: SCUM's own NPC AI (a state machine in the controller) is paused
     -- while the director walks an NPC, so it plays no crouched idle actions
-    -- and walks no Guard back to its post mid-route. It runs in fights.
+    -- and walks no Guard back to its post mid-route. It runs whenever the
+    -- NPC aims (the controller holds the weapon's aim).
     PauseScumAIWhileDirected = true,
     -- The AI team trick for those fights: one side counts as the players'
     -- team for the other side's AI. false: only the generic team ids.
