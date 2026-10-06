@@ -668,7 +668,6 @@ function D:move_physical(group, dt)
     if now - st.pace.at >= 10 then
         local v = U.dist2d(st.pace.pos, pos) / (now - st.pace.at)
         st.pace = { at = now, pos = U.copy_vec(pos) }
-        if self.bridge.probe_locomotion then pcall(self.bridge.probe_locomotion, lead.runtime_id, v) end
         D.pace_logs = D.pace_logs or 0
         if D.pace_logs < 12 and self.bridge.on_debug and group.act.state == S.TRAVEL then
             D.pace_logs = D.pace_logs + 1

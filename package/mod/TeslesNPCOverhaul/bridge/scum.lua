@@ -194,6 +194,11 @@ B.unwrap = unwrap
 -- Every property of an object's own (non-engine) classes, with its value
 -- where it is a plain value or an object - for learning how SCUM stores
 -- things like an NPC's outfit.
+local READABLE = {
+    BoolProperty = true, ByteProperty = true, EnumProperty = true, IntProperty = true,
+    Int64Property = true, UInt32Property = true, FloatProperty = true, DoubleProperty = true,
+    NameProperty = true, StrProperty = true, ObjectProperty = true, ClassProperty = true,
+}
 local function dump_props(obj, out, label, stop_at)
     local okc, cls = pcall(function() return obj:GetClass() end)
     if not (okc and cls) then return end
@@ -210,7 +215,10 @@ local function dump_props(obj, out, label, stop_at)
                 local pt = ""
                 pcall(function() pt = p:GetClass():GetFName():ToString() end)
                 local val = ""
-                pcall(function()
+                -- Only plain values are read: reading a struct, container,
+                -- delegate or weak pointer of a live AI object crashed the
+                -- server inside UE4SS (2.1.4), where pcall cannot catch it.
+                if READABLE[pt] then pcall(function()
                     local v = obj[n]
                     local tv = type(v)
                     if tv == "number" or tv == "boolean" or tv == "string" then val = tostring(v)
@@ -222,7 +230,7 @@ local function dump_props(obj, out, label, stop_at)
                             val = okt and tostring(st) or tostring(v)
                         end
                     end
-                end)
+                end) end
                 if #val > 160 then val = val:sub(1, 160) .. "..." end
                 out[#out + 1] = string.format("  %s : %s = %s", n, pt, val)
             end)
@@ -968,7 +976,6 @@ function B.spawn_npc(req)
     B.last_spawn = { handle = h, at = os.clock(), t = os.time() }
     B.stats.spawns = B.stats.spawns + 1
     if not B.api_dumped then pcall(B.dump_api_once, h) end
-    if not B.ai_dumped then pcall(B.dump_ai_once, h) end
     set_health("physicalVirtualization", "OK",
         B.stats.spawns .. " actors materialized this session")
     return h
@@ -1243,7 +1250,6 @@ function B.set_speed(handle, uu_per_sec)
     local speed = pace == 1 and 135 or 262
     local rec = handles[handle]
     pcall(function() a._pace = pace end)
-    pcall(function() a:SetPace(pace) end)
     local ok = pcall(function()
         local mc = a.CharacterMovement
         if mc then mc.MaxWalkSpeed = speed end
@@ -1530,50 +1536,6 @@ function B.restore_team(handle)
     end
     if o.ai ~= nil then pcall(function() a._aiTeam = o.ai end) end
     return true
-end
-
--- SCUM's own AI, written once to output/npc_ai.txt: the controller's
--- fields with their values, its state machine (_statesByEnum), the
--- behaviour tree and blackboard keys. It is the map for letting SCUM's AI
--- walk an NPC to a place itself instead of the director pushing it.
-function B.dump_ai_once(handle)
-    if B.ai_dumped or not B.write_file then return end
-    local a = B.actor(handle)
-    local c = a and B.controller(a)
-    if not c then return end
-    B.ai_dumped = true
-    local out = { "TESLES NPC OVERHAUL - SCUM NPC AI (" .. os.date("%Y-%m-%d %H:%M:%S") .. ")" }
-    pcall(dump_props, c, out, "controller", "/Script/Engine.Controller")
-    pcall(function()
-        local states = c._statesByEnum
-        out[#out + 1] = "--- _statesByEnum"
-        states:ForEach(function(k, v)
-            local key, val = "?", "?"
-            pcall(function() key = tostring(k:get()) end)
-            pcall(function() val = full_name(v:get()) end)
-            out[#out + 1] = "  " .. key .. " = " .. val
-            pcall(function() dump_props(v:get(), out, "    state", "/Script/CoreUObject.Object") end)
-        end)
-    end)
-    pcall(function()
-        local bt = c.BrainComponent
-        out[#out + 1] = "--- brain " .. full_name(bt)
-        pcall(dump_props, bt, out, "  brain", "/Script/Engine.ActorComponent")
-    end)
-    pcall(function()
-        local bb = c.Blackboard
-        out[#out + 1] = "--- blackboard " .. full_name(bb)
-        local asset = bb.BlackboardAsset
-        out[#out + 1] = "  asset " .. full_name(asset)
-        asset.Keys:ForEach(function(_, e)
-            local entry = e:get()
-            local n, kt = "?", "?"
-            pcall(function() n = entry.EntryName:ToString() end)
-            pcall(function() kt = full_name(entry.KeyType) end)
-            out[#out + 1] = "  key " .. n .. " : " .. kt
-        end)
-    end)
-    pcall(B.write_file, "npc_ai.txt", table.concat(out, "\n") .. "\n")
 end
 
 -- How the body turns and animates while the director walks it.
@@ -2181,15 +2143,6 @@ function B.probe_locomotion(handle, walked_uu_s)
             acc and string.format("%.0f %.0f %.0f", acc.X or 0, acc.Y or 0, acc.Z or 0) or "?",
             tostring(mc.MovementMode), tostring(mc.MaxWalkSpeed))
     end)
-    pcall(function()
-        local anim = a.Mesh:GetAnimInstance()
-        if anim and valid(anim) then
-            dump_props(anim, out, "  anim", "/Script/Engine.AnimInstance")
-        else
-            out[#out + 1] = "  (no anim instance on the server)"
-        end
-    end)
-    pcall(dump_props, a, out, "  pawn", "/Script/Engine.Character")
     if #out > 6000 then
         while #out > 6000 do table.remove(out, 2) end
     end
