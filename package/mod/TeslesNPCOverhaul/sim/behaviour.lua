@@ -531,13 +531,18 @@ function Bh.fight_zombies(director, group, now, list)
             if d < best then target, best = z, d end
         end
         if target and courage >= 0.55 and best <= t.zombie_fire_uu then
-            if m.runtime_id and director.bridge.face then
+            if m.runtime_id and director.bridge.aim_at then
+                -- Weapon up and on the zombie, not just the body turned.
+                pcall(director.bridge.aim_at, m.runtime_id, target.pos, target.actor)
+                group.focused = true
+                group.focus_until = now + 3
+            elseif m.runtime_id and director.bridge.face then
                 director.bridge.face(m.runtime_id, target.pos)
                 group.focused = true
                 group.focus_until = now + 3
             end
             if director.rng:chance(0.6) then
-                if m.runtime_id and director.bridge.fire_once then director.bridge.fire_once(m.runtime_id) end
+                if m.runtime_id and director.bridge.fire_once then director.bridge.fire_once(m.runtime_id, target.actor) end
                 Bh.noise(director, mp, "gunfire", 1)
                 director.noises[#director.noises].from = group.gid
                 local skill = math.max((m.skills or {}).rifle or 0, (m.skills or {}).pistol or 0)

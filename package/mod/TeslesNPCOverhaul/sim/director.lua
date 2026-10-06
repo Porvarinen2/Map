@@ -980,12 +980,16 @@ function D:hunt_animals(g, now)
                 end
             end
             if target then
-                if self.bridge.face then
+                if self.bridge.aim_at then
+                    pcall(self.bridge.aim_at, m.runtime_id, target.pos, target.actor)
+                    g.focused = true
+                    g.focus_until = now + 3
+                elseif self.bridge.face then
                     self.bridge.face(m.runtime_id, target.pos)
                     g.focused = true
                     g.focus_until = now + 3
                 end
-                if self.bridge.fire_once then pcall(self.bridge.fire_once, m.runtime_id) end
+                if self.bridge.fire_once then pcall(self.bridge.fire_once, m.runtime_id, target.actor) end
                 fired = true
                 local skill = math.max((m.skills or {}).rifle or 0, (m.skills or {}).shotgun or 0)
                 local p = 0.3 * (0.6 + skill) * (1 - 0.5 * best / D.HUNT_RANGE_UU)
@@ -1106,6 +1110,18 @@ function D:run_combat(group, contact, zpressure)
                 if e.alive then
                     local d = U.dist2d(mp, e.position or enemy_pos)
                     if d < bd then tgt, bd = e, d end
+                end
+            end
+            -- The enemy it already fights stays its target until it falls or
+            -- another is clearly nearer: switching to whoever was nearest
+            -- this second swung NPCs round and back (2.1.9).
+            if m.ctarget and tgt and m.ctarget ~= tgt.npcId then
+                for _, e in ipairs(enemy.members) do
+                    if e.alive and e.npcId == m.ctarget then
+                        local d = U.dist2d(mp, e.position or enemy_pos)
+                        if d < bd * 1.4 + 500 then tgt, bd = e, d end
+                        break
+                    end
                 end
             end
             local tpos = (tgt and tgt.position) or enemy_pos
@@ -1276,7 +1292,10 @@ function D:run_combat(group, contact, zpressure)
     end
     -- Every NPC that shot fires its real weapon (seen and heard), hit or miss.
     for _, m in ipairs(hits.shooters or {}) do
-        if m.runtime_id and self.bridge.fire_once then pcall(self.bridge.fire_once, m.runtime_id) end
+        if m.runtime_id and self.bridge.fire_once then
+            local t = aimed[m]
+            pcall(self.bridge.fire_once, m.runtime_id, t and t.runtime_id or nil)
+        end
     end
     for _, h in ipairs(hits) do
         local handle = h.target.runtime_id
@@ -1727,10 +1746,15 @@ function D:tick_group(group, players, physical_groups, dt)
 
     -- 3. Threat context.
     local contact = nil
-    if not (group.disengaged_until and group.disengaged_until > now) then
+    do
+        -- A squad that broke off is left alone - unless it is still within
+        -- 40 m: then nobody stands staring at an enemy at arm's length.
         local pool = group.physical and physical_groups or self.world.groups
         local list = Combat.find_contacts(group, pool, self.world.diplomacy, now)
-        contact = list[1]
+        local away = group.disengaged_until and group.disengaged_until > now
+        for _, c in ipairs(list) do
+            if not away or c.distance <= Combat.tuning.point_blank_uu then contact = c; break end
+        end
     end
     -- What the squad hears, sees and feels this second.
     local zlist = {}

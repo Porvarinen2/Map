@@ -1652,10 +1652,11 @@ function B.set_pose(handle, mode)
     local rec = handles[handle]
     local a = B.actor(handle)
     if not a or (rec and rec.native) then return false end
-    -- Paused for a walk; ticking whenever it aims: the controller keeps
-    -- the weapon's aim on the focus point only while it ticks (2.1.8 paused
-    -- it in fights too, and shots went into the ground).
-    pcall(B.pause_ai, handle, mode == "walk")
+    -- Paused while the director has the NPC, aiming too: with the
+    -- controller ticking, SCUM's idle states turned it away from its enemy
+    -- and back (2.1.9). It is turned through the control rotation instead
+    -- (turn_to), and its weapon is aimed at the target itself (fire_once).
+    pcall(B.pause_ai, handle, true)
     if rec and rec.pose == mode then return true end
     local mc = read_field(a, "CharacterMovement")
     if not pose_logged and B.on_debug then
@@ -2014,10 +2015,8 @@ function B.keep_ownership(handle)
     if rec and rec.senses ~= false and B.cfg and B.cfg.BlindDirectedNPCs ~= false then
         pcall(B.set_senses, handle, false)
     end
-    if rec and rec.pose == "walk" and not rec.aiming then
-        if rec.ai_paused == nil then pcall(B.pause_ai, handle, true) end
-        pcall(B.stop_montage, handle)
-    end
+    if rec and rec.ai_paused == nil then pcall(B.pause_ai, handle, true) end
+    if rec and not rec.aiming then pcall(B.stop_montage, handle) end
     local ok, running = pcall(function()
         local bt = c.BrainComponent
         return bt and bt:IsRunning()
@@ -2135,11 +2134,20 @@ local fire_fn = nil
 -- an actor, not a point (2.1.2's npc_locomotion.txt). Up to 2.1.2 a point was
 -- written there, nothing took, and the NPCs fired wherever they happened to
 -- face. Now it is the enemy's body, and the controller keeps its eyes on it.
-function B.aim_at(handle, pos, target_handle)
+local function target_actor(t)
+    if t == nil then return nil end
+    if type(t) == "number" then return B.actor(t) end
+    if valid(t) then return t end
+    return nil
+end
+B.target_actor = target_actor
+
+function B.aim_at(handle, pos, target)
     local rec = handles[handle]
     local a = B.actor(handle)
     if not (rec and a and pos) or rec.native then return false end
-    local ta = target_handle and B.actor(target_handle) or nil
+    local ta = target_actor(target)
+    rec.aim_target = ta
     pcall(function() a._isInCombatMode = true end)
     if ta then
         pcall(function() a._aimLocationTargetForSimulatedProxy = ta end)
@@ -2150,9 +2158,10 @@ function B.aim_at(handle, pos, target_handle)
             pcall(function() c:SetFocus(ta, 2) end)
         end
     end
-    turn_to(handle, pos)
-    -- With the controller ticking again SCUM's idle actions could start a
-    -- montage mid-fight: it is stopped now and then.
+    local live = nil
+    if ta then pcall(function() live = vec(ta:K2_GetActorLocation()) end) end
+    turn_to(handle, live or pos)
+    -- An idle montage left from before the fight is stopped now and then.
     if os.time() - (rec.montage_at or 0) >= 3 then
         rec.montage_at = os.time()
         pcall(B.stop_montage, handle)
@@ -2196,7 +2205,30 @@ end
 -- (ApplyDamage); this makes the shot seen and heard. An empty magazine gets
 -- a few rounds first, so a long fight does not go silent.
 B.firing = {}
-function B.fire_once(handle)
+-- Where the shot goes: SCUM's weapons fire along the muzzle unless told
+-- otherwise, and a server never animates its NPCs, so the muzzle of a
+-- director-fired weapon pointed at the ground (the sparks at their feet up
+-- to 2.1.9). The weapon is told to shoot at its target the way SCUM's own
+-- NPCs do: not along the muzzle, at _projectileTargetLocationOverride.
+local aim_logged = false
+local function aim_weapon(w, ta)
+    local r = {}
+    r[#r + 1] = pcall(function() w:SetUseMuzzleDirectionForShooting(false) end) and "nomuzzle" or "-"
+    pcall(function() w._shouldOverrideUseMuzzleDirectionForShooting = true end)
+    pcall(function() w._useMuzzleDirectionForShootingOverride = false end)
+    if ta then
+        r[#r + 1] = pcall(function() w._projectileTargetLocationOverride = ta end) and "target" or "-"
+    end
+    if not aim_logged and B.on_debug then
+        aim_logged = true
+        local now = nil
+        pcall(function() now = w._projectileTargetLocationOverride end)
+        pcall(B.on_debug, string.format("npc weapon aim: %s, target now %s", table.concat(r, "+"),
+            now and full_name(now) or "nil"))
+    end
+end
+
+function B.fire_once(handle, target)
     local rec = handles[handle]
     local a = B.actor(handle)
     if not (rec and a) or rec.native then return false end
@@ -2204,6 +2236,7 @@ function B.fire_once(handle)
     if not (w and valid(w)) then pcall(function() w = a._itemInHands end) end
     if not (w and valid(w)) then return false end
     if B.firing[handle] then return true end
+    pcall(aim_weapon, w, target_actor(target) or target_actor(rec.aim_target))
     pcall(function()
         local mag = unwrap(w:GetMagazine())
         if mag and valid(mag) and (tonumber(unwrap(mag:GetAmmoCount())) or 0) == 0 then

@@ -29,6 +29,7 @@ C.tuning = {
     morale_retreat = 0.25,
     retarget_sec = 6,
     disengage_uu = 26000,
+    point_blank_uu = 4000,         -- a broken-off squad this close still fights
     zombie_panic_count = 6,
 }
 
@@ -40,10 +41,10 @@ function C.find_contacts(group, groups, registry, now)
     if not group.position then return out end
     local range = C.contact_range(group)
     for _, other in ipairs(groups) do
-        if other ~= group and (other.physical == group.physical) and other.position
-            and not (other.disengaged_until and other.disengaged_until > (now or 0)) then
+        if other ~= group and (other.physical == group.physical) and other.position then
             local d = U.dist2d(group.position, other.position)
-            if d <= range then
+            local away = other.disengaged_until and other.disengaged_until > (now or 0)
+            if d <= range and (not away or d <= C.tuning.point_blank_uu) then
                 local hostile, value, tier = Diplomacy.hostile(registry, group, other)
                 if hostile then
                     out[#out + 1] = { group = other, distance = d, standing = value, tier = tier }
