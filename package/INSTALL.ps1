@@ -400,7 +400,7 @@ if (Test-Path -LiteralPath $target) {
   if (Test-Path -LiteralPath $oldCfg) {
     $oc = Get-Content -LiteralPath $oldCfg -Raw
     $mv = [regex]::Match($oc, 'Version\s*=\s*"([^"]+)"')
-    foreach ($key in @('Language', 'TargetNPCs', 'EnableReplenish', 'GhostWeaponChance', 'TopWeaponChance', 'NPCDetectRangeM', 'NPCFireRangeM', 'NPCScopedFireRangeM', 'NPCViewAngleDeg', 'NPCCloseSenseM', 'PlayerAreaCombatLethality', 'VirtualCombatLethality')) {
+    foreach ($key in @('Language', 'TargetNPCs', 'EnableReplenish', 'GhostWeaponChance', 'TopWeaponChance', 'NPCDetectRangeM', 'NPCFireRangeM', 'NPCScopedFireRangeM', 'NPCViewAngleDeg', 'NPCCloseSenseM', 'PlayerAreaCombatLethality', 'VirtualCombatLethality', 'SquadDetectRangeM', 'SquadNeedsSight', 'SquadFightDistanceM', 'SquadBackOffShare', 'WeaponRangePistolM', 'WeaponRangeSmgM', 'WeaponRangeShotgunM', 'WeaponRangeRifleM', 'WeaponRangeScopedM', 'WeaponRangeBowM', 'WeaponRangeCrossbowM', 'SquadAccuracy', 'SquadPursuit', 'SquadRetreatM', 'RealBulletsOnly', 'NativeSquadFights', 'ScumNPCDifficulty', 'CombatDamageScale', 'BlindDirectedNPCs', 'PauseScumAIWhileDirected')) {
       $mg = [regex]::Match($oc, "$key\s*=\s*(`"[a-z]+`"|true|false|[0-9.]+)")
       if (-not $mg.Success) { continue }
       # Up to 1.9.31 GhostWeaponChance held an old default (0.5 / 1.0); from
@@ -412,6 +412,12 @@ if (Test-Path -LiteralPath $target) {
       }
       # 1.9.27 had the first sight defaults (200 m / 60 deg...); 1.9.28 brings new ones.
       if ($key -like 'NPC*' -and $mv.Success -and $mv.Groups[1].Value -eq '1.9.27') { continue }
+      # 2.1.4-2.1.7 had SCUM's own squad fights on (they never worked).
+      if ($key -eq 'NativeSquadFights') {
+        $ov2 = $null
+        if ($mv.Success) { try { $ov2 = [version]$mv.Groups[1].Value } catch { $ov2 = $null } }
+        if (-not $ov2 -or $ov2 -lt [version]'2.1.12') { continue }
+      }
       # Up to 2.1.7 the sight defaults were 300 m / 45 deg; 2.1.8 uses SCUM's own (70 m / 80 deg).
       if ($key -eq 'NPCDetectRangeM' -and $mg.Groups[1].Value -eq '300') { continue }
       if ($key -eq 'NPCViewAngleDeg' -and $mg.Groups[1].Value -eq '45') { continue }

@@ -35,7 +35,7 @@ C.tuning = {
 -- Finds hostile groups in contact range. Physical squads meet physical
 -- squads, virtual ones meet virtual ones: a squad within 120 m of a physical
 -- one is inside a player's render circle and physical itself.
-function C.find_contacts(group, groups, registry, now)
+function C.find_contacts(group, groups, registry, now, pursue_on)
     local out = {}
     if not group.position then return out end
     local range = C.contact_range(group)
@@ -46,7 +46,7 @@ function C.find_contacts(group, groups, registry, now)
             -- it is within reach of a squad at least as strong; a weaker
             -- one lets it go.
             local away = other.disengaged_until and other.disengaged_until > (now or 0)
-            local pursue = away and C.alive_count(group) >= C.alive_count(other)
+            local pursue = away and pursue_on ~= false and C.alive_count(group) >= C.alive_count(other)
                 and d <= C.reach(group)
             if d <= range and (not away or pursue) then
                 local hostile, value, tier = Diplomacy.hostile(registry, group, other)
@@ -377,7 +377,7 @@ function C.exchange_fire(group, enemy, rng, accuracy, scale, opts)
                     hits.shots = (hits.shots or 0) + 1
                     hits.shooters = hits.shooters or {}
                     hits.shooters[#hits.shooters + 1] = m
-                    for _ = 1, rounds do
+                    for _ = 1, (opts.no_hits and 0 or rounds) do
                         if not target.alive then break end
                         if rng:chance(p) then
                             local dmg = opts.damage and opts.damage(m, target, best)

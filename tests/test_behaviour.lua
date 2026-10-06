@@ -756,6 +756,32 @@ do
     check(g.act.state == "RETREAT" and (g.flee_until or 0) > d.now, "breaking off is a retreat, not standing still")
 end
 
+section("NPC vs NPC settings in config.lua")
+do
+    local W = require("npc.weapons")
+    local C = require("sim.combat")
+    Director.apply_squad_tuning({ WeaponRangeRifleM = 200, WeaponRangePistolM = 40, SquadDetectRangeM = 300 })
+    check(W.PROFILE.bolt.range == 20000 and W.PROFILE.pistol.range == 4000 and C.tuning.contact_uu == 30000,
+          "weapon reach and squad detection come from config")
+    Director.apply_squad_tuning({ WeaponRangeRifleM = 150, WeaponRangePistolM = 50, SquadDetectRangeM = 200 })
+    local world, d = fresh(68)
+    local a, b
+    for _, g in ipairs(world.groups) do
+        if #g.members >= 1 then if not a then a = g elseif not b then b = g; break end end
+    end
+    a.physical = true
+    for _, m in ipairs(a.members) do m.runtime_id = m.runtime_id or 1; m.position = U.copy_vec(a.position) end
+    for _, m in ipairs(b.members) do m.position = { X = a.position.X + 5000, Y = a.position.Y, Z = 0 } end
+    local orig = Bridge.sees
+    Bridge.sees = function() return false end
+    d.cfg.SquadNeedsSight = true
+    check(d:squad_sees(a, b, 1000) == false, "near players a squad must see the other squad")
+    Bridge.sees = function() return true end
+    a.sight_at = nil
+    check(d:squad_sees(a, b, 1010) == true and d:squad_sees(a, b, 1020) == true, "and once seen it is known for a while")
+    Bridge.sees = orig
+end
+
 section("a spectator is not seen by NPCs")
 do
     local world, d = fresh(59)

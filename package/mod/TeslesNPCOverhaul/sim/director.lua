@@ -37,6 +37,32 @@ D.__index = D
 
 local S = Activity.STATES
 
+-- NPC vs NPC settings from config.lua (weapon reach per kind, detection
+-- range). Only keys that are set change anything.
+local RANGE_KINDS = {
+    WeaponRangePistolM = { pistol = 1, revolver = 1, gun_impro = 0.6 },
+    WeaponRangeSmgM = { smg = 1 },
+    WeaponRangeShotgunM = { shotgun = 1, sawed = 0.45 },
+    WeaponRangeRifleM = { bolt = 1, semi = 1, ak = 1, assault = 1, dmr = 1, sniper = 1, lmg = 1 },
+    WeaponRangeBowM = { bow = 1, bow_crude = 0.6, compound = 1.2 },
+    WeaponRangeCrossbowM = { xbow = 1, xbow_impro = 0.7 },
+}
+function D.apply_squad_tuning(cfg)
+    cfg = cfg or {}
+    for key, kinds in pairs(RANGE_KINDS) do
+        local m = tonumber(cfg[key])
+        if m and m > 0 then
+            for kind, f in pairs(kinds) do
+                if Weapons.PROFILE[kind] then Weapons.PROFILE[kind].range = m * 100 * f end
+            end
+        end
+    end
+    local sc = tonumber(cfg.WeaponRangeScopedM)
+    if sc and sc > 0 then Weapons.SCOPE_RANGE = sc * 100 end
+    local det = tonumber(cfg.SquadDetectRangeM)
+    if det and det > 0 then Combat.tuning.contact_uu = det * 100 end
+end
+
 function D.new(opts)
     local self = setmetatable({}, D)
     self.world = opts.world
@@ -51,6 +77,7 @@ function D.new(opts)
     self.virtual_speed = self.cfg.VirtualTravelSpeedUU or 340
     self.virtual_road_bonus = self.cfg.VirtualRoadSpeedMultiplier or 1.25
     self.max_delta = self.cfg.MaxDeltaSec or 12
+    D.apply_squad_tuning(self.cfg)
     self.ticks = 0
     self.counters = {
         routes = 0, route_fail = 0, commands = 0, arrivals = 0,
@@ -1064,11 +1091,51 @@ local function now_ge(now, t, sec) return t == nil or now - t >= sec end
 -- A squad that breaks off really leaves: away from the enemy at a jog, every
 -- member, the route redrawn from there. Up to 2.1.10 it only stopped
 -- fighting and stood where it was, staring at the enemy.
+-- Does a squad with bodies see the other squad? With SquadNeedsSight a
+-- member must have it in front of it (NPCViewAngleDeg) with a clear line of
+-- sight; once seen it is known for 30 s, and a squad that is shot at knows
+-- its shooters. Squads off the map's bodies go by range alone.
+function D:squad_sees(group, other, now)
+    if self.cfg.SquadNeedsSight == false or not group.physical or not self.bridge.sees then return true end
+    group.known = group.known or {}
+    if (group.known[other.gid] or 0) > now then return true end
+    group.sight_at = group.sight_at or {}
+    if now - (group.sight_at[other.gid] or 0) < 2 then return false end
+    group.sight_at[other.gid] = now
+    local R = self:sight_rules()
+    local checked = 0
+    for _, m in ipairs(group.members) do
+        if m.alive and m.runtime_id and not m.native_fight and checked < 3 then
+            checked = checked + 1
+            local mp = m.position or group.position
+            local best, bd = nil, math.huge
+            for _, e in ipairs(other.members) do
+                if e.alive and e.position then
+                    local d = U.dist2d(mp, e.position)
+                    if d < bd then best, bd = e, d end
+                end
+            end
+            if best then
+                local seen = bd <= R.close
+                if not seen then
+                    local ok, v = pcall(self.bridge.sees, m.runtime_id, best.position, R.angle)
+                    seen = ok and v == true
+                end
+                if seen then
+                    group.known[other.gid] = now + 30
+                    return true
+                end
+            end
+        end
+    end
+    return checked == 0
+end
+
 function D:retreat(group, from_pos)
     if not (group.position and from_pos) then return end
     local dir = U.direction(from_pos, group.position)
     if not dir then return end
-    local dist = 15000
+    local dist = (tonumber(self.cfg.SquadRetreatM) or 150) * 100
     local dest = { X = group.position.X + dir.X * dist, Y = group.position.Y + dir.Y * dist, Z = group.position.Z }
     dest = Grid.snap_to_land(dest) or dest
     group.flee_until = self.now + 40
@@ -1174,7 +1241,8 @@ function D:run_combat(group, contact, zpressure)
             -- most 120 m - a rifleman opens up from 100 m and more, not from
             -- ten (SCUM's own approach distance, 26-33 m, is for walking up
             -- to a player with a pistol).
-            m.approach = math.min(reach * (0.7 + 0.15 * rng:float()), 12000)
+            m.approach = math.min(reach * (0.7 + 0.15 * rng:float()),
+                (tonumber(self.cfg.SquadFightDistanceM) or 120) * 100)
             local moving = m.moving_until and now < m.moving_until
             local point, jog = nil, false
             if tpos and (m.action == "RETREAT" or m.action == "FLEE") then
@@ -1187,7 +1255,7 @@ function D:run_combat(group, contact, zpressure)
                     point = { X = tpos.X, Y = tpos.Y, Z = tpos.Z }
                     jog = bd > 1500
                 end
-            elseif tpos and (bd > reach or bd < m.approach * 0.55) then
+            elseif tpos and (bd > reach or bd < m.approach * (tonumber(self.cfg.SquadBackOffShare) or 0.55)) then
                 -- Out of reach: closing in along the line to the enemy, to
                 -- its fighting distance. Too close: backing off to it - no
                 -- running into each other face to face.
@@ -1283,7 +1351,7 @@ function D:run_combat(group, contact, zpressure)
             local a = 1 / math.sqrt(math.max(0.5, f.spread or 1))
             if walking[m] then a = a * 0.7 end
             if rounds > 1 then a = a * 0.6 end
-            return a * 2.2
+            return a * 2.2 * (tonumber(self.cfg.SquadAccuracy) or 1)
         end
         -- SCUM's firing rhythm: a row of shots (one a second at most, one
         -- director tick), then a pause; automatic weapons fire the whole
@@ -1320,10 +1388,14 @@ function D:run_combat(group, contact, zpressure)
             return 1
         end
     end
+    local real_only = self.cfg.RealBulletsOnly == true and group.physical and enemy.physical
+    if real_only then opts.no_hits = true end
     local hits = Combat.exchange_fire(group, enemy, self.rng,
         function(m) return Behaviour.accuracy(m, fatigue) end, scale, opts)
     if (hits.shots or 0) > 0 then
         group.last_shot_at, enemy.last_shot_at = self.now, self.now
+        enemy.known = enemy.known or {}
+        enemy.known[group.gid] = self.now + 30
         Behaviour.noise(self, group.position, "gunfire", U.clamp(0.7 + hits.shots * 0.15, 0.7, 1.6))
         self.noises[#self.noises].from = group.gid
     end
@@ -1355,6 +1427,34 @@ function D:run_combat(group, contact, zpressure)
             Log.event("KILL", group.gid, h.shooter.name .. " -> " .. h.target.name .. " (" .. enemy.gid .. ")")
             if h.target.is_leader then
                 Leadership.on_leader_lost(enemy, self.now, function(m) Stress.apply(m, "LEADER_DOWN") end)
+            end
+        end
+    end
+
+    -- SCUM's own bullets: the director fires the members' real weapons at
+    -- their targets; whether those bullets hurt the other squad is measured
+    -- here (a body that lost health the director did not take). With
+    -- RealBulletsOnly the director's health follows the body's.
+    if group.physical and enemy.physical and self.bridge.actor_health then
+        local ours = {}
+        for _, h in ipairs(hits) do ours[h.target] = true end
+        for _, e in ipairs(enemy.members) do
+            if e.alive and e.runtime_id then
+                local hp = self.bridge.actor_health(e.runtime_id)
+                if hp then
+                    if e.hp_seen and not ours[e] and hp < e.hp_seen - 0.5 then
+                        D.bullet_logs = (D.bullet_logs or 0) + 1
+                        if D.bullet_logs <= 5 and self.bridge.on_debug then
+                            pcall(self.bridge.on_debug, string.format(
+                                "bullet damage: %s lost %.0f hp to SCUM's own bullets (%.0f left)",
+                                e.npcId, e.hp_seen - hp, hp))
+                        end
+                    end
+                    e.hp_seen = hp
+                    if real_only then
+                        e.health = U.clamp(hp * 100 / ScumData.max_health(e.body_level or e.level), 0, 100)
+                    end
+                end
             end
         end
     end
@@ -1784,8 +1884,11 @@ function D:tick_group(group, players, physical_groups, dt)
     local contact = nil
     if not (group.disengaged_until and group.disengaged_until > now) then
         local pool = group.physical and physical_groups or self.world.groups
-        local list = Combat.find_contacts(group, pool, self.world.diplomacy, now)
-        contact = list[1]
+        local list = Combat.find_contacts(group, pool, self.world.diplomacy, now,
+            self.cfg.SquadPursuit ~= false)
+        for _, c in ipairs(list) do
+            if self:squad_sees(group, c.group, now) then contact = c; break end
+        end
     end
     -- What the squad hears, sees and feels this second.
     local zlist = {}

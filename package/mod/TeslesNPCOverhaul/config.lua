@@ -1,7 +1,7 @@
 -- TESLES NPC OVERHAUL - server configuration.
 -- Distances are Unreal units unless a name says otherwise. 100 UU = 1 metre.
 return {
-    Version = "2.1.11",
+    Version = "2.1.12",
 
     -- Language of the live map and messages: "en" or "fi".
     Language = "en",
@@ -150,6 +150,40 @@ return {
     NPCScopedFireRangeM = 250,
     NPCViewAngleDeg = 80,
     NPCCloseSenseM = 5,
+
+    -- NPC VS NPC: how squads find and fight each other. All kept on updates.
+    -- A squad notices another squad this far away (metres)...
+    SquadDetectRangeM = 200,
+    -- ...and, near players (where squads have bodies), only if a member
+    -- sees it: in front of it (NPCViewAngleDeg to either side) with a clear
+    -- line of sight. A squad that is shot at knows where from. false: range
+    -- alone, through walls and hills.
+    SquadNeedsSight = true,
+    -- The furthest a member fights from (metres). Within it each fights
+    -- from most of its weapon's reach (below): riflemen from about 100 m.
+    SquadFightDistanceM = 120,
+    -- A member closer than this share of its fighting distance backs off.
+    SquadBackOffShare = 0.55,
+    -- How far each kind of weapon shoots in squad fights (metres).
+    WeaponRangePistolM = 50,
+    WeaponRangeSmgM = 80,
+    WeaponRangeShotgunM = 35,
+    WeaponRangeRifleM = 150,
+    WeaponRangeScopedM = 200,
+    WeaponRangeBowM = 50,
+    WeaponRangeCrossbowM = 60,
+    -- Hit chance between squads with bodies (1 = normal, 2 = twice).
+    SquadAccuracy = 1.0,
+    -- true: a squad at least as strong keeps shooting at one that breaks
+    -- off and runs, while it is in reach.
+    SquadPursuit = true,
+    -- How far a squad that breaks off runs (metres).
+    SquadRetreatM = 150,
+    -- true: hits between squads with bodies come only from SCUM's real
+    -- bullets (the director fires the members' own weapons at their
+    -- targets), no dice. Turn on only once director.log shows
+    -- "bullet damage:" lines - otherwise nobody would ever be hit.
+    RealBulletsOnly = false,
 
     -- Your own squad weapons: see loadouts.lua (kept on updates).
 
