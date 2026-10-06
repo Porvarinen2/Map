@@ -51,8 +51,13 @@ do
     if h and h2 then
         local ok, sp = B.set_speed(h, 135)
         check(ok and sp == 135, "walking is SCUM's walk pace (135)")
+        local pace = nil
+        pcall(function() pace = B.actor(h)._pace end)
+        check(pace == 0, "a walk is pace 0 (Slow): pace 1 played the jog at walking speed")
+        ok, sp = B.set_speed(h, 262)
+        check(ok and sp == 262, "a jog is SCUM's jog pace (262)")
         ok, sp = B.set_speed(h, 450)
-        check(ok and sp == 262, "anything faster is SCUM's jog pace (262), never a speed of our own")
+        check(ok and sp == 600, "anything faster is SCUM's run pace (600), never a speed of our own")
         check(B.aim_at(h, { X = 0, Y = 0, Z = 0 }, h2) == true, "an NPC aims at another NPC's body")
     end
 end

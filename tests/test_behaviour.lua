@@ -677,6 +677,7 @@ end
 section("squads with bodies shoot from standing, aimed at the man they hit")
 do
     local world, d = fresh(66)
+    d.cfg.NativeSquadFights = false
     local a, b
     for _, g in ipairs(world.groups) do
         if not require("world.zones").reserved_by_class[g.class] and #g.members >= 2 then
@@ -710,7 +711,7 @@ do
         if a.act.state == "COMBAT" or b.act.state == "COMBAT" then fights = fights + 1 end
     end
     Bridge.fire_once, Bridge.aim_at = orig_fire, orig_aim
-    check(fights > 0 and a.nsf == nil, "the director fights it (SCUM's AI is off by default)")
+    check(fights > 0 and a.nsf == nil, "the director's own fight")
     check(aimed_all > 0, string.format("they shoot (%d shots)", aimed_all))
     check(moving_shots == 0, "nobody fires while walking to a new spot")
     check(aimed_ok == aimed_all, "every shot comes from a man aiming at an enemy")
@@ -1076,10 +1077,10 @@ do
         position = { X = 0, Y = 0, Z = 0 }, home = { X = 0, Y = 0, Z = 0 } })
     local m = g.members[1]
     local f, v, l = Physical.armed_body(m, g, "Guard", nil, 5)
-    check(f == "Guard" and l == 4, "the elite spawn in the level 4 Guard body (level 5 Guards get bows)")
+    check(f == "Guard" and v == nil and l == 5, "the elite spawn in the plain level 5 Guard body (the best guns)")
     m.rearms = 1
-    f, v, l = Physical.armed_body(m, g, "Guard", "AbandonedBunker", 5)
-    check(f == "Guard" and v == nil and l == 4, "and stay plain level 4 Guards when spawned again for a gun")
+    f, v, l = Physical.armed_body(m, g, "Guard", "AbandonedBunker", 4)
+    check(f == "Guard" and v == nil and l == 5, "never the Abandoned Bunker body (clubs and bows)")
     m.rearms = 2
     f, v, l = Physical.armed_body(m, g, "Guard", nil, 5)
     check(f == "Drifter" and l == 5, "still no gun after two tries: a level 5 Drifter (always armed)")

@@ -1,7 +1,7 @@
 -- TESLES NPC OVERHAUL - server configuration.
 -- Distances are Unreal units unless a name says otherwise. 100 UU = 1 metre.
 return {
-    Version = "2.1.6",
+    Version = "2.1.7",
 
     -- Language of the live map and messages: "en" or "fi".
     Language = "en",
@@ -86,18 +86,27 @@ return {
     -- Away from every player (fought on the map only):
     VirtualCombatLethality = 0.5,
     -- true: fights between two squads near players are handed to SCUM's
-    -- own combat AI. Off since 2.1.6: SCUM's AI only takes players as
-    -- targets, and squads handed to it stood idle (2.1.5 log: no hits).
-    -- false: the director fights them - aimed, from standing, real shots.
-    NativeSquadFights = false,
+    -- own combat AI, as fights with players are. One side is put on the
+    -- players' team for the other side's AI (NativeSquadAITeamId). If
+    -- nobody is hit for 30 s the director takes the fight back, and after
+    -- three such fights it fights them itself for the rest of the session.
+    -- false: always the director's fight - aimed, from standing, real shots.
+    NativeSquadFights = true,
     -- true: SCUM's own sight and hearing are off while the director walks
     -- an NPC (on again for a fight with a player). With them on, SCUM's AI
     -- chased animals and zombies on its own and aimed at them crouched
     -- while the body walked on - the crouched sliding.
     BlindDirectedNPCs = true,
+    -- true: SCUM's own NPC AI (a state machine in the controller) is paused
+    -- while the director walks an NPC, so it plays no crouched idle actions
+    -- and walks no Guard back to its post mid-route. It runs in fights.
+    PauseScumAIWhileDirected = true,
     -- The AI team trick for those fights: one side counts as the players'
-    -- team (5) for the other side's AI. false: only the generic team ids.
+    -- team for the other side's AI. false: only the generic team ids.
     NativeSquadAITeam = true,
+    -- The team one side gets (SCUM's EAITeam: 0 Prisoner = the players,
+    -- 5 Neutral, 10 ArmedNPC). Up to 2.1.6 this was 5, which no AI attacks.
+    NativeSquadAITeamId = 0,
     -- ------------------------------------------------------------- stress ---
     -- How much stress an average NPC sheds in five minutes out of danger
     -- (0.01 = one point). Veterans and soldiers recover faster, survivors,

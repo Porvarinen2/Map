@@ -440,9 +440,10 @@ function D:move_physical(group, dt)
         group.member_speed_at = now
         for _, m in ipairs(group.members) do
             if steerable(m) and m.speed_set then
-                local expect = m.speed_set <= 170 and 135 or 262
+                local expect = (m.speed_set <= 170 and 135) or (m.speed_set <= 400 and 262) or 600
                 local ws = self.bridge.walk_speed(m.runtime_id)
-                if ws and math.abs(ws - expect) > 5 then self.bridge.set_speed(m.runtime_id, m.speed_set) end
+                if ws and math.abs(ws - expect) > 5 then self.bridge.set_speed(m.runtime_id, m.speed_set)
+                elseif self.bridge.keep_pace then self.bridge.keep_pace(m.runtime_id) end
             end
         end
     end
@@ -1301,7 +1302,7 @@ function D:native_squad_fight(group, enemy)
         Log.event("FIGHT", group.gid, "vs " .. enemy.gid .. " on SCUM's own AI")
     end
     local team = 1 + ((group.id or 0) % 250)
-    local ai_team = (self.cfg.NativeSquadAITeam ~= false and group.gid < enemy.gid) and 5 or nil
+    local ai_team = (self.cfg.NativeSquadAITeam ~= false and group.gid < enemy.gid) and (self.cfg.NativeSquadAITeamId or 0) or nil
     for _, m in ipairs(group.members) do
         if m.alive and m.runtime_id and m.materialized and not m.native_squad then
             self.bridge.set_team(m.runtime_id, team, ai_team)

@@ -155,23 +155,21 @@ end
 function Ph.armed_body(m, group, family, variant, level)
     local cls = group and GroupClasses.get(group.class)
     if not (cls and cls.firearms) or variant == "Radiation" then return family, variant, level end
-    -- The elite wear the plain level 4 Guard body. The Abandoned Bunker
-    -- Guards carry clubs, bows and crossbows (2.1.5: fifteen rolls in a row
-    -- without a gun), so that variant is never used for squads that should
-    -- be armed. An elite still without a gun after two tries comes back as
-    -- a level 5 Drifter: SCUM always gives those a firearm.
-    if family == "Guard" and variant == "AbandonedBunker" then variant = nil end
+    -- SCUM's weapon lists (NPC*CommonData, read with FModel) are the same for
+    -- Guards and Drifters: levels 1-2 improvised, 3 M1911/M1887/DT11B/
+    -- Hunter85, 4 Deagle/SDASS/M1911, 5 AS Val/MP5/UMP45/98k/Garand/Mosin/
+    -- SDASS. The Abandoned Bunker bodies carry clubs, bows and crossbows, so
+    -- squads that should be armed never wear them. The elite wear the plain
+    -- level 5 Guard body (always a good gun); the others at least level 3.
+    if variant == "AbandonedBunker" then variant = nil end
     if cls.firearms == "strict" then
         if (m.rearms or 0) >= 2 then return "Drifter", nil, 5 end
-        return "Guard", variant, 4
+        return "Guard", nil, 5
     end
     if (m.rearms or 0) >= 1 then
         return "Drifter", nil, math.max(3, level or 3)
     end
-    if family == "Guard" and (level or 1) > 4 then
-        return family, variant, 4
-    end
-    return family, variant, level
+    return family, variant, math.max(3, level or 3)
 end
 
 -- SCUM ships the Radiation bodies for levels 3-5 and the AbandonedBunker

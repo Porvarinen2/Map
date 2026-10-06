@@ -1224,6 +1224,34 @@ function B.stop(handle)
     return (pcall(function() c:StopMovement() end))
 end
 
+local PACE_SPEED = { [0] = 135, [1] = 262, [2] = 600 }
+local function PACE_OF(uu)
+    uu = uu or 0
+    if uu <= 170 then return 0 elseif uu <= 400 then return 1 end
+    return 2
+end
+B.PACE_SPEED, B.PACE_OF = PACE_SPEED, PACE_OF
+
+-- SCUM's own AI sets the pace back now and then (alerted, combat): the pace
+-- the director chose is put back, speed and all.
+function B.keep_pace(handle)
+    local rec = handles[handle]
+    local a = B.actor(handle)
+    if not (rec and a and rec.pace) or rec.native then return false end
+    local now = nil
+    pcall(function() now = a._pace end)
+    if now ~= nil and tonumber(now) ~= rec.pace then
+        pcall(function() a._pace = rec.pace end)
+        pcall(function() a.CharacterMovement.MaxWalkSpeed = PACE_SPEED[rec.pace] end)
+        B.pace_fixes = (B.pace_fixes or 0) + 1
+        if B.pace_fixes <= 3 and B.on_debug then
+            pcall(B.on_debug, string.format("npc pace: SCUM had set %s, put back %d", tostring(now), rec.pace))
+        end
+        return true
+    end
+    return false
+end
+
 function B.set_speed(handle, uu_per_sec)
     local a = B.actor(handle)
     if not a then return false end
@@ -1240,14 +1268,14 @@ function B.set_speed(handle, uu_per_sec)
             end
         end)
     end
-    -- SCUM moves its NPCs at a pace (_pace: 1 walk, 2 jog), not at a free
-    -- speed, and every player's game animates the NPC from that pace. 2.0-2.1
-    -- wrote MaxWalkSpeed alone (141, 300, 450...): the server moved the body
-    -- faster or slower than the pace the players' games were animating,
-    -- and the NPC slid. Now the pace is set and the speed is SCUM's own for
-    -- it (walk 135, jog 262 - both read from SCUM in earlier logs).
-    local pace = (uu_per_sec or 0) <= 170 and 1 or 2
-    local speed = pace == 1 and 135 or 262
+    -- SCUM moves its NPCs at a pace and every player's game picks the
+    -- walk, jog or run animation from it (EArmedNPCBaseMovementPace: 0 Slow
+    -- = walk, 1 Medium = jog, 2 Fast = run - SCUM's header dump). 2.1.3-2.1.6
+    -- set 1 for a walk: players' games played the jog at walking speed and
+    -- the feet slid (2.1.6 client probe: pace 1, wantsToJog at 135 UU/s).
+    -- The speed is SCUM's own for each pace: 135, 262, 600.
+    local pace = PACE_OF(uu_per_sec)
+    local speed = PACE_SPEED[pace]
     local rec = handles[handle]
     pcall(function() a._pace = pace end)
     local ok = pcall(function()
@@ -1552,10 +1580,38 @@ local function read_field(o, k)
     if ok then return v end
     return nil
 end
+-- SCUM's NPC AI is a state machine in the controller (idle, idle actions,
+-- return to post, investigate...), not a behaviour tree: stopping the brain
+-- left it running, and it played its crouched idle montages and walked
+-- Guards back to their posts while the director walked the body (header
+-- dump, 2.1.6). The controller's own tick is paused while the director
+-- walks an NPC; path following ticks on its own. It runs again for a fight
+-- (turning to a target needs it) and for SCUM's own fights.
+local ai_pause_logged = false
+function B.pause_ai(handle, paused)
+    local rec = handles[handle]
+    local a = B.actor(handle)
+    if not (rec and a) then return false end
+    if paused and B.cfg and B.cfg.PauseScumAIWhileDirected == false then paused = false end
+    if rec.ai_paused == paused then return true end
+    local c = B.controller(a)
+    if not c then return false end
+    local ok = pcall(function() c:SetActorTickEnabled(not paused) end)
+    rec.ai_paused = ok and paused or nil
+    if not ai_pause_logged and paused and B.on_debug then
+        ai_pause_logged = true
+        local now = nil
+        pcall(function() now = c:IsActorTickEnabled() end)
+        pcall(B.on_debug, string.format("npc AI tick paused: %s (controller ticking now %s)", tostring(ok), tostring(now)))
+    end
+    return ok
+end
+
 function B.set_pose(handle, mode)
     local rec = handles[handle]
     local a = B.actor(handle)
     if not a or (rec and rec.native) then return false end
+    pcall(B.pause_ai, handle, mode == "walk")
     if rec and rec.pose == mode then return true end
     local mc = read_field(a, "CharacterMovement")
     if not pose_logged and B.on_debug then
@@ -1754,6 +1810,7 @@ function B.set_native(handle, on)
     local c = B.controller(a)
     local ok = false
     if on then
+        pcall(B.pause_ai, handle, false)
         pcall(B.set_senses, handle, true)
         if not rec.sight_tuned then
             rec.sight_tuned = true
@@ -1911,6 +1968,7 @@ function B.keep_ownership(handle)
     if rec and rec.senses ~= false and B.cfg and B.cfg.BlindDirectedNPCs ~= false then
         pcall(B.set_senses, handle, false)
     end
+    if rec and rec.pose == "walk" and rec.ai_paused == nil then pcall(B.pause_ai, handle, true) end
     local ok, running = pcall(function()
         local bt = c.BrainComponent
         return bt and bt:IsRunning()
