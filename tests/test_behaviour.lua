@@ -533,6 +533,36 @@ do
     check(hunt == nil or hunt > 0, "hunters shoot the deer (" .. tostring(hunt) .. " hits)")
 end
 
+section("the squad stays together when SCUM ignores follow requests (2.0.7)")
+do
+    local world, d = fresh(62)
+    local g = first_group(world, function(x) return #x.members >= 3 end)
+    Bridge.follow_goes_nowhere = true
+    local sim = os.time()
+    local worst, at_end = 0, 0
+    for i = 1, 900 do
+        sim = sim + 1
+        Bridge.players = { { X = g.position.X + 50000, Y = g.position.Y, Z = 0 } }
+        Bridge.step(1); d:tick(sim)
+        if g.physical and i > 120 then
+            local lead = d:driver(g)
+            local far = 0
+            for _, m in ipairs(g.members) do
+                if m.alive and m.runtime_id and lead and lead.position and m.position then
+                    far = math.max(far, U.dist2d(m.position, lead.position))
+                end
+            end
+            worst = math.max(worst, far)
+            at_end = far
+        end
+    end
+    Bridge.follow_goes_nowhere = nil
+    Bridge.players = {}
+    check(g.physical, "the squad walked with bodies")
+    check(at_end < 6000, string.format("members stay with the leader (%.0f m apart at the end, worst %.0f m)",
+        at_end / 100, worst / 100))
+end
+
 section("a spectator is not seen by NPCs")
 do
     local world, d = fresh(59)

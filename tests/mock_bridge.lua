@@ -82,6 +82,8 @@ function B.follow(h, target, radius)
     local a, t = B.actors[h], B.actors[target]
     if not (a and t) then return false end
     if B.rng:float() < B.move_reject_rate then return false end
+    -- SCUM accepting a follow request and never walking it (2.0.7 server).
+    if B.follow_goes_nowhere then B.stats.moves = B.stats.moves + 1; return true end
     a.follow = { h = target, r = radius or 300 }
     B.stats.moves = B.stats.moves + 1
     return true

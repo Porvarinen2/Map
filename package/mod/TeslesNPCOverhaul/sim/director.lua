@@ -395,12 +395,14 @@ function D:move_physical(group, dt)
     if recheck then
         group.speed_checked_at = now
         local ws = self.bridge.walk_speed(lead.runtime_id)
-        if ws and math.abs(ws - want) > 5 then group.speed_set = nil end
+        if ws and math.abs(ws - (lead.speed_set or want)) > 5 then group.speed_set = nil end
     end
     if group.speed_set ~= want and self.bridge.set_speed then
         for _, m in ipairs(group.members) do
             if steerable(m) then
-                self.bridge.set_speed(m.runtime_id, m == lead and want or want * 1.05)
+                local v = m == lead and want or want * 1.05
+                self.bridge.set_speed(m.runtime_id, v)
+                m.speed_set = v
             end
         end
         group.speed_set = want
@@ -512,6 +514,13 @@ function D:move_physical(group, dt)
     -- continuous curve instead of stopping at footprint points and being
     -- sent on again (the stop-go of 1.4.1). Where the engine refuses to
     -- follow, the footprint hop is the fallback.
+    -- A follower that has fallen far behind (2.0.7: a follow request SCUM
+    -- accepted but never walked left three of four men 100-360 m back while
+    -- the leader went on alone) runs straight for its place in the column,
+    -- steps aside when something blocks it, and the leader slows down until
+    -- the squad has closed up.
+    local run = self.cfg.PhysicalRunSpeedUU or 450
+    local lag = 0
     local ahead = lead
     local k = 0
     for _, m in ipairs(group.members) do
@@ -519,36 +528,78 @@ function D:move_physical(group, dt)
             k = k + 1
             local f = st.follow[m.npcId]
             local gap = (ahead.position and m.position) and U.dist2d(ahead.position, m.position) or 0
-            local target_changed = not f or f.ahead ~= ahead.npcId
-            -- A follow request ends when the follower arrives. It is renewed
-            -- only once the follower has actually stopped with the one ahead
-            -- walking away - never while it is still walking. 1.4.4 renewed
-            -- every second while a follower lagged, each renewal restarted
-            -- the walk, and the body slid along in its idle animation.
+            local behind = (m.position and pos) and U.dist2d(m.position, pos) or 0
+            lag = math.max(lag, behind - k * STEER.spacing)
             local moved = (f and f.last and m.position) and U.dist2d(f.last, m.position) or 999
             if f and m.position then f.last = U.copy_vec(m.position) end
             local stopped = moved < 25
-            local renew = target_changed
-                or (gap > STEER.spacing + 180 and stopped and now - f.at >= 2)
-                or (stopped and now - f.at >= 15)
-            if renew and self.bridge.follow
-                and self.bridge.follow(m.runtime_id, ahead.runtime_id, STEER.spacing) then
-                st.follow[m.npcId] = { ahead = ahead.npcId, at = now,
-                                       last = m.position and U.copy_vec(m.position) }
-                self.counters.commands = self.counters.commands + 1
-            elseif renew and gap > STEER.follow_slack then
-                local spot = footprint_back(st.trail, pos, k * STEER.spacing)
-                if spot and m.position then
+            local far = behind > k * STEER.spacing + 1500
+            local v = far and run or want * 1.05
+            if m.speed_set ~= v and self.bridge.set_speed then
+                self.bridge.set_speed(m.runtime_id, v)
+                m.speed_set = v
+            end
+            if far and m.position then
+                if not f or f.ahead ~= "catchup" or now - f.at >= 3 then
+                    -- Its place on the leader's footprints, or the leader
+                    -- itself when the footprints do not reach that far back.
+                    local spot = footprint_back(st.trail, pos, k * STEER.spacing)
+                    if not spot or U.dist2d(m.position, spot) >= behind then spot = U.copy_vec(pos) end
+                    local stuck = (f and f.ahead == "catchup" and stopped) and ((f.stuck or 0) + 1) or 0
+                    if stuck > 0 then
+                        local dir = U.direction(m.position, spot)
+                        if dir then
+                            local side = (stuck % 2 == 1) and 1 or -1
+                            spot = { X = m.position.X - dir.Y * 700 * side + dir.X * 400,
+                                     Y = m.position.Y + dir.X * 700 * side + dir.Y * 400 }
+                        end
+                    end
                     spot.Z = m.position.Z
-                    if self.bridge.move_to(m.runtime_id, spot, { direct = true, radius = 150 }) then
-                        st.follow[m.npcId] = { ahead = "trail", at = now,
-                                               last = m.position and U.copy_vec(m.position) }
+                    if self.bridge.move_to(m.runtime_id, spot, { direct = true, radius = 200 }) then
                         self.counters.commands = self.counters.commands + 1
+                    end
+                    st.follow[m.npcId] = { ahead = "catchup", at = now, stuck = stuck,
+                                           last = U.copy_vec(m.position) }
+                end
+            else
+                local target_changed = not f or f.ahead ~= ahead.npcId
+                -- A follow request ends when the follower arrives. It is
+                -- renewed only once the follower has actually stopped with
+                -- the one ahead walking away - never while it is still
+                -- walking: 1.4.4 renewed every second, each renewal
+                -- restarted the walk and the body slid in its idle animation.
+                local renew = target_changed
+                    or (gap > STEER.spacing + 180 and stopped and now - f.at >= 2)
+                    or (stopped and now - f.at >= 15)
+                -- Two renewals without a step: SCUM took the follow request
+                -- and does not walk it; the footprints are used instead.
+                local fails = (f and renew and stopped and f.ahead == ahead.npcId) and ((f.idle or 0) + 1) or 0
+                if renew and fails < 2 and self.bridge.follow
+                    and self.bridge.follow(m.runtime_id, ahead.runtime_id, STEER.spacing) then
+                    st.follow[m.npcId] = { ahead = ahead.npcId, at = now, idle = fails,
+                                           last = m.position and U.copy_vec(m.position) }
+                    self.counters.commands = self.counters.commands + 1
+                elseif renew and gap > STEER.follow_slack then
+                    local spot = footprint_back(st.trail, pos, k * STEER.spacing)
+                    if spot and m.position then
+                        spot.Z = m.position.Z
+                        if self.bridge.move_to(m.runtime_id, spot, { direct = true, radius = 150 }) then
+                            st.follow[m.npcId] = { ahead = "trail", at = now,
+                                                   last = m.position and U.copy_vec(m.position) }
+                            self.counters.commands = self.counters.commands + 1
+                        end
                     end
                 end
             end
             ahead = m
         end
+    end
+    -- The leader waits for stragglers: half pace while someone is more than
+    -- 25 m behind their place, its own pace again once the squad has closed.
+    local lead_v = (lag > 2500) and want * 0.5 or want
+    if lead.speed_set ~= lead_v and self.bridge.set_speed then
+        self.bridge.set_speed(lead.runtime_id, lead_v)
+        lead.speed_set = lead_v
     end
 
     -- SCUM's own AI must stay stopped outside a fight, or it steers too.
