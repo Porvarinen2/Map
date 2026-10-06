@@ -1003,7 +1003,13 @@ do
     check(f == "Guard" and l == 4, "the elite spawn in the level 4 Guard body (level 5 Guards get bows)")
     m.rearms = 1
     f, v, l = Physical.armed_body(m, g, "Guard", "AbandonedBunker", 5)
-    check(f == "Drifter" and v == nil and l == 5, "and after a roll without a gun in the level 5 Drifter body")
+    check(f == "Guard" and v == "AbandonedBunker" and l == 4, "and stay level 4 Guards when spawned again for a gun")
+    local mg = Factory.new_group({ id = 991, class = "military_group", seed = 4998,
+        position = { X = 0, Y = 0, Z = 0 }, home = { X = 0, Y = 0, Z = 0 } })
+    local mm = mg.members[1]
+    mm.rearms = 1
+    f, v, l = Physical.armed_body(mm, mg, "Guard", nil, 5)
+    check(f == "Drifter" and l == 5, "soldiers without a gun come back as level 5 Drifters (always armed)")
     m.rearms = nil
     local lv = { [4] = 0, [5] = 0 }
     local other = 0

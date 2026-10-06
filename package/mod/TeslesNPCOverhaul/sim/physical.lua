@@ -155,6 +155,11 @@ end
 function Ph.armed_body(m, group, family, variant, level)
     local cls = group and GroupClasses.get(group.class)
     if not (cls and cls.firearms) or variant == "Radiation" then return family, variant, level end
+    -- The elite always wear the level 4 Guard body (the Abandoned Bunker
+    -- one for about half of them), re-rolls included.
+    if cls.firearms == "strict" then
+        return "Guard", variant, 4
+    end
     if (m.rearms or 0) >= 1 then
         return "Drifter", nil, math.max(3, level or 3)
     end
