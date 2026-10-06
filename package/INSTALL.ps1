@@ -412,6 +412,8 @@ if (Test-Path -LiteralPath $target) {
       }
       # 1.9.27 had the first sight defaults (200 m / 60 deg...); 1.9.28 brings new ones.
       if ($key -like 'NPC*' -and $mv.Success -and $mv.Groups[1].Value -eq '1.9.27') { continue }
+      # 2.0.6-2.1.0 had 0.75 near players; squad fights then hardly killed.
+      if ($key -eq 'PlayerAreaCombatLethality' -and $mg.Groups[1].Value -eq '0.75') { continue }
       $keepCfg[$key] = $mg.Groups[1].Value
     }
   }

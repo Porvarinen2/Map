@@ -1,7 +1,7 @@
 -- TESLES NPC OVERHAUL - server configuration.
 -- Distances are Unreal units unless a name says otherwise. 100 UU = 1 metre.
 return {
-    Version = "2.1.0",
+    Version = "2.1.1",
 
     -- Language of the live map and messages: "en" or "fi".
     Language = "en",
@@ -48,7 +48,7 @@ return {
     VirtualRoadSpeedMultiplier = 1.25,
     PhysicalWalkSpeedUU = 135,      -- SCUM's own NPC walk speed: faster slides
     PhysicalTravelSpeedUU = 135,
-    PhysicalRunSpeedUU = 450,       -- fleeing
+    PhysicalRunSpeedUU = 300,       -- fleeing, catching up (SCUM's own NPC jog is about 260)
 
     -- ------------------------------------------------------ render circle ---
     -- A squad within this map distance (2D, height ignored) of any player is
@@ -81,7 +81,8 @@ return {
     -- ------------------------------------------------------------- combat --
     -- How deadly fights between squads are (hit chance multiplier, 1 = the
     -- full hit chance). Near a player, where the squads have real bodies:
-    PlayerAreaCombatLethality = 0.75,
+    -- (1.25 from 2.1.1: at 0.75 squads near players rarely killed anyone.)
+    PlayerAreaCombatLethality = 1.25,
     -- Away from every player (fought on the map only):
     VirtualCombatLethality = 0.5,
     -- ------------------------------------------------------------- stress ---

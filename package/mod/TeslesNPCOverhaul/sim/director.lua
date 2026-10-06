@@ -397,7 +397,7 @@ function D:move_physical(group, dt)
         or (self.cfg.PhysicalWalkSpeedUU or 135)
     -- Running away (or back): a run, not a walk.
     if (group.flee_until and self.now < group.flee_until) or group.act.state == S.RETREAT then
-        want = self.cfg.PhysicalRunSpeedUU or 450
+        want = self.cfg.PhysicalRunSpeedUU or 300
     end
     -- SCUM puts its own speed back (262 after a fight, read in the 2.0.3
     -- log while the leader stood still), so the speed is checked every few
@@ -482,7 +482,7 @@ function D:move_physical(group, dt)
                     and now - (st.at or 0) >= STEER.retarget_sec)
                 or (now - (st.at or 0) >= STEER.stale_sec and now - (st.still and st.still.at or now) >= 2)
                 or (now - (st.still and st.still.at or now) >= 5 and now - (st.at or 0) >= 5))
-            if need and now >= (st.backoff_until or 0) then
+            if need and now >= (st.backoff_until or 0) and not st.waiting then
                 -- Straight at the carrot by default: the route is already
                 -- checked against the terrain, and a navmesh request out here
                 -- only reaches the edge of the small patch SCUM builds around
@@ -545,7 +545,7 @@ function D:move_physical(group, dt)
     -- the leader went on alone) runs straight for its place in the column,
     -- steps aside when something blocks it, and the leader slows down until
     -- the squad has closed up.
-    local run = self.cfg.PhysicalRunSpeedUU or 450
+    local run = self.cfg.PhysicalRunSpeedUU or 300
     local lag = 0
     local ahead = lead
     local k = 0
@@ -631,13 +631,11 @@ function D:move_physical(group, dt)
             end
         end
     end
-    -- The leader waits for stragglers: half pace while someone is more than
-    -- 25 m behind their place, its own pace again once the squad has closed.
-    local lead_v = (lag > 2500) and want * 0.5 or want
-    if lead.speed_set ~= lead_v and self.bridge.set_speed then
-        self.bridge.set_speed(lead.runtime_id, lead_v)
-        lead.speed_set = lead_v
-    end
+    -- The leader waits for stragglers: while someone is more than 25 m
+    -- behind their place it gets no new hop and stands at the last one.
+    -- (2.0.9-2.1.0 slowed it to half pace instead: below SCUM's walking
+    -- speed the body kept its idle pose and slid along the ground.)
+    st.waiting = lag > 2500
 
     -- SCUM's own AI must stay stopped outside a fight, or it steers too.
     if group.act.state ~= S.COMBAT and self.bridge.keep_ownership
@@ -655,6 +653,7 @@ function D:move_physical(group, dt)
     if now - st.pace.at >= 10 then
         local v = U.dist2d(st.pace.pos, pos) / (now - st.pace.at)
         st.pace = { at = now, pos = U.copy_vec(pos) }
+        if self.bridge.probe_locomotion then pcall(self.bridge.probe_locomotion, lead.runtime_id, v) end
         D.pace_logs = D.pace_logs or 0
         if D.pace_logs < 12 and self.bridge.on_debug and group.act.state == S.TRAVEL then
             D.pace_logs = D.pace_logs + 1
@@ -1092,7 +1091,7 @@ function D:run_combat(group, contact, zpressure)
     -- 2.0.4 about 140 NPCs died an hour, and the island was repopulated
     -- faster than anyone could meet the squads living on it.
     local scale = (group.physical or enemy.physical)
-        and (self.cfg.PlayerAreaCombatLethality or 0.75)
+        and (self.cfg.PlayerAreaCombatLethality or 1.25)
         or (self.cfg.VirtualCombatLethality or 0.5)
     local hits = Combat.exchange_fire(group, enemy, self.rng,
         function(m) return Behaviour.accuracy(m, fatigue) end, scale)
@@ -1543,7 +1542,7 @@ function D:tick_group(group, players, physical_groups, dt)
             if not reacting then self:move_physical(group, dt)
             elseif group.flee_until and now < group.flee_until and self.bridge.set_speed then
                 -- A squad running for it runs (the walk pace would crawl).
-                local run = self.cfg.PhysicalRunSpeedUU or 450
+                local run = self.cfg.PhysicalRunSpeedUU or 300
                 if group.speed_set ~= run then
                     for _, m in ipairs(group.members) do
                         if m.alive and m.runtime_id then self.bridge.set_speed(m.runtime_id, run) end

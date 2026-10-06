@@ -2028,6 +2028,53 @@ local function dump_class(obj, out, label)
     end
 end
 
+-- What drives the walking animation, read from a live NPC: its movement
+-- (speed, acceleration, mode) and every variable of its animation
+-- blueprint, a few times while it walks and once while it stands. Written
+-- to output/npc_locomotion.txt. NPCs slide along in their idle pose and
+-- the reason is not in anything the mod sets (2.1.0's log: SCUM's own
+-- turning and acceleration settings were already right), so this shows
+-- which animation variable says "standing" while the body moves.
+B.loco_samples = { moving = 0, still = 0 }
+local loco_out = nil
+function B.probe_locomotion(handle, walked_uu_s)
+    if not B.write_file then return end
+    local moving = (walked_uu_s or 0) > 60
+    local key = moving and "moving" or "still"
+    if B.loco_samples[key] >= (moving and 3 or 1) then return end
+    local a = B.actor(handle)
+    if not a then return end
+    B.loco_samples[key] = B.loco_samples[key] + 1
+    loco_out = loco_out or { "TESLES NPC OVERHAUL - NPC locomotion (" .. os.date("%Y-%m-%d %H:%M:%S") .. ")" }
+    local out = loco_out
+    out[#out + 1] = ""
+    out[#out + 1] = string.format("=== %s sample %d at %s, director measured %.0f UU/s: %s",
+        key, B.loco_samples[key], os.date("%H:%M:%S"), walked_uu_s or 0, full_name(a))
+    pcall(function()
+        local mc = a.CharacterMovement
+        local v = mc.Velocity
+        local acc = nil
+        pcall(function() acc = mc:GetCurrentAcceleration() end)
+        out[#out + 1] = string.format("  velocity %.0f %.0f %.0f | acceleration %s | mode %s | MaxWalkSpeed %s",
+            v.X or 0, v.Y or 0, v.Z or 0,
+            acc and string.format("%.0f %.0f %.0f", acc.X or 0, acc.Y or 0, acc.Z or 0) or "?",
+            tostring(mc.MovementMode), tostring(mc.MaxWalkSpeed))
+    end)
+    pcall(function()
+        local anim = a.Mesh:GetAnimInstance()
+        if anim and valid(anim) then
+            dump_props(anim, out, "  anim", "/Script/Engine.AnimInstance")
+        else
+            out[#out + 1] = "  (no anim instance on the server)"
+        end
+    end)
+    pcall(dump_props, a, out, "  pawn", "/Script/Engine.Character")
+    if #out > 6000 then
+        while #out > 6000 do table.remove(out, 2) end
+    end
+    pcall(B.write_file, "npc_locomotion.txt", table.concat(out, "\n") .. "\n")
+end
+
 function B.dump_api_once(handle)
     if B.api_dumped or not B.write_file then return end
     local a = B.actor(handle)

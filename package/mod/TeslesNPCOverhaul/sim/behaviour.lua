@@ -332,7 +332,7 @@ function Bh.react(director, group, now, sense, fighting)
 
     -- A flight in progress runs its course.
     if group.flee_until and now < group.flee_until then
-        group.mood = group.mood == "ROUT" and "ROUT" or "PANIC"
+        group.mood = (group.mood == "ROUT" or group.mood == "AVOID") and group.mood or "PANIC"
         return group.flee_move ~= false
     end
     group.flee_until, group.flee_move = nil, nil
@@ -417,6 +417,37 @@ function Bh.react(director, group, now, sense, fighting)
             end
             m.action = "COVER"
         end
+        return true
+    end
+
+    -- Clearly outnumbered by zombies (or beasts): the whole squad runs,
+    -- away from the middle of the crowd, at a run, and keeps away for a
+    -- while. Standing against a horde only ever ended one way.
+    local alive_n = #list
+    if group.physical and director.zombie_centroid
+        and (sense.zombies_near >= math.max(8, alive_n * 3)
+             or sense.zombies_close >= math.max(5, alive_n * 2)) then
+        local dest = away_point(group.position, director.zombie_centroid, t.flee_uu * 1.3)
+        group.flee_until = now + 35
+        group.act.state = S.RETREAT
+        group.act.goal_poi, group.act.queue = nil, {}
+        group.act.until_t = group.flee_until
+        group.mood = "AVOID"
+        director:solve_route(group, dest, { prefer_roads = false, direct_max = 400000 })
+        for _, m in ipairs(list) do
+            if m.native_fight and director.release_native then
+                director:release_native(group, m, "flees zombies")
+            end
+            if m.runtime_id and director.bridge.move_to then
+                local spread = { X = dest.X + director.rng:range(-600, 600),
+                                 Y = dest.Y + director.rng:range(-600, 600),
+                                 Z = m.position and m.position.Z or 0 }
+                director.bridge.move_to(m.runtime_id, spread, { direct = true, radius = 300 })
+            end
+            m.action = "RETREAT"
+        end
+        group.flee_move = true
+        director.log_event("FLEE_HORDE", group.gid, string.format("%d zombies", sense.zombies_near))
         return true
     end
 

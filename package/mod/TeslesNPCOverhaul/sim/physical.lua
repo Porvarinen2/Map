@@ -145,6 +145,25 @@ function Ph.body_variant(group, m)
     return nil
 end
 
+-- The body a gun-carrying squad (soldiers, police, elite) wears. SCUM arms
+-- each body from its own list, and the diagnostics of 2.0.3-2.1.0 show who
+-- gets what: level 5 Guards carry bows and melee weapons in 25 of 27 cases,
+-- level 3-4 Guards mostly guns, Drifters of level 3-5 a gun every time
+-- (22 of 22). So such a squad's Guards wear the level 4 body at most (their
+-- own skills and level stay as they are), and a member that still got no
+-- gun (check_armament) is spawned again in a level 3-5 Drifter body.
+function Ph.armed_body(m, group, family, variant, level)
+    local cls = group and GroupClasses.get(group.class)
+    if not (cls and cls.firearms) or variant == "Radiation" then return family, variant, level end
+    if (m.rearms or 0) >= 1 then
+        return "Drifter", nil, math.max(3, level or 3)
+    end
+    if family == "Guard" and (level or 1) > 4 then
+        return family, variant, 4
+    end
+    return family, variant, level
+end
+
 -- SCUM ships the Radiation bodies for levels 3-5 and the AbandonedBunker
 -- bodies for 4-5 only. Every radiation NPC must wear the hazmat body, so a
 -- lower level NPC wears the lowest body of its variant; its own level and
@@ -205,17 +224,19 @@ function Ph.materialize(group, bridge, ctx)
             else
                 local variant = Ph.body_variant(group, m)
                 local lo = ctx.loadout_for and ctx.loadout_for(m) or ctx.loadout
+                local family, level = Ph.body_family(m, group), Ph.body_level(m.level, variant)
+                family, variant, level = Ph.armed_body(m, group, family, variant, level)
                 local handle, err = bridge.spawn_npc({
                     weapons = lo and lo.Weapons or nil,
                     archetype = m.archetype,
-                    level = Ph.body_level(m.level, variant),
+                    level = level,
                     position = pos,
                     group = group.gid,
                     npcId = m.npcId,
                     -- Radiation-zone groups get SCUM's hazmat body variant
                     -- where the server exposes it; the bridge falls back to
                     -- the plain class when it does not.
-                    family = Ph.body_family(m, group),
+                    family = family,
                     variant = variant,
                     yaw = ctx.yaw,
                 })

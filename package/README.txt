@@ -1,4 +1,4 @@
-TESLES NPC OVERHAUL 2.1.0
+TESLES NPC OVERHAUL 2.1.1
 =========================
 
 Living squads for SCUM dedicated servers.
@@ -81,7 +81,7 @@ SETTINGS
                         rifles, police with pistols and SMGs...)
   TopWeaponChance       how rare the top weapons are (0.2 = one in five)
   EnableBuildingSearch  squads go through the houses at the places they visit
-  PlayerAreaCombatLethality  how deadly squad fights near players are (0.75)
+  PlayerAreaCombatLethality  how deadly squad fights near players are (1.25)
   VirtualCombatLethality     the same for fights far from every player (0.5)
   StressRecoveryPer5Min      how fast NPCs calm down (0.10)
 

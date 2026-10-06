@@ -150,8 +150,8 @@ do
     run(15)
     check(g.physical, "the squad is physical")
     local before = avg_stress(g)
-    -- Six zombies 25 m away.
-    for i = 1, 6 do
+    -- Four zombies 25 m away (six would be a horde for a small squad: it runs).
+    for i = 1, 4 do
         Bridge.zombies[#Bridge.zombies + 1] = {
             pos = { X = g.position.X + 2500 + i * 60, Y = g.position.Y + i * 40, Z = 0 },
             actor = { hp = 400 } }  -- tough enough to stay a while
@@ -167,12 +167,12 @@ do
         moods[g.mood or "?"] = true
     end
     local after = avg_stress(g)
-    check(after > before + 0.1, string.format("zombies raise stress (%.2f -> %.2f)", before, after))
+    check(after > before + 0.05, string.format("zombies raise stress (%.2f -> %.2f)", before, after))
     check(moods.ZOMBIES or moods.PANIC, "the squad fights the zombies or panics")
     check(Bridge.zombie_damage > 0, string.format("zombies get shot (%d hits)", Bridge.zombie_damage))
     local killed = 0
     for _, z in ipairs(Bridge.zombies) do if z.actor.hp <= 0 then killed = killed + 1 end end
-    check(killed >= 1, string.format("and some go down (%d of 6)", killed))
+    check(killed >= 1, string.format("and some go down (%d of 4)", killed))
     -- With the zombies gone the squad calms down again.
     Bridge.zombies = {}
     local peak = avg_stress(g)
@@ -620,6 +620,27 @@ do
     end
 end
 
+section("a squad runs from a zombie horde it cannot hold")
+do
+    local world, d = fresh(64)
+    local g = first_group(world, function(x) return #x.members >= 2 and #x.members <= 3 end)
+    for _, m in ipairs(g.members) do m.traits.courage, m.stress = 0.95, 0 end
+    local sim = os.time()
+    Bridge.players = { { X = g.position.X + 60000, Y = g.position.Y, Z = 0 } }
+    for _ = 1, 15 do sim = sim + 1; Bridge.step(1); d:tick(sim) end
+    local start = U.copy_vec(g.position)
+    Bridge.zombies = {}
+    for i = 1, 12 do
+        Bridge.zombies[#Bridge.zombies + 1] = { pos = { X = start.X + 2500 + i * 50, Y = start.Y + (i % 3) * 300, Z = 0 },
+                                                actor = { hp = 100000 } }
+    end
+    for _ = 1, 25 do sim = sim + 1; Bridge.step(1); d:tick(sim) end
+    check(count("FLEE_HORDE", g.gid) >= 1, "twelve zombies against a small squad: it runs")
+    check(U.dist2d(g.position, start) > 3000, string.format("and gets away (%.0f m)", U.dist2d(g.position, start) / 100))
+    Bridge.zombies = {}
+    Bridge.players = {}
+end
+
 section("a spectator is not seen by NPCs")
 do
     local world, d = fresh(59)
@@ -974,6 +995,16 @@ do
         end
     end
     check(all5, "every elite member is a level 5 Guard")
+    -- What they wear when spawned: a body SCUM arms with guns.
+    local g = Factory.new_group({ id = 990, class = "elite_unit", seed = 4999,
+        position = { X = 0, Y = 0, Z = 0 }, home = { X = 0, Y = 0, Z = 0 } })
+    local m = g.members[1]
+    local f, v, l = Physical.armed_body(m, g, "Guard", nil, 5)
+    check(f == "Guard" and l == 4, "the elite spawn in the level 4 Guard body (level 5 Guards get bows)")
+    m.rearms = 1
+    f, v, l = Physical.armed_body(m, g, "Guard", "AbandonedBunker", 5)
+    check(f == "Drifter" and v == nil and l == 5, "and after a roll without a gun in the level 5 Drifter body")
+    m.rearms = nil
     local lv = { [4] = 0, [5] = 0 }
     local other = 0
     for k = 1, 30 do
