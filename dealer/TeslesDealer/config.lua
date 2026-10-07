@@ -14,6 +14,14 @@ return {
     DrugPriceJoint = 50,
     DrugPriceMushroom = 80,
 
+    -- How the doctor pays: "cash" (a bundle of SCUM cash on the counter),
+    -- "bank" (to the account of the player standing at the counter, with
+    -- SCUM's own admin command) or "auto" (cash if this server lets the mod
+    -- set a bundle's amount, otherwise the bank).
+    DrugPayment = "auto",
+    -- The admin command for bank payments ({amount}, {player} = name).
+    DrugBankCommand = "#ChangeCurrencyBalance Normal {amount} {player}",
+
     -- Items in at least this condition (0.9 = 90 %) fetch the full price;
     -- below it the price is the condition share (a 50 % bud: half).
     DrugFullPriceCondition = 0.9,

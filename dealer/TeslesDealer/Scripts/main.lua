@@ -7,7 +7,7 @@ local MOD_DIR = SCRIPT_DIR .. "..\\"
 package.path = SCRIPT_DIR .. "?.lua;" .. package.path
 
 local Dealer = require("dealer")
-local VERSION = "1.0.1"
+local VERSION = "1.0.2"
 
 local CFG = {}
 do
@@ -216,17 +216,7 @@ local function get_cash_class()
     end
     return valid(cash_class) and cash_class or nil
 end
--- Where SCUM keeps the amount of a cash item is not known for certain: the
--- places below are tried in turn, and the first one that holds the amount
--- after it is set is used from then on. Everything the cash item has is
--- written to the log once, so the right place can be found if none works.
-local CASH_SLOTS = {
-    { comp = "/Script/SCUM.DiscreteAmountItemComponent", prop = "_repQuantity" },
-    { comp = "/Script/SCUM.BasicGameResourceContainerComponent", prop = "_repResourceAmount" },
-    { prop = "_cashAmount" }, { prop = "CashAmount" }, { prop = "_amount" }, { prop = "Amount" },
-    { prop = "_repCashAmount" }, { prop = "_money" }, { prop = "_value" },
-}
-local cash_slot = nil
+-- A component (or the item itself) and one of its fields.
 local function slot_targets(item, slot)
     if slot.comp then return components(item, slot.comp) end
     return { item }
@@ -245,25 +235,6 @@ local function write_slot(item, slot, amount)
     end
     return done
 end
-local function set_cash(item, amount)
-    if cash_slot then return write_slot(item, cash_slot, amount) end
-    for _, slot in ipairs(CASH_SLOTS) do
-        if read_slot(item, slot) ~= nil and write_slot(item, slot, amount) then
-            local got = read_slot(item, slot)
-            if got and math.abs(got - amount) <= 0.5 then
-                cash_slot = slot
-                log("cash amount is kept in " .. (slot.comp or "the item") .. " " .. slot.prop)
-                return true
-            end
-        end
-    end
-    return false
-end
-local function read_cash(item)
-    if cash_slot then return read_slot(item, cash_slot) end
-    return nil
-end
-
 local NUMERIC = { IntProperty = true, FloatProperty = true, DoubleProperty = true, Int64Property = true,
                   UInt32Property = true, ByteProperty = true, Int16Property = true, BoolProperty = true }
 local function plain_props(obj, stop)
@@ -304,10 +275,7 @@ local function log_cash_structure(item)
     log(table.concat(lines, "\n"))
 end
 
-local cash_logged = false
-function Bridge.spawn_cash(pos, amount)
-    local cls = get_cash_class()
-    if not cls then return false, "Cash class not found" end
+local function get_world_and_statics()
     local gs = nil
     pcall(function() gs = StaticFindObject("/Script/Engine.Default__GameplayStatics") end)
     local world = nil
@@ -318,32 +286,133 @@ function Bridge.spawn_cash(pos, amount)
         end)
         if valid(world) then break end
     end
+    return world, gs
+end
+
+local function weight(item)
+    local ok, w = pcall(function() return item:GetTotalWeight() end)
+    return (ok and type(w) == "number") and w or nil
+end
+
+-- Cash on the counter. Setting the shown amount alone is not enough: SCUM
+-- keeps the real count elsewhere, and 1.0.1's 120 became 1 when picked up.
+-- The amount is set and SCUM is told it changed (OnRep_Quantity); whether
+-- the real count followed is read from the bundle's weight (every note
+-- weighs the same). If it did not, the cash is removed and nothing is paid.
+local cash_logged = false
+local function pay_cash(pos, amount)
+    local cls = get_cash_class()
+    if not cls then return false, "Cash class not found" end
+    local world, gs = get_world_and_statics()
     if not (valid(gs) and valid(world)) then return false, "no world" end
     local xf = { Rotation = { X = 0, Y = 0, Z = 0, W = 1 },
                  Translation = { X = pos.X, Y = pos.Y, Z = pos.Z + 5 },
                  Scale3D = { X = 1, Y = 1, Z = 1 } }
     local ok, cash = pcall(function()
         local a = gs:BeginDeferredActorSpawnFromClass(world, cls, xf, 1, nil)
-        if valid(a) then
-            set_cash(a, amount)
-            gs:FinishSpawningActor(a, xf)
-        end
+        if valid(a) then gs:FinishSpawningActor(a, xf) end
         return a
     end)
     if not (ok and valid(cash)) then return false, "spawn failed" end
-    -- SCUM may give new cash an amount of its own after spawning: set again.
-    set_cash(cash, amount)
-    local got = read_cash(cash)
+    local slot = { comp = "/Script/SCUM.DiscreteAmountItemComponent", prop = "_repQuantity" }
+    local before_q = read_slot(cash, slot) or 1
+    local w1 = weight(cash)
+    write_slot(cash, slot, amount)
+    for _, c in ipairs(components(cash, slot.comp)) do
+        pcall(function() c:OnRep_Quantity(before_q) end)
+    end
+    local w2 = weight(cash)
+    local want = w1 and (w1 / math.max(1, before_q)) * amount or nil
+    local good = want and w2 and want > 0 and math.abs(w2 - want) <= want * 0.1
     if not cash_logged then
         cash_logged = true
-        log(string.format("cash paid: asked %d, the cash item holds %s", amount, tostring(got)))
+        log(string.format("cash paid %d: shown %s, weight %s -> %s (a true count weighs %s)%s", amount,
+            tostring(read_slot(cash, slot)), tostring(w1), tostring(w2), tostring(want),
+            good and "" or " - the real count did not follow"))
     end
-    if got == nil or math.abs(got - amount) > 0.5 then
+    if not good then
         pcall(log_cash_structure, cash)
         pcall(function() cash:K2_DestroyActor() end)
-        return false, "cash amount " .. tostring(got) .. " instead of " .. amount
+        return false, "the cash's real count stays 1"
     end
     return true
+end
+
+-- SCUM's admin commands as the server runs them (UMiscStatics), and what
+-- they are called on this build: written to the log once.
+local misc = nil
+local function admin(cmd)
+    if not valid(misc) then pcall(function() misc = StaticFindObject("/Script/SCUM.Default__MiscStatics") end) end
+    local world = get_world_and_statics()
+    if not (valid(misc) and valid(world)) then return false, "no MiscStatics/world" end
+    local ok, err = pcall(function() misc:Test_ProcessAdminCommand(world, cmd) end)
+    return ok, ok and nil or tostring(err)
+end
+local commands_logged = false
+local function log_admin_commands()
+    if commands_logged then return end
+    commands_logged = true
+    local lines = { "SCUM admin commands for money:" }
+    for _, n in ipairs({ "ChangeCurrencyBalance", "SetCurrencyBalance", "SpawnItem" }) do
+        local cdo = nil
+        pcall(function() cdo = StaticFindObject("/Script/SCUM.Default__AdminCommand_" .. n) end)
+        if valid(cdo) then
+            local verb, args = "?", {}
+            pcall(function() verb = cdo._verb:ToString() end)
+            pcall(function()
+                local list = cdo._argumentDescriptions
+                for i = 1, #list do
+                    local okn, an = pcall(function() return list[i].Name:ToString() end)
+                    args[#args + 1] = okn and an or "?"
+                end
+            end)
+            lines[#lines + 1] = string.format("  %s: #%s %s", n, verb, table.concat(args, " "))
+        else
+            lines[#lines + 1] = "  " .. n .. ": not found"
+        end
+    end
+    log(table.concat(lines, "\n"))
+end
+
+-- The bank: the seller is the player standing nearest the counter, and the
+-- money goes to their account with SCUM's own admin command.
+local function pay_bank(pos, amount)
+    log_admin_commands()
+    local best, bd = nil, math.huge
+    for _, pc in ipairs(find_all("PlayerController")) do
+        pcall(function()
+            local pawn = pc.Pawn
+            local p = valid(pawn) and loc(pawn) or nil
+            if p then
+                local d = (p.X - pos.X) ^ 2 + (p.Y - pos.Y) ^ 2
+                if d < bd then best, bd = pc, d end
+            end
+        end)
+    end
+    if not best or bd > 600 * 600 then return false, "no player at the counter" end
+    local name = nil
+    pcall(function() name = best.PlayerState:GetPlayerName():ToString() end)
+    if not name then pcall(function() name = best.PlayerState._platformPlayerDisplayName:ToString() end) end
+    if not name or name == "" then return false, "the seller's name could not be read" end
+    local tmpl = CFG.DrugBankCommand or "#ChangeCurrencyBalance Normal {amount} {player}"
+    local cmd = tmpl:gsub("{amount}", tostring(amount)):gsub("{player}", name)
+    local ok, err = admin(cmd)
+    log(string.format("bank payment to %s: %s -> %s", name, cmd, ok and "sent" or ("failed: " .. tostring(err))))
+    if not ok then return false, err end
+    return true
+end
+
+local cash_broken = false
+function Bridge.spawn_cash(pos, amount)
+    local mode = tostring(CFG.DrugPayment or "auto"):lower()
+    if mode ~= "bank" and not cash_broken then
+        local ok, why = pay_cash(pos, amount)
+        if ok then return true end
+        if mode == "cash" then return false, why end
+        cash_broken = true
+        log("cash cannot hold an amount (" .. tostring(why) .. "): paying to the seller's bank account from now on")
+    end
+    return pay_bank(pos, amount)
 end
 
 -- ----------------------------------------------------------------- loop ---
