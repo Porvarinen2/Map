@@ -1,7 +1,7 @@
 -- TESLES NPC OVERHAUL - server configuration.
 -- Distances are Unreal units unless a name says otherwise. 100 UU = 1 metre.
 return {
-    Version = "2.1.12",
+    Version = "2.1.13",
 
     -- Language of the live map and messages: "en" or "fi".
     Language = "en",
@@ -159,9 +159,10 @@ return {
     -- line of sight. A squad that is shot at knows where from. false: range
     -- alone, through walls and hills.
     SquadNeedsSight = true,
-    -- The furthest a member fights from (metres). Within it each fights
-    -- from most of its weapon's reach (below): riflemen from about 100 m.
-    SquadFightDistanceM = 120,
+    -- The distance squads fight from (metres), whatever their guns: a
+    -- rifle hits well from there, a pistol or shotgun badly (their reach,
+    -- below, is where their aim starts to fall off steeply).
+    SquadFightDistanceM = 100,
     -- A member closer than this share of its fighting distance backs off.
     SquadBackOffShare = 0.55,
     -- How far each kind of weapon shoots in squad fights (metres).
@@ -172,6 +173,10 @@ return {
     WeaponRangeScopedM = 200,
     WeaponRangeBowM = 50,
     WeaponRangeCrossbowM = 60,
+    -- true: an NPC that got a shotgun is spawned again (out of players'
+    -- sight) for another weapon: shotgun pellets fly where the muzzle
+    -- points, and a server never animates NPCs, so that is the ground.
+    SquadAvoidShotguns = true,
     -- Hit chance between squads with bodies (1 = normal, 2 = twice).
     SquadAccuracy = 1.0,
     -- true: a squad at least as strong keeps shooting at one that breaks

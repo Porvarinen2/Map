@@ -360,7 +360,8 @@ function C.exchange_fire(group, enemy, rng, accuracy, scale, opts)
             -- The member's own weapon sets its reach and aim: a scoped rifle
             -- 200 m and steady, a pistol 50 m, a club only at arm's length.
             local prof = m.gear and m.gear.weapon and Weapons.profile(m.gear.weapon, m.gear.scoped) or nil
-            local range = prof and prof.range or f.range_uu
+            local eff = prof and prof.range or f.range_uu
+            local range = opts.max_range and opts.max_range(m, eff) or eff
             if target and best <= range then
                 local rounds
                 if opts.bullets then rounds = opts.bullets(m, best)
@@ -368,8 +369,10 @@ function C.exchange_fire(group, enemy, rng, accuracy, scale, opts)
                 if rounds > 0 then
                     local skill = weapon_skill(m) + ((m.skills or {}).perception or 0) * 0.4
                         + (m.level or 1) * 0.06
-                    local p = f.base_hit * (0.55 + skill) * (1 - 0.6 * best / range)
-                        * (prof and prof.acc or 1)
+                    -- Within the weapon's own reach the chance falls off
+                    -- gently; beyond it (a pistol at 100 m) steeply.
+                    local fall = best <= eff and (1 - 0.6 * best / eff) or 0.4 * (eff / best) ^ 1.5
+                    local p = f.base_hit * (0.55 + skill) * fall * (prof and prof.acc or 1)
                     if target.action == "COVER" then p = p * 0.6 end
                     if accuracy then p = p * accuracy(m) end
                     if opts.acc then p = p * opts.acc(m, rounds) end

@@ -782,6 +782,21 @@ do
     Bridge.sees = orig
 end
 
+section("shotguns are swapped (their pellets go into the ground)")
+do
+    local world, d = fresh(69)
+    local g = first_group(world, function(x) return x.class == "hunters" end) or first_group(world)
+    g.physical, g.player_distance = true, 60000
+    local m = g.members[1]
+    m.alive, m.materialized, m.runtime_id, m.armed_ok = true, true, 4242, nil
+    Bridge.weapons_given = Bridge.weapons_given or {}
+    Bridge.weapons_given[4242] = "Weapon_M1887"
+    d.now = os.time()
+    d:check_armament(g)
+    check(m.runtime_id == nil and (m.rearms or 0) == 1, "an NPC with a shotgun is spawned again for another weapon")
+    Bridge.weapons_given[4242] = nil
+end
+
 section("a spectator is not seen by NPCs")
 do
     local world, d = fresh(59)

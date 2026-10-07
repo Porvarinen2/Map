@@ -1241,8 +1241,13 @@ function D:run_combat(group, contact, zpressure)
             -- most 120 m - a rifleman opens up from 100 m and more, not from
             -- ten (SCUM's own approach distance, 26-33 m, is for walking up
             -- to a player with a pistol).
-            m.approach = math.min(reach * (0.7 + 0.15 * rng:float()),
-                (tonumber(self.cfg.SquadFightDistanceM) or 120) * 100)
+            -- Every gun fights from SquadFightDistanceM (100 m): riflemen hit
+            -- well from there, a pistol or shotgun badly - but nobody walks up
+            -- to 30 m because their weapon is short (2.1.11).
+            local fight_uu = (tonumber(self.cfg.SquadFightDistanceM) or 100) * 100
+            m.approach = m.approach_set == fight_uu and m.approach or fight_uu * (0.85 + 0.15 * rng:float())
+            m.approach_set = fight_uu
+            reach = math.max(reach, fight_uu * 1.25)
             local moving = m.moving_until and now < m.moving_until
             local point, jog = nil, false
             if tpos and (m.action == "RETREAT" or m.action == "FLEE") then
@@ -1343,6 +1348,8 @@ function D:run_combat(group, contact, zpressure)
         end,
     }
     if group.physical then
+        local fight_uu = (tonumber(self.cfg.SquadFightDistanceM) or 100) * 100
+        opts.max_range = function(m, eff) return math.max(eff, fight_uu * 1.25) end
         opts.ready = function(m) return m.runtime_id == nil or ready[m] == true end
         opts.target = function(m) return aimed[m] end
         opts.acc = function(m, rounds)
@@ -1507,13 +1514,21 @@ end
 D.is_firearm = is_firearm
 function D:check_armament(group)
     local cls = GroupClasses.get(group.class)
-    if not (cls and cls.firearms) or not self.bridge.weapon_of then return end
+    local firearms = cls and cls.firearms
+    -- Shotguns: their pellets do not take the target the director gives the
+    -- weapon and fly where the (never animated) muzzle points - into the
+    -- ground. With SquadAvoidShotguns a shotgun is swapped like a club.
+    local avoid = self.cfg.SquadAvoidShotguns ~= false
+    if not ((firearms or avoid) and self.bridge.weapon_of) then return end
     if (group.player_distance or math.huge) < 30000 then return end
     for _, m in ipairs(group.members) do
         if m.alive and m.materialized and m.runtime_id and not m.armed_ok and not m.native_fight then
             local w = self.bridge.weapon_of(m.runtime_id)
             if w then
-                if is_firearm(w, cls.firearms == "strict") or (m.rearms or 0) >= 5 then
+                local good = not firearms or is_firearm(w, firearms == "strict")
+                local st = ScumData.weapon(w)
+                if avoid and st and st.cat == "shotgun" then good = false end
+                if good or (m.rearms or 0) >= 5 then
                     m.armed_ok = true
                 else
                     m.rearms = (m.rearms or 0) + 1

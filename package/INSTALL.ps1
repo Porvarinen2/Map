@@ -400,7 +400,7 @@ if (Test-Path -LiteralPath $target) {
   if (Test-Path -LiteralPath $oldCfg) {
     $oc = Get-Content -LiteralPath $oldCfg -Raw
     $mv = [regex]::Match($oc, 'Version\s*=\s*"([^"]+)"')
-    foreach ($key in @('Language', 'TargetNPCs', 'EnableReplenish', 'GhostWeaponChance', 'TopWeaponChance', 'NPCDetectRangeM', 'NPCFireRangeM', 'NPCScopedFireRangeM', 'NPCViewAngleDeg', 'NPCCloseSenseM', 'PlayerAreaCombatLethality', 'VirtualCombatLethality', 'SquadDetectRangeM', 'SquadNeedsSight', 'SquadFightDistanceM', 'SquadBackOffShare', 'WeaponRangePistolM', 'WeaponRangeSmgM', 'WeaponRangeShotgunM', 'WeaponRangeRifleM', 'WeaponRangeScopedM', 'WeaponRangeBowM', 'WeaponRangeCrossbowM', 'SquadAccuracy', 'SquadPursuit', 'SquadRetreatM', 'RealBulletsOnly', 'NativeSquadFights', 'ScumNPCDifficulty', 'CombatDamageScale', 'BlindDirectedNPCs', 'PauseScumAIWhileDirected')) {
+    foreach ($key in @('Language', 'TargetNPCs', 'EnableReplenish', 'GhostWeaponChance', 'TopWeaponChance', 'NPCDetectRangeM', 'NPCFireRangeM', 'NPCScopedFireRangeM', 'NPCViewAngleDeg', 'NPCCloseSenseM', 'PlayerAreaCombatLethality', 'VirtualCombatLethality', 'SquadDetectRangeM', 'SquadNeedsSight', 'SquadFightDistanceM', 'SquadBackOffShare', 'WeaponRangePistolM', 'WeaponRangeSmgM', 'WeaponRangeShotgunM', 'WeaponRangeRifleM', 'WeaponRangeScopedM', 'WeaponRangeBowM', 'WeaponRangeCrossbowM', 'SquadAccuracy', 'SquadPursuit', 'SquadRetreatM', 'SquadAvoidShotguns', 'RealBulletsOnly', 'NativeSquadFights', 'ScumNPCDifficulty', 'CombatDamageScale', 'BlindDirectedNPCs', 'PauseScumAIWhileDirected')) {
       $mg = [regex]::Match($oc, "$key\s*=\s*(`"[a-z]+`"|true|false|[0-9.]+)")
       if (-not $mg.Success) { continue }
       # Up to 1.9.31 GhostWeaponChance held an old default (0.5 / 1.0); from
@@ -418,6 +418,8 @@ if (Test-Path -LiteralPath $target) {
         if ($mv.Success) { try { $ov2 = [version]$mv.Groups[1].Value } catch { $ov2 = $null } }
         if (-not $ov2 -or $ov2 -lt [version]'2.1.12') { continue }
       }
+      # 2.1.12 had 120 m as the fighting distance default; 2.1.13 uses 100 m for every gun.
+      if ($key -eq 'SquadFightDistanceM' -and $mg.Groups[1].Value -eq '120') { continue }
       # Up to 2.1.7 the sight defaults were 300 m / 45 deg; 2.1.8 uses SCUM's own (70 m / 80 deg).
       if ($key -eq 'NPCDetectRangeM' -and $mg.Groups[1].Value -eq '300') { continue }
       if ($key -eq 'NPCViewAngleDeg' -and $mg.Groups[1].Value -eq '45') { continue }
