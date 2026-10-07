@@ -4,8 +4,6 @@
 -- counter. After a few seconds they disappear and SCUM cash for them
 -- appears in their place. Nothing to type.
 return {
-    Version = "1.0.0",
-
     -- false: the mod does nothing.
     DrugSales = true,
 

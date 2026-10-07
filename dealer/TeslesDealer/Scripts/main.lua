@@ -7,6 +7,7 @@ local MOD_DIR = SCRIPT_DIR .. "..\\"
 package.path = SCRIPT_DIR .. "?.lua;" .. package.path
 
 local Dealer = require("dealer")
+local VERSION = "1.0.1"
 
 local CFG = {}
 do
@@ -135,11 +136,32 @@ end
 
 -- Lying in the world, not in someone's hands, pockets or a container
 -- (those are attached to their holder, or hidden).
-local function on_ground(item)
-    local parent, hidden = nil, false
+local players_at, players = -1, {}
+local function player_spots()
+    local now = os.time()
+    if now ~= players_at then
+        players_at, players = now, {}
+        for _, pc in ipairs(find_all("PlayerController")) do
+            pcall(function()
+                local pawn = pc.Pawn
+                if valid(pawn) then players[#players + 1] = loc(pawn) end
+            end)
+        end
+    end
+    return players
+end
+local function why_not_free(item)
+    local parent, owner = nil, nil
     pcall(function() parent = item:GetAttachParentActor() end)
-    pcall(function() hidden = item.bHidden == true end)
-    return not valid(parent) and not hidden
+    if valid(parent) then return "attached to " .. full_name(parent) end
+    pcall(function() owner = item:GetOwner() end)
+    if valid(owner) then return "owned by " .. full_name(owner) end
+    -- An item in a pocket sits where its carrier is.
+    local p = loc(item)
+    for _, q in ipairs(player_spots()) do
+        if p and q and (p.X - q.X) ^ 2 + (p.Y - q.Y) ^ 2 < 40 * 40 then return "on a player" end
+    end
+    return nil
 end
 
 local item_logged, skip_logged = false, false
@@ -153,15 +175,12 @@ function Bridge.dealer_items(goods, zones, radius, height)
                     for zi, z in ipairs(zones) do
                         local dx, dy, dz = p.X - z.pos.X, p.Y - z.pos.Y, p.Z - z.pos.Z
                         if dx * dx + dy * dy <= radius * radius and math.abs(dz) <= height then
-                            local ground = on_ground(it)
-                            if not ground and not skip_logged then
+                            local why = why_not_free(it)
+                            if why and not skip_logged then
                                 skip_logged = true
-                                local par = nil
-                                pcall(function() par = it:GetAttachParentActor() end)
-                                log("goods near a doctor but not lying free (held or in a container): "
-                                    .. full_name(it) .. " attached to " .. (valid(par) and full_name(par) or "nothing"))
+                                log("goods near a doctor but not lying free: " .. full_name(it) .. " (" .. why .. ")")
                             end
-                            if ground then
+                            if not why then
                                 local q, h = quantity(it), health_share(it)
                                 if not item_logged then
                                     item_logged = true
@@ -197,19 +216,92 @@ local function get_cash_class()
     end
     return valid(cash_class) and cash_class or nil
 end
-local function set_cash(item, amount)
-    local set = false
-    for _, c in ipairs(components(item, "/Script/SCUM.BasicGameResourceContainerComponent")) do
-        if pcall(function() c._repResourceAmount = amount end) then set = true end
-    end
-    return set
+-- Where SCUM keeps the amount of a cash item is not known for certain: the
+-- places below are tried in turn, and the first one that holds the amount
+-- after it is set is used from then on. Everything the cash item has is
+-- written to the log once, so the right place can be found if none works.
+local CASH_SLOTS = {
+    { comp = "/Script/SCUM.DiscreteAmountItemComponent", prop = "_repQuantity" },
+    { comp = "/Script/SCUM.BasicGameResourceContainerComponent", prop = "_repResourceAmount" },
+    { prop = "_cashAmount" }, { prop = "CashAmount" }, { prop = "_amount" }, { prop = "Amount" },
+    { prop = "_repCashAmount" }, { prop = "_money" }, { prop = "_value" },
+}
+local cash_slot = nil
+local function slot_targets(item, slot)
+    if slot.comp then return components(item, slot.comp) end
+    return { item }
 end
-local function read_cash(item)
-    for _, c in ipairs(components(item, "/Script/SCUM.BasicGameResourceContainerComponent")) do
-        local ok, v = pcall(function() return c._repResourceAmount end)
+local function read_slot(item, slot)
+    for _, t in ipairs(slot_targets(item, slot)) do
+        local ok, v = pcall(function() return t[slot.prop] end)
         if ok and type(v) == "number" then return v end
     end
     return nil
+end
+local function write_slot(item, slot, amount)
+    local done = false
+    for _, t in ipairs(slot_targets(item, slot)) do
+        if pcall(function() t[slot.prop] = amount end) then done = true end
+    end
+    return done
+end
+local function set_cash(item, amount)
+    if cash_slot then return write_slot(item, cash_slot, amount) end
+    for _, slot in ipairs(CASH_SLOTS) do
+        if read_slot(item, slot) ~= nil and write_slot(item, slot, amount) then
+            local got = read_slot(item, slot)
+            if got and math.abs(got - amount) <= 0.5 then
+                cash_slot = slot
+                log("cash amount is kept in " .. (slot.comp or "the item") .. " " .. slot.prop)
+                return true
+            end
+        end
+    end
+    return false
+end
+local function read_cash(item)
+    if cash_slot then return read_slot(item, cash_slot) end
+    return nil
+end
+
+local NUMERIC = { IntProperty = true, FloatProperty = true, DoubleProperty = true, Int64Property = true,
+                  UInt32Property = true, ByteProperty = true, Int16Property = true, BoolProperty = true }
+local function plain_props(obj, stop)
+    local out = {}
+    local ok_c, cls = pcall(function() return obj:GetClass() end)
+    local depth = 0
+    while ok_c and valid(cls) and depth < 8 do
+        depth = depth + 1
+        local cn = full_name(cls)
+        if stop and cn:find(stop, 1, true) then break end
+        pcall(function()
+            cls:ForEachProperty(function(p)
+                local n, t = "?", ""
+                pcall(function() n = p:GetFName():ToString() end)
+                pcall(function() t = p:GetClass():GetFName():ToString() end)
+                if NUMERIC[t] then
+                    local okv, v = pcall(function() return obj[n] end)
+                    out[#out + 1] = n .. "=" .. (okv and tostring(v) or "?")
+                end
+            end)
+        end)
+        local oks, sup = pcall(function() return cls:GetSuperStruct() end)
+        if not (oks and valid(sup)) then break end
+        cls = sup
+    end
+    return out
+end
+local structure_logged = false
+local function log_cash_structure(item)
+    if structure_logged then return end
+    structure_logged = true
+    local lines = { "cash item structure (" .. full_name(item) .. "):" }
+    lines[#lines + 1] = "  item: " .. table.concat(plain_props(item, "/Script/Engine.Actor"), ", ")
+    for _, c in ipairs(components(item, "/Script/Engine.ActorComponent")) do
+        lines[#lines + 1] = "  " .. full_name(c):match("^(%S+)") .. " " .. (full_name(c):match("([^%.:]+)$") or "")
+            .. ": " .. table.concat(plain_props(c, "/Script/Engine.ActorComponent"), ", ")
+    end
+    log(table.concat(lines, "\n"))
 end
 
 local cash_logged = false
@@ -247,6 +339,7 @@ function Bridge.spawn_cash(pos, amount)
         log(string.format("cash paid: asked %d, the cash item holds %s", amount, tostring(got)))
     end
     if got == nil or math.abs(got - amount) > 0.5 then
+        pcall(log_cash_structure, cash)
         pcall(function() cash:K2_DestroyActor() end)
         return false, "cash amount " .. tostring(got) .. " instead of " .. amount
     end
@@ -261,7 +354,7 @@ local function tick()
     if not ok then log("error: " .. tostring(err)) end
 end
 
-log("TESLES DEALER " .. tostring(CFG.Version) .. " loaded (sales " .. tostring(CFG.DrugSales ~= false) .. ")")
+log("TESLES DEALER " .. VERSION .. " loaded (sales " .. tostring(CFG.DrugSales ~= false) .. ")")
 -- The world and the traders are there some time after the server starts.
 local function start()
     if LoopInGameThreadWithDelay then
