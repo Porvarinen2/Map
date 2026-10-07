@@ -3,7 +3,7 @@
 set -e
 cd "$(dirname "$0")"
 fail=0
-for t in test_guide.lua test_engine.lua test_movement.lua test_world.lua test_physical.lua test_behaviour.lua test_lifecycle.lua test_bootstrap.lua test_spawnfallback.lua; do
+for t in test_guide.lua test_engine.lua test_movement.lua test_world.lua test_physical.lua test_behaviour.lua test_lifecycle.lua test_bootstrap.lua test_spawnfallback.lua test_dealer.lua; do
   echo ""
   echo "=================== $t ==================="
   if lua5.4 "$t"; then :; else echo "*** $t FAILED"; fail=1; fi
@@ -21,7 +21,7 @@ fi
 
 echo ""
 echo "=================== syntax ==================="
-find ../package/mod/TeslesNPCOverhaul -name '*.lua' -exec luac5.4 -p {} + && echo "all lua files compile"
+find ../package/mod/TeslesNPCOverhaul ../dealer -name "*.lua" -exec luac5.4 -p {} + && echo "all lua files compile"
 node --check ../package/livemap/app.js && echo "app.js parses"
 echo ""
 if [ "$fail" = "0" ]; then echo "ALL TESTS PASSED"; else echo "SOME TESTS FAILED"; exit 1; fi
