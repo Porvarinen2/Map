@@ -1249,6 +1249,21 @@ function D:run_combat(group, contact, zpressure)
             m.approach_set = fight_uu
             reach = math.max(reach, fight_uu * 1.25)
             local moving = m.moving_until and now < m.moving_until
+            -- Walking into a wall or a corner: no ground made for 3 s, so the
+            -- move is over and a new spot is picked at once.
+            if moving and m.position then
+                local mc = m.move_check
+                if not mc then
+                    m.move_check = { at = now, pos = U.copy_vec(m.position) }
+                elseif now - mc.at >= 3 then
+                    if U.dist2d(mc.pos, m.position) < 60 then
+                        moving, m.moving_until, m.cnext = false, now, now
+                    end
+                    m.move_check = { at = now, pos = U.copy_vec(m.position) }
+                end
+            else
+                m.move_check = nil
+            end
             local point, jog = nil, false
             if tpos and (m.action == "RETREAT" or m.action == "FLEE") then
                 if not moving then

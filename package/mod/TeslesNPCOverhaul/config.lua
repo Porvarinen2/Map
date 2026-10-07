@@ -1,7 +1,7 @@
 -- TESLES NPC OVERHAUL - server configuration.
 -- Distances are Unreal units unless a name says otherwise. 100 UU = 1 metre.
 return {
-    Version = "2.1.13",
+    Version = "2.1.14",
 
     -- Language of the live map and messages: "en" or "fi".
     Language = "en",
@@ -49,6 +49,11 @@ return {
     PhysicalWalkSpeedUU = 135,      -- SCUM's own NPC walk speed: faster slides
     PhysicalTravelSpeedUU = 135,
     PhysicalRunSpeedUU = 262,       -- fleeing, catching up: SCUM's own jog pace
+    -- true: moves within PathfindMaxM metres go round walls, corners and
+    -- rocks on SCUM's navigation mesh (built 100 m round every NPC); longer
+    -- ones, and any the mesh refuses, are walked straight.
+    UseNavmeshPaths = true,
+    PathfindMaxM = 90,
 
     -- ------------------------------------------------------ render circle ---
     -- A squad within this map distance (2D, height ignored) of any player is

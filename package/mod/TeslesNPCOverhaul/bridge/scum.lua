@@ -1169,6 +1169,28 @@ local function in_native(handle)
 end
 B.in_native = in_native
 
+-- Short moves go round walls, corners and rocks on SCUM's navigation mesh:
+-- every NPC carries a NavigationInvokerComponent that builds the mesh 100 m
+-- round it, so a goal within PathfindMaxM is on it. Up to 2.1.13 nearly every
+-- order was a straight walk, and NPCs stood with their faces to a wall
+-- (2.1.13 screenshot). A path request that is refused falls back to the
+-- straight walk; far goals (the leader's catch-up spots) stay straight.
+local path_stats = { tried = 0, ok = 0, logged = false }
+local function issue_move(c, dest, radius, path)
+    local ok, res = pcall(function()
+        return c:MoveToLocation(
+            { X = dest.X, Y = dest.Y, Z = dest.Z },
+            radius,
+            false,          -- stop on overlap: no, followers brush each other
+            path,           -- use pathfinding
+            path,           -- project destination to navigation
+            false,          -- can strafe: no, walk facing the way they go
+            nil,            -- filter class
+            true)           -- allow partial path
+    end)
+    return ok and accepted_result(res)
+end
+
 function B.move_to(handle, dest, opts)
     if in_native(handle) then return true end
     opts = opts or {}
@@ -1177,25 +1199,27 @@ function B.move_to(handle, dest, opts)
     local c = B.controller(a)
     if not c then return false end
     if not sane(dest) then return false end
-    local direct = opts.direct == true
-    crumb(string.format("MoveToLocation h%s %.0f %.0f %.0f%s", tostring(handle),
-        dest.X, dest.Y, dest.Z, direct and " direct" or ""))
-    local ok, res = pcall(function()
-        return c:MoveToLocation(
-            { X = dest.X, Y = dest.Y, Z = dest.Z },
-            opts.radius or B.cfg.MoveAcceptanceRadiusUU or 150.0,
-            false,          -- stop on overlap: no, followers brush each other
-            not direct,     -- use pathfinding
-            not direct,     -- project destination to navigation
-            false,          -- can strafe: no, walk facing the way they go
-            nil,            -- filter class
-            true)           -- allow partial path
-    end)
-    if not ok then
-        B.stats.move_reject = B.stats.move_reject + 1
-        return false
+    local radius = opts.radius or B.cfg.MoveAcceptanceRadiusUU or 150.0
+    local near = false
+    if B.cfg.UseNavmeshPaths ~= false and opts.straight ~= true then
+        local p = nil
+        pcall(function() p = vec(a:K2_GetActorLocation()) end)
+        local max = (tonumber(B.cfg.PathfindMaxM) or 90) * 100
+        near = p ~= nil and math.sqrt((dest.X - p.X) ^ 2 + (dest.Y - p.Y) ^ 2) <= max
     end
-    local good = accepted_result(res)
+    crumb(string.format("MoveToLocation h%s %.0f %.0f %.0f%s", tostring(handle),
+        dest.X, dest.Y, dest.Z, near and " path" or " direct"))
+    local good = false
+    if near then
+        path_stats.tried = path_stats.tried + 1
+        good = issue_move(c, dest, radius, true)
+        if good then path_stats.ok = path_stats.ok + 1 end
+        if path_stats.tried == 50 and not path_stats.logged and B.on_debug then
+            path_stats.logged = true
+            pcall(B.on_debug, string.format("npc paths: %d of %d navmesh requests accepted", path_stats.ok, path_stats.tried))
+        end
+    end
+    if not good then good = issue_move(c, dest, radius, false) end
     if good then B.stats.moves = B.stats.moves + 1
     else B.stats.move_reject = B.stats.move_reject + 1 end
     return good
