@@ -1,0 +1,321 @@
+<title>Elara Nova Profile</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: top bar + left nav + main feed + right info column */
+:root{
+  --bg:#0c0e1a; --panel:#121527; --panel2:#171a2f; --line:#232741;
+  --fg:#e9eaf3; --muted:#9a9db5; --accent:#7b7cff; --accent2:#6567f0; --link:#8f91ff;
+  --heart:#ff4d6d; --online:#2fd07a;
+  --font:"Inter","Segoe UI",system-ui,-apple-system,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:14px/1.45 var(--font);margin:0}
+a{color:inherit;text-decoration:none}
+svg.i{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* top bar */
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;height:52px;display:flex;align-items:center;gap:24px;background:var(--bg);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:30;background:var(--bg)}
+.logo{width:32px;height:32px;margin-left:8px;margin-right:72px}
+.topnav{display:flex;gap:6px}
+.topnav a{display:flex;align-items:center;gap:9px;padding:8px 14px;font-size:13px;color:#d5d7e6}
+.topnav .dot{position:relative}.topnav .dot::after{content:"";position:absolute;top:0;right:0;width:6px;height:6px;border-radius:50%;background:var(--heart)}
+.search{flex:1;max-width:412px;margin-left:36px;display:flex;align-items:center;gap:10px;height:36px;padding:0 10px 0 14px;background:var(--panel);border:1px solid var(--line);border-radius:8px;color:var(--muted)}
+.search input{flex:1;min-width:0;background:none;border:0;outline:0;color:var(--fg);font:13px var(--font)}
+.search input::placeholder{color:var(--muted)}
+.search kbd{font:11px var(--font);padding:2px 7px;border:1px solid var(--line);border-radius:4px;background:var(--panel2)}
+.top-r{margin-left:auto;display:flex;align-items:center;gap:22px;color:#cfd1e3}
+.me{position:relative;width:32px;height:32px}.me img{width:32px;height:32px;border-radius:50%}
+.me::after{content:"";position:absolute;right:-1px;bottom:-1px;width:9px;height:9px;border-radius:50%;background:var(--online);border:2px solid var(--bg)}
+
+.app{display:grid;grid-template-columns:162px minmax(0,1fr);gap:0}
+/* sidebar */
+.side{position:sticky;top:52px;align-self:start;padding:16px 16px 0 16px;display:flex;flex-direction:column;gap:4px}
+.side a{display:flex;align-items:center;gap:18px;padding:12px 10px;border-radius:8px;font-size:13px;color:#d5d7e6}
+.side a.on{background:#1d2142;color:var(--link)}
+.side hr{border:0;border-top:1px solid var(--line);margin:10px 0}
+.fab{margin:22px 0 0 6px;width:62px;height:42px;border-radius:12px;background:var(--accent);color:#fff;display:grid;place-items:center;box-shadow:0 8px 24px #6b6cff55}
+.fab svg{width:22px;height:22px;stroke-width:2}
+
+/* content */
+.wrap{padding-right:max(20px,env(safe-area-inset-right,0px));padding-bottom:16px}
+.banner{width:100%;aspect-ratio:1266/188;max-width:100%;object-fit:cover;border-radius:4px 4px 0 0;display:block}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 326px;gap:16px}
+.main{display:flex;flex-direction:column;gap:12px;min-width:0}
+.right{display:flex;flex-direction:column;gap:12px;margin-top:-10px;padding-top:0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px}
+
+/* profile header */
+.head{position:relative;margin-top:-1px;padding:20px 16px 12px 190px;border-top:0;border-radius:0 0 10px 10px;min-height:210px}
+.av{position:absolute;left:22px;top:-34px;width:150px;height:150px}
+.av img{width:150px;height:150px;border-radius:50%;border:3px solid var(--bg);background:var(--bg)}
+.av::after{content:"";position:absolute;right:10px;bottom:10px;width:18px;height:18px;border-radius:50%;background:var(--online);border:3px solid var(--panel)}
+.hrow{display:flex;gap:16px;justify-content:space-between;flex-wrap:wrap}
+.who{min-width:0;flex:1 1 320px}
+h1{margin:0;font-size:28px;font-weight:600;display:flex;align-items:center;gap:10px;letter-spacing:-.2px}
+.verified{width:22px;height:22px}
+.handle{display:flex;align-items:center;gap:22px;margin-top:4px;color:var(--muted);font-size:16px}
+.chip{display:inline-flex;align-items:center;gap:7px;padding:4px 12px;border-radius:7px;background:var(--panel2);border:1px solid var(--line);font-size:12px;color:#d5d7e6}
+.chip svg{width:14px;height:14px}
+.bio{margin-top:18px;font-size:13px;color:#d5d7e6;line-height:1.5}
+.meta{display:flex;flex-wrap:wrap;gap:22px;margin-top:18px;font-size:12px;color:#c7c9da}
+.meta span{display:flex;align-items:center;gap:8px}.meta svg{width:16px;height:16px}
+.meta a{color:var(--link)}
+.acts{display:flex;flex-direction:column;align-items:flex-end;gap:16px}
+.btns{display:flex;gap:10px}
+.btn{height:38px;padding:0 20px;border-radius:20px;border:1px solid #3a3e5c;display:flex;align-items:center;gap:10px;font-size:13px}
+.btn.round{width:38px;padding:0;justify-content:center}
+.btn.follow{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600;padding:0 30px;font-size:14px;box-shadow:0 6px 18px #6b6cff40}
+.btn svg{width:17px;height:17px}
+.stats{display:flex}
+.stats div{padding:0 26px;text-align:center;border-left:1px solid var(--line)}.stats div:first-child{border:0}
+.stats b{display:block;font-size:17px;font-weight:600;font-variant-numeric:tabular-nums}.stats small{color:var(--muted);font-size:12px}
+.badges{display:flex;gap:4px;margin-top:6px}
+.badges figure{margin:0;width:54px;text-align:center;font-size:9px;color:#c7c9da}
+.badges img{width:39px;height:41px;display:block;margin:0 auto 3px}
+
+/* tabs */
+.tabs{display:flex;gap:4px;padding:0 24px;overflow-x:auto}
+.tabs a{display:flex;align-items:center;gap:10px;padding:14px 24px;font-size:13px;color:#d5d7e6;border-bottom:2px solid transparent;white-space:nowrap}
+.tabs a.on{color:var(--link);border-color:var(--accent)}
+.tabs svg{width:18px;height:18px}
+
+/* posts */
+.post{padding:14px 22px 14px 16px;display:grid;grid-template-columns:60px minmax(0,1fr);gap:14px}
+.post>img{width:60px;height:60px;border-radius:50%}
+.ph{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.ph b{color:var(--fg);font-size:14px;font-weight:600;margin-right:4px}
+.ph .more{margin-left:auto;color:#d5d7e6}
+.txt{margin:4px 0 10px;font-size:14px;line-height:1.5}
+.grid3{display:grid;grid-template-columns:376fr 161fr 255fr;gap:7px}
+.grid3 img,.wide{width:100%;height:174px;object-fit:cover;border-radius:6px;display:block}
+.wide{height:132px}
+.react{display:flex;gap:56px;margin-top:14px;font-size:13px;color:#c7c9da}
+.react span{display:flex;align-items:center;gap:10px}.react svg{width:19px;height:19px}
+.react .h svg{fill:var(--heart);stroke:var(--heart)}
+
+/* right column */
+.box{padding:14px 14px 14px 14px}
+.box h3{margin:0 0 10px;font-size:15px;font-weight:600;display:flex;justify-content:space-between;align-items:center}
+.box h3 a{font-size:12px;font-weight:400;color:var(--link)}
+.about{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:11px;font-size:12px;color:#d5d7e6}
+.about li{display:flex;gap:18px;align-items:center}.about svg{width:17px;height:17px;color:#c7c9da}
+.about a{color:var(--link)}
+.quote{margin:16px 0 0;padding:12px 14px;border:1px solid var(--line);border-radius:8px;font:italic 14px/1.45 Georgia,"Times New Roman",serif;color:#d5d7e6}
+.tags{display:flex;flex-wrap:wrap;gap:8px 8px}
+.tags span{display:flex;align-items:center;gap:8px;padding:7px 14px;border-radius:18px;background:var(--panel2);border:1px solid var(--line);font-size:11px;color:#d5d7e6}
+.tags em{font-style:normal;font-size:13px}
+.pin{display:grid;grid-template-columns:101px minmax(0,1fr) 24px;gap:14px;align-items:start}
+.pin img{width:101px;height:77px;object-fit:cover;border-radius:4px}
+.pin b{font-size:12px;font-weight:600;display:block;margin-top:4px;line-height:1.4}.pin p{margin:4px 0 0;font-size:12px;color:var(--muted)}
+.gal{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.gal img{width:100%;aspect-ratio:93/81;object-fit:cover;border-radius:4px;display:block}
+
+@media (max-width:1180px){.cols{grid-template-columns:minmax(0,1fr)}.right{margin-top:0}.topnav a span{display:none}}
+@media (max-width:820px){
+  .app{grid-template-columns:minmax(0,1fr)}.side,.topnav,.logo{display:none}
+  .search{margin-left:0}
+  .wrap{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+  .head{padding:96px 16px 16px}.av{left:16px;top:-60px;width:120px;height:120px}.av img{width:120px;height:120px}
+  .acts{align-items:flex-start}.stats div{padding:0 16px}.stats div:first-child{padding-left:0}
+  .post{grid-template-columns:44px minmax(0,1fr);padding:14px}.post>img{width:44px;height:44px}
+  .grid3 img{height:110px}.react{gap:28px}.tabs{padding:0 8px}.tabs a{padding:14px 12px}
+  .top-r{gap:14px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></symbol>
+  <symbol id="search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+  <symbol id="bell" viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/></symbol>
+  <symbol id="mail" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></symbol>
+  <symbol id="user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+  <symbol id="users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6 6 0 0 1 3.5 6"/></symbol>
+  <symbol id="bookmark" viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z"/></symbol>
+  <symbol id="plusbox" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="5"/><path d="M12 8v8M8 12h8"/></symbol>
+  <symbol id="plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+  <symbol id="chat" viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 21l1.9-5.4A8 8 0 1 1 21 12z"/></symbol>
+  <symbol id="dots" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.3" fill="currentColor"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/><circle cx="19" cy="12" r="1.3" fill="currentColor"/></symbol>
+  <symbol id="pin" viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></symbol>
+  <symbol id="link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
+  <symbol id="cal" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></symbol>
+  <symbol id="image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/></symbol>
+  <symbol id="badge" viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="14" rx="2"/><path d="M9 6V4h6v2"/><circle cx="12" cy="12" r="2"/><path d="M8.5 17a3.5 3.5 0 0 1 7 0"/></symbol>
+  <symbol id="activity" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/><path d="M3 12h6M15 12h6"/></symbol>
+  <symbol id="heart" viewBox="0 0 24 24"><path d="M12 20s-7.5-4.6-9-9.4C2 7 4.6 4 7.7 4c2 0 3.4 1.1 4.3 2.5C12.9 5.1 14.3 4 16.3 4 19.4 4 22 7 21 10.6 19.5 15.4 12 20 12 20z"/></symbol>
+  <symbol id="comment" viewBox="0 0 24 24"><path d="M20 12a8 8 0 0 1-11.5 7.2L4 20l1.1-4A8 8 0 1 1 20 12z"/></symbol>
+  <symbol id="repost" viewBox="0 0 24 24"><path d="M17 2l3 3-3 3"/><path d="M4 11V9a4 4 0 0 1 4-4h12M7 22l-3-3 3-3"/><path d="M20 13v2a4 4 0 0 1-4 4H4"/></symbol>
+  <symbol id="share" viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></symbol>
+  <symbol id="globe" viewBox="0 0 24 24"><circle cx="9" cy="10" r="6"/><circle cx="16" cy="14" r="6"/></symbol>
+  <symbol id="ext" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
+</svg>
+
+<header class="top">
+  <img class="logo" src="assets/logo.png" alt="Logo">
+  <nav class="topnav">
+    <a href="#"><svg class="i"><use href="#home"/></svg><span>Home</span></a>
+    <a href="#"><svg class="i"><use href="#search"/></svg><span>Explore</span></a>
+    <a href="#" class="dot"><svg class="i"><use href="#bell"/></svg><span>Notifications</span></a>
+    <a href="#"><svg class="i"><use href="#mail"/></svg><span>Messages</span></a>
+  </nav>
+  <label class="search"><svg class="i"><use href="#search"/></svg><input id="q" type="search" placeholder="Search people, posts, or topics..."><kbd>/</kbd></label>
+  <div class="top-r">
+    <button aria-label="Theme"><svg class="i"><use href="#sun"/></svg></button>
+    <button aria-label="Chat"><svg class="i"><use href="#chat"/></svg></button>
+    <span class="me"><img src="assets/avatar-top.png" alt="You"></span>
+  </div>
+</header>
+
+<div class="app">
+  <aside class="side">
+    <a href="#"><svg class="i"><use href="#home"/></svg>Home</a>
+    <a href="#"><svg class="i"><use href="#search"/></svg>Explore</a>
+    <a href="#"><svg class="i"><use href="#bell"/></svg>Notifications</a>
+    <a href="#"><svg class="i"><use href="#mail"/></svg>Messages</a>
+    <a href="#" class="on"><svg class="i"><use href="#user"/></svg>Profile</a>
+    <a href="#"><svg class="i"><use href="#users"/></svg>Communities</a>
+    <a href="#"><svg class="i"><use href="#bookmark"/></svg>Bookmarks</a>
+    <hr>
+    <a href="#"><svg class="i"><use href="#plusbox"/></svg>Create</a>
+    <button class="fab" aria-label="New post"><svg class="i"><use href="#plus"/></svg></button>
+  </aside>
+
+  <main class="wrap">
+    <img class="banner" src="assets/banner.jpg" alt="Good people, brighter places. A kinder internet for curious minds.">
+    <div class="cols">
+      <div class="main">
+        <section class="card head">
+          <div class="av"><img src="assets/avatar.png" alt="Elara Nova"></div>
+          <div class="hrow">
+            <div class="who">
+              <h1>Elara Nova <svg class="verified" viewBox="0 0 24 24"><path fill="#7b7cff" d="M12 1.5l2.6 1.9 3.2-.2 1 3 2.7 1.8-1 3 1 3-2.7 1.8-1 3-3.2-.2L12 22.5l-2.6-1.9-3.2.2-1-3-2.7-1.8 1-3-1-3 2.7-1.8 1-3 3.2.2z"/><path d="m8 12 2.8 2.8L16.5 9" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></h1>
+              <div class="handle">@elaranova <span class="chip"><svg class="i"><use href="#chat"/></svg>Creator</span></div>
+              <div class="bio">Photographer &nbsp;•&nbsp; Traveler &nbsp;•&nbsp; Storyteller<br>Capturing quiet moments and the beautiful details around us.<br>Nature, coffee and a more curious, kind world.</div>
+              <div class="meta">
+                <span><svg class="i"><use href="#pin"/></svg>Helsinki, Finland</span>
+                <span><svg class="i"><use href="#link"/></svg><a href="#">elaranova.co</a></span>
+                <span><svg class="i"><use href="#cal"/></svg>Joined Mar 2022</span>
+              </div>
+            </div>
+            <div class="acts">
+              <div class="btns">
+                <button class="btn round" aria-label="More"><svg class="i"><use href="#dots"/></svg></button>
+                <button class="btn"><svg class="i"><use href="#mail"/></svg>Message</button>
+                <button class="btn follow" id="follow">Follow</button>
+              </div>
+              <div class="stats">
+                <div><b>328</b><small>Posts</small></div>
+                <div><b>12.4K</b><small>Followers</small></div>
+                <div><b>1.1K</b><small>Following</small></div>
+              </div>
+              <div class="badges">
+                <figure><img src="assets/badge-explorer.jpg" alt="">Explorer</figure>
+                <figure><img src="assets/badge-creator.jpg" alt="">Creator</figure>
+                <figure><img src="assets/badge-top5.jpg" alt="">Top 5%</figure>
+                <figure><img src="assets/badge-kind.jpg" alt="">Kind Human</figure>
+                <figure><img src="assets/badge-photo.jpg" alt="">Photo Lover</figure>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <nav class="card tabs">
+          <a href="#" class="on"><svg class="i"><use href="#mail"/></svg>Posts</a>
+          <a href="#"><svg class="i"><use href="#image"/></svg>Media</a>
+          <a href="#"><svg class="i"><use href="#badge"/></svg>About</a>
+          <a href="#"><svg class="i"><use href="#activity"/></svg>Activity</a>
+          <a href="#"><svg class="i"><use href="#users"/></svg>Friends</a>
+        </nav>
+
+        <article class="card post">
+          <img src="assets/avatar-sm.png" alt="">
+          <div>
+            <div class="ph"><b>Elara Nova</b>@elaranova · 2h ago<button class="more" aria-label="More"><svg class="i"><use href="#dots"/></svg></button></div>
+            <p class="txt">Some places just instantly feel like home.<br>The mountains have a way of putting things into perspective. 🏔️</p>
+            <div class="grid3">
+              <img src="assets/post1-a.jpg" alt="Hiker overlooking a mountain lake at sunset">
+              <img src="assets/post1-b.jpg" alt="White alpine flowers">
+              <img src="assets/post1-c.jpg" alt="Mountain peak at dusk">
+            </div>
+            <div class="react">
+              <button class="like h"><svg class="i"><use href="#heart"/></svg><span>1.2K</span></button>
+              <span><svg class="i"><use href="#comment"/></svg>86</span>
+              <span><svg class="i"><use href="#repost"/></svg>42</span>
+              <span><svg class="i"><use href="#share"/></svg></span>
+            </div>
+          </div>
+        </article>
+
+        <article class="card post">
+          <img src="assets/avatar-sm.png" alt="">
+          <div>
+            <div class="ph"><b>Elara Nova</b>@elaranova · 3d ago<button class="more" aria-label="More"><svg class="i"><use href="#dots"/></svg></button></div>
+            <p class="txt">Coffee, a good book and a rainy afternoon. Small moments, big energy. ☕ ✨</p>
+            <img class="wide" src="assets/post2.jpg" alt="Coffee cup and book by a rainy window">
+            <div class="react">
+              <button class="like h"><svg class="i"><use href="#heart"/></svg><span>842</span></button>
+              <span><svg class="i"><use href="#comment"/></svg>64</span>
+              <span><svg class="i"><use href="#repost"/></svg>28</span>
+              <span><svg class="i"><use href="#share"/></svg></span>
+            </div>
+          </div>
+        </article>
+      </div>
+
+      <aside class="right">
+        <section class="card box">
+          <h3>About <button aria-label="More"><svg class="i"><use href="#dots"/></svg></button></h3>
+          <ul class="about">
+            <li><svg class="i"><use href="#mail"/></svg>Photographer &amp; Content Creator</li>
+            <li><svg class="i"><use href="#user"/></svg>Based in Helsinki, Finland</li>
+            <li><svg class="i"><use href="#link"/></svg><a href="#">elaranova.co</a></li>
+            <li><svg class="i"><use href="#cal"/></svg>Born Apr 14, 1996</li>
+            <li><svg class="i"><use href="#globe"/></svg>Speaking English, Finnish</li>
+          </ul>
+          <p class="quote">“A more curious, kinder and brighter world. That’s the goal.”</p>
+        </section>
+
+        <section class="card box">
+          <h3>Interests <a href="#">See all</a></h3>
+          <div class="tags">
+            <span><em>📷</em>Photography</span><span><em>✈️</em>Travel</span><span><em>🍃</em>Nature</span>
+            <span><em>⛰️</em>Hiking</span><span><em>☕</em>Good Coffee</span><span><em>📖</em>Books</span>
+            <span><em>🌿</em>Minimalism</span><span><em>🌱</em>Sustainability</span>
+          </div>
+        </section>
+
+        <section class="card box">
+          <h3>Pinned</h3>
+          <div class="pin">
+            <img src="assets/pinned.jpg" alt="">
+            <div><b>My Ultimate Guide to Hiking in the Nordics</b><p>Routes, tips and everything you need to know.</p></div>
+            <svg class="i"><use href="#ext"/></svg>
+          </div>
+        </section>
+
+        <section class="card box">
+          <h3>Gallery <a href="#">See all</a></h3>
+          <div class="gal">
+            <img src="assets/g1.jpg" alt=""><img src="assets/g2.jpg" alt=""><img src="assets/g3.jpg" alt="">
+            <img src="assets/g4.jpg" alt=""><img src="assets/g5.jpg" alt=""><img src="assets/g6.jpg" alt="">
+          </div>
+        </section>
+      </aside>
+    </div>
+  </main>
+</div>
+
+<script>
+const f=document.getElementById('follow');
+f.addEventListener('click',()=>{const on=f.textContent==='Follow';f.textContent=on?'Following':'Follow';f.style.background=on?'transparent':'';});
+document.querySelectorAll('.like').forEach(b=>b.addEventListener('click',()=>{const s=b.querySelector('span'),n=s.textContent;b.classList.toggle('h');}));
+document.addEventListener('keydown',e=>{if(e.key==='/'&&document.activeElement.tagName!=='INPUT'){e.preventDefault();document.getElementById('q').focus();}});
+</script>
