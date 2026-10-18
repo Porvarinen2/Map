@@ -48,7 +48,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 
 /* hero: kuva oikealla, liukuväri vasemmalle, teksti HTML:nä */
 .hero{position:relative;overflow:hidden;min-height:238px;border-radius:12px;border:1px solid var(--line);
-  background:linear-gradient(90deg,#0c1030 0%,#121842 40%,transparent 62%),url(assets/hero.jpg) right/auto 100% no-repeat,#101536;
+  background:linear-gradient(90deg,#0c1030 0%,#121842 40%,transparent 62%),radial-gradient(ellipse at 80% 20%,#2fd0a855,transparent 45%),linear-gradient(160deg,#1a2160,#3a2a7a 55%,#0d1a3a);
   padding:24px 24px 24px 60px;display:flex;flex-direction:column;justify-content:center;gap:10px}
 .hero h1{margin:0;font:800 42px/0.92 var(--display);text-wrap:balance}
 .hero h1 span{display:block;background:linear-gradient(90deg,#fff,#e9d9ff);-webkit-background-clip:text;background-clip:text;color:transparent}
@@ -78,7 +78,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 
 /* esittelyssä */
 .feat{display:grid;grid-template-columns:minmax(0,500px) minmax(0,1fr) auto;align-items:center;gap:20px;overflow:hidden;padding-right:16px}
-.feat .img{position:relative;align-self:stretch;min-height:114px;background:url(assets/featured.jpg) center/cover;-webkit-mask-image:linear-gradient(90deg,#000 80%,transparent)}
+.feat .img{position:relative;align-self:stretch;min-height:114px;background:radial-gradient(circle at 55% 55%,#111 0 34px,#fff 35px 46px,transparent 47px),radial-gradient(ellipse at 50% 60%,#1f8a7a,#0b3a36 70%);display:grid;place-items:center;-webkit-mask-image:linear-gradient(90deg,#000 80%,transparent)}
 .feat .tag{left:12px;right:auto;top:12px}
 .feat h3{margin:0;font:800 22px/1 var(--display);color:#c9b6ff}
 .feat p{margin:6px 0 10px;font-size:12px;color:#d0d3e6}
@@ -115,7 +115,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .casino-h h2{margin:0;font-size:18px}.casino-h small{color:#d5c5ca;font-size:12px}
 .casino-h .why{margin-left:auto;font-size:12px;color:var(--pink);border:1px solid #5a2030;border-radius:6px;padding:4px 10px;display:flex;gap:6px;align-items:center}
 .casino-games{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;padding:0 16px 16px;filter:blur(3px) brightness(.55);pointer-events:none;user-select:none}
-.casino-games div{height:110px;border-radius:10px;border:1px solid #5a2030;background:url(assets/casino.jpg) no-repeat;background-size:auto 140px;display:flex;align-items:flex-end;padding:10px;font-weight:700;color:#fff}
+.casino-games div{height:110px;border-radius:10px;border:1px solid #5a2030;background:linear-gradient(135deg,#5a1424,#2a0a12);font-size:15px;display:flex;align-items:flex-end;padding:10px;font-weight:700;color:#fff}
 .casino-games div:nth-child(1){background-position:-16px -10px}.casino-games div:nth-child(2){background-position:-350px -10px}
 .casino-games div:nth-child(3){background-position:-880px -10px}.casino-games div:nth-child(4){background-position:-1070px -10px}
 .gate{position:absolute;z-index:3;left:50%;top:50%;transform:translate(-50%,-38%);width:min(396px,calc(100% - 32px));
@@ -133,7 +133,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 @media (max-width:1150px){.layout{grid-template-columns:minmax(0,1fr)}.side{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}.games{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media (max-width:720px){
   .games{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .hero{padding:22px;background:linear-gradient(0deg,#0c1030 30%,transparent 80%),url(assets/hero.jpg) center/cover}
+  .hero{padding:22px;background:linear-gradient(0deg,#0c1030 30%,transparent 80%),linear-gradient(160deg,#1a2160,#3a2a7a)}
   .hero h1{font-size:34px}.hero p{font-size:17px}
   .feat{grid-template-columns:1fr;padding:0 0 16px}.feat>div:not(.img),.feat>.btn{margin:0 16px}
   .casino-games{grid-template-columns:repeat(2,1fr)}
@@ -142,6 +142,13 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 }
 @media (max-width:440px){.games{grid-template-columns:minmax(0,1fr)}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+.av{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:13px;color:#fff;flex:none}
+.user .av{width:33px;height:33px}
+.ai{width:46px;height:46px;border-radius:50%;display:grid;place-items:center;font-size:20px;border:2px solid var(--c);background:color-mix(in srgb,var(--c) 18%,transparent);box-shadow:0 0 12px color-mix(in srgb,var(--c) 40%,transparent)}
+.game .img{display:grid;place-items:center}.emoji{font-size:52px;filter:drop-shadow(0 4px 12px #0008)}
+.hero::after{content:"🏔️🎧";position:absolute;right:40px;bottom:20px;font-size:90px;opacity:.85;pointer-events:none}
+.feat .img::after{content:"8";position:absolute;left:50%;top:55%;transform:translate(-50%,-50%);font:800 18px var(--font);color:#111}
+@media (max-width:720px){.hero::after{display:none}}
 </style>
 </head><body>
 
@@ -166,7 +173,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
   <label class="search"><svg class="i"><use href="#search"/></svg><input id="q" type="search" placeholder="Hae pelejä, kategorioita tai käyttäjiä..."></label>
   <div class="top-r">
     <button class="iconbtn" aria-label="Ilmoitukset"><svg class="i"><use href="#bell"/></svg><span class="badge-n">4</span></button>
-    <div class="user"><img src="assets/me.png" alt=""><div><b>Pelimies</b><span class="lvl">Taso 12 <span class="xp"><i></i></span></span></div></div>
+    <div class="user"><span class="av" style="background:#2b6cf0">P</span><div><b>Pelimies</b><span class="lvl">Taso 12 <span class="xp"><i></i></span></span></div></div>
     <button class="iconbtn" aria-label="Asetukset"><svg class="i"><use href="#gear"/></svg></button>
   </div>
 </header>
@@ -231,9 +238,9 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
     <section class="card box">
       <div class="box-h"><span style="font-size:18px">🏅</span><h3>Viimeisimmät saavutukset</h3></div>
       <ul class="ach">
-        <li><img src="assets/ach-salama.png" alt=""><div><b>Nopea kuin salama</b><small>Suorita Reaction Test alle 0.2 sekunnissa</small></div></li>
-        <li><img src="assets/ach-biljardi.png" alt=""><div><b>Biljardimestari</b><small>Voita 10 peliä 8 Ballissa</small></div></li>
-        <li><img src="assets/ach-muisti.png" alt=""><div><b>Muistivelho</b><small>Löydä kaikki parit alle 30 sekunnissa</small></div></li>
+        <li><span class="ai" style="--c:#f5b62a">⚡</span><div><b>Nopea kuin salama</b><small>Suorita Reaction Test alle 0.2 sekunnissa</small></div></li>
+        <li><span class="ai" style="--c:#32d474">🎱</span><div><b>Biljardimestari</b><small>Voita 10 peliä 8 Ballissa</small></div></li>
+        <li><span class="ai" style="--c:#5aa0ff">🧠</span><div><b>Muistivelho</b><small>Löydä kaikki parit alle 30 sekunnissa</small></div></li>
       </ul>
     </section>
   </aside>
@@ -262,11 +269,11 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 <script>
 // Data: oikeassa sovelluksessa nämä tulisivat API:sta (esim. fetch('/api/games')).
 const GAMES = [
-  {id:'kps',      name:'Kivi, paperi, sakset', tag:'Party',  players:'2.4K', desc:'Klassinen peli uudella twistillä. Haasta kaveri tai tietokone!'},
-  {id:'8ball',    name:'8 Ball',               tag:'Arcade', players:'3.1K', desc:'Tarkkuutta ja taitoa. Pelaa klassista biljardia selaimessa.'},
-  {id:'muisti',   name:'Muistipeli',           tag:'Taito',  players:'1.8K', desc:'Testaa muistiasi ja löydä yhteensopivat parit.'},
-  {id:'reaction', name:'Reaction Test',        tag:'Taito',  players:'2.9K', desc:'Kuinka nopeasti reagoit? Testaa ja haasta kaverit!'},
-  {id:'noppa',    name:'Dice / Noppa',         tag:'Arcade', players:'1.6K', desc:'Heitä noppaa ja kokeile onneasi. Useita pelitiloja!'},
+  {id:'kps',icon:'✌️',bg:'linear-gradient(135deg,#3a1d6a,#0f6a8a)',      name:'Kivi, paperi, sakset', tag:'Party',  players:'2.4K', desc:'Klassinen peli uudella twistillä. Haasta kaveri tai tietokone!'},
+  {id:'8ball',icon:'🎱',bg:'radial-gradient(ellipse at 50% 70%,#1f8a7a,#0b2e30)',    name:'8 Ball',               tag:'Arcade', players:'3.1K', desc:'Tarkkuutta ja taitoa. Pelaa klassista biljardia selaimessa.'},
+  {id:'muisti',icon:'🧠',bg:'linear-gradient(135deg,#8a4a1a,#1a5a8a)',   name:'Muistipeli',           tag:'Taito',  players:'1.8K', desc:'Testaa muistiasi ja löydä yhteensopivat parit.'},
+  {id:'reaction',icon:'⏱️',bg:'radial-gradient(circle,#2a3aa8,#0a0f3a)', name:'Reaction Test',        tag:'Taito',  players:'2.9K', desc:'Kuinka nopeasti reagoit? Testaa ja haasta kaverit!'},
+  {id:'noppa',icon:'🎲',bg:'radial-gradient(circle at 60% 40%,#7a4a1a,#1a0f08)',    name:'Dice / Noppa',         tag:'Arcade', players:'1.6K', desc:'Heitä noppaa ja kokeile onneasi. Useita pelitiloja!'},
 ];
 const LEADERS = [
   {name:'NoppaNinja',pts:12450},{name:'BiljardiBosse',pts:11230},{name:'KiviKunkku',pts:9880},
@@ -277,7 +284,7 @@ const fmt = n => n.toLocaleString('fi-FI');
 // Pelikortit
 document.getElementById('games').innerHTML = GAMES.map(g => `
   <article class="card game">
-    <div class="img" style="background-image:url(assets/game-${g.id}.jpg)"><span class="tag ${g.tag.toLowerCase()}">${g.tag}</span></div>
+    <div class="img" style="background:${g.bg}"><span class="emoji">${g.icon}</span><span class="tag ${g.tag.toLowerCase()}">${g.tag}</span></div>
     <div class="body">
       <span class="online">${g.players} pelaajaa</span>
       <h3>${g.name}</h3>
@@ -288,7 +295,7 @@ document.getElementById('games').innerHTML = GAMES.map(g => `
 
 // Tulostaulu (top 3 saa mitalivärin)
 document.getElementById('lead').innerHTML = LEADERS.map((p,i) => `
-  <li><span class="rank ${i<3?'r'+(i+1):''}">${i+1}</span><img src="assets/p${i+1}.png" alt="">
+  <li><span class="rank ${i<3?'r'+(i+1):''}">${i+1}</span><span class="av" style="background:hsl(${i*67+200} 60% 45%)">${p.name[0]}</span>
   <span class="name">${p.name}</span><span class="pts">${fmt(p.pts)}</span></li>`).join('');
 
 // Ikävarmistus: oikeasti tämä tehtäisiin palvelimella (esim. tunnistautuminen), ei pelkällä napilla.
